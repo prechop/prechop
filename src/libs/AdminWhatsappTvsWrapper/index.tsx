@@ -7,11 +7,13 @@ import {
 	Badge,
 	Button,
 	Card,
-	Heading,
+	EmptyState,
+	FadeIn,
 	Input,
-	PageLoader,
+	PageHeader,
 	Row,
 	Select,
+	Skeleton,
 	Stack,
 	Text,
 	Title,
@@ -33,9 +35,11 @@ interface WhatsappTv {
 	displayOrder: number;
 }
 
-const Toolbar = styled(Row)`
-	margin: var(--pc-space-5) 0 var(--pc-space-4);
+const Toolbar = styled(Card)`
+	display: flex;
 	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--pc-space-4);
 `;
 const Scroll = styled.div`
 	overflow-x: auto;
@@ -46,32 +50,59 @@ const Table = styled.table`
 	font-size: 14px;
 	th, td {
 		text-align: left;
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--pc-border);
+		padding: 14px 16px;
 		white-space: nowrap;
 	}
-	th {
+	thead th {
+		position: sticky;
+		top: 0;
+		background: var(--pc-surface-2);
 		color: var(--pc-text-muted);
-		font-weight: 600;
-		font-size: 12px;
+		font-weight: 700;
+		font-size: 11.5px;
 		text-transform: uppercase;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.06em;
+		border-bottom: 1px solid var(--pc-border);
+	}
+	tbody td {
+		border-bottom: 1px solid var(--pc-border);
+		color: var(--pc-text);
+	}
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+	tbody tr {
+		transition: background var(--pc-dur) var(--pc-ease);
+	}
+	tbody tr:hover td {
+		background: var(--pc-surface-2);
+	}
+	td.name {
+		font-weight: 700;
+		color: var(--pc-text);
+	}
+	td.right {
+		text-align: right;
 	}
 `;
 const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.45);
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(4px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: var(--pc-space-4);
 	z-index: 80;
+	animation: pc-fade-up var(--pc-dur) var(--pc-ease) both;
 `;
 const Modal = styled(Card)`
 	width: min(460px, 100%);
 	max-height: 90dvh;
 	overflow-y: auto;
+	box-shadow: var(--pc-shadow-lg);
+	animation: pc-fade-up var(--pc-dur-slow) var(--pc-ease) both;
 `;
 
 export default function AdminWhatsappTvsWrapper() {
@@ -144,102 +175,152 @@ export default function AdminWhatsappTvsWrapper() {
 
 	return (
 		<Stack $gap={4}>
-			<Row $justify="space-between">
-				<Heading $size={26}>WhatsApp TVs</Heading>
-				<Button onClick={() => setAdding(true)} disabled={!campusId}>
-					+ Add TV
-				</Button>
-			</Row>
-			<Text $muted>
-				Broadcast channels used to promote listings per campus.
-			</Text>
-
-			<Toolbar $gap={12}>
-				<div style={{ minWidth: 240 }}>
-					<Select
-						label="Campus"
-						value={campusId}
-						onChange={(e) => setCampusId(e.target.value)}
+			<PageHeader
+				eyebrow="Broadcast"
+				title="WhatsApp TVs"
+				subtitle="Broadcast channels used to promote listings per campus."
+				actions={
+					<Button
+						$pill
+						onClick={() => setAdding(true)}
+						disabled={!campusId}
 					>
-						<option value="">Select a campus…</option>
-						{(campuses ?? []).map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name}
-							</option>
-						))}
-					</Select>
-				</div>
-			</Toolbar>
+						+ Add TV
+					</Button>
+				}
+			/>
 
-			{!campusId ? (
-				<Card>
-					<Text $muted style={{ textAlign: "center" }}>
-						Choose a campus to view its WhatsApp TVs.
-					</Text>
-				</Card>
-			) : isLoading ? (
-				<PageLoader />
-			) : tvs.length === 0 ? (
-				<Card>
-					<Text $muted style={{ textAlign: "center" }}>
-						No WhatsApp TVs for this campus yet.
-					</Text>
-				</Card>
-			) : (
-				<Card style={{ padding: 0 }}>
-					<Scroll>
-						<Table>
-							<thead>
-								<tr>
-									<th>Name</th>
-									<th>Audience</th>
-									<th>Price range</th>
-									<th>Order</th>
-									<th>Status</th>
-									<th></th>
-								</tr>
-							</thead>
-							<tbody>
-								{tvs.map((t) => (
-									<tr key={t.id}>
-										<td>{t.name}</td>
-										<td>
-											{t.audienceSize.toLocaleString(
-												"en-NG",
-											)}
-										</td>
-										<td>{t.priceRange ?? "—"}</td>
-										<td>{t.displayOrder}</td>
-										<td>
-											<Badge
-												$tone={
-													t.isActive
-														? "success"
-														: "muted"
-												}
-											>
-												{t.isActive
-													? "Active"
-													: "Inactive"}
-											</Badge>
-										</td>
-										<td>
-											<Button
-												$variant="danger"
-												$size="sm"
-												$loading={deletingId === t.id}
-												onClick={() => remove(t.id)}
-											>
-												Delete
-											</Button>
-										</td>
-									</tr>
+			<FadeIn>
+				<Stack $gap={16}>
+					<Toolbar>
+						<div style={{ minWidth: 260, flex: 1 }}>
+							<Select
+								label="Campus"
+								value={campusId}
+								onChange={(e) => setCampusId(e.target.value)}
+							>
+								<option value="">Select a campus…</option>
+								{(campuses ?? []).map((c) => (
+									<option key={c.id} value={c.id}>
+										{c.name}
+									</option>
 								))}
-							</tbody>
-						</Table>
-					</Scroll>
-				</Card>
-			)}
+							</Select>
+						</div>
+					</Toolbar>
+
+					{!campusId ? (
+						<EmptyState
+							icon="📺"
+							title="Pick a campus"
+							description="Choose a campus above to view and manage its WhatsApp TVs."
+						/>
+					) : isLoading ? (
+						<Card $pad={0}>
+							<Scroll>
+								<Table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Audience</th>
+											<th>Price range</th>
+											<th>Order</th>
+											<th>Status</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{Array.from({ length: 4 }).map(
+											(_, i) => (
+												<tr key={i}>
+													{Array.from({
+														length: 6,
+													}).map((__, j) => (
+														<td key={j}>
+															<Skeleton $h={16} />
+														</td>
+													))}
+												</tr>
+											),
+										)}
+									</tbody>
+								</Table>
+							</Scroll>
+						</Card>
+					) : tvs.length === 0 ? (
+						<EmptyState
+							icon="📺"
+							title="No WhatsApp TVs yet"
+							description="This campus has no broadcast channels. Add one to start promoting listings."
+							action={
+								<Button $pill onClick={() => setAdding(true)}>
+									+ Add TV
+								</Button>
+							}
+						/>
+					) : (
+						<Card $pad={0}>
+							<Scroll>
+								<Table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Audience</th>
+											<th>Price range</th>
+											<th>Order</th>
+											<th>Status</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{tvs.map((t) => (
+											<tr key={t.id}>
+												<td className="name">
+													{t.name}
+												</td>
+												<td>
+													{t.audienceSize.toLocaleString(
+														"en-NG",
+													)}
+												</td>
+												<td>{t.priceRange ?? "—"}</td>
+												<td>{t.displayOrder}</td>
+												<td>
+													<Badge
+														$tone={
+															t.isActive
+																? "success"
+																: "muted"
+														}
+													>
+														{t.isActive
+															? "Active"
+															: "Inactive"}
+													</Badge>
+												</td>
+												<td className="right">
+													<Button
+														$variant="danger"
+														$size="sm"
+														$loading={
+															deletingId === t.id
+														}
+														onClick={() =>
+															remove(t.id)
+														}
+													>
+														Delete
+													</Button>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</Table>
+							</Scroll>
+						</Card>
+					)}
+				</Stack>
+			</FadeIn>
 
 			{adding && (
 				<Overlay onClick={() => setAdding(false)}>

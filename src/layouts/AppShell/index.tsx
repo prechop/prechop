@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import styled from "styled-components";
-import { Container } from "@/components";
+import { Avatar, Container } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
@@ -17,6 +17,7 @@ const vendorNav = [
 	{ href: "/dashboard", label: "Home", icon: "🏠" },
 	{ href: "/menu", label: "Menu", icon: "📋" },
 	{ href: "/pipeline", label: "Cooking", icon: "🔥" },
+	{ href: "/timetable", label: "Timetable", icon: "🗓️" },
 	{ href: "/earnings", label: "Earnings", icon: "💰" },
 ];
 
@@ -24,20 +25,61 @@ const Bar = styled.header`
 	position: sticky;
 	top: 0;
 	z-index: 50;
-	background: var(--pc-surface);
+	background: color-mix(in srgb, var(--pc-surface) 82%, transparent);
+	backdrop-filter: saturate(1.4) blur(12px);
 	border-bottom: 1px solid var(--pc-border);
 `;
 const BarInner = styled(Container)`
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	height: 58px;
+	height: 62px;
 `;
 const Brand = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	font-family: var(--pc-font-display);
 	font-weight: 800;
-	font-size: 20px;
-	color: var(--pc-color-primary);
-	letter-spacing: -0.02em;
+	font-size: 21px;
+	letter-spacing: -0.03em;
+	color: var(--pc-text);
+`;
+const Logo = styled.span`
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	border-radius: 9px;
+	background: var(--pc-gradient-warm);
+	box-shadow: var(--pc-shadow-primary);
+	font-size: 16px;
+`;
+const Right = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 14px;
+`;
+const NavRow = styled.nav`
+	display: none;
+	@media (min-width: 760px) {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+`;
+const TopLink = styled(Link)<{ $active: boolean }>`
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 8px 14px;
+	border-radius: var(--pc-radius-pill);
+	font-size: 14px;
+	font-weight: 700;
+	color: ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)")};
+	background: ${(p) => (p.$active ? "var(--pc-color-primary-50)" : "transparent")};
+	transition: background var(--pc-dur) var(--pc-ease), color var(--pc-dur) var(--pc-ease);
+	&:hover { color: var(--pc-text); background: var(--pc-surface-2); }
 `;
 const LogoutBtn = styled.button`
 	background: none;
@@ -45,30 +87,45 @@ const LogoutBtn = styled.button`
 	color: var(--pc-text-muted);
 	font-size: 14px;
 	cursor: pointer;
-	font-weight: 600;
+	font-weight: 700;
+	padding: 6px 4px;
+	&:hover { color: var(--pc-color-danger); }
 `;
 const Main = styled.main`
-	min-height: calc(100dvh - 58px - 64px);
-	padding: var(--pc-space-5) 0 var(--pc-space-8);
+	min-height: calc(100dvh - 62px - 70px);
+	padding: var(--pc-space-6) 0 var(--pc-space-10);
+	@media (min-width: 760px) {
+		padding-bottom: var(--pc-space-8);
+	}
 `;
 const BottomNav = styled.nav`
 	position: sticky;
 	bottom: 0;
-	background: var(--pc-surface);
+	z-index: 50;
+	background: color-mix(in srgb, var(--pc-surface) 88%, transparent);
+	backdrop-filter: saturate(1.4) blur(12px);
 	border-top: 1px solid var(--pc-border);
 	display: flex;
 	justify-content: space-around;
 	padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+	@media (min-width: 760px) {
+		display: none;
+	}
 `;
 const NavLink = styled(Link)<{ $active: boolean }>`
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 2px;
+	gap: 3px;
 	font-size: 11px;
-	font-weight: 600;
+	font-weight: 700;
 	color: ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)")};
-	span:first-child { font-size: 20px; }
+	transition: color var(--pc-dur) var(--pc-ease);
+	span:first-child {
+		font-size: 21px;
+		transform: ${(p) => (p.$active ? "translateY(-1px) scale(1.05)" : "none")};
+		transition: transform var(--pc-dur) var(--pc-ease);
+	}
 `;
 
 export default function AppShell({
@@ -91,13 +148,36 @@ export default function AppShell({
 	if (isLoading || !isAuthenticated) return <PageLoader />;
 
 	const nav = (shellRole ?? user?.role) === "VENDOR" ? vendorNav : buyerNav;
+	const fullName = user
+		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+		: undefined;
 
 	return (
 		<>
 			<Bar>
 				<BarInner>
-					<Brand href="/">Prechop</Brand>
-					<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+					<Brand
+						href={nav === vendorNav ? "/dashboard" : "/marketplace"}
+					>
+						<Logo aria-hidden>🍲</Logo>
+						Prechop
+					</Brand>
+					<NavRow>
+						{nav.map((n) => (
+							<TopLink
+								key={n.href}
+								href={n.href}
+								$active={pathname.startsWith(n.href)}
+							>
+								<span aria-hidden>{n.icon}</span>
+								{n.label}
+							</TopLink>
+						))}
+					</NavRow>
+					<Right>
+						<Avatar name={fullName} size={34} />
+						<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+					</Right>
 				</BarInner>
 			</Bar>
 			<Main>
@@ -110,7 +190,7 @@ export default function AppShell({
 						href={n.href}
 						$active={pathname.startsWith(n.href)}
 					>
-						<span>{n.icon}</span>
+						<span aria-hidden>{n.icon}</span>
 						<span>{n.label}</span>
 					</NavLink>
 				))}

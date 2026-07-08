@@ -3,37 +3,46 @@
 import Link from "next/link";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Badge, Card, Grid, Row, Stack, Text, Title } from "@/components";
-import { PageLoader } from "@/components/Loader";
+import {
+	Badge,
+	Card,
+	EmptyState,
+	FadeIn,
+	Grid,
+	PageHeader,
+	Row,
+	Skeleton,
+	Stack,
+	Text,
+	Title,
+} from "@/components";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import type { Campus, DailyOrder } from "@/types";
 
-const Header = styled(Stack)`
-	margin-bottom: var(--pc-space-5);
-`;
 const CampusTag = styled.span`
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	align-self: flex-start;
-	background: var(--pc-surface-2);
+	background: var(--pc-surface);
+	border: 1px solid var(--pc-border);
 	color: var(--pc-text-muted);
 	font-size: 13px;
-	font-weight: 600;
-	padding: 5px 12px;
-	border-radius: 999px;
+	font-weight: 700;
+	padding: 7px 14px;
+	border-radius: var(--pc-radius-pill);
+	box-shadow: var(--pc-shadow-sm);
 `;
 const ListingCard = styled(Card)`
 	padding: 0;
 	overflow: hidden;
 	display: flex;
 	flex-direction: column;
-	transition: box-shadow 0.15s ease, transform 0.15s ease;
+	transition: box-shadow var(--pc-dur) var(--pc-ease), transform var(--pc-dur) var(--pc-ease);
 	&:hover {
 		box-shadow: var(--pc-shadow-lg);
-		transform: translateY(-2px);
+		transform: translateY(-3px);
 	}
 `;
 const CardLink = styled(Link)`
@@ -42,10 +51,14 @@ const CardLink = styled(Link)`
 	height: 100%;
 	color: inherit;
 `;
+const Media = styled.div`
+	position: relative;
+	height: 150px;
+`;
 const Thumbs = styled.div`
 	display: flex;
 	gap: 2px;
-	height: 120px;
+	height: 100%;
 	background: var(--pc-surface-2);
 `;
 const Thumb = styled.div<{ $src?: string }>`
@@ -53,20 +66,39 @@ const Thumb = styled.div<{ $src?: string }>`
 	background: ${(p) =>
 		p.$src
 			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-surface-2)"};
+			: "var(--pc-color-primary-50)"};
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 30px;
+	font-size: 34px;
+`;
+const MediaShade = styled.div`
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.28), transparent 55%);
+`;
+const CutoffFloat = styled.div`
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	z-index: 1;
 `;
 const Body = styled(Stack)`
 	padding: var(--pc-space-4);
 	flex: 1;
 `;
-const Cutoff = styled(Badge)``;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const Foot = styled(Row)`
+	padding-top: var(--pc-space-2);
+	border-top: 1px solid var(--pc-border);
+`;
+const OrderCta = styled.span`
+	font-weight: 700;
+	font-size: 14px;
+	color: var(--pc-color-primary);
+`;
+const Chips = styled(Row)`
+	flex-wrap: wrap;
 `;
 
 function priceRange(o: DailyOrder): string {
@@ -93,98 +125,124 @@ export default function MarketplaceWrapper() {
 
 	const campusName = campuses?.find((c) => c.id === campusId)?.name;
 
-	if (isLoading || !campusId) return <PageLoader />;
+	if (isLoading || !campusId) {
+		return (
+			<Stack $gap={0}>
+				<PageHeader
+					eyebrow="Marketplace"
+					title="Today's kitchens"
+					subtitle="Fresh listings from campus vendors, updated daily."
+				/>
+				<Grid $min={260} $gap={16}>
+					{[0, 1, 2, 3, 4, 5].map((n) => (
+						<Card key={n} $pad={0}>
+							<Skeleton $h={150} $radius="0" />
+							<Stack $gap={10} style={{ padding: 16 }}>
+								<Skeleton $w="70%" $h={18} />
+								<Skeleton $w="45%" $h={13} />
+								<Skeleton $w="55%" $h={13} />
+							</Stack>
+						</Card>
+					))}
+				</Grid>
+			</Stack>
+		);
+	}
 
 	const listings = data ?? [];
 
 	return (
 		<Stack $gap={0}>
-			<Header $gap={8}>
-				<Title $size={24}>Today&apos;s kitchens</Title>
-				<CampusTag>📍 {campusName ?? "Your campus"}</CampusTag>
-			</Header>
+			<PageHeader
+				eyebrow="Marketplace"
+				title="Today's kitchens"
+				subtitle="Order before they cook — reserve your plate from campus vendors serving today."
+				actions={
+					<CampusTag>📍 {campusName ?? "Your campus"}</CampusTag>
+				}
+			/>
 
 			{listings.length === 0 ? (
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No kitchens open right now
-						</Text>
-						<Text $muted>
-							Check back soon — vendors post fresh listings every
-							day.
-						</Text>
-					</Stack>
-				</Empty>
+				<EmptyState
+					icon="🍲"
+					title="No kitchens open right now"
+					description="Check back soon — vendors post fresh listings every day."
+				/>
 			) : (
 				<Grid $min={260} $gap={16}>
-					{listings.map((o) => {
+					{listings.map((o, i) => {
 						const closed = timeUntil(o.cutoffTime) === "closed";
 						return (
-							<ListingCard key={o.id}>
-								<CardLink href={`/o/${o.shareableToken}`}>
-									<Thumbs>
-										{o.items.slice(0, 3).map((i) => (
-											<Thumb
-												key={i.id}
-												$src={i.snapshotImageUrl}
-											>
-												{i.snapshotImageUrl ? "" : "🍲"}
-											</Thumb>
-										))}
-										{o.items.length === 0 && (
-											<Thumb>🍲</Thumb>
-										)}
-									</Thumbs>
-									<Body $gap={10}>
-										<Row
-											$justify="space-between"
-											$align="flex-start"
-											$gap={8}
-										>
+							<FadeIn key={o.id} $delay={i * 45}>
+								<ListingCard>
+									<CardLink href={`/o/${o.shareableToken}`}>
+										<Media>
+											<CutoffFloat>
+												<Badge
+													$tone={
+														closed
+															? "danger"
+															: "warning"
+													}
+												>
+													{closed
+														? "⛔ Closed"
+														: `⏱ ${timeUntil(o.cutoffTime)}`}
+												</Badge>
+											</CutoffFloat>
+											<Thumbs>
+												{o.items
+													.slice(0, 3)
+													.map((it) => (
+														<Thumb
+															key={it.id}
+															$src={
+																it.snapshotImageUrl
+															}
+														>
+															{it.snapshotImageUrl
+																? ""
+																: "🍲"}
+														</Thumb>
+													))}
+												{o.items.length === 0 && (
+													<Thumb>🍲</Thumb>
+												)}
+											</Thumbs>
+											<MediaShade />
+										</Media>
+										<Body $gap={10}>
 											<Title $size={17}>{o.title}</Title>
-											<Cutoff
-												$tone={
-													closed
-														? "danger"
-														: "warning"
-												}
+											<Chips $gap={6}>
+												<Badge $tone="muted">
+													{o.items.length} item
+													{o.items.length === 1
+														? ""
+														: "s"}
+												</Badge>
+												<Badge $tone="gold">
+													{priceRange(o)}
+												</Badge>
+											</Chips>
+											<Foot
+												$justify="space-between"
+												$align="center"
 											>
-												{closed
-													? "Closed"
-													: timeUntil(o.cutoffTime)}
-											</Cutoff>
-										</Row>
-										<Text $muted $size={13}>
-											{o.items.length} item
-											{o.items.length === 1 ? "" : "s"} ·{" "}
-											{priceRange(o)}
-										</Text>
-										<Row
-											$justify="space-between"
-											$align="center"
-										>
-											<Text $size={13} $muted>
-												{o.pickupAvailable && "Pickup"}
-												{o.pickupAvailable &&
-													o.deliveryAvailable &&
-													" · "}
-												{o.deliveryAvailable &&
-													"Delivery"}
-											</Text>
-											<Text
-												$weight={700}
-												$size={14}
-												style={{
-													color: "var(--pc-color-primary)",
-												}}
-											>
-												Order →
-											</Text>
-										</Row>
-									</Body>
-								</CardLink>
-							</ListingCard>
+												<Text $size={13} $muted>
+													{o.pickupAvailable &&
+														"Pickup"}
+													{o.pickupAvailable &&
+														o.deliveryAvailable &&
+														" · "}
+													{o.deliveryAvailable &&
+														"Delivery"}
+												</Text>
+												<OrderCta>Order →</OrderCta>
+											</Foot>
+										</Body>
+									</CardLink>
+								</ListingCard>
+							</FadeIn>
 						);
 					})}
 				</Grid>

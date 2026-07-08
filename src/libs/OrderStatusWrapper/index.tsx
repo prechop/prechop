@@ -8,8 +8,11 @@ import {
 	Badge,
 	Button,
 	Card,
+	FadeIn,
+	Grid,
 	Row,
 	Stack,
+	StatCard,
 	Text,
 	Textarea,
 	Title,
@@ -35,41 +38,95 @@ const FLOW: OrderStatus[] = [
 ];
 const CANCELLABLE: OrderStatus[] = ["PENDING_PAYMENT", "PAID", "CONFIRMED"];
 
+const STEP_META: Record<string, { icon: string; hint: string }> = {
+	PAID: { icon: "💳", hint: "Payment received" },
+	CONFIRMED: { icon: "✅", hint: "Kitchen accepted your order" },
+	PREPARING: { icon: "🍳", hint: "Your food is being cooked" },
+	READY: { icon: "🛎️", hint: "Ready for pickup / on the way" },
+	COMPLETED: { icon: "🎉", hint: "Order fulfilled — enjoy!" },
+};
+
+const statusTone: Record<
+	OrderStatus,
+	"primary" | "success" | "warning" | "danger" | "muted"
+> = {
+	PENDING_PAYMENT: "warning",
+	PAID: "primary",
+	CONFIRMED: "primary",
+	PREPARING: "warning",
+	READY: "success",
+	COMPLETED: "success",
+	CANCELLED: "danger",
+	REFUNDED: "muted",
+};
+
 const Wrap = styled(Stack)`
 	max-width: 560px;
 	margin: 0 auto;
 `;
-const Step = styled.div<{ $done: boolean; $current: boolean }>`
+const HeroCard = styled(Card)`
+	background: var(--pc-gradient-warm);
+	border: none;
+`;
+const Track = styled.div`
 	display: flex;
-	align-items: center;
+	flex-direction: column;
+`;
+const Step = styled.div<{ $done: boolean; $current: boolean }>`
+	display: grid;
+	grid-template-columns: 30px 1fr;
 	gap: 12px;
-	opacity: ${(p) => (p.$done || p.$current ? 1 : 0.4)};
+	opacity: ${(p) => (p.$done || p.$current ? 1 : 0.5)};
+	transition: opacity var(--pc-dur) var(--pc-ease);
+`;
+const DotCol = styled.div`
+	display: flex;
+	flex-direction: column;
+	align-items: center;
 `;
 const Dot = styled.div<{ $done: boolean; $current: boolean }>`
-	width: 26px;
-	height: 26px;
+	width: 30px;
+	height: 30px;
 	border-radius: 50%;
 	flex-shrink: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 13px;
+	font-size: 14px;
+	font-weight: 700;
 	color: #fff;
 	background: ${(p) =>
 		p.$done
-			? "var(--pc-color-success, #2B8A3E)"
+			? "var(--pc-color-accent)"
 			: p.$current
 				? "var(--pc-color-primary)"
 				: "var(--pc-border)"};
+	box-shadow: ${(p) =>
+		p.$current ? "0 0 0 4px var(--pc-color-primary-50)" : "none"};
+`;
+const Conn = styled.div<{ $done: boolean }>`
+	flex: 1;
+	width: 2px;
+	min-height: 22px;
+	margin: 2px 0;
+	background: ${(p) =>
+		p.$done ? "var(--pc-color-accent)" : "var(--pc-border)"};
+`;
+const StepBody = styled.div`
+	padding-bottom: var(--pc-space-4);
 `;
 const Line = styled(Row)`
 	justify-content: space-between;
 	font-size: 14px;
 `;
+const Divider = styled.div`
+	border-top: 1px solid var(--pc-border);
+	margin: 4px 0;
+`;
 const Stars = styled.div`
 	display: flex;
 	gap: 4px;
-	font-size: 28px;
+	font-size: 30px;
 	cursor: pointer;
 `;
 const Star = styled.button<{ $on: boolean }>`
@@ -78,7 +135,9 @@ const Star = styled.button<{ $on: boolean }>`
 	cursor: pointer;
 	padding: 0;
 	line-height: 1;
-	color: ${(p) => (p.$on ? "#F59F00" : "var(--pc-border)")};
+	transition: transform var(--pc-dur) var(--pc-ease), color var(--pc-dur) var(--pc-ease);
+	color: ${(p) => (p.$on ? "var(--pc-color-gold)" : "var(--pc-border)")};
+	&:hover { transform: scale(1.15); }
 `;
 
 export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
@@ -114,6 +173,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const isTerminalBad =
 		data.status === "CANCELLED" || data.status === "REFUNDED";
 	const currentIdx = FLOW.indexOf(data.status);
+	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
 
 	async function cancel() {
 		if (!reason.trim()) {
@@ -158,58 +218,121 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 
 	return (
 		<Wrap $gap={16}>
-			<Row $justify="space-between" $align="flex-start">
-				<Stack $gap={2}>
-					<Title $size={22}>{data.orderNumber}</Title>
-					<Text $muted $size={13}>
-						{formatDateTime(data.createdAt)}
-					</Text>
-				</Stack>
-				<Badge $tone={isTerminalBad ? "danger" : "primary"}>
-					{statusLabel(data.status)}
-				</Badge>
-			</Row>
+			<FadeIn>
+				<HeroCard>
+					<Row $justify="space-between" $align="flex-start" $gap={12}>
+						<Stack $gap={4}>
+							<Title $size={24}>{data.orderNumber}</Title>
+							<Text $muted $size={13}>
+								{formatDateTime(data.createdAt)}
+							</Text>
+						</Stack>
+						<Badge $tone={statusTone[data.status]}>
+							{statusLabel(data.status)}
+						</Badge>
+					</Row>
+				</HeroCard>
+			</FadeIn>
+
+			<FadeIn $delay={60}>
+				<Grid $min={150} $gap={12}>
+					<StatCard
+						label="Order total"
+						value={formatKobo(data.totalKobo)}
+						icon="💰"
+					/>
+					<StatCard
+						label="Items"
+						value={itemCount}
+						icon="🍽️"
+						tone="var(--pc-color-accent)"
+					/>
+					<StatCard
+						label="Fulfilment"
+						value={
+							data.fulfillmentType === "DELIVERY"
+								? "Delivery"
+								: "Pickup"
+						}
+						icon={data.fulfillmentType === "DELIVERY" ? "🛵" : "🥡"}
+						tone="var(--pc-color-gold)"
+					/>
+				</Grid>
+			</FadeIn>
 
 			{!isTerminalBad && data.status !== "PENDING_PAYMENT" && (
-				<Card>
-					<Stack $gap={14}>
-						{FLOW.map((s, i) => {
-							const done = currentIdx > i;
-							const current = currentIdx === i;
-							return (
-								<Step key={s} $done={done} $current={current}>
-									<Dot $done={done} $current={current}>
-										{done ? "✓" : i + 1}
-									</Dot>
-									<Text $weight={current ? 700 : 400}>
-										{statusLabel(s)}
-									</Text>
-								</Step>
-							);
-						})}
-					</Stack>
-				</Card>
+				<FadeIn $delay={120}>
+					<Card>
+						<Stack $gap={14}>
+							<Text $weight={800}>Order progress</Text>
+							<Track>
+								{FLOW.map((s, i) => {
+									const done = currentIdx > i;
+									const current = currentIdx === i;
+									const meta = STEP_META[s];
+									return (
+										<Step
+											key={s}
+											$done={done}
+											$current={current}
+										>
+											<DotCol>
+												<Dot
+													$done={done}
+													$current={current}
+												>
+													{done ? "✓" : i + 1}
+												</Dot>
+												{i < FLOW.length - 1 && (
+													<Conn $done={done} />
+												)}
+											</DotCol>
+											<StepBody>
+												<Text
+													$weight={
+														current ? 800 : 600
+													}
+												>
+													{meta?.icon}{" "}
+													{statusLabel(s)}
+												</Text>
+												<Text $muted $size={13}>
+													{meta?.hint}
+												</Text>
+											</StepBody>
+										</Step>
+									);
+								})}
+							</Track>
+						</Stack>
+					</Card>
+				</FadeIn>
 			)}
 
 			{data.status === "PENDING_PAYMENT" && (
-				<Card>
-					<Text $muted>
-						This order is awaiting payment. If you already paid, it
-						will update shortly.
-					</Text>
+				<Card $accent>
+					<Row $gap={10} $align="flex-start">
+						<Text $size={20}>⏳</Text>
+						<Text $muted>
+							This order is awaiting payment. If you already paid,
+							it will update shortly.
+						</Text>
+					</Row>
 				</Card>
 			)}
 
 			<Card>
 				<Stack $gap={10}>
-					<Text $weight={700}>Items</Text>
+					<Text $weight={800}>Receipt</Text>
 					{data.items.map((it) => (
 						<Stack key={it.dailyOrderItemId} $gap={2}>
 							<Line>
-								<Text>
+								<Text $weight={600}>
 									{it.quantity}× {it.snapshotName}
 								</Text>
-								<Text>{formatKobo(it.subtotalKobo)}</Text>
+								<Text $weight={600}>
+									{formatKobo(it.subtotalKobo)}
+								</Text>
 							</Line>
 							{it.addons.map((a) => (
 								<Line key={a.snapshotName}>
@@ -223,12 +346,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 							))}
 						</Stack>
 					))}
-					<div
-						style={{
-							borderTop: "1px solid var(--pc-border)",
-							margin: "4px 0",
-						}}
-					/>
+					<Divider />
 					<Line>
 						<Text $muted>Subtotal</Text>
 						<Text>{formatKobo(data.subtotalKobo)}</Text>
@@ -243,27 +361,30 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						<Text $muted>Service fee</Text>
 						<Text>{formatKobo(data.platformFeeKobo)}</Text>
 					</Line>
+					<Divider />
 					<Line>
-						<Text $weight={800}>Total</Text>
-						<Text $weight={800}>{formatKobo(data.totalKobo)}</Text>
+						<Text $weight={800} $size={16}>
+							Total
+						</Text>
+						<Text $weight={800} $size={16}>
+							{formatKobo(data.totalKobo)}
+						</Text>
 					</Line>
-					<Text $muted $size={13}>
-						{data.fulfillmentType === "DELIVERY"
-							? "Delivery"
-							: "Pickup"}
-					</Text>
 				</Stack>
 			</Card>
 
 			{data.status === "COMPLETED" && (
-				<Card>
+				<Card $accent>
 					<Stack $gap={12}>
-						<Text $weight={700}>Rate this order</Text>
+						<Text $weight={800}>Rate this order</Text>
 						{existingReview ? (
-							<Text $muted>
-								You rated this {existingReview.rating}★. Thanks
-								for the feedback!
-							</Text>
+							<Row $gap={8} $align="center">
+								<Text $size={20}>⭐</Text>
+								<Text $muted>
+									You rated this {existingReview.rating}★.
+									Thanks for the feedback!
+								</Text>
+							</Row>
 						) : (
 							<>
 								<Stars>
@@ -300,7 +421,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				(showCancel ? (
 					<Card>
 						<Stack $gap={12}>
-							<Text $weight={700}>Cancel order</Text>
+							<Text $weight={800}>Cancel order</Text>
 							<Textarea
 								label="Reason"
 								value={reason}
@@ -335,7 +456,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 
 			<Link href="/my-orders">
 				<Button $full $variant="secondary">
-					Back to orders
+					← Back to orders
 				</Button>
 			</Link>
 		</Wrap>

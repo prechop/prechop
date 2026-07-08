@@ -4,14 +4,19 @@ import { useState } from "react";
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
+	Avatar,
 	Badge,
 	Button,
 	Card,
-	Heading,
-	PageLoader,
+	EmptyState,
+	FadeIn,
+	Grid,
+	PageHeader,
 	Row,
 	Select,
+	Skeleton,
 	Stack,
+	StatCard,
 	Text,
 	Textarea,
 	Title,
@@ -41,51 +46,116 @@ interface AdminVendor {
 const tone = (s: VendorStatus) =>
 	s === "ACTIVE" ? "success" : s === "SUSPENDED" ? "danger" : "muted";
 
-const Toolbar = styled(Row)`
-	margin: var(--pc-space-5) 0 var(--pc-space-4);
+const Toolbar = styled(Card)`
+	display: flex;
 	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--pc-space-4);
+`;
+const FilterField = styled.div`
+	min-width: 200px;
+	flex: 1 1 220px;
+	max-width: 320px;
 `;
 const Scroll = styled.div`
 	overflow-x: auto;
+	border-radius: var(--pc-radius);
 `;
 const Table = styled.table`
 	width: 100%;
 	border-collapse: collapse;
 	font-size: 14px;
-	th, td {
+	th,
+	td {
 		text-align: left;
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--pc-border);
+		padding: 13px 16px;
 		white-space: nowrap;
 	}
-	th {
+	thead th {
 		color: var(--pc-text-muted);
-		font-weight: 600;
-		font-size: 12px;
+		font-weight: 700;
+		font-size: 11.5px;
 		text-transform: uppercase;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.05em;
+		background: var(--pc-surface-2);
+		border-bottom: 1px solid var(--pc-border);
+	}
+	tbody td {
+		border-bottom: 1px solid var(--pc-border);
+		color: var(--pc-text);
+	}
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+	tbody tr {
+		transition: background var(--pc-dur) var(--pc-ease);
+	}
+	tbody tr:hover td {
+		background: var(--pc-surface-2);
+	}
+`;
+const Rating = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-weight: 700;
+	& > span {
+		color: var(--pc-color-gold);
 	}
 `;
 const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.45);
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(3px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: var(--pc-space-4);
 	z-index: 80;
+	animation: pc-fade-up var(--pc-dur) var(--pc-ease) both;
 `;
 const Modal = styled(Card)`
 	width: min(520px, 100%);
 	max-height: 90dvh;
 	overflow-y: auto;
+	box-shadow: var(--pc-shadow-lg);
 `;
 const KV = styled(Row)`
 	justify-content: space-between;
+	gap: var(--pc-space-4);
 	border-bottom: 1px solid var(--pc-border);
-	padding: 8px 0;
+	padding: 11px 0;
+	&:last-child {
+		border-bottom: none;
+	}
 `;
+
+function LoadingTable() {
+	return (
+		<Card $pad={0}>
+			<Stack $gap={0}>
+				{[0, 1, 2, 3, 4].map((i) => (
+					<Row
+						key={i}
+						$justify="space-between"
+						$align="center"
+						style={{
+							padding: "16px",
+							borderBottom: "1px solid var(--pc-border)",
+						}}
+					>
+						<Row $gap={10} $align="center">
+							<Skeleton $w="32px" $h={32} $radius="50%" />
+							<Skeleton $w="140px" $h={14} />
+						</Row>
+						<Skeleton $w="80px" $h={22} $radius="999px" />
+					</Row>
+				))}
+			</Stack>
+		</Card>
+	);
+}
 
 export default function AdminVendorsWrapper() {
 	const { toast } = useToast();
@@ -137,14 +207,44 @@ export default function AdminVendorsWrapper() {
 	}
 
 	const vendors = data ?? [];
+	const activeCount = vendors.filter((v) => v.status === "ACTIVE").length;
+	const suspendedCount = vendors.filter(
+		(v) => v.status === "SUSPENDED",
+	).length;
 
 	return (
-		<Stack $gap={4}>
-			<Heading $size={26}>Vendors</Heading>
-			<Text $muted>Manage vendor accounts across all campuses.</Text>
+		<Stack $gap={20}>
+			<PageHeader
+				eyebrow="Admin console"
+				title="Vendors"
+				subtitle="Manage vendor accounts across all campuses."
+			/>
 
-			<Toolbar $gap={12}>
-				<div style={{ minWidth: 200 }}>
+			<FadeIn>
+				<Grid $min={200} $gap={16}>
+					<StatCard
+						label="Vendors shown"
+						value={vendors.length}
+						icon="🏪"
+						tone="var(--pc-gradient-warm)"
+					/>
+					<StatCard
+						label="Active"
+						value={activeCount}
+						icon="🔥"
+						tone="var(--pc-color-accent)"
+					/>
+					<StatCard
+						label="Suspended"
+						value={suspendedCount}
+						icon="⛔"
+						tone="var(--pc-color-danger)"
+					/>
+				</Grid>
+			</FadeIn>
+
+			<Toolbar>
+				<FilterField>
 					<Select
 						label="Filter by status"
 						value={status}
@@ -155,91 +255,120 @@ export default function AdminVendorsWrapper() {
 						<option value="SUSPENDED">Suspended</option>
 						<option value="INCOMPLETE">Incomplete</option>
 					</Select>
-				</div>
+				</FilterField>
 			</Toolbar>
 
 			{isLoading ? (
-				<PageLoader />
+				<LoadingTable />
 			) : vendors.length === 0 ? (
-				<Card>
-					<Text $muted style={{ textAlign: "center" }}>
-						No vendors found.
-					</Text>
-				</Card>
+				<FadeIn>
+					<EmptyState
+						icon="🏪"
+						title="No vendors found"
+						description="No vendor accounts match this filter yet. Try a different status."
+					/>
+				</FadeIn>
 			) : (
-				<Card style={{ padding: 0 }}>
-					<Scroll>
-						<Table>
-							<thead>
-								<tr>
-									<th>Business</th>
-									<th>Email</th>
-									<th>Status</th>
-									<th>Rating</th>
-									<th>Orders</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-								{vendors.map((v) => (
-									<tr key={v.id}>
-										<td>{v.businessName ?? "—"}</td>
-										<td>{v.email}</td>
-										<td>
-											<Badge $tone={tone(v.status)}>
-												{statusLabel(v.status)}
-											</Badge>
-										</td>
-										<td>{v.rating.toFixed(1)} ★</td>
-										<td>{v.totalOrders}</td>
-										<td>
-											<Row $gap={8}>
-												<Button
-													$variant="ghost"
-													$size="sm"
-													onClick={() =>
-														setDetailId(v.id)
-													}
-												>
-													View
-												</Button>
-												{v.status === "SUSPENDED" ? (
-													<Button
-														$variant="secondary"
-														$size="sm"
-														$loading={busy}
-														onClick={() =>
-															reactivate(v.id)
-														}
-													>
-														Reactivate
-													</Button>
-												) : (
-													<Button
-														$variant="danger"
-														$size="sm"
-														onClick={() =>
-															setSuspendId(v.id)
-														}
-													>
-														Suspend
-													</Button>
-												)}
-											</Row>
-										</td>
+				<FadeIn>
+					<Card $pad={0}>
+						<Scroll>
+							<Table>
+								<thead>
+									<tr>
+										<th>Business</th>
+										<th>Email</th>
+										<th>Status</th>
+										<th>Rating</th>
+										<th>Orders</th>
+										<th>Actions</th>
 									</tr>
-								))}
-							</tbody>
-						</Table>
-					</Scroll>
-				</Card>
+								</thead>
+								<tbody>
+									{vendors.map((v) => (
+										<tr key={v.id}>
+											<td>
+												<Row $gap={10} $align="center">
+													<Avatar
+														name={
+															v.businessName ??
+															"?"
+														}
+														size={32}
+													/>
+													<Text $weight={700}>
+														{v.businessName ?? "—"}
+													</Text>
+												</Row>
+											</td>
+											<td>
+												<Text $muted $size={13}>
+													{v.email}
+												</Text>
+											</td>
+											<td>
+												<Badge $tone={tone(v.status)}>
+													{statusLabel(v.status)}
+												</Badge>
+											</td>
+											<td>
+												<Rating>
+													{v.rating.toFixed(1)}
+													<span aria-hidden>★</span>
+												</Rating>
+											</td>
+											<td>{v.totalOrders}</td>
+											<td>
+												<Row $gap={8}>
+													<Button
+														$variant="ghost"
+														$size="sm"
+														onClick={() =>
+															setDetailId(v.id)
+														}
+													>
+														View
+													</Button>
+													{v.status ===
+													"SUSPENDED" ? (
+														<Button
+															$variant="accent"
+															$size="sm"
+															$loading={busy}
+															onClick={() =>
+																reactivate(v.id)
+															}
+														>
+															Reactivate
+														</Button>
+													) : (
+														<Button
+															$variant="danger"
+															$size="sm"
+															onClick={() =>
+																setSuspendId(
+																	v.id,
+																)
+															}
+														>
+															Suspend
+														</Button>
+													)}
+												</Row>
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</Table>
+						</Scroll>
+					</Card>
+				</FadeIn>
 			)}
 
 			{detailId && (
 				<Overlay onClick={() => setDetailId(null)}>
 					<Modal onClick={(e) => e.stopPropagation()}>
-						<Stack $gap={12}>
-							<Row $justify="space-between">
+						<Stack $gap={16}>
+							<Row $justify="space-between" $align="center">
 								<Title $size={18}>Vendor detail</Title>
 								<Button
 									$variant="ghost"
@@ -250,73 +379,93 @@ export default function AdminVendorsWrapper() {
 								</Button>
 							</Row>
 							{!detail ? (
-								<PageLoader />
+								<Stack $gap={12}>
+									{[0, 1, 2, 3, 4].map((i) => (
+										<Skeleton key={i} $h={18} />
+									))}
+								</Stack>
 							) : (
-								<Stack $gap={0}>
-									<KV>
-										<Text $muted>Business</Text>
-										<Text $weight={600}>
-											{detail.businessName ?? "—"}
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Email</Text>
-										<Text $weight={600}>
-											{detail.email}
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Status</Text>
-										<Badge $tone={tone(detail.status)}>
-											{statusLabel(detail.status)}
-										</Badge>
-									</KV>
-									<KV>
-										<Text $muted>Type</Text>
-										<Text $weight={600}>
-											{detail.vendorType
-												? statusLabel(detail.vendorType)
-												: "—"}
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Rating</Text>
-										<Text $weight={600}>
-											{detail.rating.toFixed(1)} ★ (
-											{detail.totalReviews})
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Total orders</Text>
-										<Text $weight={600}>
-											{detail.totalOrders}
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Profile completeness</Text>
-										<Text $weight={600}>
-											{detail.profileCompleteness}%
-										</Text>
-									</KV>
-									<KV>
-										<Text $muted>Open for orders</Text>
-										<Text $weight={600}>
-											{detail.isOpenForOrders
-												? "Yes"
-												: "No"}
-										</Text>
-									</KV>
-									{detail.categories.length > 0 && (
+								<>
+									<Row $gap={12} $align="center">
+										<Avatar
+											name={detail.businessName ?? "?"}
+											size={48}
+										/>
+										<Stack $gap={2}>
+											<Text $weight={800} $size={16}>
+												{detail.businessName ?? "—"}
+											</Text>
+											<Badge $tone={tone(detail.status)}>
+												{statusLabel(detail.status)}
+											</Badge>
+										</Stack>
+									</Row>
+									<Stack $gap={0}>
 										<KV>
-											<Text $muted>Categories</Text>
+											<Text $muted>Email</Text>
 											<Text $weight={600}>
-												{detail.categories
-													.map((c) => statusLabel(c))
-													.join(", ")}
+												{detail.email}
 											</Text>
 										</KV>
-									)}
-								</Stack>
+										<KV>
+											<Text $muted>Type</Text>
+											<Text $weight={600}>
+												{detail.vendorType
+													? statusLabel(
+															detail.vendorType,
+														)
+													: "—"}
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>Rating</Text>
+											<Text $weight={600}>
+												{detail.rating.toFixed(1)} ★ (
+												{detail.totalReviews})
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>Total orders</Text>
+											<Text $weight={600}>
+												{detail.totalOrders}
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>
+												Profile completeness
+											</Text>
+											<Text $weight={600}>
+												{detail.profileCompleteness}%
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>Open for orders</Text>
+											<Badge
+												$tone={
+													detail.isOpenForOrders
+														? "success"
+														: "muted"
+												}
+											>
+												{detail.isOpenForOrders
+													? "Yes"
+													: "No"}
+											</Badge>
+										</KV>
+										{detail.categories.length > 0 && (
+											<KV>
+												<Text $muted>Categories</Text>
+												<Text $weight={600}>
+													{detail.categories
+														.map((c) =>
+															statusLabel(c),
+														)
+														.join(", ")}
+												</Text>
+											</KV>
+										)}
+									</Stack>
+								</>
 							)}
 						</Stack>
 					</Modal>

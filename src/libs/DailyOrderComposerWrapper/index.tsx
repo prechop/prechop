@@ -4,7 +4,19 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Button, Card, Input, Row, Stack, Text, Title } from "@/components";
+import {
+	Badge,
+	Button,
+	Card,
+	EmptyState,
+	FadeIn,
+	Input,
+	PageHeader,
+	Row,
+	SectionHeader,
+	Stack,
+	Text,
+} from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
@@ -18,54 +30,88 @@ interface TemplateEntry {
 
 const ItemRow = styled(Card)<{ $on: boolean }>`
 	padding: var(--pc-space-3) var(--pc-space-4);
+	cursor: pointer;
 	border-color: ${(p) =>
 		p.$on ? "var(--pc-color-primary)" : "var(--pc-border)"};
 	background: ${(p) =>
 		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
-	cursor: pointer;
+	box-shadow: ${(p) => (p.$on ? "var(--pc-shadow-primary)" : "var(--pc-shadow-sm)")};
+	&:hover {
+		border-color: var(--pc-color-primary);
+	}
 `;
 const Check = styled.span<{ $on: boolean }>`
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
-	border-radius: 6px;
+	width: 26px;
+	height: 26px;
+	border-radius: 8px;
 	flex-shrink: 0;
-	font-size: 14px;
-	font-weight: 700;
-	color: #fff;
+	font-size: 15px;
+	font-weight: 800;
+	color: var(--pc-text-inverse);
+	transition: all var(--pc-dur) var(--pc-ease);
 	background: ${(p) =>
 		p.$on ? "var(--pc-color-primary)" : "var(--pc-surface-2)"};
-	border: 1px solid
+	border: 1.5px solid
 		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+`;
+const ToggleRow = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pc-space-3);
+	padding: var(--pc-space-3) var(--pc-space-4);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
 `;
 const Switch = styled.button<{ $on: boolean }>`
 	position: relative;
-	width: 44px;
-	height: 26px;
-	border-radius: 999px;
+	width: 46px;
+	height: 27px;
+	border-radius: var(--pc-radius-pill);
 	border: none;
 	cursor: pointer;
 	flex-shrink: 0;
+	transition: background var(--pc-dur) var(--pc-ease);
 	background: ${(p) =>
-		p.$on ? "var(--pc-color-success)" : "var(--pc-surface-2)"};
+		p.$on ? "var(--pc-color-accent)" : "var(--pc-surface-3)"};
 	&::after {
 		content: "";
 		position: absolute;
 		top: 3px;
-		left: ${(p) => (p.$on ? "21px" : "3px")};
-		width: 20px;
-		height: 20px;
+		left: ${(p) => (p.$on ? "22px" : "3px")};
+		width: 21px;
+		height: 21px;
 		border-radius: 999px;
-		background: #fff;
+		background: var(--pc-text-inverse);
 		box-shadow: var(--pc-shadow);
-		transition: left 0.15s ease;
+		transition: left var(--pc-dur) var(--pc-ease);
 	}
 `;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const QtyWrap = styled.div`
+	padding-left: 36px;
+`;
+const SubmitBar = styled.div`
+	position: sticky;
+	bottom: var(--pc-space-3);
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pc-space-4);
+	flex-wrap: wrap;
+	padding: var(--pc-space-3) var(--pc-space-4);
+	background: var(--pc-surface);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius);
+	box-shadow: var(--pc-shadow-lg);
+`;
+const SubmitAction = styled.div`
+	flex: 1;
+	min-width: 200px;
 `;
 
 function errMsg(e: unknown): string {
@@ -186,152 +232,224 @@ export default function DailyOrderComposerWrapper() {
 
 	if (menuItems.length === 0) {
 		return (
-			<Stack $gap={16}>
-				<Title $size={24}>New daily order</Title>
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No available menu items
-						</Text>
-						<Text $muted>
-							Add and enable menu items before composing a daily
-							order.
-						</Text>
-						<div>
+			<FadeIn>
+				<Stack $gap={20}>
+					<PageHeader
+						eyebrow="Vendor · Kitchen"
+						title="New daily order"
+						subtitle="Compose today's menu and open it for orders."
+					/>
+					<EmptyState
+						icon="🍽️"
+						title="No available menu items"
+						description="Add and enable menu items before composing a daily order."
+						action={
 							<Button onClick={() => router.push("/menu")}>
 								Go to menu
 							</Button>
-						</div>
-					</Stack>
-				</Empty>
-			</Stack>
+						}
+					/>
+				</Stack>
+			</FadeIn>
 		);
 	}
 
 	const selectedCount = Object.keys(selected).length;
 
 	return (
-		<Stack $gap={16}>
-			<Title $size={24}>New daily order</Title>
+		<FadeIn>
+			<Stack $gap={20}>
+				<PageHeader
+					eyebrow="Vendor · Kitchen"
+					title="New daily order"
+					subtitle="Pick today's dishes, set availability, and open the kitchen for orders."
+				/>
 
-			<Card>
-				<Stack $gap={12}>
-					<Input
-						label="Title"
-						value={title}
-						onChange={(e) => setTitle(e.target.value)}
-						placeholder="Friday lunch specials"
-					/>
-					<Row $gap={12} $wrap>
-						<div style={{ flex: 1, minWidth: 140 }}>
-							<Input
-								label="Date"
-								type="date"
-								value={scheduledDate}
-								onChange={(e) =>
-									setScheduledDate(e.target.value)
-								}
-							/>
-						</div>
-						<div style={{ flex: 1, minWidth: 140 }}>
-							<Input
-								label="Order cutoff"
-								type="datetime-local"
-								value={cutoff}
-								onChange={(e) => setCutoff(e.target.value)}
-							/>
-						</div>
-					</Row>
-
-					<Row $justify="space-between" $align="center">
-						<Text $weight={600}>Pickup available</Text>
-						<Switch
-							$on={pickup}
-							onClick={() => setPickup((v) => !v)}
-							aria-label="Toggle pickup"
-						/>
-					</Row>
-					<Row $justify="space-between" $align="center">
-						<Text $weight={600}>Delivery available</Text>
-						<Switch
-							$on={delivery}
-							onClick={() => setDelivery((v) => !v)}
-							aria-label="Toggle delivery"
-						/>
-					</Row>
-					{delivery && (
+				<Card>
+					<Stack $gap={16}>
+						<SectionHeader title="Details" icon="📝" />
 						<Input
-							label="Delivery fee (₦)"
-							type="number"
-							inputMode="decimal"
-							value={deliveryFee}
-							onChange={(e) => setDeliveryFee(e.target.value)}
-							placeholder="200"
+							label="Title"
+							value={title}
+							onChange={(e) => setTitle(e.target.value)}
+							placeholder="Friday lunch specials"
 						/>
-					)}
-				</Stack>
-			</Card>
+						<Row $gap={12} $wrap>
+							<div style={{ flex: 1, minWidth: 140 }}>
+								<Input
+									label="Date"
+									type="date"
+									value={scheduledDate}
+									onChange={(e) =>
+										setScheduledDate(e.target.value)
+									}
+								/>
+							</div>
+							<div style={{ flex: 1, minWidth: 140 }}>
+								<Input
+									label="Order cutoff"
+									type="datetime-local"
+									value={cutoff}
+									onChange={(e) => setCutoff(e.target.value)}
+								/>
+							</div>
+						</Row>
 
-			<Row $justify="space-between" $align="center">
-				<Title $size={17}>
-					Items {selectedCount > 0 && `(${selectedCount})`}
-				</Title>
-				<Button
-					$size="sm"
-					$variant="secondary"
-					onClick={seedFromTemplate}
-				>
-					Seed from timetable
-				</Button>
-			</Row>
-
-			<Stack $gap={8}>
-				{menuItems.map((m) => {
-					const on = m.id in selected;
-					return (
-						<ItemRow
-							key={m.id}
-							$on={on}
-							onClick={() => toggle(m.id)}
-						>
-							<Stack $gap={on ? 10 : 0}>
-								<Row $justify="space-between" $gap={10}>
-									<Row $gap={10}>
-										<Check $on={on}>{on ? "✓" : ""}</Check>
-										<Text $weight={600}>{m.name}</Text>
-									</Row>
+						<Stack $gap={10}>
+							<ToggleRow>
+								<Stack $gap={2}>
 									<Text $weight={600}>
-										{formatKobo(m.priceKobo)}
+										🥡 Pickup available
 									</Text>
-								</Row>
-								{on && (
-									// biome-ignore lint/a11y/noStaticElementInteractions: wrapper only halts the row-toggle click from bubbling
-									// biome-ignore lint/a11y/useKeyWithClickEvents: no keyboard action — purely stops click propagation to the parent toggle
-									<div onClick={(e) => e.stopPropagation()}>
-										<Input
-											label="Max quantity (blank = unlimited)"
-											type="number"
-											inputMode="numeric"
-											value={selected[m.id]}
-											onChange={(e) =>
-												setSelected((s) => ({
-													...s,
-													[m.id]: e.target.value,
-												}))
-											}
-											placeholder="Unlimited"
-										/>
-									</div>
-								)}
-							</Stack>
-						</ItemRow>
-					);
-				})}
-			</Stack>
+									<Text $muted $size={12}>
+										Buyers collect from your spot
+									</Text>
+								</Stack>
+								<Switch
+									$on={pickup}
+									onClick={() => setPickup((v) => !v)}
+									aria-label="Toggle pickup"
+								/>
+							</ToggleRow>
+							<ToggleRow>
+								<Stack $gap={2}>
+									<Text $weight={600}>
+										🛵 Delivery available
+									</Text>
+									<Text $muted $size={12}>
+										Deliver to hostels for a fee
+									</Text>
+								</Stack>
+								<Switch
+									$on={delivery}
+									onClick={() => setDelivery((v) => !v)}
+									aria-label="Toggle delivery"
+								/>
+							</ToggleRow>
+							{delivery && (
+								<Input
+									label="Delivery fee (₦)"
+									type="number"
+									inputMode="decimal"
+									value={deliveryFee}
+									onChange={(e) =>
+										setDeliveryFee(e.target.value)
+									}
+									placeholder="200"
+								/>
+							)}
+						</Stack>
+					</Stack>
+				</Card>
 
-			<Button $full $size="lg" $loading={busy} onClick={submit}>
-				Post daily order
-			</Button>
-		</Stack>
+				<Card>
+					<Stack $gap={14}>
+						<SectionHeader
+							title={
+								<Row $gap={8} $align="center">
+									<span>Items</span>
+									{selectedCount > 0 && (
+										<Badge $tone="primary">
+											{selectedCount} selected
+										</Badge>
+									)}
+								</Row>
+							}
+							icon="🍲"
+							action={
+								<Button
+									$size="sm"
+									$variant="secondary"
+									onClick={seedFromTemplate}
+								>
+									Seed from timetable
+								</Button>
+							}
+						/>
+
+						<Stack $gap={8}>
+							{menuItems.map((m) => {
+								const on = m.id in selected;
+								return (
+									<ItemRow
+										key={m.id}
+										$on={on}
+										onClick={() => toggle(m.id)}
+									>
+										<Stack $gap={on ? 12 : 0}>
+											<Row
+												$justify="space-between"
+												$gap={10}
+											>
+												<Row $gap={10}>
+													<Check $on={on}>
+														{on ? "✓" : ""}
+													</Check>
+													<Text $weight={600}>
+														{m.name}
+													</Text>
+												</Row>
+												<Text $weight={700}>
+													{formatKobo(m.priceKobo)}
+												</Text>
+											</Row>
+											{on && (
+												<QtyWrap
+													onClick={(e) =>
+														e.stopPropagation()
+													}
+												>
+													<Input
+														label="Max quantity (blank = unlimited)"
+														type="number"
+														inputMode="numeric"
+														value={selected[m.id]}
+														onChange={(e) =>
+															setSelected(
+																(s) => ({
+																	...s,
+																	[m.id]: e
+																		.target
+																		.value,
+																}),
+															)
+														}
+														placeholder="Unlimited"
+													/>
+												</QtyWrap>
+											)}
+										</Stack>
+									</ItemRow>
+								);
+							})}
+						</Stack>
+					</Stack>
+				</Card>
+
+				<SubmitBar>
+					<Stack $gap={2}>
+						<Text $weight={700}>
+							{selectedCount} item
+							{selectedCount === 1 ? "" : "s"} ready
+						</Text>
+						<Text $muted $size={12}>
+							{selectedCount === 0
+								? "Select dishes to post"
+								: "Looks good — post it live"}
+						</Text>
+					</Stack>
+					<SubmitAction>
+						<Button
+							$full
+							$size="lg"
+							$loading={busy}
+							onClick={submit}
+						>
+							Post daily order
+						</Button>
+					</SubmitAction>
+				</SubmitBar>
+			</Stack>
+		</FadeIn>
 	);
 }

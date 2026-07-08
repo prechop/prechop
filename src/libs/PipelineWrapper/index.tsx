@@ -7,11 +7,14 @@ import {
 	Badge,
 	Button,
 	Card,
+	EmptyState,
+	FadeIn,
+	PageHeader,
 	Row,
 	Select,
+	Skeleton,
 	Stack,
 	Text,
-	Title,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
@@ -46,12 +49,20 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
 };
 
 // Live columns shown top-to-bottom (mobile-first board).
-const COLUMNS: { status: OrderStatus; label: string }[] = [
-	{ status: "PAID", label: "New" },
-	{ status: "CONFIRMED", label: "Confirmed" },
-	{ status: "PREPARING", label: "Preparing" },
-	{ status: "READY", label: "Ready" },
+const COLUMNS: { status: OrderStatus; label: string; icon: string }[] = [
+	{ status: "PAID", label: "New", icon: "🔔" },
+	{ status: "CONFIRMED", label: "Confirmed", icon: "✅" },
+	{ status: "PREPARING", label: "Preparing", icon: "🍳" },
+	{ status: "READY", label: "Ready", icon: "🥡" },
 ];
+
+// Presentational lane accent per column (kitchen-board colour coding).
+const LANE_ACCENT: Record<string, string> = {
+	PAID: "var(--pc-color-gold)",
+	CONFIRMED: "var(--pc-color-accent)",
+	PREPARING: "var(--pc-color-primary)",
+	READY: "var(--pc-color-accent)",
+};
 
 function statusTone(
 	s: OrderStatus,
@@ -70,17 +81,62 @@ function statusTone(
 	}
 }
 
-const Col = styled.div`
+const Board = styled.div`
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: var(--pc-space-4);
+	align-items: start;
+	@media (min-width: 720px) {
+		grid-template-columns: repeat(2, 1fr);
+	}
+	@media (min-width: 1080px) {
+		grid-template-columns: repeat(4, 1fr);
+	}
+`;
+const Lane = styled.div<{ $accent: string }>`
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--pc-space-3);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius);
+	padding: var(--pc-space-3);
+	border-top: 3px solid ${(p) => p.$accent};
+`;
+const LaneHead = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pc-space-2);
+	padding: 2px var(--pc-space-1);
+`;
+const LaneTitle = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-family: var(--pc-font-display);
+	font-weight: 700;
+	font-size: 15px;
+	color: var(--pc-text);
 `;
 const OrderCard = styled(Card)`
 	padding: var(--pc-space-4);
+	&:hover {
+		box-shadow: var(--pc-shadow);
+	}
 `;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const Divider = styled.div`
+	height: 1px;
+	background: var(--pc-border);
+`;
+const AddrLine = styled.div`
+	display: flex;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--pc-text-muted);
+	background: var(--pc-surface-2);
+	padding: 8px 10px;
+	border-radius: var(--pc-radius-sm);
 `;
 const CancelBtn = styled.button`
 	all: unset;
@@ -88,6 +144,17 @@ const CancelBtn = styled.button`
 	font-size: 13px;
 	font-weight: 600;
 	color: var(--pc-color-danger);
+	&:hover {
+		text-decoration: underline;
+	}
+`;
+const LaneEmpty = styled.div`
+	text-align: center;
+	font-size: 13px;
+	color: var(--pc-text-faint);
+	padding: var(--pc-space-4) var(--pc-space-2);
+	border: 1.5px dashed var(--pc-border);
+	border-radius: var(--pc-radius-sm);
 `;
 
 function errMsg(e: unknown): string {
@@ -121,20 +188,20 @@ export default function PipelineWrapper() {
 
 	if (active.length === 0) {
 		return (
-			<Stack $gap={16}>
-				<Title $size={24}>Cooking</Title>
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No active daily orders
-						</Text>
-						<Text $muted>
-							Post a daily order to start receiving and cooking
-							orders.
-						</Text>
-					</Stack>
-				</Empty>
-			</Stack>
+			<FadeIn>
+				<Stack $gap={20}>
+					<PageHeader
+						eyebrow="Live kitchen"
+						title="Cooking"
+						subtitle="Move orders across the board as you cook and hand off."
+					/>
+					<EmptyState
+						icon="🍳"
+						title="No active daily orders"
+						description="Post a daily order to start receiving and cooking orders."
+					/>
+				</Stack>
+			</FadeIn>
 		);
 	}
 
@@ -181,131 +248,230 @@ export default function PipelineWrapper() {
 	).length;
 
 	return (
-		<Stack $gap={16}>
-			<Title $size={24}>Cooking</Title>
+		<FadeIn>
+			<Stack $gap={20}>
+				<PageHeader
+					eyebrow="Live kitchen"
+					title="Cooking"
+					subtitle="Move orders across the board as you cook and hand off."
+					actions={
+						liveCount > 0 ? (
+							<Badge $tone="primary">🔴 {liveCount} live</Badge>
+						) : undefined
+					}
+				/>
 
-			<Select
-				value={currentId ?? ""}
-				onChange={(e) => setSelectedId(e.target.value)}
-			>
-				{active.map((d) => (
-					<option key={d.id} value={d.id}>
-						{d.title} · {d.totalOrdersCount} order
-						{d.totalOrdersCount === 1 ? "" : "s"}
-					</option>
-				))}
-			</Select>
+				<Select
+					value={currentId ?? ""}
+					onChange={(e) => setSelectedId(e.target.value)}
+				>
+					{active.map((d) => (
+						<option key={d.id} value={d.id}>
+							{d.title} · {d.totalOrdersCount} order
+							{d.totalOrdersCount === 1 ? "" : "s"}
+						</option>
+					))}
+				</Select>
 
-			{ordersLoading ? (
-				<PageLoader />
-			) : liveCount === 0 ? (
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No orders to cook yet
-						</Text>
-						<Text $muted>
-							Paid orders will appear here as buyers order.
-						</Text>
-					</Stack>
-				</Empty>
-			) : (
-				COLUMNS.map((col) => {
-					const colOrders = list.filter(
-						(o) => o.status === col.status,
-					);
-					if (colOrders.length === 0) return null;
-					return (
-						<Col key={col.status}>
-							<Row $gap={8} $align="center">
-								<Text $weight={700}>{col.label}</Text>
-								<Badge $tone={statusTone(col.status)}>
-									{colOrders.length}
-								</Badge>
-							</Row>
-							{colOrders.map((o) => {
-								const next = NEXT[o.status];
-								return (
-									<OrderCard key={o.id}>
-										<Stack $gap={10}>
-											<Row
-												$justify="space-between"
-												$align="flex-start"
-												$gap={8}
-											>
-												<Stack $gap={2}>
-													<Text $weight={700}>
-														#{o.orderNumber}
-													</Text>
-													<Text $muted $size={12}>
+				{ordersLoading ? (
+					<Board>
+						{COLUMNS.map((col) => (
+							<Lane
+								key={col.status}
+								$accent={LANE_ACCENT[col.status]}
+							>
+								<LaneHead>
+									<LaneTitle>
+										<span aria-hidden>{col.icon}</span>
+										{col.label}
+									</LaneTitle>
+								</LaneHead>
+								<OrderCard>
+									<Stack $gap={10}>
+										<Skeleton $w="55%" $h={14} />
+										<Skeleton $w="80%" $h={12} />
+										<Skeleton $w="40%" $h={12} />
+									</Stack>
+								</OrderCard>
+							</Lane>
+						))}
+					</Board>
+				) : liveCount === 0 ? (
+					<EmptyState
+						icon="🧾"
+						title="No orders to cook yet"
+						description="Paid orders will appear here as buyers order."
+					/>
+				) : (
+					<Board>
+						{COLUMNS.map((col) => {
+							const colOrders = list.filter(
+								(o) => o.status === col.status,
+							);
+							return (
+								<Lane
+									key={col.status}
+									$accent={LANE_ACCENT[col.status]}
+								>
+									<LaneHead>
+										<LaneTitle>
+											<span aria-hidden>{col.icon}</span>
+											{col.label}
+										</LaneTitle>
+										<Badge $tone={statusTone(col.status)}>
+											{colOrders.length}
+										</Badge>
+									</LaneHead>
+									{colOrders.length === 0 ? (
+										<LaneEmpty>Nothing here</LaneEmpty>
+									) : (
+										colOrders.map((o) => {
+											const next = NEXT[o.status];
+											return (
+												<OrderCard key={o.id}>
+													<Stack $gap={10}>
+														<Row
+															$justify="space-between"
+															$align="flex-start"
+															$gap={8}
+														>
+															<Stack $gap={4}>
+																<Text
+																	$weight={
+																		700
+																	}
+																>
+																	#
+																	{
+																		o.orderNumber
+																	}
+																</Text>
+																<Badge
+																	$tone={
+																		o.fulfillmentType ===
+																		"DELIVERY"
+																			? "primary"
+																			: "muted"
+																	}
+																>
+																	{o.fulfillmentType ===
+																	"DELIVERY"
+																		? "🛵 Delivery"
+																		: "🥡 Pickup"}
+																</Badge>
+															</Stack>
+															<Text $weight={800}>
+																{formatKobo(
+																	o.totalKobo,
+																)}
+															</Text>
+														</Row>
+
+														<Divider />
+
+														<Stack $gap={3}>
+															{o.items.map(
+																(it, idx) => (
+																	<Row
+																		key={
+																			idx
+																		}
+																		$gap={8}
+																		$align="baseline"
+																	>
+																		<Text
+																			$size={
+																				14
+																			}
+																			$weight={
+																				700
+																			}
+																		>
+																			{
+																				it.quantity
+																			}
+																			×
+																		</Text>
+																		<Text
+																			$size={
+																				14
+																			}
+																		>
+																			{
+																				it.snapshotName
+																			}
+																		</Text>
+																	</Row>
+																),
+															)}
+														</Stack>
+
 														{o.fulfillmentType ===
-														"DELIVERY"
-															? "🛵 Delivery"
-															: "🥡 Pickup"}
-													</Text>
-												</Stack>
-												<Text $weight={700}>
-													{formatKobo(o.totalKobo)}
-												</Text>
-											</Row>
+															"DELIVERY" && (
+															<AddrLine>
+																<span
+																	aria-hidden
+																>
+																	📍
+																</span>
+																<span>
+																	{o.deliveryFullAddress ??
+																		[
+																			o.deliveryHostelName,
+																			o.deliveryRoomNumber,
+																			o.deliveryAdditionalInfo,
+																		]
+																			.filter(
+																				Boolean,
+																			)
+																			.join(
+																				", ",
+																			) ??
+																		"No address"}
+																</span>
+															</AddrLine>
+														)}
 
-											<Stack $gap={2}>
-												{o.items.map((it, idx) => (
-													<Text key={idx} $size={14}>
-														{it.quantity}×{" "}
-														{it.snapshotName}
-													</Text>
-												))}
-											</Stack>
-
-											{o.fulfillmentType ===
-												"DELIVERY" && (
-												<Text $muted $size={13}>
-													📍{" "}
-													{o.deliveryFullAddress ??
-														[
-															o.deliveryHostelName,
-															o.deliveryRoomNumber,
-															o.deliveryAdditionalInfo,
-														]
-															.filter(Boolean)
-															.join(", ") ??
-														"No address"}
-												</Text>
-											)}
-
-											<Row
-												$gap={10}
-												$justify="space-between"
-												$align="center"
-											>
-												<CancelBtn
-													onClick={() => cancel(o)}
-												>
-													Cancel
-												</CancelBtn>
-												{next && (
-													<Button
-														$size="sm"
-														$loading={
-															busyId === o.id
-														}
-														onClick={() =>
-															advance(o)
-														}
-													>
-														{next.label}
-													</Button>
-												)}
-											</Row>
-										</Stack>
-									</OrderCard>
-								);
-							})}
-						</Col>
-					);
-				})
-			)}
-		</Stack>
+														<Row
+															$gap={10}
+															$justify="space-between"
+															$align="center"
+														>
+															<CancelBtn
+																onClick={() =>
+																	cancel(o)
+																}
+															>
+																Cancel
+															</CancelBtn>
+															{next && (
+																<Button
+																	$size="sm"
+																	$loading={
+																		busyId ===
+																		o.id
+																	}
+																	onClick={() =>
+																		advance(
+																			o,
+																		)
+																	}
+																>
+																	{next.label}
+																</Button>
+															)}
+														</Row>
+													</Stack>
+												</OrderCard>
+											);
+										})
+									)}
+								</Lane>
+							);
+						})}
+					</Board>
+				)}
+			</Stack>
+		</FadeIn>
 	);
 }

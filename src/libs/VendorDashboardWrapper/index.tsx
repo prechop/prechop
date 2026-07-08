@@ -4,7 +4,21 @@ import Link from "next/link";
 import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Badge, Card, Row, Stack, Text, Title } from "@/components";
+import {
+	Badge,
+	Card,
+	EmptyState,
+	FadeIn,
+	Grid,
+	PageHeader,
+	Row,
+	SectionHeader,
+	Skeleton,
+	Stack,
+	StatCard,
+	Text,
+	Title,
+} from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
@@ -15,65 +29,108 @@ import VendorOnboardingWrapper, {
 } from "@/libs/VendorOnboardingWrapper";
 import type { DailyOrder } from "@/types";
 
-const Header = styled(Row)`
-	margin-bottom: var(--pc-space-5);
-`;
 const OpenCard = styled(Card)`
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
+	gap: var(--pc-space-4);
+	background: var(--pc-gradient-warm);
+	border: none;
+	color: var(--pc-text-inverse);
+	box-shadow: var(--pc-shadow-primary);
+	position: relative;
+	overflow: hidden;
+	&::after {
+		content: "";
+		position: absolute;
+		right: -30px;
+		top: -30px;
+		width: 140px;
+		height: 140px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.12);
+	}
+`;
+const OpenText = styled.div`
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+`;
+const OpenTitle = styled.span`
+	font-family: var(--pc-font-display);
+	font-size: 19px;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	color: #fff;
+`;
+const OpenSub = styled.span`
+	font-size: 13.5px;
+	font-weight: 600;
+	color: rgba(255, 255, 255, 0.88);
 `;
 const NewButton = styled(Link)`
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: 8px;
+	gap: 10px;
 	width: 100%;
-	padding: 14px;
-	border-radius: var(--pc-radius-sm);
+	padding: 16px;
+	border-radius: var(--pc-radius);
 	background: var(--pc-color-primary);
 	color: var(--pc-text-inverse);
-	font-weight: 700;
+	font-family: var(--pc-font-display);
+	font-weight: 800;
 	font-size: 16px;
+	letter-spacing: -0.01em;
+	box-shadow: var(--pc-shadow-primary);
+	transition: transform var(--pc-dur) var(--pc-ease),
+		background var(--pc-dur) var(--pc-ease);
 	&:hover {
 		background: var(--pc-color-primary-600);
+		transform: translateY(-2px);
 	}
 `;
 const OrderCard = styled(Card)`
 	display: block;
 	color: inherit;
-	transition: box-shadow 0.15s ease;
 	&:hover {
 		box-shadow: var(--pc-shadow-lg);
+		transform: translateY(-3px);
+		border-color: var(--pc-surface-3);
 	}
 `;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const CookLink = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--pc-color-primary);
+	font-weight: 800;
+	font-size: 14px;
 `;
 const Toggle = styled.button<{ $on: boolean }>`
 	position: relative;
-	width: 52px;
-	height: 30px;
+	width: 56px;
+	height: 32px;
 	border-radius: 999px;
-	border: none;
+	border: 2px solid rgba(255, 255, 255, 0.55);
 	cursor: pointer;
 	flex-shrink: 0;
 	background: ${(p) =>
-		p.$on ? "var(--pc-color-success)" : "var(--pc-surface-2)"};
-	transition: background 0.15s ease;
+		p.$on ? "rgba(255, 255, 255, 0.92)" : "rgba(0, 0, 0, 0.18)"};
+	transition: background var(--pc-dur) var(--pc-ease);
 	&::after {
 		content: "";
 		position: absolute;
 		top: 3px;
-		left: ${(p) => (p.$on ? "25px" : "3px")};
-		width: 24px;
-		height: 24px;
+		left: ${(p) => (p.$on ? "27px" : "3px")};
+		width: 22px;
+		height: 22px;
 		border-radius: 999px;
-		background: #fff;
+		background: ${(p) => (p.$on ? "var(--pc-color-accent)" : "#fff")};
 		box-shadow: var(--pc-shadow);
-		transition: left 0.15s ease;
+		transition: left var(--pc-dur) var(--pc-ease),
+			background var(--pc-dur) var(--pc-ease);
 	}
 `;
 
@@ -144,129 +201,188 @@ export default function VendorDashboardWrapper() {
 	}
 
 	const list = orders ?? [];
+	const activeCount = list.filter((o) => o.status === "ACTIVE").length;
+	const ordersPlaced = list.reduce(
+		(sum, o) => sum + (o.totalOrdersCount ?? 0),
+		0,
+	);
 
 	return (
-		<Stack $gap={16}>
-			<Header $justify="space-between" $align="flex-start">
-				<Stack $gap={2}>
-					<Title $size={24}>
-						{vendor.businessName ?? "Your kitchen"}
-					</Title>
-					<Text $muted $size={13}>
-						{list.length} daily order{list.length === 1 ? "" : "s"}
-					</Text>
-				</Stack>
-			</Header>
-
-			<OpenCard>
-				<Stack $gap={2}>
-					<Text $weight={700}>
-						{vendor.isOpenForOrders ? "Open for orders" : "Closed"}
-					</Text>
-					<Text $muted $size={13}>
-						{vendor.isOpenForOrders
-							? "Buyers can order from you"
-							: "You're not accepting orders"}
-					</Text>
-				</Stack>
-				<Toggle
-					$on={vendor.isOpenForOrders}
-					onClick={toggleOpen}
-					disabled={toggling}
-					aria-label="Toggle open for orders"
+		<FadeIn>
+			<Stack $gap={20}>
+				<PageHeader
+					eyebrow="Vendor dashboard"
+					title={vendor.businessName ?? "Your kitchen"}
+					subtitle={
+						vendor.isOpenForOrders
+							? "You're open — buyers can order from you right now."
+							: "You're currently closed for new orders."
+					}
 				/>
-			</OpenCard>
 
-			<NewButton href="/dashboard/new">＋ New daily order</NewButton>
+				<OpenCard>
+					<OpenText>
+						<OpenTitle>
+							{vendor.isOpenForOrders
+								? "Open for orders"
+								: "Closed"}
+						</OpenTitle>
+						<OpenSub>
+							{vendor.isOpenForOrders
+								? "Buyers can order from you"
+								: "You're not accepting orders"}
+						</OpenSub>
+					</OpenText>
+					<Toggle
+						$on={vendor.isOpenForOrders}
+						onClick={toggleOpen}
+						disabled={toggling}
+						aria-label="Toggle open for orders"
+					/>
+				</OpenCard>
 
-			<Stack $gap={4}>
-				<Title $size={17}>Today&apos;s orders</Title>
+				<Grid $min={150} $gap={12}>
+					<StatCard
+						label="Daily orders"
+						value={list.length}
+						icon="🍲"
+						hint="Posted this period"
+					/>
+					<StatCard
+						label="Live now"
+						value={activeCount}
+						icon="🔥"
+						tone="var(--pc-color-accent)"
+						hint="Active daily orders"
+					/>
+					<StatCard
+						label="Orders placed"
+						value={ordersPlaced}
+						icon="🧾"
+						tone="var(--pc-color-gold)"
+						hint="Across all your posts"
+					/>
+				</Grid>
+
+				<NewButton href="/dashboard/new">
+					<span aria-hidden>＋</span> New daily order
+				</NewButton>
+
+				<div>
+					<SectionHeader title="Today's orders" icon="📋" />
+
+					{ordersLoading ? (
+						<Stack $gap={12}>
+							{[0, 1, 2].map((i) => (
+								<Card key={i}>
+									<Stack $gap={10}>
+										<Skeleton $w="55%" $h={20} />
+										<Skeleton $w="80%" $h={14} />
+										<Skeleton $w="40%" $h={14} />
+									</Stack>
+								</Card>
+							))}
+						</Stack>
+					) : list.length === 0 ? (
+						<EmptyState
+							icon="🍲"
+							title="No daily orders yet"
+							description="Post your first daily order to start selling today."
+						/>
+					) : (
+						<Stack $gap={12}>
+							{list.map((o, i) => {
+								const closed =
+									timeUntil(o.cutoffTime) === "closed";
+								return (
+									<FadeIn key={o.id} $delay={i * 40}>
+										<OrderCard>
+											<Stack $gap={12}>
+												<Row
+													$justify="space-between"
+													$align="flex-start"
+													$gap={8}
+												>
+													<Title $size={17}>
+														{o.title}
+													</Title>
+													<Badge
+														$tone={statusTone(
+															o.status,
+														)}
+													>
+														{statusLabel(o.status)}
+													</Badge>
+												</Row>
+												<Row
+													$justify="space-between"
+													$align="center"
+													$wrap
+													$gap={8}
+												>
+													<Text $muted $size={13}>
+														{formatDate(
+															o.scheduledDate,
+														)}{" "}
+														· {o.items.length} item
+														{o.items.length === 1
+															? ""
+															: "s"}
+													</Text>
+													<Badge
+														$tone={
+															o.status ===
+															"ACTIVE"
+																? closed
+																	? "danger"
+																	: "warning"
+																: "muted"
+														}
+													>
+														{o.status === "ACTIVE"
+															? closed
+																? "Cutoff passed"
+																: timeUntil(
+																		o.cutoffTime,
+																	)
+															: statusLabel(
+																	o.status,
+																)}
+													</Badge>
+												</Row>
+												<Row
+													$justify="space-between"
+													$align="center"
+													$gap={8}
+												>
+													<Text
+														$size={13}
+														$weight={700}
+													>
+														{o.totalOrdersCount}{" "}
+														order
+														{o.totalOrdersCount ===
+														1
+															? ""
+															: "s"}{" "}
+														placed
+													</Text>
+													<CookLink href="/pipeline">
+														Cooking{" "}
+														<span aria-hidden>
+															→
+														</span>
+													</CookLink>
+												</Row>
+											</Stack>
+										</OrderCard>
+									</FadeIn>
+								);
+							})}
+						</Stack>
+					)}
+				</div>
 			</Stack>
-
-			{ordersLoading ? (
-				<PageLoader />
-			) : list.length === 0 ? (
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No daily orders yet
-						</Text>
-						<Text $muted>
-							Post your first daily order to start selling today.
-						</Text>
-					</Stack>
-				</Empty>
-			) : (
-				<Stack $gap={12}>
-					{list.map((o) => {
-						const closed = timeUntil(o.cutoffTime) === "closed";
-						return (
-							<OrderCard key={o.id}>
-								<Stack $gap={10}>
-									<Row
-										$justify="space-between"
-										$align="flex-start"
-										$gap={8}
-									>
-										<Title $size={17}>{o.title}</Title>
-										<Badge $tone={statusTone(o.status)}>
-											{statusLabel(o.status)}
-										</Badge>
-									</Row>
-									<Row
-										$justify="space-between"
-										$align="center"
-										$wrap
-									>
-										<Text $muted $size={13}>
-											{formatDate(o.scheduledDate)} ·{" "}
-											{o.items.length} item
-											{o.items.length === 1 ? "" : "s"}
-										</Text>
-										<Badge
-											$tone={
-												o.status === "ACTIVE"
-													? closed
-														? "danger"
-														: "warning"
-													: "muted"
-											}
-										>
-											{o.status === "ACTIVE"
-												? closed
-													? "Cutoff passed"
-													: timeUntil(o.cutoffTime)
-												: statusLabel(o.status)}
-										</Badge>
-									</Row>
-									<Row
-										$justify="space-between"
-										$align="center"
-									>
-										<Text $size={13} $weight={600}>
-											{o.totalOrdersCount} order
-											{o.totalOrdersCount === 1
-												? ""
-												: "s"}{" "}
-											placed
-										</Text>
-										<Link
-											href="/pipeline"
-											style={{
-												color: "var(--pc-color-primary)",
-												fontWeight: 700,
-												fontSize: 14,
-											}}
-										>
-											Cooking →
-										</Link>
-									</Row>
-								</Stack>
-							</OrderCard>
-						);
-					})}
-				</Stack>
-			)}
-		</Stack>
+		</FadeIn>
 	);
 }

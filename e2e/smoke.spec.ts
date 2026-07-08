@@ -22,9 +22,11 @@ test.describe("public pages", () => {
 	test("landing renders the brand and primary CTAs", async ({ page }) => {
 		await page.goto("/");
 		await expect(
-			page.getByRole("heading", { name: /reserve your campus meal/i }),
+			page.getByRole("heading", { name: /reserve your meal/i }),
 		).toBeVisible();
-		await expect(page.getByRole("link", { name: /browse food/i })).toBeVisible();
+		await expect(
+			page.getByRole("link", { name: /browse food/i }),
+		).toBeVisible();
 		await expect(
 			page.getByRole("link", { name: /sell on prechop/i }),
 		).toBeVisible();
@@ -35,7 +37,7 @@ test.describe("public pages", () => {
 	}) => {
 		await page.goto("/login");
 		await expect(
-			page.getByRole("heading", { name: /welcome to prechop/i }),
+			page.getByRole("heading", { name: /^prechop$/i }),
 		).toBeVisible();
 		// Switch to the vendor sign-up tab → business fields appear.
 		await page.getByRole("button", { name: "Vendor" }).click();
@@ -64,7 +66,8 @@ test.describe("public read path (seeded data)", () => {
 			id: string;
 			shortCode: string;
 		}>;
-		const campus = campuses.find((c) => c.shortCode === "UNILAG") ?? campuses[0];
+		const campus =
+			campuses.find((c) => c.shortCode === "UNILAG") ?? campuses[0];
 		expect(campus, "seed must create at least one campus").toBeTruthy();
 
 		const marketRes = await request.get(

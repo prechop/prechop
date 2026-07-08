@@ -7,12 +7,15 @@ import {
 	Badge,
 	Button,
 	Card,
-	Heading,
+	EmptyState,
+	FadeIn,
+	Grid,
 	Input,
-	PageLoader,
+	PageHeader,
 	Row,
+	Skeleton,
 	Stack,
-	Text,
+	StatCard,
 	Title,
 } from "@/components";
 import { api } from "@/constants/api";
@@ -35,30 +38,81 @@ const Table = styled.table`
 	font-size: 14px;
 	th, td {
 		text-align: left;
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--pc-border);
+		padding: 14px 16px;
 		white-space: nowrap;
 	}
-	th {
+	thead th {
+		position: sticky;
+		top: 0;
+		background: var(--pc-surface-2);
 		color: var(--pc-text-muted);
-		font-weight: 600;
-		font-size: 12px;
+		font-weight: 700;
+		font-size: 11.5px;
 		text-transform: uppercase;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.06em;
+		border-bottom: 1px solid var(--pc-border);
+	}
+	tbody td {
+		border-bottom: 1px solid var(--pc-border);
+		color: var(--pc-text);
+	}
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+	tbody tr {
+		transition: background var(--pc-dur) var(--pc-ease);
+	}
+	tbody tr:hover td {
+		background: var(--pc-surface-2);
+	}
+	td.name {
+		font-weight: 700;
+		color: var(--pc-text);
+	}
+	td.code {
+		font-family: var(--pc-font-display);
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		color: var(--pc-color-primary);
+	}
+	td.right {
+		text-align: right;
 	}
 `;
 const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.45);
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(4px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: var(--pc-space-4);
 	z-index: 80;
+	animation: pc-fade-up var(--pc-dur) var(--pc-ease) both;
 `;
 const Modal = styled(Card)`
 	width: min(460px, 100%);
+	box-shadow: var(--pc-shadow-lg);
+	animation: pc-fade-up var(--pc-dur-slow) var(--pc-ease) both;
+`;
+const CheckRow = styled.label`
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	padding: 12px 14px;
+	border: 1.5px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	font-size: 14px;
+	font-weight: 700;
+	cursor: pointer;
+	input {
+		width: 18px;
+		height: 18px;
+		accent-color: var(--pc-color-primary);
+		cursor: pointer;
+	}
 `;
 
 type Editing = AdminCampus | "new" | null;
@@ -122,25 +176,23 @@ export default function AdminCampusesWrapper() {
 
 	const campuses = data ?? [];
 	const valid = name.trim() && shortCode.trim() && state.trim();
+	const activeCount = campuses.filter((c) => c.isActive).length;
 
 	return (
 		<Stack $gap={4}>
-			<Row $justify="space-between">
-				<Heading $size={26}>Campuses</Heading>
-				<Button onClick={() => open("new")}>+ Add campus</Button>
-			</Row>
-			<Text $muted>Campuses buyers and vendors belong to.</Text>
+			<PageHeader
+				eyebrow="Directory"
+				title="Campuses"
+				subtitle="Campuses buyers and vendors belong to."
+				actions={
+					<Button $pill onClick={() => open("new")}>
+						+ Add campus
+					</Button>
+				}
+			/>
 
 			{isLoading ? (
-				<PageLoader />
-			) : campuses.length === 0 ? (
-				<Card style={{ marginTop: "var(--pc-space-5)" }}>
-					<Text $muted style={{ textAlign: "center" }}>
-						No campuses yet.
-					</Text>
-				</Card>
-			) : (
-				<Card style={{ padding: 0, marginTop: "var(--pc-space-5)" }}>
+				<Card $pad={0}>
 					<Scroll>
 						<Table>
 							<thead>
@@ -153,39 +205,106 @@ export default function AdminCampusesWrapper() {
 								</tr>
 							</thead>
 							<tbody>
-								{campuses.map((c) => (
-									<tr key={c.id}>
-										<td>{c.name}</td>
-										<td>{c.shortCode}</td>
-										<td>{c.state}</td>
-										<td>
-											<Badge
-												$tone={
-													c.isActive
-														? "success"
-														: "muted"
-												}
-											>
-												{c.isActive
-													? "Active"
-													: "Inactive"}
-											</Badge>
-										</td>
-										<td>
-											<Button
-												$variant="ghost"
-												$size="sm"
-												onClick={() => open(c)}
-											>
-												Edit
-											</Button>
-										</td>
+								{Array.from({ length: 5 }).map((_, i) => (
+									<tr key={i}>
+										{Array.from({ length: 5 }).map(
+											(__, j) => (
+												<td key={j}>
+													<Skeleton $h={16} />
+												</td>
+											),
+										)}
 									</tr>
 								))}
 							</tbody>
 						</Table>
 					</Scroll>
 				</Card>
+			) : campuses.length === 0 ? (
+				<EmptyState
+					icon="🏫"
+					title="No campuses yet"
+					description="Add your first campus to start onboarding buyers and vendors."
+					action={
+						<Button $pill onClick={() => open("new")}>
+							+ Add campus
+						</Button>
+					}
+				/>
+			) : (
+				<FadeIn>
+					<Stack $gap={16}>
+						<Grid $min={200} $gap={14}>
+							<StatCard
+								label="Total campuses"
+								value={campuses.length}
+								icon="🏫"
+							/>
+							<StatCard
+								label="Active"
+								value={activeCount}
+								icon="✅"
+								tone="var(--pc-color-accent)"
+							/>
+							<StatCard
+								label="Inactive"
+								value={campuses.length - activeCount}
+								icon="⏸️"
+								tone="var(--pc-surface-3)"
+							/>
+						</Grid>
+						<Card $pad={0}>
+							<Scroll>
+								<Table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Short code</th>
+											<th>State</th>
+											<th>Status</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{campuses.map((c) => (
+											<tr key={c.id}>
+												<td className="name">
+													{c.name}
+												</td>
+												<td className="code">
+													{c.shortCode}
+												</td>
+												<td>{c.state}</td>
+												<td>
+													<Badge
+														$tone={
+															c.isActive
+																? "success"
+																: "muted"
+														}
+													>
+														{c.isActive
+															? "Active"
+															: "Inactive"}
+													</Badge>
+												</td>
+												<td className="right">
+													<Button
+														$variant="ghost"
+														$size="sm"
+														onClick={() => open(c)}
+													>
+														Edit
+													</Button>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</Table>
+							</Scroll>
+						</Card>
+					</Stack>
+				</FadeIn>
 			)}
 
 			{editing && (
@@ -216,15 +335,7 @@ export default function AdminCampusesWrapper() {
 								placeholder="Lagos"
 							/>
 							{editing !== "new" && (
-								<label
-									style={{
-										display: "flex",
-										gap: 8,
-										alignItems: "center",
-										fontSize: 14,
-										fontWeight: 600,
-									}}
-								>
+								<CheckRow>
 									<input
 										type="checkbox"
 										checked={isActive}
@@ -233,7 +344,7 @@ export default function AdminCampusesWrapper() {
 										}
 									/>
 									Active
-								</label>
+								</CheckRow>
 							)}
 							<Row $gap={10} $justify="flex-end">
 								<Button

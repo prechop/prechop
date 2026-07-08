@@ -4,14 +4,18 @@ import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
+	Avatar,
 	Badge,
 	Button,
 	Card,
+	EmptyState,
+	FadeIn,
+	PageHeader,
 	Row,
+	SectionHeader,
 	Select,
 	Stack,
 	Text,
-	Title,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
@@ -25,11 +29,39 @@ import type { AppNotification, Campus } from "@/types";
 const Section = styled(Card)`
 	padding: var(--pc-space-5);
 `;
+const ProfileCard = styled(Card)`
+	padding: var(--pc-space-5);
+	position: relative;
+	overflow: hidden;
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0 0 auto 0;
+		height: 4px;
+		background: var(--pc-gradient-hero);
+	}
+`;
+const NotifList = styled.div`
+	display: flex;
+	flex-direction: column;
+`;
 const NotifItem = styled.div<{ $unread: boolean }>`
-	padding: 12px 0;
+	display: flex;
+	gap: 12px;
+	padding: 14px 0;
 	border-bottom: 1px solid var(--pc-border);
-	&:last-child { border-bottom: none; }
-	opacity: ${(p) => (p.$unread ? 1 : 0.7)};
+	&:last-child {
+		border-bottom: none;
+	}
+`;
+const Dot = styled.span<{ $unread: boolean }>`
+	flex: 0 0 auto;
+	width: 9px;
+	height: 9px;
+	margin-top: 6px;
+	border-radius: 50%;
+	background: ${(p) =>
+		p.$unread ? "var(--pc-color-primary)" : "var(--pc-border)"};
 `;
 
 export default function AccountWrapper() {
@@ -91,71 +123,86 @@ export default function AccountWrapper() {
 	const unreadCount = notifications.filter((n) => !n.isRead).length;
 
 	return (
-		<Stack $gap={16}>
-			<Title $size={24}>Account</Title>
+		<FadeIn>
+			<Stack $gap={16}>
+				<PageHeader
+					eyebrow="Account"
+					title="Your account"
+					subtitle="Manage your profile, campus and notifications."
+				/>
 
-			<Section>
-				<Stack $gap={10}>
-					<Row $justify="space-between">
-						<Text $weight={700}>
-							{user.firstName} {user.lastName}
-						</Text>
-						<Badge $tone="muted">{user.role}</Badge>
+				<ProfileCard>
+					<Row $justify="space-between" $align="center" $gap={12}>
+						<Row $gap={12} $align="center">
+							<Avatar
+								name={`${user.firstName} ${user.lastName}`}
+								size={52}
+							/>
+							<Stack $gap={2}>
+								<Text $weight={700} $size={17}>
+									{user.firstName} {user.lastName}
+								</Text>
+								<Text $muted $size={14}>
+									{user.phone}
+								</Text>
+							</Stack>
+						</Row>
+						<Badge $tone="gold">{user.role}</Badge>
 					</Row>
-					<Text $muted>{user.phone}</Text>
-				</Stack>
-			</Section>
+				</ProfileCard>
 
-			<Section>
-				<Stack $gap={12}>
-					<Text $weight={700}>Campus</Text>
-					<Select
-						value={user.campusId}
-						disabled={savingCampus}
-						onChange={(e) => changeCampus(e.target.value)}
-					>
-						{(campuses ?? []).map((c) => (
-							<option key={c.id} value={c.id}>
-								{c.name}
-							</option>
-						))}
-					</Select>
-					<Text $muted $size={13}>
-						You&apos;ll see kitchens open on your selected campus.
-					</Text>
-				</Stack>
-			</Section>
-
-			<Section>
-				<Stack $gap={12}>
-					<Row $justify="space-between">
-						<Text $weight={700}>
-							Notifications
-							{unreadCount > 0 && (
-								<Badge
-									$tone="primary"
-									style={{ marginLeft: 8 }}
-								>
-									{unreadCount}
-								</Badge>
-							)}
-						</Text>
-						<Button
-							$variant="ghost"
-							$size="sm"
-							onClick={enablePush}
-							$loading={enabling}
+				<Section>
+					<SectionHeader title="Campus" icon="📍" />
+					<Stack $gap={12}>
+						<Select
+							value={user.campusId}
+							disabled={savingCampus}
+							onChange={(e) => changeCampus(e.target.value)}
 						>
-							Enable push
-						</Button>
-					</Row>
+							{(campuses ?? []).map((c) => (
+								<option key={c.id} value={c.id}>
+									{c.name}
+								</option>
+							))}
+						</Select>
+						<Text $muted $size={13}>
+							You&apos;ll see kitchens open on your selected
+							campus.
+						</Text>
+					</Stack>
+				</Section>
+
+				<Section>
+					<SectionHeader
+						title={
+							<Row $gap={8} $align="center">
+								<span>Notifications</span>
+								{unreadCount > 0 && (
+									<Badge $tone="primary">{unreadCount}</Badge>
+								)}
+							</Row>
+						}
+						icon="🔔"
+						action={
+							<Button
+								$variant="ghost"
+								$size="sm"
+								onClick={enablePush}
+								$loading={enabling}
+							>
+								Enable push
+							</Button>
+						}
+					/>
 
 					{notifications.length === 0 ? (
-						<Text $muted $size={14}>
-							No notifications yet.
-						</Text>
+						<EmptyState
+							icon="🔔"
+							title="No notifications yet"
+							description="Order updates and campus news will show up here."
+						/>
 					) : (
-						<>
+						<Stack $gap={12}>
 							{unreadCount > 0 && (
 								<Button
 									$variant="ghost"
@@ -166,9 +213,10 @@ export default function AccountWrapper() {
 									Mark all read
 								</Button>
 							)}
-							<div>
+							<NotifList>
 								{notifications.map((n) => (
 									<NotifItem key={n.id} $unread={!n.isRead}>
+										<Dot $unread={!n.isRead} aria-hidden />
 										<Stack $gap={2}>
 											<Text
 												$weight={n.isRead ? 400 : 700}
@@ -185,16 +233,16 @@ export default function AccountWrapper() {
 										</Stack>
 									</NotifItem>
 								))}
-							</div>
-						</>
+							</NotifList>
+						</Stack>
 					)}
-				</Stack>
-			</Section>
+				</Section>
 
-			<Button $variant="secondary" $full onClick={() => logout()}>
-				Log out
-			</Button>
-		</Stack>
+				<Button $variant="secondary" $full onClick={() => logout()}>
+					Log out
+				</Button>
+			</Stack>
+		</FadeIn>
 	);
 }
 

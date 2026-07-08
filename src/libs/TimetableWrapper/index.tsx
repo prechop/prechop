@@ -3,7 +3,17 @@
 import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Badge, Card, Row, Select, Stack, Text, Title } from "@/components";
+import {
+	Badge,
+	Card,
+	EmptyState,
+	FadeIn,
+	PageHeader,
+	Row,
+	Select,
+	Stack,
+	Text,
+} from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
@@ -28,10 +38,20 @@ const DAYS = [
 ];
 
 const DayCard = styled(Card)`
-	padding: var(--pc-space-4);
+	padding: var(--pc-space-4) var(--pc-space-5);
+`;
+const DayHead = styled(Row)`
+	padding-bottom: var(--pc-space-2);
+`;
+const DayName = styled.span`
+	font-family: var(--pc-font-display);
+	font-size: 17px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--pc-text);
 `;
 const EntryRow = styled(Row)`
-	padding: 8px 0;
+	padding: 10px 0;
 	border-top: 1px solid var(--pc-border);
 `;
 const Toggle = styled.button<{ $on: boolean }>`
@@ -43,7 +63,8 @@ const Toggle = styled.button<{ $on: boolean }>`
 	cursor: pointer;
 	flex-shrink: 0;
 	background: ${(p) =>
-		p.$on ? "var(--pc-color-success)" : "var(--pc-surface-2)"};
+		p.$on ? "var(--pc-color-accent)" : "var(--pc-surface-3)"};
+	transition: background var(--pc-dur) var(--pc-ease);
 	&::after {
 		content: "";
 		position: absolute;
@@ -64,9 +85,8 @@ const RemoveBtn = styled.button`
 	font-weight: 600;
 	color: var(--pc-color-danger);
 `;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const AddSelect = styled(Select)`
+	margin-top: var(--pc-space-3);
 `;
 
 function errMsg(e: unknown): string {
@@ -129,111 +149,116 @@ export default function TimetableWrapper() {
 	if (menuItems.length === 0) {
 		return (
 			<Stack $gap={16}>
-				<Title $size={24}>Weekly timetable</Title>
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							Add menu items first
-						</Text>
-						<Text $muted>
-							Build your menu, then schedule which items you sell
-							each day.
-						</Text>
-					</Stack>
-				</Empty>
+				<PageHeader
+					eyebrow="Schedule"
+					title="Weekly timetable"
+					subtitle="Plan which menu items you sell on each day of the week."
+				/>
+				<EmptyState
+					icon="📋"
+					title="Add menu items first"
+					description="Build your menu, then schedule which items you sell each day."
+				/>
 			</Stack>
 		);
 	}
 
 	return (
 		<Stack $gap={16}>
-			<Stack $gap={6}>
-				<Title $size={24}>Weekly timetable</Title>
-				<Text $muted>
-					Schedule which menu items you sell on each day. Use these as
-					a template when composing a daily order.
-				</Text>
-			</Stack>
+			<PageHeader
+				eyebrow="Schedule"
+				title="Weekly timetable"
+				subtitle="Schedule which menu items you sell on each day. Use these as a template when composing a daily order."
+			/>
 
-			{DAYS.map((day) => {
+			{DAYS.map((day, i) => {
 				const dayEntries = all.filter((e) => e.dayOfWeek === day.value);
 				const usedIds = new Set(dayEntries.map((e) => e.menuItemId));
 				const available = menuItems.filter((m) => !usedIds.has(m.id));
 				return (
-					<DayCard key={day.value}>
-						<Stack $gap={4}>
-							<Row $justify="space-between" $align="center">
-								<Text $weight={700}>{day.label}</Text>
-								<Badge
-									$tone={
-										dayEntries.some((e) => e.isOpen)
-											? "success"
-											: "muted"
-									}
-								>
-									{dayEntries.filter((e) => e.isOpen).length}{" "}
-									open
-								</Badge>
-							</Row>
-
-							{dayEntries.map((e) => (
-								<EntryRow
-									key={e.id}
+					<FadeIn key={day.value} $delay={i * 40}>
+						<DayCard>
+							<Stack $gap={0}>
+								<DayHead
 									$justify="space-between"
-									$gap={10}
+									$align="center"
 								>
-									<Text $size={14}>
-										{nameById.get(e.menuItemId) ??
-											"Unknown item"}
-									</Text>
-									<Row $gap={12}>
-										<Toggle
-											$on={e.isOpen}
-											disabled={busy}
-											aria-label="Toggle open"
-											onClick={() =>
-												upsert(
-													e.menuItemId,
-													day.value,
-													!e.isOpen,
-												)
-											}
-										/>
-										<RemoveBtn
-											onClick={() => removeEntry(e.id)}
-										>
-											Remove
-										</RemoveBtn>
-									</Row>
-								</EntryRow>
-							))}
+									<DayName>{day.label}</DayName>
+									<Badge
+										$tone={
+											dayEntries.some((e) => e.isOpen)
+												? "success"
+												: "muted"
+										}
+									>
+										{
+											dayEntries.filter((e) => e.isOpen)
+												.length
+										}{" "}
+										open
+									</Badge>
+								</DayHead>
 
-							{available.length > 0 && (
-								<Select
-									value=""
-									disabled={busy}
-									onChange={(ev) => {
-										if (ev.target.value)
-											upsert(
-												ev.target.value,
-												day.value,
-												true,
-											);
-									}}
-									style={{ marginTop: 10 }}
-								>
-									<option value="">
-										＋ Add item to {day.label}…
-									</option>
-									{available.map((m) => (
-										<option key={m.id} value={m.id}>
-											{m.name}
+								{dayEntries.map((e) => (
+									<EntryRow
+										key={e.id}
+										$justify="space-between"
+										$gap={10}
+									>
+										<Text $size={14}>
+											{nameById.get(e.menuItemId) ??
+												"Unknown item"}
+										</Text>
+										<Row $gap={12}>
+											<Toggle
+												$on={e.isOpen}
+												disabled={busy}
+												aria-label="Toggle open"
+												onClick={() =>
+													upsert(
+														e.menuItemId,
+														day.value,
+														!e.isOpen,
+													)
+												}
+											/>
+											<RemoveBtn
+												onClick={() =>
+													removeEntry(e.id)
+												}
+											>
+												Remove
+											</RemoveBtn>
+										</Row>
+									</EntryRow>
+								))}
+
+								{available.length > 0 && (
+									<AddSelect
+										value=""
+										disabled={busy}
+										onChange={(ev) => {
+											if (ev.target.value)
+												upsert(
+													ev.target.value,
+													day.value,
+													true,
+												);
+										}}
+									>
+										<option value="">
+											＋ Add item to {day.label}…
 										</option>
-									))}
-								</Select>
-							)}
-						</Stack>
-					</DayCard>
+										{available.map((m) => (
+											<option key={m.id} value={m.id}>
+												{m.name}
+											</option>
+										))}
+									</AddSelect>
+								)}
+							</Stack>
+						</DayCard>
+					</FadeIn>
 				);
 			})}
 		</Stack>

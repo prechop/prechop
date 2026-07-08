@@ -7,13 +7,16 @@ import {
 	Badge,
 	Button,
 	Card,
-	Heading,
+	EmptyState,
+	FadeIn,
+	Grid,
 	Input,
-	PageLoader,
+	PageHeader,
 	Row,
 	Select,
+	Skeleton,
 	Stack,
-	Text,
+	StatCard,
 	Title,
 } from "@/components";
 import { api } from "@/constants/api";
@@ -43,30 +46,57 @@ const Table = styled.table`
 	font-size: 14px;
 	th, td {
 		text-align: left;
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--pc-border);
+		padding: 14px 16px;
 		white-space: nowrap;
 	}
-	th {
+	thead th {
+		position: sticky;
+		top: 0;
+		background: var(--pc-surface-2);
 		color: var(--pc-text-muted);
-		font-weight: 600;
-		font-size: 12px;
+		font-weight: 700;
+		font-size: 11.5px;
 		text-transform: uppercase;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.06em;
+		border-bottom: 1px solid var(--pc-border);
+	}
+	tbody td {
+		border-bottom: 1px solid var(--pc-border);
+		color: var(--pc-text);
+	}
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+	tbody tr {
+		transition: background var(--pc-dur) var(--pc-ease);
+	}
+	tbody tr:hover td {
+		background: var(--pc-surface-2);
+	}
+	td.name {
+		font-weight: 700;
+		color: var(--pc-text);
+	}
+	td.right {
+		text-align: right;
 	}
 `;
 const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.45);
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(4px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: var(--pc-space-4);
 	z-index: 80;
+	animation: pc-fade-up var(--pc-dur) var(--pc-ease) both;
 `;
 const Modal = styled(Card)`
 	width: min(460px, 100%);
+	box-shadow: var(--pc-shadow-lg);
+	animation: pc-fade-up var(--pc-dur-slow) var(--pc-ease) both;
 `;
 
 export default function AdminSchoolsWrapper() {
@@ -120,27 +150,23 @@ export default function AdminSchoolsWrapper() {
 
 	const schools = data ?? [];
 	const valid = name.trim() && state.trim();
+	const activeCount = schools.filter((s) => s.isActive).length;
 
 	return (
 		<Stack $gap={4}>
-			<Row $justify="space-between">
-				<Heading $size={26}>Schools</Heading>
-				<Button onClick={() => setAdding(true)}>+ Add school</Button>
-			</Row>
-			<Text $muted>
-				The school directory used during vendor onboarding.
-			</Text>
+			<PageHeader
+				eyebrow="Directory"
+				title="Schools"
+				subtitle="The school directory used during vendor onboarding."
+				actions={
+					<Button $pill onClick={() => setAdding(true)}>
+						+ Add school
+					</Button>
+				}
+			/>
 
 			{isLoading ? (
-				<PageLoader />
-			) : schools.length === 0 ? (
-				<Card style={{ marginTop: "var(--pc-space-5)" }}>
-					<Text $muted style={{ textAlign: "center" }}>
-						No schools yet.
-					</Text>
-				</Card>
-			) : (
-				<Card style={{ padding: 0, marginTop: "var(--pc-space-5)" }}>
+				<Card $pad={0}>
 					<Scroll>
 						<Table>
 							<thead>
@@ -153,42 +179,115 @@ export default function AdminSchoolsWrapper() {
 								</tr>
 							</thead>
 							<tbody>
-								{schools.map((s) => (
-									<tr key={s.id}>
-										<td>{s.name}</td>
-										<td>{s.type}</td>
-										<td>{s.state}</td>
-										<td>
-											<Badge
-												$tone={
-													s.isActive
-														? "success"
-														: "muted"
-												}
-											>
-												{s.isActive
-													? "Active"
-													: "Inactive"}
-											</Badge>
-										</td>
-										<td>
-											<Button
-												$variant="secondary"
-												$size="sm"
-												$loading={togglingId === s.id}
-												onClick={() => toggle(s.id)}
-											>
-												{s.isActive
-													? "Deactivate"
-													: "Activate"}
-											</Button>
-										</td>
+								{Array.from({ length: 5 }).map((_, i) => (
+									<tr key={i}>
+										{Array.from({ length: 5 }).map(
+											(__, j) => (
+												<td key={j}>
+													<Skeleton $h={16} />
+												</td>
+											),
+										)}
 									</tr>
 								))}
 							</tbody>
 						</Table>
 					</Scroll>
 				</Card>
+			) : schools.length === 0 ? (
+				<EmptyState
+					icon="🎓"
+					title="No schools yet"
+					description="Add schools to the directory so vendors can pick theirs during onboarding."
+					action={
+						<Button $pill onClick={() => setAdding(true)}>
+							+ Add school
+						</Button>
+					}
+				/>
+			) : (
+				<FadeIn>
+					<Stack $gap={16}>
+						<Grid $min={200} $gap={14}>
+							<StatCard
+								label="Total schools"
+								value={schools.length}
+								icon="🎓"
+							/>
+							<StatCard
+								label="Active"
+								value={activeCount}
+								icon="✅"
+								tone="var(--pc-color-accent)"
+							/>
+							<StatCard
+								label="Inactive"
+								value={schools.length - activeCount}
+								icon="⏸️"
+								tone="var(--pc-surface-3)"
+							/>
+						</Grid>
+						<Card $pad={0}>
+							<Scroll>
+								<Table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Type</th>
+											<th>State</th>
+											<th>Status</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{schools.map((s) => (
+											<tr key={s.id}>
+												<td className="name">
+													{s.name}
+												</td>
+												<td>
+													<Badge $tone="muted">
+														{s.type}
+													</Badge>
+												</td>
+												<td>{s.state}</td>
+												<td>
+													<Badge
+														$tone={
+															s.isActive
+																? "success"
+																: "muted"
+														}
+													>
+														{s.isActive
+															? "Active"
+															: "Inactive"}
+													</Badge>
+												</td>
+												<td className="right">
+													<Button
+														$variant="secondary"
+														$size="sm"
+														$loading={
+															togglingId === s.id
+														}
+														onClick={() =>
+															toggle(s.id)
+														}
+													>
+														{s.isActive
+															? "Deactivate"
+															: "Activate"}
+													</Button>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</Table>
+							</Scroll>
+						</Card>
+					</Stack>
+				</FadeIn>
 			)}
 
 			{adding && (

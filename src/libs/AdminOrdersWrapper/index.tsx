@@ -7,11 +7,15 @@ import {
 	Badge,
 	Button,
 	Card,
-	Heading,
-	PageLoader,
+	EmptyState,
+	FadeIn,
+	Grid,
+	PageHeader,
 	Row,
 	Select,
+	Skeleton,
 	Stack,
+	StatCard,
 	Text,
 	Title,
 } from "@/components";
@@ -42,55 +46,121 @@ function tone(
 	return "warning";
 }
 
-const Toolbar = styled(Row)`
-	margin: var(--pc-space-5) 0 var(--pc-space-4);
+const Toolbar = styled(Card)`
+	display: flex;
 	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--pc-space-4);
+`;
+const FilterField = styled.div`
+	min-width: 220px;
+	flex: 1 1 240px;
+	max-width: 340px;
 `;
 const Scroll = styled.div`
 	overflow-x: auto;
+	border-radius: var(--pc-radius);
 `;
 const Table = styled.table`
 	width: 100%;
 	border-collapse: collapse;
 	font-size: 14px;
-	th, td {
+	th,
+	td {
 		text-align: left;
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--pc-border);
+		padding: 13px 16px;
 		white-space: nowrap;
 	}
-	th {
+	thead th {
 		color: var(--pc-text-muted);
-		font-weight: 600;
-		font-size: 12px;
+		font-weight: 700;
+		font-size: 11.5px;
 		text-transform: uppercase;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.05em;
+		background: var(--pc-surface-2);
+		border-bottom: 1px solid var(--pc-border);
 	}
+	tbody td {
+		border-bottom: 1px solid var(--pc-border);
+		color: var(--pc-text);
+	}
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+	tbody tr {
+		transition: background var(--pc-dur) var(--pc-ease);
+	}
+	tbody tr:hover td {
+		background: var(--pc-surface-2);
+	}
+`;
+const OrderNo = styled.span`
+	font-family: var(--pc-font-display);
+	font-weight: 800;
+	color: var(--pc-text);
 `;
 const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.45);
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(3px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: var(--pc-space-4);
 	z-index: 80;
+	animation: pc-fade-up var(--pc-dur) var(--pc-ease) both;
 `;
 const Modal = styled(Card)`
 	width: min(560px, 100%);
 	max-height: 90dvh;
 	overflow-y: auto;
+	box-shadow: var(--pc-shadow-lg);
 `;
 const KV = styled(Row)`
 	justify-content: space-between;
+	gap: var(--pc-space-4);
 	border-bottom: 1px solid var(--pc-border);
-	padding: 8px 0;
+	padding: 10px 0;
+	&:last-child {
+		border-bottom: none;
+	}
 `;
 const LineItem = styled(Row)`
 	justify-content: space-between;
-	padding: 6px 0;
+	gap: var(--pc-space-4);
+	padding: 8px 0;
 `;
+const ItemsPanel = styled.div`
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius);
+	padding: var(--pc-space-3) var(--pc-space-4);
+`;
+
+function LoadingTable() {
+	return (
+		<Card $pad={0}>
+			<Stack $gap={0}>
+				{[0, 1, 2, 3, 4, 5].map((i) => (
+					<Row
+						key={i}
+						$justify="space-between"
+						$align="center"
+						style={{
+							padding: "16px",
+							borderBottom: "1px solid var(--pc-border)",
+						}}
+					>
+						<Skeleton $w="120px" $h={14} />
+						<Skeleton $w="90px" $h={14} />
+						<Skeleton $w="80px" $h={22} $radius="999px" />
+					</Row>
+				))}
+			</Stack>
+		</Card>
+	);
+}
 
 export default function AdminOrdersWrapper() {
 	const [status, setStatus] = useState<string>("");
@@ -103,14 +173,46 @@ export default function AdminOrdersWrapper() {
 	);
 
 	const orders = data ?? [];
+	const completedCount = orders.filter(
+		(o) => o.status === "COMPLETED",
+	).length;
+	const grossKobo = orders
+		.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED")
+		.reduce((s, o) => s + o.totalKobo, 0);
 
 	return (
-		<Stack $gap={4}>
-			<Heading $size={26}>Orders</Heading>
-			<Text $muted>Every order placed on the platform.</Text>
+		<Stack $gap={20}>
+			<PageHeader
+				eyebrow="Admin console"
+				title="Orders"
+				subtitle="Every order placed on the platform."
+			/>
 
-			<Toolbar $gap={12}>
-				<div style={{ minWidth: 220 }}>
+			<FadeIn>
+				<Grid $min={200} $gap={16}>
+					<StatCard
+						label="Orders shown"
+						value={orders.length}
+						icon="🧾"
+						tone="var(--pc-gradient-warm)"
+					/>
+					<StatCard
+						label="Completed"
+						value={completedCount}
+						icon="✅"
+						tone="var(--pc-color-accent)"
+					/>
+					<StatCard
+						label="Gross value"
+						value={formatKobo(grossKobo)}
+						icon="💳"
+						tone="var(--pc-color-primary)"
+					/>
+				</Grid>
+			</FadeIn>
+
+			<Toolbar>
+				<FilterField>
 					<Select
 						label="Filter by status"
 						value={status}
@@ -123,69 +225,87 @@ export default function AdminOrdersWrapper() {
 							</option>
 						))}
 					</Select>
-				</div>
+				</FilterField>
 			</Toolbar>
 
 			{isLoading ? (
-				<PageLoader />
+				<LoadingTable />
 			) : orders.length === 0 ? (
-				<Card>
-					<Text $muted style={{ textAlign: "center" }}>
-						No orders found.
-					</Text>
-				</Card>
+				<FadeIn>
+					<EmptyState
+						icon="🧾"
+						title="No orders found"
+						description="No orders match this filter yet. Try a different status."
+					/>
+				</FadeIn>
 			) : (
-				<Card style={{ padding: 0 }}>
-					<Scroll>
-						<Table>
-							<thead>
-								<tr>
-									<th>Order #</th>
-									<th>Fulfilment</th>
-									<th>Total</th>
-									<th>Status</th>
-									<th>Placed</th>
-									<th></th>
-								</tr>
-							</thead>
-							<tbody>
-								{orders.map((o) => (
-									<tr key={o.id}>
-										<td>{o.orderNumber}</td>
-										<td>
-											{statusLabel(o.fulfillmentType)}
-										</td>
-										<td>{formatKobo(o.totalKobo)}</td>
-										<td>
-											<Badge $tone={tone(o.status)}>
-												{statusLabel(o.status)}
-											</Badge>
-										</td>
-										<td>{formatDateTime(o.createdAt)}</td>
-										<td>
-											<Button
-												$variant="ghost"
-												$size="sm"
-												onClick={() =>
-													setDetailId(o.id)
-												}
-											>
-												View
-											</Button>
-										</td>
+				<FadeIn>
+					<Card $pad={0}>
+						<Scroll>
+							<Table>
+								<thead>
+									<tr>
+										<th>Order #</th>
+										<th>Fulfilment</th>
+										<th>Total</th>
+										<th>Status</th>
+										<th>Placed</th>
+										<th></th>
 									</tr>
-								))}
-							</tbody>
-						</Table>
-					</Scroll>
-				</Card>
+								</thead>
+								<tbody>
+									{orders.map((o) => (
+										<tr key={o.id}>
+											<td>
+												<OrderNo>
+													{o.orderNumber}
+												</OrderNo>
+											</td>
+											<td>
+												{statusLabel(o.fulfillmentType)}
+											</td>
+											<td>
+												<Text $weight={700}>
+													{formatKobo(o.totalKobo)}
+												</Text>
+											</td>
+											<td>
+												<Badge $tone={tone(o.status)}>
+													{statusLabel(o.status)}
+												</Badge>
+											</td>
+											<td>
+												<Text $muted $size={13}>
+													{formatDateTime(
+														o.createdAt,
+													)}
+												</Text>
+											</td>
+											<td>
+												<Button
+													$variant="ghost"
+													$size="sm"
+													onClick={() =>
+														setDetailId(o.id)
+													}
+												>
+													View
+												</Button>
+											</td>
+										</tr>
+									))}
+								</tbody>
+							</Table>
+						</Scroll>
+					</Card>
+				</FadeIn>
 			)}
 
 			{detailId && (
 				<Overlay onClick={() => setDetailId(null)}>
 					<Modal onClick={(e) => e.stopPropagation()}>
-						<Stack $gap={12}>
-							<Row $justify="space-between">
+						<Stack $gap={16}>
+							<Row $justify="space-between" $align="center">
 								<Title $size={18}>
 									{detail
 										? `Order ${detail.orderNumber}`
@@ -200,9 +320,13 @@ export default function AdminOrdersWrapper() {
 								</Button>
 							</Row>
 							{!detail ? (
-								<PageLoader />
+								<Stack $gap={12}>
+									{[0, 1, 2, 3, 4].map((i) => (
+										<Skeleton key={i} $h={18} />
+									))}
+								</Stack>
 							) : (
-								<Stack $gap={14}>
+								<Stack $gap={16}>
 									<Stack $gap={0}>
 										<KV>
 											<Text $muted>Status</Text>
@@ -228,25 +352,35 @@ export default function AdminOrdersWrapper() {
 										</KV>
 									</Stack>
 
-									<Stack $gap={6}>
+									<Stack $gap={8}>
 										<Text $weight={700} $size={14}>
 											Items
 										</Text>
-										{detail.items.map((it, idx) => (
-											<LineItem
-												key={`${it.snapshotName}-${idx}`}
-											>
-												<Text $size={14}>
-													{it.quantity}×{" "}
-													{it.snapshotName}
-												</Text>
-												<Text $size={14} $weight={600}>
-													{formatKobo(
-														it.subtotalKobo,
-													)}
-												</Text>
-											</LineItem>
-										))}
+										<ItemsPanel>
+											{detail.items.map((it, idx) => (
+												<LineItem
+													key={`${it.snapshotName}-${idx}`}
+												>
+													<Text $size={14}>
+														<Text
+															as="span"
+															$weight={700}
+														>
+															{it.quantity}×
+														</Text>{" "}
+														{it.snapshotName}
+													</Text>
+													<Text
+														$size={14}
+														$weight={600}
+													>
+														{formatKobo(
+															it.subtotalKobo,
+														)}
+													</Text>
+												</LineItem>
+											))}
+										</ItemsPanel>
 									</Stack>
 
 									<Stack $gap={0}>
@@ -276,7 +410,7 @@ export default function AdminOrdersWrapper() {
 										</KV>
 										<KV>
 											<Text $weight={700}>Total</Text>
-											<Text $weight={800}>
+											<Text $weight={800} $size={16}>
 												{formatKobo(detail.totalKobo)}
 											</Text>
 										</KV>

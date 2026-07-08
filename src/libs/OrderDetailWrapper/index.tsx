@@ -8,8 +8,10 @@ import {
 	Badge,
 	Button,
 	Card,
+	FadeIn,
 	Input,
 	Row,
+	SectionHeader,
 	Stack,
 	Text,
 	Textarea,
@@ -35,24 +37,65 @@ const Hero = styled(Card)`
 	overflow: hidden;
 `;
 const Cover = styled.div<{ $src?: string }>`
-	height: 160px;
+	position: relative;
+	height: 180px;
 	background: ${(p) =>
 		p.$src
 			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-surface-2)"};
+			: "var(--pc-gradient-hero)"};
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 46px;
+	font-size: 56px;
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			180deg,
+			transparent 45%,
+			rgba(0, 0, 0, 0.22)
+		);
+	}
 `;
 const HeroBody = styled(Stack)`
 	padding: var(--pc-space-5);
 `;
+const Chips = styled(Row)`
+	flex-wrap: wrap;
+`;
+const Chip = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 11px;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--pc-text-muted);
+`;
 const ItemCard = styled(Card)`
 	padding: var(--pc-space-4);
+	transition: border-color var(--pc-dur) var(--pc-ease);
+	&:hover { border-color: var(--pc-surface-3); }
 `;
 const SoldOut = styled(ItemCard)`
 	opacity: 0.55;
+`;
+const Thumb = styled.div<{ $src?: string }>`
+	width: 52px;
+	height: 52px;
+	flex: 0 0 auto;
+	border-radius: var(--pc-radius-sm);
+	background: ${(p) =>
+		p.$src
+			? `center / cover no-repeat url(${p.$src})`
+			: "var(--pc-color-primary-50)"};
+	display: grid;
+	place-items: center;
+	font-size: 24px;
 `;
 const AddonRow = styled.label`
 	display: flex;
@@ -63,12 +106,21 @@ const AddonRow = styled.label`
 	cursor: pointer;
 	padding: 4px 0;
 `;
+const AddonBox = styled.div`
+	border-top: 1px dashed var(--pc-border);
+	padding-top: var(--pc-space-2);
+	margin-top: var(--pc-space-1);
+`;
 const Qty = styled(Row)`
+	background: var(--pc-surface-2);
+	border-radius: var(--pc-radius-pill);
+	padding: 3px;
 	button {
 		width: 32px;
 		height: 32px;
 		padding: 0;
 		font-size: 18px;
+		border-radius: 50%;
 	}
 `;
 const FeeRow = styled(Row)`
@@ -80,6 +132,7 @@ const Sticky = styled.div`
 	bottom: 0;
 	background: var(--pc-surface);
 	border-top: 1px solid var(--pc-border);
+	box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);
 	padding: var(--pc-space-4) 0;
 	margin: 0 calc(-1 * var(--pc-space-4));
 	padding-left: var(--pc-space-4);
@@ -87,16 +140,17 @@ const Sticky = styled.div`
 `;
 const Toggle = styled.button<{ $active: boolean }>`
 	flex: 1;
-	border: 1px solid
+	border: 1.5px solid
 		${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
 	background: ${(p) =>
 		p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
 	color: ${(p) =>
 		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
 	font-weight: 700;
-	padding: 10px;
+	padding: 12px;
 	border-radius: var(--pc-radius-sm);
 	cursor: pointer;
+	transition: all var(--pc-dur) var(--pc-ease);
 `;
 
 function lineSubtotal(item: DailyOrderItem, line: Line): number {
@@ -143,7 +197,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	if (!data) {
 		return (
 			<Wrap>
-				<Card>
+				<Card $accent>
 					<Stack $gap={6}>
 						<Title $size={18}>Listing not found</Title>
 						<Text $muted>
@@ -238,35 +292,44 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 
 	return (
 		<Wrap $gap={16}>
-			<Hero>
-				<Cover $src={data.items[0]?.snapshotImageUrl}>
-					{data.items[0]?.snapshotImageUrl ? "" : "🍲"}
-				</Cover>
-				<HeroBody $gap={10}>
-					<Row $justify="space-between" $align="flex-start" $gap={10}>
-						<Title $size={22}>{data.title}</Title>
-						<Badge
-							$tone={closed || inactive ? "danger" : "warning"}
+			<FadeIn>
+				<Hero>
+					<Cover $src={data.items[0]?.snapshotImageUrl}>
+						{data.items[0]?.snapshotImageUrl ? "" : "🍲"}
+					</Cover>
+					<HeroBody $gap={12}>
+						<Row
+							$justify="space-between"
+							$align="flex-start"
+							$gap={10}
 						>
-							{inactive
-								? "Closed"
-								: closed
-									? "Cutoff passed"
-									: timeUntil(data.cutoffTime)}
-						</Badge>
-					</Row>
-					<Text $muted $size={14}>
-						{data.pickupAvailable && "Pickup"}
-						{data.pickupAvailable &&
-							data.deliveryAvailable &&
-							" · "}
-						{data.deliveryAvailable &&
-							`Delivery ${formatKobo(data.deliveryFeeKobo)}`}
-					</Text>
-				</HeroBody>
-			</Hero>
+							<Title $size={24}>{data.title}</Title>
+							<Badge
+								$tone={
+									closed || inactive ? "danger" : "warning"
+								}
+							>
+								{inactive
+									? "Closed"
+									: closed
+										? "Cutoff passed"
+										: timeUntil(data.cutoffTime)}
+							</Badge>
+						</Row>
+						<Chips $gap={8}>
+							{data.pickupAvailable && <Chip>🥡 Pickup</Chip>}
+							{data.deliveryAvailable && (
+								<Chip>
+									🛵 Delivery{" "}
+									{formatKobo(data.deliveryFeeKobo)}
+								</Chip>
+							)}
+						</Chips>
+					</HeroBody>
+				</Hero>
+			</FadeIn>
 
-			<Title $size={17}>Menu</Title>
+			<SectionHeader title="Menu" icon="🍽️" />
 			<Stack $gap={10}>
 				{data.items.map((item) => {
 					const line = lines[item.id];
@@ -280,22 +343,32 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							<Stack $gap={10}>
 								<Row
 									$justify="space-between"
-									$align="flex-start"
-									$gap={10}
+									$align="center"
+									$gap={12}
 								>
-									<Stack $gap={2}>
-										<Text $weight={700}>
-											{item.snapshotName}
-										</Text>
-										<Text $muted $size={13}>
-											{formatKobo(item.snapshotPriceKobo)}{" "}
-											· {item.snapshotPrepMin}m prep
-										</Text>
-									</Stack>
+									<Row $gap={12} $align="center">
+										<Thumb
+											$src={item.snapshotImageUrl}
+											aria-hidden
+										>
+											{item.snapshotImageUrl ? "" : "🍛"}
+										</Thumb>
+										<Stack $gap={2}>
+											<Text $weight={700}>
+												{item.snapshotName}
+											</Text>
+											<Text $muted $size={13}>
+												{formatKobo(
+													item.snapshotPriceKobo,
+												)}{" "}
+												· {item.snapshotPrepMin}m prep
+											</Text>
+										</Stack>
+									</Row>
 									{listingSoldOut ? (
 										<Badge $tone="danger">Sold out</Badge>
 									) : (
-										<Qty $gap={10}>
+										<Qty $gap={6}>
 											<Button
 												$variant="secondary"
 												$size="sm"
@@ -329,25 +402,30 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 									)}
 								</Row>
 								{qty > 0 && item.addons.length > 0 && (
-									<Stack $gap={2}>
-										{item.addons.map((a) => (
-											<AddonRow key={a.id}>
-												<input
-													type="checkbox"
-													checked={
-														line?.addonIds.has(
-															a.id,
-														) ?? false
-													}
-													onChange={() =>
-														toggleAddon(item, a.id)
-													}
-												/>
-												{a.name} ·{" "}
-												{formatKobo(a.priceKobo)}
-											</AddonRow>
-										))}
-									</Stack>
+									<AddonBox>
+										<Stack $gap={2}>
+											{item.addons.map((a) => (
+												<AddonRow key={a.id}>
+													<input
+														type="checkbox"
+														checked={
+															line?.addonIds.has(
+																a.id,
+															) ?? false
+														}
+														onChange={() =>
+															toggleAddon(
+																item,
+																a.id,
+															)
+														}
+													/>
+													{a.name} ·{" "}
+													{formatKobo(a.priceKobo)}
+												</AddonRow>
+											))}
+										</Stack>
+									</AddonBox>
 								)}
 							</Stack>
 						</Wrapper>
@@ -361,13 +439,13 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 						$active={fulfillment === "PICKUP"}
 						onClick={() => setFulfillment("PICKUP")}
 					>
-						Pickup
+						🥡 Pickup
 					</Toggle>
 					<Toggle
 						$active={fulfillment === "DELIVERY"}
 						onClick={() => setFulfillment("DELIVERY")}
 					>
-						Delivery
+						🛵 Delivery
 					</Toggle>
 				</Row>
 			)}

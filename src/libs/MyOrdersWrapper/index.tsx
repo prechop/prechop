@@ -3,8 +3,20 @@
 import Link from "next/link";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Badge, Card, Row, Stack, Text, Title } from "@/components";
-import { PageLoader } from "@/components/Loader";
+import {
+	Badge,
+	Button,
+	Card,
+	EmptyState,
+	FadeIn,
+	Grid,
+	PageHeader,
+	Row,
+	Skeleton,
+	Stack,
+	StatCard,
+	Text,
+} from "@/components";
 import { fetcher } from "@/constants/fetcher";
 import {
 	formatDateTime,
@@ -27,18 +39,40 @@ const tone: Record<
 	REFUNDED: "muted",
 };
 
-const OrderCard = styled(Card)`
-	padding: var(--pc-space-4);
-	transition: box-shadow 0.15s ease;
-	&:hover { box-shadow: var(--pc-shadow-lg); }
-`;
+const ACTIVE: OrderStatus[] = [
+	"PENDING_PAYMENT",
+	"PAID",
+	"CONFIRMED",
+	"PREPARING",
+	"READY",
+];
+
 const CardLink = styled(Link)`
 	color: inherit;
 	display: block;
 `;
-const Empty = styled(Card)`
-	text-align: center;
-	padding: var(--pc-space-8) var(--pc-space-5);
+const OrderCard = styled(Card)`
+	position: relative;
+	overflow: hidden;
+`;
+const Thumb = styled.div`
+	width: 46px;
+	height: 46px;
+	flex: 0 0 auto;
+	border-radius: var(--pc-radius-sm);
+	display: grid;
+	place-items: center;
+	font-size: 24px;
+	background: var(--pc-color-primary-50);
+`;
+const Divider = styled.div`
+	height: 1px;
+	background: var(--pc-border);
+`;
+const Chevron = styled.span`
+	color: var(--pc-text-faint);
+	font-size: 20px;
+	line-height: 1;
 `;
 
 export default function MyOrdersWrapper() {
@@ -47,73 +81,163 @@ export default function MyOrdersWrapper() {
 		fetcher,
 	);
 
-	if (isLoading) return <PageLoader />;
-	const orders = data ?? [];
-
-	return (
-		<Stack $gap={16}>
-			<Title $size={24}>My orders</Title>
-
-			{orders.length === 0 ? (
-				<Empty>
-					<Stack $gap={6}>
-						<Text $weight={700} $size={16}>
-							No orders yet
-						</Text>
-						<Text $muted>
-							Browse today&apos;s kitchens and place your first
-							order.
-						</Text>
-						<Link href="/marketplace">
-							<Text
-								$weight={700}
-								style={{ color: "var(--pc-color-primary)" }}
-							>
-								Go to marketplace →
-							</Text>
-						</Link>
-					</Stack>
-				</Empty>
-			) : (
-				<Stack $gap={10}>
-					{orders.map((o) => (
-						<CardLink key={o.id} href={`/my-orders/${o.id}`}>
-							<OrderCard>
-								<Stack $gap={8}>
-									<Row
-										$justify="space-between"
-										$align="flex-start"
-										$gap={10}
-									>
-										<Stack $gap={2}>
-											<Text $weight={700}>
-												{o.orderNumber}
-											</Text>
-											<Text $muted $size={13}>
-												{formatDateTime(o.createdAt)}
-											</Text>
-										</Stack>
-										<Badge $tone={tone[o.status]}>
-											{statusLabel(o.status)}
-										</Badge>
-									</Row>
-									<Row $justify="space-between">
-										<Text $muted $size={13}>
-											{o.items.length} item
-											{o.items.length === 1 ? "" : "s"} ·{" "}
-											{o.fulfillmentType === "DELIVERY"
-												? "Delivery"
-												: "Pickup"}
-										</Text>
-										<Text $weight={700}>
-											{formatKobo(o.totalKobo)}
-										</Text>
-									</Row>
-								</Stack>
-							</OrderCard>
-						</CardLink>
+	if (isLoading) {
+		return (
+			<Stack $gap={20}>
+				<PageHeader
+					eyebrow="Your kitchen runs"
+					title="My orders"
+					subtitle="Every plate you've pre-ordered, from cutoff to pickup."
+				/>
+				<Stack $gap={12}>
+					{[0, 1, 2, 3].map((i) => (
+						<Card key={i}>
+							<Stack $gap={12}>
+								<Row $justify="space-between">
+									<Skeleton $w="140px" $h={18} />
+									<Skeleton
+										$w="80px"
+										$h={22}
+										$radius="999px"
+									/>
+								</Row>
+								<Skeleton $w="60%" $h={14} />
+							</Stack>
+						</Card>
 					))}
 				</Stack>
+			</Stack>
+		);
+	}
+
+	const orders = data ?? [];
+	const activeCount = orders.filter((o) => ACTIVE.includes(o.status)).length;
+	const spentKobo = orders
+		.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED")
+		.reduce((s, o) => s + o.totalKobo, 0);
+
+	return (
+		<Stack $gap={20}>
+			<PageHeader
+				eyebrow="Your kitchen runs"
+				title="My orders"
+				subtitle="Every plate you've pre-ordered, from cutoff to pickup."
+				actions={
+					<Link href="/marketplace">
+						<Button $variant="secondary" $size="sm" $pill>
+							Browse kitchens
+						</Button>
+					</Link>
+				}
+			/>
+
+			{orders.length === 0 ? (
+				<FadeIn>
+					<EmptyState
+						icon="🍲"
+						title="No orders yet"
+						description="Browse today's kitchens and place your first order — freshly cooked, ready at cutoff."
+						action={
+							<Link href="/marketplace">
+								<Button $pill>Go to marketplace →</Button>
+							</Link>
+						}
+					/>
+				</FadeIn>
+			) : (
+				<>
+					<FadeIn>
+						<Grid $min={150} $gap={12}>
+							<StatCard
+								label="Total orders"
+								value={orders.length}
+								icon="🧾"
+							/>
+							<StatCard
+								label="In progress"
+								value={activeCount}
+								icon="🔥"
+								tone="var(--pc-color-primary)"
+								hint={
+									activeCount === 1
+										? "1 cooking"
+										: "cooking now"
+								}
+							/>
+							<StatCard
+								label="Total spent"
+								value={formatKobo(spentKobo)}
+								icon="💳"
+								tone="var(--pc-color-accent)"
+							/>
+						</Grid>
+					</FadeIn>
+
+					<Stack $gap={12}>
+						{orders.map((o, i) => (
+							<FadeIn key={o.id} $delay={i * 45}>
+								<CardLink href={`/my-orders/${o.id}`}>
+									<OrderCard $hover>
+										<Stack $gap={12}>
+											<Row
+												$justify="space-between"
+												$align="flex-start"
+												$gap={12}
+											>
+												<Row $gap={12} $align="center">
+													<Thumb aria-hidden>
+														🍱
+													</Thumb>
+													<Stack $gap={2}>
+														<Text $weight={800}>
+															{o.orderNumber}
+														</Text>
+														<Text $muted $size={13}>
+															{formatDateTime(
+																o.createdAt,
+															)}
+														</Text>
+													</Stack>
+												</Row>
+												<Badge $tone={tone[o.status]}>
+													{statusLabel(o.status)}
+												</Badge>
+											</Row>
+											<Divider />
+											<Row
+												$justify="space-between"
+												$align="center"
+												$gap={10}
+											>
+												<Text $muted $size={13}>
+													{o.items.length} item
+													{o.items.length === 1
+														? ""
+														: "s"}{" "}
+													·{" "}
+													{o.fulfillmentType ===
+													"DELIVERY"
+														? "Delivery"
+														: "Pickup"}
+												</Text>
+												<Row $gap={8} $align="center">
+													<Text $weight={800}>
+														{formatKobo(
+															o.totalKobo,
+														)}
+													</Text>
+													<Chevron aria-hidden>
+														›
+													</Chevron>
+												</Row>
+											</Row>
+										</Stack>
+									</OrderCard>
+								</CardLink>
+							</FadeIn>
+						))}
+					</Stack>
+				</>
 			)}
 		</Stack>
 	);
