@@ -1,0 +1,506 @@
+import mongoose, { type ClientSession, type Model } from "mongoose";
+import {
+	phoneHash as computePhoneHash,
+	ErrInvalidAction,
+	ErrUserNotFound,
+	encrypt,
+	MAX_LIMIT,
+} from "../../constants";
+import { databaseResponseTimeHistogram } from "../../metrics";
+import type { IJwtPayload } from "../../types";
+import { UserRole } from "../enums";
+import { IOperationType } from "../utils";
+import type { IUser, IUserCreateInput } from "./types";
+import { generateAuthToken } from "./utils";
+
+const collectionName = "users";
+
+export type UserModel = Model<any>;
+
+const schema = new mongoose.Schema<any>(
+	{
+		campusId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "campuses",
+			required: true,
+			index: true,
+		},
+		role: {
+			type: String,
+			enum: Object.values(UserRole),
+			default: UserRole.BUYER,
+			index: true,
+		},
+		firstName: { type: String, required: true, trim: true },
+		lastName: { type: String, required: true, trim: true },
+		// Encrypted at rest. `phoneHash` carries the unique constraint since the
+		// ciphertext is non-deterministic.
+		phone: { type: String, required: true, select: false },
+		phoneHash: { type: String, required: true, unique: true, index: true },
+		isPhoneVerified: { type: Boolean, default: false },
+		isActive: { type: Boolean, default: true },
+		lastLoginAt: { type: Date, required: false },
+		refreshTokens: {
+			type: [
+				{
+					_id: false,
+					refreshToken: { type: String, required: true },
+					deadline: { type: Date, required: true },
+				},
+			],
+			select: false,
+			default: [],
+		},
+		deleted: { type: Boolean, default: false, select: false },
+	},
+	{ timestamps: true },
+);
+
+schema.index({ "refreshTokens.deadline": 1 });
+
+schema.pre("aggregate", function () {
+	this.pipeline().unshift({ $match: { deleted: false } });
+	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
+	this.pipeline().push({
+		$project: {
+			phone: 0,
+			phoneHash: 0,
+			refreshTokens: 0,
+			deleted: 0,
+			__v: 0,
+		},
+	});
+});
+
+schema.methods.generateAuthToken = async function (
+	ip?: string,
+): Promise<IJwtPayload> {
+	const result = await generateAuthToken({
+		userId: this._id.toString(),
+		ip: ip || "",
+		shouldRegenerateRefreshToken: true,
+	});
+	if (!result) throw ErrInvalidAction;
+
+	// SECURITY: cap concurrent sessions at 3 so a stolen refresh token can't
+	// coexist with the victim's legitimate sessions undetected.
+	const MAX_REFRESH_TOKENS = 3;
+	const existing = this?.refreshTokens ?? [];
+	const trimmed =
+		existing.length >= MAX_REFRESH_TOKENS
+			? existing.slice(existing.length - MAX_REFRESH_TOKENS + 1)
+			: existing;
+	this.refreshTokens = [
+		...trimmed,
+		{
+			refreshToken: result.refreshToken,
+			deadline: result.refreshTokenExpiresIn,
+		},
+	];
+	await this.save();
+	return result;
+};
+
+export const User: UserModel =
+	(mongoose.models[collectionName] as UserModel | undefined) ??
+	mongoose.model<any>(collectionName, schema);
+
+// ── Writes ────────────────────────────────────────────────────────────────
+
+export async function createUserDB({
+	payload,
+	session,
+}: {
+	payload: IUserCreateInput;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		const doc = await new User({
+			campusId: payload.campusId,
+			role: payload.role ?? UserRole.BUYER,
+			firstName: payload.firstName,
+			lastName: payload.lastName,
+			phone: encrypt(payload.phone),
+			phoneHash: computePhoneHash(payload.phone),
+			isPhoneVerified: payload.isPhoneVerified ?? false,
+			isActive: payload.isActive ?? true,
+		}).save({ session });
+		timer({
+			operation: IOperationType.Create,
+			collection: collectionName,
+			method: "createUserDB",
+			success: "true",
+		});
+		return doc.toObject() as unknown as IUser;
+	} catch {
+		timer({
+			operation: IOperationType.Create,
+			collection: collectionName,
+			method: "createUserDB",
+			success: "false",
+		});
+		return null;
+	}
+}
+
+export async function markPhoneVerifiedDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { isPhoneVerified: true, lastLoginAt: new Date() } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function updateLastLoginDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { lastLoginAt: new Date() } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function setUserActiveDB({
+	id,
+	isActive,
+	session,
+}: {
+	id: string;
+	isActive: boolean;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { isActive } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function updateUserProfileDB({
+	id,
+	firstName,
+	lastName,
+	campusId,
+	session,
+}: {
+	id: string;
+	firstName?: string;
+	lastName?: string;
+	campusId?: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	try {
+		const set: Record<string, unknown> = {};
+		if (firstName !== undefined) set.firstName = firstName;
+		if (lastName !== undefined) set.lastName = lastName;
+		if (campusId !== undefined) {
+			set.campusId = new mongoose.Types.ObjectId(campusId);
+		}
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: set },
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IUser) : null;
+	} catch {
+		return null;
+	}
+}
+
+// ── Reads ─────────────────────────────────────────────────────────────────
+
+export async function getUserByIdDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return null;
+		const result =
+			(
+				await User.aggregate<IUser>(
+					[
+						{ $match: { _id: new mongoose.Types.ObjectId(id) } },
+						{ $limit: 1 },
+					],
+					{ session },
+				)
+			).at(0) ?? null;
+		if (!result) throw ErrUserNotFound;
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "getUserByIdDB",
+			success: "true",
+		});
+		return result;
+	} catch {
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "getUserByIdDB",
+			success: "false",
+		});
+		return null;
+	}
+}
+
+export async function getUsersByIdsDB({
+	ids,
+	session,
+}: {
+	ids: string[];
+	session?: ClientSession;
+}): Promise<IUser[]> {
+	try {
+		return await User.aggregate<IUser>(
+			[
+				{
+					$match: {
+						_id: {
+							$in: ids
+								.filter((id) =>
+									mongoose.Types.ObjectId.isValid(id),
+								)
+								.map((id) => new mongoose.Types.ObjectId(id)),
+						},
+					},
+				},
+			],
+			{ session },
+		);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Look up a user by phone (plaintext). Returns the FULL doc including the
+ * encrypted `phone`, `phoneHash`, and `refreshTokens` — for internal auth use
+ * only; never return this shape to a client.
+ */
+export async function getUserByPhoneDB({
+	phone,
+	session,
+}: {
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		const result = await User.findOne(
+			{ phoneHash: computePhoneHash(phone), deleted: false },
+			null,
+			{ session },
+		)
+			.select("+phone +phoneHash +refreshTokens")
+			.lean<IUser>();
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "getUserByPhoneDB",
+			success: "true",
+		});
+		return result
+			? ({ ...result, id: result._id.toString() } as IUser)
+			: null;
+	} catch {
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "getUserByPhoneDB",
+			success: "false",
+		});
+		return null;
+	}
+}
+
+// ── Auth token lifecycle (embedded refresh tokens) ─────────────────────────
+
+export async function loginUserDB({
+	id,
+	ip,
+	session,
+}: {
+	id: string;
+	ip?: string;
+	session?: ClientSession;
+}): Promise<IJwtPayload | null> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		const doc = await User.findById(new mongoose.Types.ObjectId(id), null, {
+			session,
+		}).select("+refreshTokens");
+		const result = await doc?.generateAuthToken(ip);
+		if (!result) throw ErrInvalidAction;
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "loginUserDB",
+			success: "true",
+		});
+		return result;
+	} catch {
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "loginUserDB",
+			success: "false",
+		});
+		return null;
+	}
+}
+
+export async function reLoginUserWithRefreshTokenDB({
+	id,
+	refreshToken,
+	ip,
+	session,
+}: {
+	id: string;
+	refreshToken: string;
+	ip: string;
+	session?: ClientSession;
+}): Promise<IJwtPayload | null> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		// Atomic claim-and-pull: concurrent requests with the same refresh
+		// token — only one succeeds; the other gets null and is rejected.
+		const now = new Date();
+		const filter = {
+			_id: new mongoose.Types.ObjectId(id),
+			deleted: false,
+			refreshTokens: {
+				$elemMatch: { refreshToken, deadline: { $gt: now } },
+			},
+		} as unknown as Parameters<typeof User.findOneAndUpdate>[0];
+		const claimed = await User.findOneAndUpdate(
+			filter,
+			{ $pull: { refreshTokens: { refreshToken } } },
+			{ session, returnDocument: "after" },
+		).select("+refreshTokens");
+
+		if (!claimed) throw ErrUserNotFound;
+
+		const result = await claimed.generateAuthToken(ip);
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "reLoginUserWithRefreshTokenDB",
+			success: "true",
+		});
+		return result;
+	} catch {
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "reLoginUserWithRefreshTokenDB",
+			success: "false",
+		});
+		return null;
+	}
+}
+
+export async function logoutUserDB({
+	id,
+	refreshToken,
+	session,
+}: {
+	id: string;
+	refreshToken: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $pull: { refreshTokens: { refreshToken } } },
+			{
+				returnDocument: "after",
+				projection: { refreshTokens: 0 },
+				session,
+			},
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function removeExpiredUsersTokensDB(): Promise<boolean> {
+	try {
+		const now = new Date();
+		const res = await User.updateMany(
+			{ "refreshTokens.deadline": { $lt: now } },
+			{ $pull: { refreshTokens: { deadline: { $lt: now } } } },
+		);
+		return res.acknowledged;
+	} catch {
+		return false;
+	}
+}
+
+/** By-id lookup that includes the encrypted `phone` (for SMS/receipt paths). */
+export async function getUserByIdWithPhoneDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return null;
+		const res = await User.findOne({ _id: id, deleted: false }, null, {
+			session,
+		})
+			.select("+phone +phoneHash")
+			.lean<IUser>();
+		return res ? ({ ...res, id: res._id.toString() } as IUser) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function countUsersDB({
+	filter,
+}: {
+	filter?: Record<string, unknown>;
+} = {}): Promise<number> {
+	try {
+		return await User.countDocuments({ deleted: false, ...(filter ?? {}) });
+	} catch {
+		return 0;
+	}
+}
+
+export * from "./types";
+export { MAX_LIMIT };

@@ -1,0 +1,15 @@
+{
+	"name": "Prechop — Campus Food Pre-order",
+	"short_name": "Prechop",
+	"description": "Order before they cook. Reserve and pay for campus meals ahead of time.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#FAF8F4",
+	"theme_color": "#E8590C",
+	"orientation": "portrait",
+	"icons": [
+		{ "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+		{ "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+	]
+}
