@@ -39,9 +39,11 @@ afterAll(async () => {
 async function activeListing({
 	maxQuantity = 10,
 	campusId,
+	availableFrom,
 }: {
 	maxQuantity?: number | null;
 	campusId: string;
+	availableFrom?: Date;
 }) {
 	const vendor = await createVendorProfileDB({
 		payload: {
@@ -63,6 +65,7 @@ async function activeListing({
 			shareableToken: generateShareableToken(),
 			title: "Lunch",
 			scheduledDate: new Date(Date.now() + 3_600_000),
+			availableFrom,
 			cutoffTime: new Date(Date.now() + 1_800_000),
 			pickupAvailable: true,
 			items: [
@@ -177,6 +180,44 @@ describe("placeOrder service", () => {
 				},
 			}),
 		).rejects.toThrow(/sold out/i);
+	});
+
+	it("rejects a 'coming soon' listing whose start time is in the future", async () => {
+		const campusId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			availableFrom: new Date(Date.now() + 3_600_000), // opens in 1h
+		});
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+				},
+			}),
+		).rejects.toThrow(/hasn't opened|opened for this listing/i);
+	});
+
+	it("allows ordering once the start time has passed", async () => {
+		const campusId = oid();
+		const buyerId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			availableFrom: new Date(Date.now() - 60_000), // opened 1 min ago
+		});
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+			},
+		});
+		expect(result.orderNumber).toMatch(/^PCH-/);
 	});
 
 	it("rejects an unknown daily order", async () => {

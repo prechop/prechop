@@ -413,6 +413,10 @@ export default function VendorDashboardWrapper() {
 							{list.map((o, i) => {
 								const closed =
 									timeUntil(o.cutoffTime) === "closed";
+								const comingSoon = o.availableFrom
+									? new Date(o.availableFrom).getTime() >
+										Date.now()
+									: false;
 								return (
 									<FadeIn key={o.id} $delay={i * 40}>
 										<OrderCard>
@@ -450,23 +454,27 @@ export default function VendorDashboardWrapper() {
 													</Text>
 													<Badge
 														$tone={
-															o.status ===
+															o.status !==
 															"ACTIVE"
-																? closed
-																	? "danger"
-																	: "warning"
-																: "muted"
+																? "muted"
+																: comingSoon
+																	? "primary"
+																	: closed
+																		? "danger"
+																		: "warning"
 														}
 													>
-														{o.status === "ACTIVE"
-															? closed
-																? "Cutoff passed"
-																: timeUntil(
-																		o.cutoffTime,
-																	)
-															: statusLabel(
+														{o.status !== "ACTIVE"
+															? statusLabel(
 																	o.status,
-																)}
+																)
+															: comingSoon
+																? `🔜 ${formatDate(o.availableFrom as string)}`
+																: closed
+																	? "Cutoff passed"
+																	: timeUntil(
+																			o.cutoffTime,
+																		)}
 													</Badge>
 												</Row>
 												<Row

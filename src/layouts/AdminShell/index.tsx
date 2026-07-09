@@ -335,7 +335,7 @@ export default function AdminShell({
 	}, [pathname]);
 
 	if (isLoading || !isAuthenticated || !user || !hasAdminAccess) {
-		return <PageLoader />;
+		return <PageLoader full />;
 	}
 
 	const staffLabel = user.groups.includes("Administrators")

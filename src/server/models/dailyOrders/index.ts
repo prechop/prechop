@@ -62,6 +62,8 @@ const schema = new mongoose.Schema<any>(
 		},
 		title: { type: String, required: true },
 		scheduledDate: { type: Date, required: true },
+		// Ordering opens here; before it the listing is "coming soon".
+		availableFrom: { type: Date },
 		cutoffTime: { type: Date, required: true },
 		status: {
 			type: String,
@@ -154,6 +156,7 @@ export async function createDailyOrderDB({
 			shareableToken: payload.shareableToken,
 			title: payload.title,
 			scheduledDate: payload.scheduledDate,
+			availableFrom: payload.availableFrom,
 			cutoffTime: payload.cutoffTime,
 			isPublic: payload.isPublic ?? true,
 			pickupAvailable: payload.pickupAvailable ?? true,
@@ -308,6 +311,8 @@ export async function updateDailyOrderDraftDB({
 		if (payload.title !== undefined) set.title = payload.title;
 		if (payload.scheduledDate !== undefined)
 			set.scheduledDate = payload.scheduledDate;
+		if (payload.availableFrom !== undefined)
+			set.availableFrom = payload.availableFrom;
 		if (payload.cutoffTime !== undefined)
 			set.cutoffTime = payload.cutoffTime;
 		if (payload.isPublic !== undefined) set.isPublic = payload.isPublic;

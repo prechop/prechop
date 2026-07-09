@@ -41,7 +41,14 @@ export default function RootLayout({
 	children,
 }: Readonly<{ children: React.ReactNode }>) {
 	return (
-		<html lang="en" className={`${jakarta.variable} ${bricolage.variable}`}>
+		<html
+			lang="en"
+			className={`${jakarta.variable} ${bricolage.variable}`}
+			// The pre-paint script below sets `data-theme` from localStorage
+			// before hydration, so <html> attributes intentionally differ from
+			// the server render — suppress the expected mismatch warning.
+			suppressHydrationWarning
+		>
 			<head>
 				<link rel="apple-touch-icon" href="/icons/icon-192.svg" />
 				<style>{`html,body{background:#FFF6EC}:root[data-theme="dark"] body{background:#14100C}`}</style>

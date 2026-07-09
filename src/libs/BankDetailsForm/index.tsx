@@ -149,8 +149,10 @@ export default function BankDetailsForm({
 				}}
 			>
 				<option value="">Select bank…</option>
-				{(banks ?? []).map((b) => (
-					<option key={b.code} value={b.code}>
+				{/* Paystack's bank list can contain entries that share a `code`,
+				    so combine it with the name + index for a unique React key. */}
+				{(banks ?? []).map((b, i) => (
+					<option key={`${b.code}-${i}`} value={b.code}>
 						{b.name}
 					</option>
 				))}

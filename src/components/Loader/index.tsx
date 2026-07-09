@@ -13,13 +13,14 @@ const Ring = styled.div<{ $size?: number }>`
 	animation: ${spin} 0.7s linear infinite;
 `;
 
-const Center = styled.div`
+const Center = styled.div<{ $full?: boolean }>`
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	gap: 14px;
-	min-height: 40dvh;
+	width: 100%;
+	min-height: ${(p) => (p.$full ? "100dvh" : "40dvh")};
 	padding: var(--pc-space-8);
 `;
 
@@ -35,9 +36,13 @@ export function Loader({ size }: { size?: number }) {
 	return <Ring $size={size} />;
 }
 
-export function PageLoader() {
+/**
+ * In-page loading placeholder. Pass `full` for route-level loading (auth gates,
+ * shell boot) so it fills the whole viewport instead of floating near the top.
+ */
+export function PageLoader({ full }: { full?: boolean } = {}) {
 	return (
-		<Center>
+		<Center $full={full}>
 			<Brand>Prechop</Brand>
 			<Ring $size={30} />
 		</Center>

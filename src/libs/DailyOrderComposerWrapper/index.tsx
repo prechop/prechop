@@ -30,6 +30,20 @@ interface TemplateEntry {
 	menuItem: { id?: string; _id?: string } | null;
 }
 
+// getDay() index → timetable DayOfWeek name.
+const WEEKDAYS = [
+	"SUNDAY",
+	"MONDAY",
+	"TUESDAY",
+	"WEDNESDAY",
+	"THURSDAY",
+	"FRIDAY",
+	"SATURDAY",
+];
+function weekdayOf(dateStr: string): string {
+	return WEEKDAYS[new Date(`${dateStr}T00:00:00`).getDay()];
+}
+
 const ItemRow = styled(Card)<{ $on: boolean }>`
 	padding: var(--pc-space-3) var(--pc-space-4);
 	cursor: pointer;
@@ -211,15 +225,18 @@ export default function DailyOrderComposerWrapper() {
 	const { toast } = useToast();
 	const { data: menu, isLoading } = useSWR<MenuItem[]>("/menu", fetcher);
 	const { data: vendor } = useSWR<VendorMe>("/vendors/me", fetcher);
-	// Today's timetable, used to pre-fill the item selection (#8).
-	const { data: template } = useSWR<TemplateEntry[]>(
-		"/timetable/today-template",
-		fetcher,
-	);
 
 	const [title, setTitle] = useState("");
 	const [scheduledDate, setScheduledDate] = useState(defaultDate());
+	const [availableFrom, setAvailableFrom] = useState(nowLocal());
 	const [cutoff, setCutoff] = useState(defaultCutoff());
+
+	// Timetable for the SELECTED date's weekday — pre-fills the item selection
+	// so the listing schedules that timetable day (#8, timetable-linked).
+	const { data: template } = useSWR<TemplateEntry[]>(
+		`/timetable/template?dayOfWeek=${weekdayOf(scheduledDate)}`,
+		fetcher,
+	);
 	const [pickup, setPickup] = useState(true);
 	const [delivery, setDelivery] = useState(false);
 	const [deliveryFee, setDeliveryFee] = useState("");
@@ -276,7 +293,9 @@ export default function DailyOrderComposerWrapper() {
 	async function seedFromTemplate() {
 		try {
 			const entries = await apiData<TemplateEntry[]>(
-				api.get("/timetable/today-template"),
+				api.get(
+					`/timetable/template?dayOfWeek=${weekdayOf(scheduledDate)}`,
+				),
 			);
 			const ids = entries
 				.map((e) => e.menuItem?.id ?? e.menuItem?._id)
@@ -315,7 +334,11 @@ export default function DailyOrderComposerWrapper() {
 			return;
 		}
 		if (new Date(cutoff).getTime() <= Date.now()) {
-			toast("The order cutoff must be in the future", "error");
+			toast("Orders must close in the future", "error");
+			return;
+		}
+		if (new Date(availableFrom).getTime() >= new Date(cutoff).getTime()) {
+			toast("Orders must open before they close", "error");
 			return;
 		}
 		setBusy(true);
@@ -331,6 +354,7 @@ export default function DailyOrderComposerWrapper() {
 				api.post("/daily-orders", {
 					title: title.trim(),
 					scheduledDate: new Date(scheduledDate).toISOString(),
+					availableFrom: new Date(availableFrom).toISOString(),
 					cutoffTime: new Date(cutoff).toISOString(),
 					pickupAvailable: pickup,
 					deliveryAvailable: delivery,
@@ -505,28 +529,44 @@ export default function DailyOrderComposerWrapper() {
 							onChange={(e) => setTitle(e.target.value)}
 							placeholder="Friday lunch specials"
 						/>
+						<div style={{ maxWidth: 240 }}>
+							<Input
+								label="Menu date"
+								type="date"
+								min={defaultDate()}
+								value={scheduledDate}
+								onChange={(e) =>
+									setScheduledDate(e.target.value)
+								}
+							/>
+						</div>
 						<Row $gap={12} $wrap>
-							<div style={{ flex: 1, minWidth: 140 }}>
+							<div style={{ flex: 1, minWidth: 160 }}>
 								<Input
-									label="Date"
-									type="date"
-									min={defaultDate()}
-									value={scheduledDate}
+									label="Orders open (start)"
+									type="datetime-local"
+									min={nowLocal()}
+									value={availableFrom}
 									onChange={(e) =>
-										setScheduledDate(e.target.value)
+										setAvailableFrom(e.target.value)
 									}
 								/>
 							</div>
-							<div style={{ flex: 1, minWidth: 140 }}>
+							<div style={{ flex: 1, minWidth: 160 }}>
 								<Input
-									label="Order cutoff"
+									label="Orders close (end)"
 									type="datetime-local"
-									min={nowLocal()}
+									min={availableFrom || nowLocal()}
 									value={cutoff}
 									onChange={(e) => setCutoff(e.target.value)}
 								/>
 							</div>
 						</Row>
+						<Text $muted $size={12}>
+							Before it opens, buyers see this listing as “coming
+							soon”. After it closes it’s pulled from the main
+							page.
+						</Text>
 
 						<Stack $gap={10}>
 							<ToggleRow>

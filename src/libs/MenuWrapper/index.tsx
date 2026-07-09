@@ -63,8 +63,6 @@ const Overlay = styled.div`
 	position: fixed;
 	inset: 0;
 	z-index: 100;
-	background: rgba(0, 0, 0, 0.5);
-	backdrop-filter: blur(3px);
 	display: flex;
 	align-items: flex-end;
 	justify-content: center;

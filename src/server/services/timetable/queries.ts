@@ -42,14 +42,23 @@ export async function getTimetableForDay({
 	return entries.filter((e) => e.dayOfWeek === dayOfWeek);
 }
 
-/** Open entries for today, joined with their menu item. */
-export async function getTodayTemplate({ userId }: { userId: string }) {
+/**
+ * Open entries for a given day of the week, joined with their menu item. This
+ * is what pre-fills the daily-order composer: pick a date, get that weekday's
+ * scheduled items straight from the vendor's timetable.
+ */
+export async function getDayTemplate({
+	userId,
+	dayOfWeek,
+}: {
+	userId: string;
+	dayOfWeek: DayOfWeek;
+}) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const entries = await listTimetableByVendorDB({
 		vendorId: vendorIdOf(vendor),
 	});
-	const day = todayDayOfWeek();
-	const open = entries.filter((e) => e.dayOfWeek === day && e.isOpen);
+	const open = entries.filter((e) => e.dayOfWeek === dayOfWeek && e.isOpen);
 
 	const menuItems = await getMenuItemsByIdsDB({
 		ids: open.map((e) => String(e.menuItemId)),
@@ -62,4 +71,9 @@ export async function getTodayTemplate({ userId }: { userId: string }) {
 		...entry,
 		menuItem: byId.get(String(entry.menuItemId)) ?? null,
 	}));
+}
+
+/** Open entries for today, joined with their menu item. */
+export async function getTodayTemplate({ userId }: { userId: string }) {
+	return getDayTemplate({ userId, dayOfWeek: todayDayOfWeek() });
 }

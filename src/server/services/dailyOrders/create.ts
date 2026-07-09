@@ -35,6 +35,9 @@ export async function createDailyOrder({
 			shareableToken: generateShareableToken(),
 			title: input.title,
 			scheduledDate: new Date(input.scheduledDate),
+			availableFrom: input.availableFrom
+				? new Date(input.availableFrom)
+				: undefined,
 			cutoffTime: new Date(input.cutoffTime),
 			pickupAvailable: input.pickupAvailable,
 			deliveryAvailable: input.deliveryAvailable,

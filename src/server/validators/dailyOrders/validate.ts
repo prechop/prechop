@@ -15,6 +15,7 @@ const dailyOrderItemInputSchema = z.object({
 export const createDailyOrderSchema = z.object({
 	title: z.string().min(1),
 	scheduledDate: z.string().datetime(),
+	availableFrom: z.string().datetime().optional(),
 	cutoffTime: z.string().datetime(),
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),
@@ -26,6 +27,7 @@ export const createDailyOrderSchema = z.object({
 export const createFromTemplateSchema = z.object({
 	title: z.string().min(1),
 	scheduledDate: z.string().datetime(),
+	availableFrom: z.string().datetime().optional(),
 	cutoffTime: z.string().datetime(),
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),
@@ -36,6 +38,7 @@ export const createFromTemplateSchema = z.object({
 export const updateDailyOrderDraftSchema = z.object({
 	title: z.string().min(1).optional(),
 	scheduledDate: z.string().datetime().optional(),
+	availableFrom: z.string().datetime().optional(),
 	cutoffTime: z.string().datetime().optional(),
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),

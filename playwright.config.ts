@@ -32,7 +32,8 @@ export default defineConfig({
 		// the local Mongo/Redis the seed populated so smoke tests are hermetic.
 		env: {
 			DISABLE_RATE_LIMIT: "1",
-			MONGODB_URI: process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017",
+			// Shared local Docker Mongo runs on host port 27018 (seed populates it).
+			MONGODB_URI: process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018",
 			DB_NAME: process.env.DB_NAME ?? "prechop",
 			REDIS_URI: process.env.REDIS_URI ?? "redis://127.0.0.1:6379",
 			// Log OTPs instead of calling the SMS provider so authenticated

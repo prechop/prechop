@@ -38,6 +38,9 @@ export interface IDailyOrderCreateInput {
 	shareableToken: string;
 	title: string;
 	scheduledDate: Date;
+	// Ordering opens at this time; before it the listing shows as "coming soon"
+	// and cannot be ordered. Defaults to creation time (orderable immediately).
+	availableFrom?: Date;
 	cutoffTime: Date;
 	isPublic?: boolean;
 	pickupAvailable?: boolean;
@@ -54,6 +57,7 @@ export interface IDailyOrder {
 	shareableToken: string;
 	title: string;
 	scheduledDate: Date;
+	availableFrom?: Date;
 	cutoffTime: Date;
 	status: DailyOrderStatus;
 	isPublic: boolean;

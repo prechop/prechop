@@ -20,7 +20,7 @@ import {
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
-import { formatKobo, timeUntil } from "@/constants/formatters";
+import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 import type { DailyOrder, DailyOrderItem } from "@/types";
@@ -179,6 +179,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 
 	const closed = data ? timeUntil(data.cutoffTime) === "closed" : false;
 	const inactive = data ? data.status !== "ACTIVE" : false;
+	// "Coming soon": the listing is visible but ordering hasn't opened yet.
+	const notStarted = data?.availableFrom
+		? new Date(data.availableFrom).getTime() > Date.now()
+		: false;
 
 	const { subtotal, itemCount } = useMemo(() => {
 		if (!data) return { subtotal: 0, itemCount: 0 };
@@ -210,7 +214,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	}
 
 	const deliveryFee = fulfillment === "DELIVERY" ? data.deliveryFeeKobo : 0;
-	const canOrder = !closed && !inactive && itemCount > 0;
+	const canOrder = !closed && !inactive && !notStarted && itemCount > 0;
 
 	function setQty(item: DailyOrderItem, delta: number) {
 		setLines((prev) => {
@@ -306,14 +310,20 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							<Title $size={24}>{data.title}</Title>
 							<Badge
 								$tone={
-									closed || inactive ? "danger" : "warning"
+									closed || inactive
+										? "danger"
+										: notStarted
+											? "primary"
+											: "warning"
 								}
 							>
 								{inactive
 									? "Closed"
-									: closed
-										? "Cutoff passed"
-										: timeUntil(data.cutoffTime)}
+									: notStarted
+										? `🔜 Starts ${formatDate(data.availableFrom as string)}`
+										: closed
+											? "Cutoff passed"
+											: timeUntil(data.cutoffTime)}
 							</Badge>
 						</Row>
 						<Chips $gap={8}>
@@ -376,7 +386,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 												disabled={
 													qty === 0 ||
 													closed ||
-													inactive
+													inactive ||
+													notStarted
 												}
 											>
 												−
@@ -394,7 +405,11 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 												$variant="secondary"
 												$size="sm"
 												onClick={() => setQty(item, 1)}
-												disabled={closed || inactive}
+												disabled={
+													closed ||
+													inactive ||
+													notStarted
+												}
 											>
 												＋
 											</Button>
@@ -504,11 +519,13 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 					>
 						{!isAuthenticated
 							? "Log in to order"
-							: closed || inactive
-								? "Ordering closed"
-								: itemCount === 0
-									? "Select items"
-									: `Pay ${formatKobo(subtotal + deliveryFee)} →`}
+							: notStarted
+								? `Opens ${formatDate(data.availableFrom as string)}`
+								: closed || inactive
+									? "Ordering closed"
+									: itemCount === 0
+										? "Select items"
+										: `Pay ${formatKobo(subtotal + deliveryFee)} →`}
 					</Button>
 				</Stack>
 			</Sticky>

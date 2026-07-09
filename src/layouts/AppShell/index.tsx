@@ -93,9 +93,11 @@ const LogoutBtn = styled.button`
 	&:hover { color: var(--pc-color-danger); }
 `;
 const Main = styled.main`
+	/* Fill the viewport minus the top bar and (mobile-only) bottom nav. */
 	min-height: calc(100dvh - 62px - 70px);
 	padding: var(--pc-space-6) 0 var(--pc-space-10);
 	@media (min-width: 760px) {
+		min-height: calc(100dvh - 62px);
 		padding-bottom: var(--pc-space-8);
 	}
 `;
@@ -146,7 +148,7 @@ export default function AppShell({
 		}
 	}, [isLoading, isAuthenticated, router, pathname]);
 
-	if (isLoading || !isAuthenticated) return <PageLoader />;
+	if (isLoading || !isAuthenticated) return <PageLoader full />;
 
 	const isVendor =
 		shellRole === "VENDOR" ||

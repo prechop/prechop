@@ -96,6 +96,8 @@ export interface DailyOrder {
 	shareableToken: string;
 	title: string;
 	scheduledDate: string;
+	/** Ordering opens at this time; before it the listing is "coming soon". */
+	availableFrom?: string;
 	cutoffTime: string;
 	status: "DRAFT" | "ACTIVE" | "CLOSED" | "CANCELLED";
 	pickupAvailable: boolean;

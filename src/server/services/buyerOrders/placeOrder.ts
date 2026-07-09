@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import {
+	conflict,
 	ErrCutoffPassed,
 	ErrDailyOrderNotActive,
 	ErrDailyOrderNotFound,
@@ -61,6 +62,14 @@ export async function placeOrder({
 	if (!dailyOrder) throw ErrDailyOrderNotFound;
 	if (dailyOrder.status !== DailyOrderStatus.ACTIVE)
 		throw ErrDailyOrderNotActive;
+	// "Coming soon": ordering hasn't opened yet for this listing.
+	if (
+		dailyOrder.availableFrom &&
+		dailyOrder.availableFrom.getTime() > Date.now()
+	)
+		throw conflict(
+			"Ordering hasn't opened for this listing yet. Please check back at the start time.",
+		);
 	if (dailyOrder.cutoffTime.getTime() <= Date.now()) throw ErrCutoffPassed;
 
 	if (

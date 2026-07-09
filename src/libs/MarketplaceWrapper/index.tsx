@@ -17,7 +17,7 @@ import {
 	Title,
 } from "@/components";
 import { fetcher } from "@/constants/fetcher";
-import { formatKobo, timeUntil } from "@/constants/formatters";
+import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import type { Campus, DailyOrder } from "@/types";
 
@@ -172,6 +172,9 @@ export default function MarketplaceWrapper() {
 				<Grid $min={260} $gap={16}>
 					{listings.map((o, i) => {
 						const closed = timeUntil(o.cutoffTime) === "closed";
+						const comingSoon = o.availableFrom
+							? new Date(o.availableFrom).getTime() > Date.now()
+							: false;
 						return (
 							<FadeIn key={o.id} $delay={i * 45}>
 								<ListingCard>
@@ -180,14 +183,18 @@ export default function MarketplaceWrapper() {
 											<CutoffFloat>
 												<Badge
 													$tone={
-														closed
-															? "danger"
-															: "warning"
+														comingSoon
+															? "primary"
+															: closed
+																? "danger"
+																: "warning"
 													}
 												>
-													{closed
-														? "⛔ Closed"
-														: `⏱ ${timeUntil(o.cutoffTime)}`}
+													{comingSoon
+														? `🔜 Starts ${formatDate(o.availableFrom as string)}`
+														: closed
+															? "⛔ Closed"
+															: `⏱ ${timeUntil(o.cutoffTime)}`}
 												</Badge>
 											</CutoffFloat>
 											<Thumbs>
@@ -237,7 +244,11 @@ export default function MarketplaceWrapper() {
 													{o.deliveryAvailable &&
 														"Delivery"}
 												</Text>
-												<OrderCta>Order →</OrderCta>
+												<OrderCta>
+													{comingSoon
+														? "Coming soon"
+														: "Order →"}
+												</OrderCta>
 											</Foot>
 										</Body>
 									</CardLink>

@@ -124,8 +124,11 @@ export const GlobalStyle = createGlobalStyle`
   }
 
   *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; }
   html, body { padding: 0; margin: 0; }
   body {
+    min-height: 100dvh;
+    width: 100%;
     background: var(--pc-bg);
     color: var(--pc-text);
     font-family: var(--pc-font-sans);
