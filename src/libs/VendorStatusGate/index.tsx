@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import styled from "styled-components";
 import { Badge, Button, Card, FadeIn, Stack, Text } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { useVendor } from "@/hooks/Vendor/useVendor";
@@ -40,36 +41,61 @@ export default function VendorStatusGate({
 	const view = resolveView(vendor);
 	return (
 		<FadeIn>
-			<Card
-				style={{
-					maxWidth: 560,
-					margin: "var(--pc-space-6) auto",
-					textAlign: "center",
-					padding: "var(--pc-space-7) var(--pc-space-6)",
-				}}
-			>
-				<Stack $gap={4} style={{ alignItems: "center" }}>
-					<div style={{ fontSize: 46, lineHeight: 1 }} aria-hidden>
-						{view.icon}
-					</div>
-					<Badge $tone={view.badge.tone}>{view.badge.label}</Badge>
-					<Text $weight={800} $size={22}>
-						{view.title}
-					</Text>
-					<Text $muted $size={15} style={{ maxWidth: "46ch" }}>
-						{view.description}
-					</Text>
-					{view.cta && (
-						<CtaButton
-							label={view.cta.label}
-							href={view.cta.href}
-						/>
-					)}
-				</Stack>
-			</Card>
+			<Center>
+				<Card
+					style={{
+						width: "100%",
+						maxWidth: 520,
+						textAlign: "center",
+						padding: "var(--pc-space-7) var(--pc-space-6)",
+					}}
+				>
+					<Stack $gap={4} style={{ alignItems: "center" }}>
+						<Medallion aria-hidden>{view.icon}</Medallion>
+						<Badge $tone={view.badge.tone}>
+							{view.badge.label}
+						</Badge>
+						<Text $weight={800} $size={22}>
+							{view.title}
+						</Text>
+						<Text $muted $size={15} style={{ maxWidth: "46ch" }}>
+							{view.description}
+						</Text>
+						{view.cta && (
+							<CtaButton
+								label={view.cta.label}
+								href={view.cta.href}
+							/>
+						)}
+					</Stack>
+				</Card>
+			</Center>
 		</FadeIn>
 	);
 }
+
+/** Centres the gate card in the available space instead of floating it up top. */
+const Center = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: min(72vh, 640px);
+	padding: var(--pc-space-4);
+`;
+
+/** Soft circular backdrop behind the status icon so it reads as intentional. */
+const Medallion = styled.div`
+	width: 76px;
+	height: 76px;
+	display: grid;
+	place-items: center;
+	border-radius: 999px;
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	font-size: 40px;
+	line-height: 1;
+	margin-bottom: var(--pc-space-1);
+`;
 
 function CtaButton({ label, href }: { label: string; href: string }) {
 	const router = useRouter();

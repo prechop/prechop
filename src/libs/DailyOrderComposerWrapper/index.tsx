@@ -25,6 +25,10 @@ import { formatKobo } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
 import type { DailyOrder, MenuItem, MenuOptionGroup } from "@/types";
+import ItemGroupsEditor, {
+	type EditableOption,
+	seedOptions,
+} from "./ItemGroupsEditor";
 
 interface TemplateEntry {
 	menuItem: { id?: string; _id?: string } | null;
@@ -43,6 +47,10 @@ const WEEKDAYS = [
 function weekdayOf(dateStr: string): string {
 	return WEEKDAYS[new Date(`${dateStr}T00:00:00`).getDay()];
 }
+
+// Stable empty defaults so unedited items don't create new prop objects each render.
+const EMPTY_SET: Set<string> = new Set();
+const EMPTY_EDITS: Record<string, EditableOption[]> = {};
 
 const ItemRow = styled(Card)<{ $on: boolean }>`
 	padding: var(--pc-space-3) var(--pc-space-4);
@@ -109,27 +117,6 @@ const Switch = styled.button<{ $on: boolean }>`
 `;
 const QtyWrap = styled.div`
 	padding-left: 36px;
-`;
-const GroupsWrap = styled.div`
-	padding-left: 36px;
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-`;
-const GroupToggle = styled.button<{ $on: boolean }>`
-	all: unset;
-	box-sizing: border-box;
-	cursor: pointer;
-	font-size: 12.5px;
-	font-weight: 600;
-	padding: 6px 11px;
-	border-radius: var(--pc-radius-pill);
-	border: 1.5px solid
-		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
-	background: ${(p) =>
-		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
-	color: ${(p) =>
-		p.$on ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
 `;
 const SubmitBar = styled.div`
 	position: sticky;
@@ -293,6 +280,11 @@ export default function DailyOrderComposerWrapper({
 	const [excludedGroups, setExcludedGroups] = useState<
 		Record<string, Set<string>>
 	>({});
+	// Per-listing option overrides: menuItemId → groupId → edited option rows.
+	// Absent means "use the menu library's options for that group as-is".
+	const [optionEdits, setOptionEdits] = useState<
+		Record<string, Record<string, EditableOption[]>>
+	>({});
 	const [busy, setBusy] = useState(false);
 	const [published, setPublished] = useState<Published | null>(null);
 	const [copied, setCopied] = useState(false);
@@ -324,10 +316,45 @@ export default function DailyOrderComposerWrapper({
 		if (editing.deliveryFeeKobo)
 			setDeliveryFee(String(editing.deliveryFeeKobo / 100));
 		const sel: Record<string, string> = {};
-		for (const it of editing.items)
+		const edits: Record<string, Record<string, EditableOption[]>> = {};
+		for (const it of editing.items) {
 			sel[it.menuItemId] = it.maxQuantity ? String(it.maxQuantity) : "";
+			for (const g of it.optionGroups ?? []) {
+				if (!g.sourceGroupId) continue;
+				edits[it.menuItemId] ??= {};
+				edits[it.menuItemId][g.sourceGroupId] = g.options.map((o) => ({
+					name: o.name,
+					priceNaira: String((o.priceKobo ?? 0) / 100),
+				}));
+			}
+		}
 		setSelected(sel);
+		setOptionEdits(edits);
 	}, [isEdit, editing]);
+
+	// Re-derive per-listing group exclusions from the edited snapshot once both
+	// the listing and the menu (for each item's attached groups) are loaded.
+	const hydratedExclusions = useRef(false);
+	useEffect(() => {
+		if (!isEdit || !editing || !menu || hydratedExclusions.current) return;
+		hydratedExclusions.current = true;
+		const byId = new Map(menu.map((m) => [m.id, m]));
+		const ex: Record<string, Set<string>> = {};
+		for (const it of editing.items) {
+			const mi = byId.get(it.menuItemId);
+			if (!mi) continue;
+			const included = new Set(
+				(it.optionGroups ?? [])
+					.map((g) => g.sourceGroupId)
+					.filter((x): x is string => Boolean(x)),
+			);
+			const excludedSet = new Set<string>();
+			for (const gid of mi.optionGroupIds ?? [])
+				if (!included.has(gid)) excludedSet.add(gid);
+			if (excludedSet.size > 0) ex[it.menuItemId] = excludedSet;
+		}
+		if (Object.keys(ex).length > 0) setExcludedGroups(ex);
+	}, [isEdit, editing, menu]);
 
 	// Pre-fill the item selection from today's timetable, once, if the vendor
 	// hasn't picked anything yet. Skipped when editing.
@@ -406,6 +433,17 @@ export default function DailyOrderComposerWrapper({
 		});
 	}
 
+	function setGroupOptions(
+		itemId: string,
+		groupId: string,
+		options: EditableOption[],
+	) {
+		setOptionEdits((prev) => ({
+			...prev,
+			[itemId]: { ...(prev[itemId] ?? {}), [groupId]: options },
+		}));
+	}
+
 	function toggle(id: string) {
 		setSelected((s) => {
 			if (id in s) {
@@ -468,31 +506,61 @@ export default function DailyOrderComposerWrapper({
 			toast("Orders must open before they close", "error");
 			return;
 		}
+		// Build each item's option groups from the (possibly edited) attached
+		// library groups, dropping any the vendor excluded for this listing and
+		// validating that each kept group still has enough named options.
+		const items: Array<{
+			menuItemId: string;
+			maxQuantity?: number;
+			optionGroups?: Array<{
+				sourceGroupId: string;
+				name: string;
+				required: boolean;
+				minSelect: number;
+				maxSelect: number | null;
+				options: Array<{ name: string; priceNaira: number }>;
+			}>;
+		}> = [];
+		for (const id of ids) {
+			const q = Number(selected[id]);
+			const item = menuItems.find((m) => m.id === id);
+			const excluded = excludedGroups[id] ?? EMPTY_SET;
+			const optionGroups = [];
+			for (const g of item ? attachedGroups(item) : []) {
+				if (excluded.has(g.id)) continue;
+				const edited = optionEdits[id]?.[g.id] ?? seedOptions(g);
+				const options = edited
+					.map((o) => ({
+						name: o.name.trim(),
+						priceNaira: Number(o.priceNaira) || 0,
+					}))
+					.filter((o) => o.name.length > 0);
+				const min = g.required ? Math.max(1, g.minSelect) : g.minSelect;
+				const need = Math.max(1, min);
+				if (options.length < need) {
+					toast(
+						`"${g.name}" needs at least ${need} option${need === 1 ? "" : "s"} with a name.`,
+						"error",
+					);
+					return;
+				}
+				optionGroups.push({
+					sourceGroupId: g.id,
+					name: g.name,
+					required: g.required,
+					minSelect: g.minSelect,
+					maxSelect: g.maxSelect,
+					options,
+				});
+			}
+			items.push({
+				menuItemId: id,
+				...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
+				...(optionGroups.length > 0 ? { optionGroups } : {}),
+			});
+		}
 		setBusy(true);
 		try {
-			const items = ids.map((id) => {
-				const q = Number(selected[id]);
-				const item = menuItems.find((m) => m.id === id);
-				const excluded = excludedGroups[id] ?? new Set<string>();
-				const optionGroups = (item ? attachedGroups(item) : [])
-					.filter((g) => !excluded.has(g.id))
-					.map((g) => ({
-						sourceGroupId: g.id,
-						name: g.name,
-						required: g.required,
-						minSelect: g.minSelect,
-						maxSelect: g.maxSelect,
-						options: g.options.map((o) => ({
-							name: o.name,
-							priceNaira: (o.priceKobo ?? 0) / 100,
-						})),
-					}));
-				return {
-					menuItemId: id,
-					...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
-					...(optionGroups.length > 0 ? { optionGroups } : {}),
-				};
-			});
 			const body = {
 				title: title.trim(),
 				scheduledDate: new Date(scheduledDate).toISOString(),
@@ -851,50 +919,36 @@ export default function DailyOrderComposerWrapper({
 											{on &&
 												attachedGroups(m).length >
 													0 && (
-													<GroupsWrap
-														onClick={(e) =>
-															e.stopPropagation()
+													<ItemGroupsEditor
+														groups={attachedGroups(
+															m,
+														)}
+														excluded={
+															excludedGroups[
+																m.id
+															] ?? EMPTY_SET
 														}
-													>
-														<Text $muted $size={12}>
-															Buyer options for
-															this listing
-														</Text>
-														<Row $gap={6} $wrap>
-															{attachedGroups(
-																m,
-															).map((g) => {
-																const off =
-																	excludedGroups[
-																		m.id
-																	]?.has(
-																		g.id,
-																	) ?? false;
-																return (
-																	<GroupToggle
-																		key={
-																			g.id
-																		}
-																		type="button"
-																		$on={
-																			!off
-																		}
-																		onClick={() =>
-																			toggleGroupForItem(
-																				m.id,
-																				g.id,
-																			)
-																		}
-																	>
-																		{off
-																			? ""
-																			: "✓ "}
-																		{g.name}
-																	</GroupToggle>
-																);
-															})}
-														</Row>
-													</GroupsWrap>
+														edits={
+															optionEdits[m.id] ??
+															EMPTY_EDITS
+														}
+														onToggle={(gid) =>
+															toggleGroupForItem(
+																m.id,
+																gid,
+															)
+														}
+														onChangeOptions={(
+															gid,
+															options,
+														) =>
+															setGroupOptions(
+																m.id,
+																gid,
+																options,
+															)
+														}
+													/>
 												)}
 										</Stack>
 									</ItemRow>
