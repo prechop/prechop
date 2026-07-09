@@ -35,10 +35,20 @@ export function useAuth(): AuthCtx {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const router = useRouter();
+	// Re-probe `/users/me` when the tab regains focus or the network reconnects.
+	// A returning user with an expired access token but a live refresh token is
+	// silently refreshed back in by the axios interceptor; if the refresh token
+	// has also expired the probe 401s, `error` is set, and the app renders the
+	// logged-out state (the shell redirects to /login) — so the navbar can never
+	// keep showing a stale session after it expires while the tab sat idle.
 	const { data, error, isLoading, mutate } = useSWR<PublicUser>(
 		"/users/me",
 		fetcher,
-		{ shouldRetryOnError: false, revalidateOnFocus: false },
+		{
+			shouldRetryOnError: false,
+			revalidateOnFocus: true,
+			revalidateOnReconnect: true,
+		},
 	);
 
 	const logout = async () => {

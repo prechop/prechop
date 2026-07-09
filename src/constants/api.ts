@@ -30,26 +30,30 @@ api.interceptors.response.use(
 		const status = error?.response?.status;
 		const original = error?.config;
 		if (status === 401 && original && !original.__retried) {
-			original.__retried = true;
-			// `/users/me` is the silent auth probe fired on every page load. A 401
-			// there simply means "anonymous" — `useAuth` handles it. Never treat it
-			// as an expired session, or public pages (shared listing links, landing)
-			// would bounce every visitor to /login before they can even browse.
 			const reqUrl: string = original.url ?? "";
-			const isAuthProbe = reqUrl.includes("/users/me");
-			if (isAuthProbe) return Promise.reject(error);
 
 			// Auth endpoints must never trigger a refresh: a 401 from OTP verify,
 			// login, register or the refresh call itself is a genuine failure, not
 			// an expired session. Attempting a refresh here deadlocks (the refresh
 			// call's own 401 re-enters this interceptor and awaits the in-flight
 			// refresh promise) — which is what made OTP verify spin forever.
-			const isAuthEndpoint = reqUrl.startsWith("/auth/");
-			if (isAuthEndpoint) return Promise.reject(error);
+			if (reqUrl.startsWith("/auth/")) return Promise.reject(error);
 
+			original.__retried = true;
+
+			// Attempt one silent refresh. This is what auto-logs-in a returning
+			// user whose access token has expired but whose refresh token is still
+			// valid — including on `/users/me`, the auth probe fired on every page
+			// load. If the refresh succeeds we transparently replay the request.
 			const ok = await tryRefresh();
 			if (ok) return api(original);
-			if (typeof window !== "undefined") {
+
+			// Refresh failed → the session is truly gone. `/users/me` is the silent
+			// auth probe: a 401 there just means "anonymous", so let `useAuth`
+			// render the logged-out state without a hard redirect (public pages —
+			// landing, shared listing links — must stay browsable for visitors).
+			const isAuthProbe = reqUrl.includes("/users/me");
+			if (!isAuthProbe && typeof window !== "undefined") {
 				const path = window.location.pathname;
 				// Public pages must not force a login redirect on a background 401.
 				const isPublicPage =
