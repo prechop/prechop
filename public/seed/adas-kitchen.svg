@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500" role="img" aria-label="Ada's Kitchen">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF7A45"/>
+      <stop offset="1" stop-color="#E8590C"/>
+    </linearGradient>
+  </defs>
+  <rect width="500" height="500" fill="url(#g)"/>
+  <text x="250" y="235" font-size="200" text-anchor="middle" dominant-baseline="central">🍳</text>
+  <text x="250" y="420" font-size="42" font-family="'Segoe UI','Noto Color Emoji',system-ui,Arial,sans-serif" font-weight="800" fill="#ffffff" text-anchor="middle">Ada's Kitchen</text>
+</svg>

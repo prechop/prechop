@@ -30,6 +30,7 @@ import {
 	createCampusDB,
 	createDailyOrderDB,
 	createMenuItemDB,
+	createOptionGroupDB,
 	createSchoolDB,
 	createUserDB,
 	createVendorProfileDB,
@@ -51,6 +52,29 @@ import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 
 function log(msg: string): void {
 	process.stdout.write(`  ${msg}\n`);
+}
+
+/** Freeze a library option group into a daily-order-item snapshot shape. */
+function snapshotGroup(g: {
+	_id: { toString(): string };
+	name: string;
+	required: boolean;
+	minSelect: number;
+	maxSelect: number | null;
+	options: Array<{ name: string; priceKobo: number }>;
+}) {
+	return {
+		sourceGroupId: g._id.toString(),
+		name: g.name,
+		required: g.required,
+		minSelect: g.minSelect,
+		maxSelect: g.maxSelect,
+		options: g.options.map((o, i) => ({
+			name: o.name,
+			priceKobo: o.priceKobo,
+			displayOrder: i,
+		})),
+	};
 }
 
 /**
@@ -240,6 +264,7 @@ async function main(): Promise<void> {
 				locationType: LocationType.ON_CAMPUS,
 				description: "Quick campus snacks and drinks.",
 				categories: [MenuCategory.SNACKS, MenuCategory.DRINKS],
+				profileImageUrl: "/seed/campus-bites.svg",
 				profileCompleteness: 100,
 				submittedAt: new Date(),
 				paystackSubaccountCode: "ACCT_seedpending01",
@@ -289,6 +314,7 @@ async function main(): Promise<void> {
 					"Home-style Nigerian meals, cooked fresh to order.",
 				categories: [MenuCategory.MEALS, MenuCategory.DRINKS],
 				isOpenForOrders: true,
+				profileImageUrl: "/seed/adas-kitchen.svg",
 				profileCompleteness: 100,
 				paystackSubaccountCode: demoSubaccountCode,
 				bankCode: "044",
@@ -305,30 +331,72 @@ async function main(): Promise<void> {
 
 	// Only seed menu + listing when we freshly created the vendor profile.
 	if (vendorProfile) {
+		// ── Reusable option groups (the vendor's shared library) ────────
+		const proteinGroup = await createOptionGroupDB({
+			payload: {
+				vendorId,
+				campusId: unilag._id,
+				name: "Protein",
+				required: true,
+				minSelect: 1,
+				maxSelect: 1,
+				displayOrder: 0,
+				options: [
+					{ name: "Grilled chicken", priceKobo: nairaToKobo(0) },
+					{ name: "Beef", priceKobo: nairaToKobo(300) },
+					{ name: "Fish", priceKobo: nairaToKobo(200) },
+				],
+			},
+		});
+		const extrasGroup = await createOptionGroupDB({
+			payload: {
+				vendorId,
+				campusId: unilag._id,
+				name: "Extras",
+				required: false,
+				minSelect: 0,
+				maxSelect: 3,
+				displayOrder: 1,
+				options: [
+					{ name: "Extra chicken", priceKobo: nairaToKobo(700) },
+					{ name: "Plantain", priceKobo: nairaToKobo(500) },
+					{ name: "Coleslaw", priceKobo: nairaToKobo(400) },
+				],
+			},
+		});
+		const mealGroupIds = [proteinGroup, extrasGroup]
+			.filter((g): g is NonNullable<typeof g> => Boolean(g))
+			.map((g) => g._id.toString());
+		log(`${mealGroupIds.length} option groups created`);
+
 		const menuSpecs = [
 			{
 				category: MenuCategory.MEALS,
 				name: "Jollof Rice & Chicken",
 				priceKobo: nairaToKobo(2500),
 				estimatedPrepMin: 20,
+				imageUrl: "/seed/jollof.svg",
 			},
 			{
 				category: MenuCategory.MEALS,
 				name: "Fried Rice & Turkey",
 				priceKobo: nairaToKobo(3000),
 				estimatedPrepMin: 25,
+				imageUrl: "/seed/fried-rice.svg",
 			},
 			{
 				category: MenuCategory.MEALS,
 				name: "Amala & Ewedu",
 				priceKobo: nairaToKobo(2000),
 				estimatedPrepMin: 15,
+				imageUrl: "/seed/amala.svg",
 			},
 			{
 				category: MenuCategory.DRINKS,
 				name: "Chapman",
 				priceKobo: nairaToKobo(800),
 				estimatedPrepMin: 5,
+				imageUrl: "/seed/chapman.svg",
 			},
 		];
 		const menuItems = [];
@@ -338,6 +406,12 @@ async function main(): Promise<void> {
 					vendorId,
 					campusId: unilag._id,
 					displayOrder: i,
+					// Attach the shared option groups to meals so buyers can
+					// customise them when ordering.
+					optionGroupIds:
+						menuSpecs[i].category === MenuCategory.MEALS
+							? mealGroupIds
+							: [],
 					...menuSpecs[i],
 				},
 			});
@@ -363,20 +437,18 @@ async function main(): Promise<void> {
 					menuItemId: m._id.toString(),
 					snapshotName: m.name,
 					snapshotPriceKobo: m.priceKobo,
+					snapshotImageUrl: m.imageUrl,
 					snapshotPrepMin: m.estimatedPrepMin,
 					maxQuantity: 25,
-					addons:
+					// Snapshot the meal's attached option groups onto the listing
+					// so buyers can pick Protein/Extras at checkout.
+					optionGroups:
 						m.category === MenuCategory.MEALS
-							? [
-									{
-										name: "Extra chicken",
-										priceKobo: nairaToKobo(700),
-									},
-									{
-										name: "Plantain",
-										priceKobo: nairaToKobo(500),
-									},
-								]
+							? [proteinGroup, extrasGroup]
+									.filter((g): g is NonNullable<typeof g> =>
+										Boolean(g),
+									)
+									.map(snapshotGroup)
 							: [],
 				})),
 			},
