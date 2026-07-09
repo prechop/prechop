@@ -1,22 +1,26 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DailyOrderStatus, DayOfWeek, VendorStatus } from "@/server/models/enums";
+import { upsertAnalyticsSnapshotDB } from "@/server/models/analyticsSnapshots";
+import {
+	DailyOrderStatus,
+	DayOfWeek,
+	VendorStatus,
+} from "@/server/models/enums";
 import { upsertTimetableEntryDB } from "@/server/models/timetableEntries";
 import { paystackProvider } from "@/server/providers/paystack";
+import { getVendorAnalytics } from "@/server/services/analytics/getVendorAnalytics";
 import { createDailyOrder } from "@/server/services/dailyOrders/create";
-import { updateDailyOrderDraft } from "@/server/services/dailyOrders/update";
-import {
-	cancelDailyOrder,
-	closeDailyOrder,
-} from "@/server/services/dailyOrders/status";
+import { createDailyOrderFromTemplate } from "@/server/services/dailyOrders/fromTemplate";
 import {
 	getMarketplace,
 	getMyDailyOrderById,
 	getMyDailyOrders,
 	getPublicDailyOrder,
 } from "@/server/services/dailyOrders/queries";
-import { createDailyOrderFromTemplate } from "@/server/services/dailyOrders/fromTemplate";
-import { getVendorAnalytics } from "@/server/services/analytics/getVendorAnalytics";
-import { upsertAnalyticsSnapshotDB } from "@/server/models/analyticsSnapshots";
+import {
+	cancelDailyOrder,
+	closeDailyOrder,
+} from "@/server/services/dailyOrders/status";
+import { updateDailyOrderDraft } from "@/server/services/dailyOrders/update";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeMenuItem, makeVendor } from "../helpers/factories";
@@ -246,8 +250,6 @@ describe("getVendorAnalytics", () => {
 	});
 
 	it("throws for a non-vendor user", async () => {
-		await expect(
-			getVendorAnalytics({ userId: oid() }),
-		).rejects.toThrow();
+		await expect(getVendorAnalytics({ userId: oid() })).rejects.toThrow();
 	});
 });

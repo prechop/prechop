@@ -1,7 +1,7 @@
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -13,7 +13,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/orders/[id]" },
 	withAuth(async ({ auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "order:read");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;

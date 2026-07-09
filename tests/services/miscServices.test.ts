@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import wait from "@/server/constants/wait";
-import { Redis } from "@/server/databases/redis";
 import {
 	acquireLock,
+	Redis,
 	redisDeleteKeys,
 	redisRetrieveKeyString,
 	redisUpdateKeyString,
@@ -10,22 +10,22 @@ import {
 } from "@/server/databases/redis";
 import { DayOfWeek, MenuCategory } from "@/server/models/enums";
 import { upsertPushSubscriptionDB } from "@/server/models/pushSubscriptions";
-import { getVapidPublicKey, subscribePush } from "@/server/services/push";
 import { sendPush } from "@/server/providers/push";
+import { createMenuItem } from "@/server/services/menu/createMenu";
 import {
 	confirmMenuItemImage,
 	presignMenuItemImage,
 } from "@/server/services/menu/image";
+import { createUserNotification } from "@/server/services/notifications/createUserNotification";
+import { getUnreadCount } from "@/server/services/notifications/listNotifications";
+import { getVapidPublicKey, subscribePush } from "@/server/services/push";
 import {
 	getTimetable,
 	getTimetableForDay,
 	getTodayTemplate,
 	todayDayOfWeek,
 } from "@/server/services/timetable/queries";
-import { createUserNotification } from "@/server/services/notifications/createUserNotification";
-import { getUnreadCount } from "@/server/services/notifications/listNotifications";
 import { upsertTimetableEntry } from "@/server/services/timetable/upsertEntry";
-import { createMenuItem } from "@/server/services/menu/createMenu";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeMenuItem, makeVendor } from "../helpers/factories";
 
@@ -59,7 +59,9 @@ describe("redis helpers", () => {
 		const k = `vitest:redis:${oid()}`;
 		keys.add(k);
 		expect(await redisUpdateKeyString(k, { a: 1 }, true, 60)).toBe(true);
-		expect(await redisRetrieveKeyString<{ a: number }>(k)).toEqual({ a: 1 });
+		expect(await redisRetrieveKeyString<{ a: number }>(k)).toEqual({
+			a: 1,
+		});
 		expect(await redisDeleteKeys(k)).toBe(true);
 		expect(await redisRetrieveKeyString(k)).toBeUndefined();
 	});
@@ -103,7 +105,10 @@ describe("push service + provider", () => {
 
 	it("sendPush returns not-ok when VAPID is unconfigured (no network)", async () => {
 		const res = await sendPush(
-			{ endpoint: "https://push.test/x", keys: { p256dh: "k", auth: "a" } },
+			{
+				endpoint: "https://push.test/x",
+				keys: { p256dh: "k", auth: "a" },
+			},
 			{ title: "hi" },
 		);
 		expect(res.ok).toBe(false);

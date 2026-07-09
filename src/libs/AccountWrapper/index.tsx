@@ -147,7 +147,9 @@ export default function AccountWrapper() {
 								</Text>
 							</Stack>
 						</Row>
-						<Badge $tone="gold">{user.role}</Badge>
+						<Badge $tone="gold">
+							{user.groups?.[0] ?? "Member"}
+						</Badge>
 					</Row>
 				</ProfileCard>
 

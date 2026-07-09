@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { BUYERS_GROUP, VENDORS_GROUP } from "@/server/constants";
 import { hashOtp } from "@/server/constants/otp";
 import { Redis } from "@/server/databases/redis";
-import { UserRole } from "@/server/models/enums";
 import { getUserByPhoneDB } from "@/server/models/users";
 import { getVendorProfileByUserIdDB } from "@/server/models/vendorProfiles";
 import { registerBuyer, registerVendor } from "@/server/services/auth/register";
@@ -11,7 +11,13 @@ import {
 	requestOtp,
 } from "@/server/services/auth/requestOtp";
 import { verifyOtpService } from "@/server/services/auth/verifyOtp";
-import { connectTestDB, dropAndDisconnect, oid, uniquePhone } from "../helpers/db";
+import { getBuiltInGroupId, seedBuiltInIam } from "@/server/services/iam";
+import {
+	connectTestDB,
+	dropAndDisconnect,
+	oid,
+	uniquePhone,
+} from "../helpers/db";
 
 const touchedPhones = new Set<string>();
 
@@ -23,6 +29,7 @@ function phone(): string {
 
 beforeAll(async () => {
 	await connectTestDB();
+	await seedBuiltInIam();
 });
 
 afterEach(async () => {
@@ -111,7 +118,10 @@ describe("registerBuyer / registerVendor", () => {
 		});
 		const user = await getUserByPhoneDB({ phone: p });
 		expect(user).not.toBeNull();
-		expect(user!.role).toBe(UserRole.BUYER);
+		const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+		expect(user!.groupIds.map((g) => g.toString())).toContain(
+			buyersGroupId,
+		);
 
 		// second registration with the same phone must not create a duplicate
 		await Redis.del(otpRateLimitKey(p)); // avoid the rate limit for the login path
@@ -136,7 +146,10 @@ describe("registerBuyer / registerVendor", () => {
 			businessName: "Biz Kitchen",
 		});
 		const user = await getUserByPhoneDB({ phone: p });
-		expect(user!.role).toBe(UserRole.VENDOR);
+		const vendorsGroupId = await getBuiltInGroupId(VENDORS_GROUP);
+		expect(user!.groupIds.map((g) => g.toString())).toContain(
+			vendorsGroupId,
+		);
 		const profile = await getVendorProfileByUserIdDB({
 			userId: user!._id.toString(),
 		});

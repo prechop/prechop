@@ -1,7 +1,7 @@
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -13,7 +13,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/reviews/flagged" },
 	withAuth(async ({ auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "review:read");
 			const reviews = await listFlaggedReviews();
 			return ok(reviews);
 		} catch (error) {

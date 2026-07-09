@@ -37,6 +37,18 @@ export const suspendVendorSchema = zod
 	.object({ reason: zod.string().trim().min(1).max(500) })
 	.strict();
 
+export const onboardingQueueQuerySchema = zod
+	.object({ campusId: zod.string().trim().min(1).optional() })
+	.strict();
+
+export const approveVendorSchema = zod
+	.object({ notes: zod.string().trim().max(1000).optional() })
+	.strict();
+
+export const rejectVendorSchema = zod
+	.object({ reason: zod.string().trim().min(1).max(1000) })
+	.strict();
+
 export const ordersQuerySchema = zod
 	.object({
 		status: zod.enum(OrderStatus).optional(),
@@ -96,5 +108,36 @@ export const auditQuerySchema = zod
 	.object({
 		limit: zod.coerce.number().int().min(1).max(100).optional(),
 		offset: zod.coerce.number().int().min(0).optional(),
+	})
+	.strict();
+
+export const catalogQuerySchema = zod
+	.object({
+		campusId: zod.string().trim().min(1).optional(),
+		search: zod.string().trim().max(120).optional(),
+		page: zod.coerce.number().int().min(1).optional(),
+		pageSize: zod.coerce.number().int().min(1).max(100).optional(),
+	})
+	.strict();
+
+export const catalogAvailabilitySchema = zod
+	.object({ isAvailable: zod.boolean() })
+	.strict();
+
+export const paymentsQuerySchema = zod
+	.object({
+		status: zod
+			.enum(["INITIALIZED", "SUCCESS", "FAILED", "ABANDONED", "REFUNDED"])
+			.optional(),
+		page: zod.coerce.number().int().min(1).optional(),
+		pageSize: zod.coerce.number().int().min(1).max(100).optional(),
+	})
+	.strict();
+
+export const broadcastNotificationSchema = zod
+	.object({
+		title: zod.string().trim().min(1).max(120),
+		body: zod.string().trim().min(1).max(500),
+		campusId: zod.string().trim().min(1).optional(),
 	})
 	.strict();

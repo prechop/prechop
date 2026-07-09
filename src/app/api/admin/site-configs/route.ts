@@ -1,10 +1,11 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
+	auditRoleLabel,
 	getClientIp,
 	getUserAgent,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -20,7 +21,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/site-configs" },
 	withAuth(async ({ auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "siteConfig:read");
 			const configs = await getSiteConfigs();
 			return ok(configs);
 		} catch (error) {
@@ -33,13 +34,13 @@ export const PATCH = withApiHandler(
 	{ route: "/api/admin/site-configs" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "siteConfig:update");
 			const parsed = updateSiteConfigsSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const updated = await updateSiteConfigs({
 				payload: parsed.data,
 				adminId: auth.userId,
-				role: auth.role,
+				role: auditRoleLabel(auth),
 				ip: getClientIp(req),
 				userAgent: getUserAgent(req),
 			});

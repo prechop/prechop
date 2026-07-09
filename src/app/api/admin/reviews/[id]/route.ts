@@ -1,7 +1,7 @@
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -13,7 +13,7 @@ export const DELETE = withApiHandler(
 	{ route: "/api/admin/reviews/[id]" },
 	withAuth(async ({ auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "review:moderate");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;

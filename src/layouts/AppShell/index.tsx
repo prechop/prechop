@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import styled from "styled-components";
-import { Avatar, Container } from "@/components";
+import { Avatar, Container, ThemeToggle } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
@@ -19,6 +19,7 @@ const vendorNav = [
 	{ href: "/pipeline", label: "Cooking", icon: "🔥" },
 	{ href: "/timetable", label: "Timetable", icon: "🗓️" },
 	{ href: "/earnings", label: "Earnings", icon: "💰" },
+	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
 
 const Bar = styled.header`
@@ -147,7 +148,10 @@ export default function AppShell({
 
 	if (isLoading || !isAuthenticated) return <PageLoader />;
 
-	const nav = (shellRole ?? user?.role) === "VENDOR" ? vendorNav : buyerNav;
+	const isVendor =
+		shellRole === "VENDOR" ||
+		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
+	const nav = isVendor ? vendorNav : buyerNav;
 	const fullName = user
 		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
 		: undefined;
@@ -175,6 +179,7 @@ export default function AppShell({
 						))}
 					</NavRow>
 					<Right>
+						<ThemeToggle />
 						<Avatar name={fullName} size={34} />
 						<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
 					</Right>

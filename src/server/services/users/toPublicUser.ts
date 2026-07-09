@@ -2,15 +2,19 @@ import { tryDecrypt } from "../../constants";
 import type { IUser, IUserPublic } from "../../models/users/types";
 
 /**
- * Project a raw user document (which may carry an encrypted `phone`) into the
- * client-safe shape. Safe to call on both aggregate results (phone stripped)
- * and `getUserByPhoneDB` results (phone present + encrypted).
+ * Project a raw user document into the client-safe shape. `groups` and
+ * `permissions` are the caller's resolved IAM group names & effective action
+ * strings — supplied by the caller (e.g. `getMe`), which resolves them once.
  */
-export function toPublicUser(user: IUser): IUserPublic {
+export function toPublicUser(
+	user: IUser,
+	resolved: { groups: string[]; permissions: string[] },
+): IUserPublic {
 	return {
 		id: (user.id ?? user._id)?.toString(),
 		campusId: user.campusId?.toString(),
-		role: user.role,
+		groups: resolved.groups,
+		permissions: resolved.permissions,
 		firstName: user.firstName,
 		lastName: user.lastName,
 		phone: user.phone ? tryDecrypt(user.phone) : "",

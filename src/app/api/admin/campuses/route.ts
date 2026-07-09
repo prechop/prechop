@@ -1,9 +1,9 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
 	created,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -16,7 +16,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/campuses" },
 	withAuth(async ({ auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "campus:read");
 			const campuses = await listCampuses();
 			return ok(campuses);
 		} catch (error) {
@@ -29,7 +29,7 @@ export const POST = withApiHandler(
 	{ route: "/api/admin/campuses" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "campus:create");
 			const parsed = createCampusSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const campus = await createCampus(parsed.data);

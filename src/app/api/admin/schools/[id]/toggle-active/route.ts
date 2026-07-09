@@ -1,7 +1,7 @@
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -13,7 +13,7 @@ export const PATCH = withApiHandler(
 	{ route: "/api/admin/schools/[id]/toggle-active" },
 	withAuth(async ({ auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "school:update");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;

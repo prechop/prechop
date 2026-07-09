@@ -1,9 +1,10 @@
 import {
-	assertAdmin,
+	auditRoleLabel,
 	getClientIp,
 	getUserAgent,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -15,7 +16,7 @@ export const POST = withApiHandler(
 	{ route: "/api/admin/vendors/[id]/reactivate" },
 	withAuth(async ({ req, auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "vendor:reactivate");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;
@@ -23,7 +24,7 @@ export const POST = withApiHandler(
 				id,
 				actor: {
 					userId: auth.userId,
-					role: auth.role,
+					role: auditRoleLabel(auth),
 					ip: getClientIp(req),
 					userAgent: getUserAgent(req),
 				},

@@ -59,3 +59,31 @@ export const openStatusSchema = zod
 		isOpenForOrders: zod.boolean(),
 	})
 	.strict();
+
+// Resolve-only bank lookup: previews the account name (Paystack) without
+// creating a subaccount or persisting anything.
+export const resolveBankSchema = zod
+	.object({
+		bankCode: zod.string().trim().min(1),
+		accountNumber: zod.string().trim().min(1),
+	})
+	.strict();
+
+export const notificationPrefsSchema = zod
+	.object({
+		notifyNewOrders: zod.boolean().optional(),
+		notifyPayouts: zod.boolean().optional(),
+		notifyReviews: zod.boolean().optional(),
+	})
+	.strict()
+	.refine((v) => Object.keys(v).length > 0, {
+		message: "At least one preference is required",
+	});
+
+export const deliveryDefaultsSchema = zod
+	.object({
+		defaultPickupAvailable: zod.boolean(),
+		defaultDeliveryAvailable: zod.boolean(),
+		defaultDeliveryFeeKobo: zod.number().int().min(0).max(10_000_00),
+	})
+	.strict();

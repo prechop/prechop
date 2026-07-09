@@ -13,10 +13,24 @@ import {
 	setDailyOrderStatusDB,
 	setVendorStatusDB,
 	updateVendorProfileDB,
-	UserRole,
 	VendorStatus,
 } from "@/server/models";
+import { getBuiltInGroupId, seedBuiltInIam } from "@/server/services/iam";
 import { oid, uniquePhone } from "./db";
+
+/** Seed the IAM built-in policies & groups into the (isolated) test DB. */
+export async function seedTestIam() {
+	return seedBuiltInIam();
+}
+
+/** Create a user already placed in a named built-in group (requires seedTestIam). */
+export async function makeUserInGroup(
+	groupName: string,
+	opts: { campusId?: string; isPhoneVerified?: boolean } = {},
+) {
+	const groupId = await getBuiltInGroupId(groupName);
+	return makeUser({ ...opts, groupIds: groupId ? [groupId] : [] });
+}
 
 export async function makeCampus(overrides: Record<string, unknown> = {}) {
 	return createCampusDB({
@@ -30,13 +44,13 @@ export async function makeCampus(overrides: Record<string, unknown> = {}) {
 }
 
 export async function makeUser({
-	role = UserRole.BUYER,
 	campusId,
 	isPhoneVerified = true,
+	groupIds = [],
 }: {
-	role?: UserRole;
 	campusId?: string;
 	isPhoneVerified?: boolean;
+	groupIds?: string[];
 } = {}) {
 	return createUserDB({
 		payload: {
@@ -44,7 +58,7 @@ export async function makeUser({
 			firstName: "Test",
 			lastName: "User",
 			phone: uniquePhone(),
-			role,
+			groupIds,
 			isPhoneVerified,
 		},
 	});
@@ -60,7 +74,7 @@ export async function makeVendor({
 } = {}) {
 	const campus = await makeCampus();
 	const campusId = campus!._id.toString();
-	const user = await makeUser({ role: UserRole.VENDOR, campusId });
+	const user = await makeUser({ campusId });
 	const userId = user!._id.toString();
 	const profile = await createVendorProfileDB({
 		payload: {

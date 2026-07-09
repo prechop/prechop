@@ -4,7 +4,10 @@ const OFFLINE_URLS = ["/", "/marketplace"];
 
 self.addEventListener("install", (event) => {
 	event.waitUntil(
-		caches.open(CACHE).then((c) => c.addAll(OFFLINE_URLS)).catch(() => {}),
+		caches
+			.open(CACHE)
+			.then((c) => c.addAll(OFFLINE_URLS))
+			.catch(() => {}),
 	);
 	self.skipWaiting();
 });
@@ -14,7 +17,11 @@ self.addEventListener("activate", (event) => {
 		caches
 			.keys()
 			.then((keys) =>
-				Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+				Promise.all(
+					keys
+						.filter((k) => k !== CACHE)
+						.map((k) => caches.delete(k)),
+				),
 			),
 	);
 	self.clients.claim();
@@ -26,7 +33,9 @@ self.addEventListener("fetch", (event) => {
 	if (req.method !== "GET" || req.url.includes("/api/")) return;
 	if (req.mode === "navigate") {
 		event.respondWith(
-			fetch(req).catch(() => caches.match(req).then((r) => r || caches.match("/"))),
+			fetch(req).catch(() =>
+				caches.match(req).then((r) => r || caches.match("/")),
+			),
 		);
 	}
 });
@@ -49,11 +58,14 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
 	event.notification.close();
-	const url = (event.notification.data && event.notification.data.url) || "/my-orders";
+	const url =
+		(event.notification.data && event.notification.data.url) ||
+		"/my-orders";
 	event.waitUntil(
 		self.clients.matchAll({ type: "window" }).then((list) => {
 			for (const client of list) {
-				if (client.url.includes(url) && "focus" in client) return client.focus();
+				if (client.url.includes(url) && "focus" in client)
+					return client.focus();
 			}
 			return self.clients.openWindow(url);
 		}),

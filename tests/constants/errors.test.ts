@@ -19,9 +19,7 @@ import {
 
 describe("getErrorResponse", () => {
 	it("maps AppError to its own status + appCode", () => {
-		const res = getErrorResponse(
-			new AppError("boom", 418, "TEAPOT"),
-		);
+		const res = getErrorResponse(new AppError("boom", 418, "TEAPOT"));
 		expect(res.code).toBe(418);
 		expect(res.message).toBe("boom");
 		expect(res.appCode).toBe("TEAPOT");

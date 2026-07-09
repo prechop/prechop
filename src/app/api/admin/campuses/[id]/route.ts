@@ -1,8 +1,8 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -15,7 +15,7 @@ export const PATCH = withApiHandler(
 	{ route: "/api/admin/campuses/[id]" },
 	withAuth(async ({ req, auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "campus:update");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;

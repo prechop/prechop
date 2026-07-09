@@ -1,24 +1,24 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { DB_NAME } from "@/server/constants/environments";
-import { UserRole } from "@/server/models/enums";
+import { validationError } from "@/server/constants/errors";
 import { Redis } from "@/server/databases/redis";
+import {
+	type AuthResult,
+	assertBuyer,
+	assertVendor,
+	hasPermission,
+	requirePermission,
+} from "@/server/lib/auth";
 import { getClientIp, getUserAgent } from "@/server/lib/clientIp";
+import { getAuthCookieOptions } from "@/server/lib/cookies";
 import { csrfReject } from "@/server/lib/csrf";
-import { created, fail, handleError, ok } from "@/server/lib/response";
 import {
 	applyRateLimitHeaders,
 	enforceRateLimit,
 } from "@/server/lib/rateLimit";
-import {
-	assertAdmin,
-	assertBuyer,
-	assertRole,
-	assertVendor,
-	type AuthResult,
-} from "@/server/lib/auth";
-import { getAuthCookieOptions } from "@/server/lib/cookies";
+import { created, fail, handleError, ok } from "@/server/lib/response";
 import { presignImageUpload } from "@/server/lib/upload";
-import { validationError } from "@/server/constants/errors";
+import type { IPolicyStatement } from "@/server/models";
 
 const rlKeys = new Set<string>();
 
@@ -82,7 +82,11 @@ describe("response helpers", () => {
 	it("ok/created/fail build the right envelope + status", async () => {
 		const okRes = ok({ a: 1 }, "done");
 		expect(okRes.status).toBe(200);
-		expect(await okRes.json()).toEqual({ code: 200, message: "done", data: { a: 1 } });
+		expect(await okRes.json()).toEqual({
+			code: 200,
+			message: "done",
+			data: { a: 1 },
+		});
 
 		const createdRes = created({ id: 1 });
 		expect(createdRes.status).toBe(201);
@@ -132,34 +136,79 @@ describe("rateLimit", () => {
 	});
 });
 
-describe("auth role guards", () => {
-	function auth(role: UserRole): AuthResult {
+describe("auth permission guards", () => {
+	function auth(statements: IPolicyStatement[], campusId = "c"): AuthResult {
 		return {
 			userId: "u",
 			token: {} as never,
 			refreshed: false,
-			role,
-			campusId: "c",
+			campusId,
 			isActive: true,
+			groups: [],
+			permissions: [],
+			statements,
 		};
 	}
 
-	it("assertRole allows listed roles and rejects others", () => {
+	const vendorStatements: IPolicyStatement[] = [
+		{ effect: "Allow", actions: ["vendorApp:manage", "menu:manage"] },
+	];
+	const buyerStatements: IPolicyStatement[] = [
+		{
+			effect: "Allow",
+			actions: ["buyer:order:read", "buyer:order:create"],
+		},
+	];
+	const adminStatements: IPolicyStatement[] = [
+		{ effect: "Allow", actions: ["*"] },
+	];
+
+	it("requirePermission allows granted actions and rejects others", () => {
 		expect(() =>
-			assertRole(auth(UserRole.VENDOR), [UserRole.VENDOR]),
+			requirePermission(auth(vendorStatements), "menu:manage"),
 		).not.toThrow();
 		expect(() =>
-			assertRole(auth(UserRole.BUYER), [UserRole.VENDOR]),
+			requirePermission(auth(vendorStatements), "vendor:suspend"),
 		).toThrow();
+		expect(() =>
+			requirePermission(auth(adminStatements), "vendor:suspend"),
+		).not.toThrow();
 	});
 
-	it("assertAdmin/Vendor/Buyer enforce the specific role", () => {
-		expect(() => assertAdmin(auth(UserRole.SUPER_ADMIN))).not.toThrow();
-		expect(() => assertAdmin(auth(UserRole.BUYER))).toThrow();
-		expect(() => assertVendor(auth(UserRole.VENDOR))).not.toThrow();
-		expect(() => assertVendor(auth(UserRole.BUYER))).toThrow();
-		expect(() => assertBuyer(auth(UserRole.BUYER))).not.toThrow();
-		expect(() => assertBuyer(auth(UserRole.VENDOR))).toThrow();
+	it("explicit Deny overrides Allow", () => {
+		const mixed: IPolicyStatement[] = [
+			{ effect: "Allow", actions: ["*"] },
+			{ effect: "Deny", actions: ["vendor:suspend"] },
+		];
+		expect(hasPermission(auth(mixed), "vendor:read")).toBe(true);
+		expect(hasPermission(auth(mixed), "vendor:suspend")).toBe(false);
+	});
+
+	it("assertVendor / assertBuyer probe the app capabilities", () => {
+		expect(() => assertVendor(auth(vendorStatements))).not.toThrow();
+		expect(() => assertVendor(auth(buyerStatements))).toThrow();
+		expect(() => assertBuyer(auth(buyerStatements))).not.toThrow();
+		expect(() => assertBuyer(auth(vendorStatements))).toThrow();
+	});
+
+	it("campus-scoped condition matches the caller's campus", () => {
+		const scoped: IPolicyStatement[] = [
+			{
+				effect: "Allow",
+				actions: ["order:read"],
+				condition: { campusId: "$user.campusId" },
+			},
+		];
+		expect(
+			hasPermission(auth(scoped, "campus-1"), "order:read", {
+				resource: { campusId: "campus-1" },
+			}),
+		).toBe(true);
+		expect(
+			hasPermission(auth(scoped, "campus-1"), "order:read", {
+				resource: { campusId: "campus-2" },
+			}),
+		).toBe(false);
 	});
 });
 

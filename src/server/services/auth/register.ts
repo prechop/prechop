@@ -1,10 +1,11 @@
+import { BUYERS_GROUP, VENDORS_GROUP } from "../../constants";
 import {
 	createUserDB,
 	createVendorProfileDB,
 	getUserByPhoneDB,
-	UserRole,
 } from "../../models";
 import { recordAudit } from "../audit";
+import { getBuiltInGroupId } from "../iam";
 import { requestOtp } from "./requestOtp";
 
 /**
@@ -24,19 +25,20 @@ export async function registerBuyer({
 }): Promise<{ message: string }> {
 	const existing = await getUserByPhoneDB({ phone });
 	if (!existing) {
+		const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
 		const user = await createUserDB({
 			payload: {
 				firstName,
 				lastName,
 				phone,
 				campusId,
-				role: UserRole.BUYER,
+				groupIds: buyersGroupId ? [buyersGroupId] : [],
 			},
 		});
 		if (user) {
 			recordAudit({
 				userId: user._id.toString(),
-				role: UserRole.BUYER,
+				role: BUYERS_GROUP,
 				action: "BUYER_REGISTER",
 				resourceType: "users",
 				resourceId: user._id.toString(),
@@ -47,8 +49,8 @@ export async function registerBuyer({
 }
 
 /**
- * Register a vendor account (step 1): creates the VENDOR user + an INCOMPLETE
- * vendor profile, then sends the first OTP.
+ * Register a vendor account (step 1): creates the user in the Vendors group +
+ * an INCOMPLETE vendor profile, then sends the first OTP.
  */
 export async function registerVendor({
 	firstName,
@@ -67,13 +69,14 @@ export async function registerVendor({
 }): Promise<{ message: string }> {
 	const existing = await getUserByPhoneDB({ phone });
 	if (!existing) {
+		const vendorsGroupId = await getBuiltInGroupId(VENDORS_GROUP);
 		const user = await createUserDB({
 			payload: {
 				firstName,
 				lastName,
 				phone,
 				campusId,
-				role: UserRole.VENDOR,
+				groupIds: vendorsGroupId ? [vendorsGroupId] : [],
 			},
 		});
 		if (user) {
@@ -87,7 +90,7 @@ export async function registerVendor({
 			});
 			recordAudit({
 				userId: user._id.toString(),
-				role: UserRole.VENDOR,
+				role: VENDORS_GROUP,
 				action: "VENDOR_REGISTER",
 				resourceType: "users",
 				resourceId: user._id.toString(),

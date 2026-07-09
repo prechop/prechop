@@ -13,15 +13,19 @@
  */
 
 import {
+	ADMINISTRATORS_GROUP,
+	BUYERS_GROUP,
 	generateShareableToken,
 	nairaToKobo,
 	SEED_ADMIN_PHONE,
+	VENDORS_GROUP,
 } from "../src/server/constants";
 import {
 	connectMongoDB,
 	disconnectMongoDB,
 } from "../src/server/databases/mongoDB";
 import {
+	addUserToGroupDB,
 	createCampusDB,
 	createDailyOrderDB,
 	createMenuItemDB,
@@ -32,15 +36,16 @@ import {
 	getCampusByShortCodeDB,
 	getSiteConfigsDocDB,
 	getUserByPhoneDB,
+	getVendorProfileByUserIdDB,
 	LocationType,
 	MenuCategory,
 	setDailyOrderStatusDB,
-	UserRole,
 	updateVendorProfileDB,
 	upsertSiteConfigsDB,
 	VendorStatus,
 	VendorType,
 } from "../src/server/models";
+import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 
 function log(msg: string): void {
 	process.stdout.write(`  ${msg}\n`);
@@ -66,27 +71,43 @@ async function seedCampus(input: {
 
 async function ensureUser(input: {
 	campusId: string;
-	role: UserRole;
+	groupName: string;
 	firstName: string;
 	lastName: string;
 	phone: string;
 }): Promise<{ _id: string; created: boolean }> {
+	const groupId = await getBuiltInGroupId(input.groupName);
 	const existing = await getUserByPhoneDB({ phone: input.phone });
 	if (existing) {
-		log(`user ${input.phone} (${input.role}) exists`);
+		// Backfill group membership on re-seed (e.g. after the IAM migration).
+		if (groupId)
+			await addUserToGroupDB({ id: existing._id.toString(), groupId });
+		log(`user ${input.phone} (${input.groupName}) exists`);
 		return { _id: existing._id.toString(), created: false };
 	}
 	const created = await createUserDB({
-		payload: { ...input, isPhoneVerified: true, isActive: true },
+		payload: {
+			campusId: input.campusId,
+			firstName: input.firstName,
+			lastName: input.lastName,
+			phone: input.phone,
+			groupIds: groupId ? [groupId] : [],
+			isPhoneVerified: true,
+			isActive: true,
+		},
 	});
 	if (!created) throw new Error(`failed to create user ${input.phone}`);
-	log(`user ${input.phone} (${input.role}) created`);
+	log(`user ${input.phone} (${input.groupName}) created`);
 	return { _id: created._id.toString(), created: true };
 }
 
 async function main(): Promise<void> {
 	process.stdout.write("\nSeeding Prechop…\n\n");
 	await connectMongoDB();
+
+	// ── IAM built-ins (policies + groups) ───────────────────────────────
+	await seedBuiltInIam();
+	log("IAM built-in policies & groups seeded");
 
 	// ── Site configs ────────────────────────────────────────────────────
 	const cfg = await getSiteConfigsDocDB();
@@ -136,7 +157,7 @@ async function main(): Promise<void> {
 	// ── Super admin ─────────────────────────────────────────────────────
 	await ensureUser({
 		campusId: unilag._id,
-		role: UserRole.SUPER_ADMIN,
+		groupName: ADMINISTRATORS_GROUP,
 		firstName: "Prechop",
 		lastName: "Admin",
 		phone: SEED_ADMIN_PHONE,
@@ -145,16 +166,59 @@ async function main(): Promise<void> {
 	// ── Demo buyer ──────────────────────────────────────────────────────
 	await ensureUser({
 		campusId: unilag._id,
-		role: UserRole.BUYER,
+		groupName: BUYERS_GROUP,
 		firstName: "Ada",
 		lastName: "Obi",
 		phone: "08111111111",
 	});
 
+	// ── Demo vendor awaiting review (populates the onboarding queue) ─────
+	const pendingUser = await ensureUser({
+		campusId: unilag._id,
+		groupName: VENDORS_GROUP,
+		firstName: "Chidi",
+		lastName: "Nwosu",
+		phone: "08133333333",
+	});
+	// Idempotent: create the profile on first run, and on every run reset it to
+	// PENDING_REVIEW so the onboarding queue always has something to review.
+	const existingPending = await getVendorProfileByUserIdDB({
+		userId: pendingUser._id,
+	});
+	const pendingProfile =
+		existingPending ??
+		(await createVendorProfileDB({
+			payload: {
+				userId: pendingUser._id,
+				campusId: unilag._id,
+				email: "chidi@campusbites.ng",
+				businessName: "Campus Bites",
+				vendorType: VendorType.CAMPUS_STALL,
+			},
+		}));
+	if (pendingProfile) {
+		await updateVendorProfileDB({
+			id: pendingProfile._id.toString(),
+			payload: {
+				status: VendorStatus.PENDING_REVIEW,
+				locationType: LocationType.ON_CAMPUS,
+				description: "Quick campus snacks and drinks.",
+				categories: [MenuCategory.SNACKS, MenuCategory.DRINKS],
+				profileCompleteness: 100,
+				submittedAt: new Date(),
+				paystackSubaccountCode: "ACCT_seedpending01",
+				bankName: "GTBank",
+				accountName: "Campus Bites",
+				accountNumber: "0123456789",
+			},
+		});
+		log("vendor 'Campus Bites' → PENDING_REVIEW");
+	}
+
 	// ── Demo vendor (fully onboarded) ───────────────────────────────────
 	const vendorUser = await ensureUser({
 		campusId: unilag._id,
-		role: UserRole.VENDOR,
+		groupName: VENDORS_GROUP,
 		firstName: "Tunde",
 		lastName: "Bakare",
 		phone: "08122222222",

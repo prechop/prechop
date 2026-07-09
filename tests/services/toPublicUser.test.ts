@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { encrypt } from "@/server/constants/crypto";
 import type { IUser } from "@/server/models/users/types";
-import { UserRole } from "@/server/models/enums";
 import { toPublicUser } from "@/server/services/users/toPublicUser";
+
+const resolved = { groups: ["Buyers"], permissions: ["buyer:order:read"] };
 
 function baseUser(overrides: Partial<IUser> = {}): IUser {
 	return {
 		_id: "507f1f77bcf86cd799439011",
 		campusId: "507f1f77bcf86cd799439012",
-		role: UserRole.BUYER,
+		groupIds: [],
+		directPolicyIds: [],
 		firstName: "Ada",
 		lastName: "Obi",
 		phone: encrypt("08012345678"),
@@ -25,30 +27,32 @@ function baseUser(overrides: Partial<IUser> = {}): IUser {
 
 describe("toPublicUser", () => {
 	it("decrypts phone and strips secrets", () => {
-		const pub = toPublicUser(baseUser());
+		const pub = toPublicUser(baseUser(), resolved);
 		expect(pub.phone).toBe("08012345678");
 		expect(pub).not.toHaveProperty("phoneHash");
 		expect(pub).not.toHaveProperty("refreshTokens");
 		expect(pub).not.toHaveProperty("deleted");
 	});
 
-	it("shapes the public fields", () => {
-		const pub = toPublicUser(baseUser());
+	it("shapes the public fields with resolved IAM", () => {
+		const pub = toPublicUser(baseUser(), resolved);
 		expect(pub.id).toBe("507f1f77bcf86cd799439011");
-		expect(pub.role).toBe(UserRole.BUYER);
+		expect(pub.groups).toEqual(["Buyers"]);
+		expect(pub.permissions).toEqual(["buyer:order:read"]);
 		expect(pub.firstName).toBe("Ada");
 		expect(pub.isPhoneVerified).toBe(true);
 		expect(pub.isActive).toBe(true);
 	});
 
 	it("prefers `id` over `_id` when present", () => {
-		const pub = toPublicUser(baseUser({ id: "the-id" }));
+		const pub = toPublicUser(baseUser({ id: "the-id" }), resolved);
 		expect(pub.id).toBe("the-id");
 	});
 
 	it("returns empty phone when none is present (aggregate shape)", () => {
 		const pub = toPublicUser(
 			baseUser({ phone: undefined as unknown as string }),
+			resolved,
 		);
 		expect(pub.phone).toBe("");
 	});

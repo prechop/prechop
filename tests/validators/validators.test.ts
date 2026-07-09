@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import {
 	registerBuyerBodySchema,
 	registerVendorBodySchema,
@@ -10,15 +11,14 @@ import {
 	placeOrderBodySchema,
 	updateOrderStatusBodySchema,
 } from "@/server/validators/buyerOrders/validate";
+import { createDailyOrderSchema } from "@/server/validators/dailyOrders/validate";
+import { createMenuItemSchema } from "@/server/validators/menu/validate";
 import { createReviewSchema } from "@/server/validators/reviews/validate";
 import {
 	parseUpdateProfile,
 	updateProfileSchema,
 } from "@/server/validators/users/validate";
 import { locationSchema } from "@/server/validators/vendors/validate";
-import { createMenuItemSchema } from "@/server/validators/menu/validate";
-import { createDailyOrderSchema } from "@/server/validators/dailyOrders/validate";
-import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 
 describe("auth phone regex", () => {
 	const valid = ["08012345678", "07098765432", "2348012345678"];

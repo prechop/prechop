@@ -1,8 +1,8 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -18,7 +18,7 @@ export const PATCH = withApiHandler(
 	{ route: "/api/admin/whatsapp-tvs/[id]" },
 	withAuth(async ({ req, auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "whatsappTv:manage");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;
@@ -36,7 +36,7 @@ export const DELETE = withApiHandler(
 	{ route: "/api/admin/whatsapp-tvs/[id]" },
 	withAuth(async ({ auth, context }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "whatsappTv:manage");
 			const { id } = await (
 				context as { params: Promise<{ id: string }> }
 			).params;

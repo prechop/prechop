@@ -10,13 +10,15 @@ import {
 	markPhoneVerifiedDB,
 	updateLastLoginDB,
 } from "../../models";
+import type { IUserPublic } from "../../models/users/types";
 import type { IJwtPayload } from "../../types";
+import { resolvePermissions } from "../iam";
 import { toPublicUser } from "../users/toPublicUser";
 import { otpKey, otpRateLimitKey } from "./requestOtp";
 
 export interface VerifyOtpResult {
 	token: IJwtPayload;
-	user: ReturnType<typeof toPublicUser>;
+	user: IUserPublic;
 }
 
 export async function verifyOtpService({
@@ -51,5 +53,12 @@ export async function verifyOtpService({
 	const token = await loginUserDB({ id: user._id.toString(), ip });
 	if (!token) throw ErrUnauthorized;
 
-	return { token, user: toPublicUser(user) };
+	const resolved = await resolvePermissions(user._id.toString());
+	return {
+		token,
+		user: toPublicUser(user, {
+			groups: resolved.groups,
+			permissions: resolved.actions,
+		}),
+	};
 }

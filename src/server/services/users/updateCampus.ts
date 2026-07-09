@@ -1,6 +1,7 @@
 import { ErrUserNotFound, validationError } from "../../constants";
 import { getCampusByIdDB, updateUserProfileDB } from "../../models";
 import type { IUserPublic } from "../../models/users/types";
+import { resolvePermissions } from "../iam";
 import { toPublicUser } from "./toPublicUser";
 
 /**
@@ -20,5 +21,9 @@ export async function updateCampus({
 	}
 	const updated = await updateUserProfileDB({ id: userId, campusId });
 	if (!updated) throw ErrUserNotFound;
-	return toPublicUser(updated);
+	const resolved = await resolvePermissions(userId);
+	return toPublicUser(updated, {
+		groups: resolved.groups,
+		permissions: resolved.actions,
+	});
 }

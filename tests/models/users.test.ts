@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decrypt, phoneHash } from "@/server/constants/crypto";
-import { UserRole } from "@/server/models/enums";
 import {
 	countUsersDB,
 	createUserDB,
@@ -12,10 +11,15 @@ import {
 	markPhoneVerifiedDB,
 	reLoginUserWithRefreshTokenDB,
 	setUserActiveDB,
-	updateUserProfileDB,
 	User,
+	updateUserProfileDB,
 } from "@/server/models/users";
-import { connectTestDB, dropAndDisconnect, oid, uniquePhone } from "../helpers/db";
+import {
+	connectTestDB,
+	dropAndDisconnect,
+	oid,
+	uniquePhone,
+} from "../helpers/db";
 
 beforeAll(async () => {
 	await connectTestDB();
@@ -43,7 +47,9 @@ describe("users model", () => {
 		expect(user!.phone).not.toBe(phone);
 		expect(decrypt(user!.phone)).toBe(phone);
 		expect(user!.phoneHash).toBe(phoneHash(phone));
-		expect(user!.role).toBe(UserRole.BUYER);
+		// no role enum anymore — a bare user has no group/policy attachments
+		expect(user!.groupIds).toEqual([]);
+		expect(user!.directPolicyIds).toEqual([]);
 	});
 
 	it("looks up by phone and returns a decryptable doc", async () => {

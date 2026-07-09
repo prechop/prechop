@@ -2,15 +2,25 @@ import crypto from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PAYSTACK_SECRET_KEY } from "@/server/constants/environments";
 import hash from "@/server/constants/hash";
-import { generateOrderNumber, generatePaystackRef } from "@/server/constants/orderNumber";
+import {
+	generateOrderNumber,
+	generatePaystackRef,
+} from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
-import { FulfillmentType, OrderStatus, PaymentStatus } from "@/server/models/enums";
-import { createBuyerOrderDB, getBuyerOrderByIdDB } from "@/server/models/buyerOrders";
+import {
+	createBuyerOrderDB,
+	getBuyerOrderByIdDB,
+} from "@/server/models/buyerOrders";
+import {
+	FulfillmentType,
+	OrderStatus,
+	PaymentStatus,
+} from "@/server/models/enums";
 import { createPaymentDB, getPaymentByRefDB } from "@/server/models/payments";
 import { paystackProvider } from "@/server/providers/paystack";
+import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
 import { refundBuyerOrder } from "@/server/services/payments/refundBuyerOrder";
-import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeVendor } from "../helpers/factories";
@@ -179,7 +189,9 @@ describe("refundBuyerOrder", () => {
 			amountKobo: 155000,
 		});
 		expect(spy).toHaveBeenCalled();
-		const refunded = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		const refunded = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
 		expect(refunded!.status).toBe(OrderStatus.REFUNDED);
 		spy.mockRestore();
 	});

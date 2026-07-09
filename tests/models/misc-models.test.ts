@@ -1,12 +1,28 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decrypt } from "@/server/constants/crypto";
+import {
+	listSnapshotsByVendorDB,
+	upsertAnalyticsSnapshotDB,
+} from "@/server/models/analyticsSnapshots";
+import { createAuditLogDB } from "@/server/models/auditLogs";
 import { DayOfWeek } from "@/server/models/enums";
 import {
-	createSchoolDB,
-	getSchoolByIdDB,
-	listSchoolsDB,
-	toggleSchoolActiveDB,
-} from "@/server/models/schools";
+	countUnreadNotificationsDB,
+	createNotificationDB,
+	listNotificationsDB,
+	markAllNotificationsReadDB,
+	markNotificationReadDB,
+} from "@/server/models/notifications";
+import {
+	deletePushSubscriptionByEndpointDB,
+	listPushSubscriptionsByUserDB,
+	upsertPushSubscriptionDB,
+} from "@/server/models/pushSubscriptions";
+import {
+	createRefundDB,
+	getRefundByPaymentIdDB,
+	markRefundProcessedDB,
+} from "@/server/models/refunds";
 import {
 	createReviewDB,
 	deleteReviewDB,
@@ -19,12 +35,11 @@ import {
 	unflagReviewDB,
 } from "@/server/models/reviews";
 import {
-	countUnreadNotificationsDB,
-	createNotificationDB,
-	listNotificationsDB,
-	markAllNotificationsReadDB,
-	markNotificationReadDB,
-} from "@/server/models/notifications";
+	createSchoolDB,
+	getSchoolByIdDB,
+	listSchoolsDB,
+	toggleSchoolActiveDB,
+} from "@/server/models/schools";
 import {
 	deleteTimetableEntryDB,
 	hasAnyTimetableEntryDB,
@@ -32,26 +47,11 @@ import {
 	upsertTimetableEntryDB,
 } from "@/server/models/timetableEntries";
 import {
-	createRefundDB,
-	getRefundByPaymentIdDB,
-	markRefundProcessedDB,
-} from "@/server/models/refunds";
-import {
-	deletePushSubscriptionByEndpointDB,
-	listPushSubscriptionsByUserDB,
-	upsertPushSubscriptionDB,
-} from "@/server/models/pushSubscriptions";
-import {
-	listSnapshotsByVendorDB,
-	upsertAnalyticsSnapshotDB,
-} from "@/server/models/analyticsSnapshots";
-import {
 	createWhatsappTvDB,
 	deactivateWhatsappTvDB,
 	listWhatsappTvsByCampusDB,
 	updateWhatsappTvDB,
 } from "@/server/models/whatsappTvs";
-import { createAuditLogDB } from "@/server/models/auditLogs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
 beforeAll(async () => {
@@ -115,9 +115,9 @@ describe("reviews model", () => {
 			buyerOrderId: r1!.buyerOrderId.toString(),
 		});
 		expect(byOrder!._id.toString()).toBe(r1!._id.toString());
-		expect((await getReviewByIdDB({ id: r1!._id.toString() }))!.rating).toBe(
-			4,
-		);
+		expect(
+			(await getReviewByIdDB({ id: r1!._id.toString() }))!.rating,
+		).toBe(4);
 
 		expect(await flagReviewDB({ id: r1!._id.toString() })).toBe(true);
 		expect((await listFlaggedReviewsDB({})).length).toBeGreaterThanOrEqual(
@@ -226,11 +226,15 @@ describe("pushSubscriptions model", () => {
 			keys: { p256dh: "key", auth: "auth" },
 		});
 		expect(sub!.endpoint).toBe(endpoint);
-		expect((await listPushSubscriptionsByUserDB({ userId })).length).toBe(1);
+		expect((await listPushSubscriptionsByUserDB({ userId })).length).toBe(
+			1,
+		);
 		expect(await deletePushSubscriptionByEndpointDB({ endpoint })).toBe(
 			true,
 		);
-		expect((await listPushSubscriptionsByUserDB({ userId })).length).toBe(0);
+		expect((await listPushSubscriptionsByUserDB({ userId })).length).toBe(
+			0,
+		);
 	});
 });
 

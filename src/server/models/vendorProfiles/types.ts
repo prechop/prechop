@@ -43,6 +43,20 @@ export interface IVendorProfile {
 	completionRate: number;
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
+	// Vendor notification preferences (email/push opt-ins).
+	notifyNewOrders: boolean;
+	notifyPayouts: boolean;
+	notifyReviews: boolean;
+	// Defaults pre-filled into the daily-order composer.
+	defaultPickupAvailable: boolean;
+	defaultDeliveryAvailable: boolean;
+	defaultDeliveryFeeKobo: number;
+	// Onboarding review trail
+	submittedAt?: Date;
+	reviewedAt?: Date;
+	reviewedBy?: string;
+	rejectionReason?: string;
+	reviewNotes?: string;
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

@@ -1,9 +1,9 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
 	created,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -19,7 +19,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/whatsapp-tvs" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "whatsappTv:read");
 			const url = new URL(req.url);
 			const parsed = whatsappTvsQuerySchema.safeParse(
 				Object.fromEntries(url.searchParams),
@@ -37,7 +37,7 @@ export const POST = withApiHandler(
 	{ route: "/api/admin/whatsapp-tvs" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "whatsappTv:manage");
 			const parsed = createWhatsappTvSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const tv = await createWhatsappTv(parsed.data);

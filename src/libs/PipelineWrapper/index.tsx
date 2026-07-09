@@ -182,6 +182,8 @@ export default function PipelineWrapper() {
 	} = useSWR<PipelineOrder[]>(
 		currentId ? `/vendor/daily-orders/${currentId}/orders` : null,
 		fetcher,
+		// Keep the kitchen board live as buyers pay/place orders (#17).
+		{ refreshInterval: 15_000 },
 	);
 
 	if (isLoading) return <PageLoader />;

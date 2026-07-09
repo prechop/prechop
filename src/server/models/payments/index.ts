@@ -86,6 +86,39 @@ export async function createPaymentDB({
 	}
 }
 
+/** Admin payments listing, newest first, with optional status filter. */
+export async function listPaymentsDB({
+	status,
+	campusId,
+	skip = 0,
+	limit = 50,
+	session,
+}: {
+	status?: string;
+	campusId?: string;
+	skip?: number;
+	limit?: number;
+	session?: ClientSession;
+} = {}): Promise<{ payments: IPayment[]; total: number }> {
+	const match: Record<string, unknown> = {};
+	if (status) match.status = status;
+	if (campusId && mongoose.Types.ObjectId.isValid(campusId))
+		match.campusId = new mongoose.Types.ObjectId(campusId);
+	const [payments, total] = await Promise.all([
+		Payment.aggregate<IPayment>(
+			[
+				{ $match: match },
+				{ $sort: { createdAt: -1 } },
+				{ $skip: skip },
+				{ $limit: Math.min(limit, 100) },
+			],
+			{ session },
+		),
+		Payment.countDocuments(match, { session }),
+	]);
+	return { payments, total };
+}
+
 export async function getPaymentByRefDB({
 	paystackRef,
 	session,

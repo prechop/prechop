@@ -7,7 +7,10 @@ export default defineConfig({
 			"@": path.resolve(__dirname, "src"),
 			// `server-only` throws outside a React Server Component graph;
 			// unit tests run under plain node, so stub it out.
-			"server-only": path.resolve(__dirname, "tests/stubs/server-only.ts"),
+			"server-only": path.resolve(
+				__dirname,
+				"tests/stubs/server-only.ts",
+			),
 		},
 	},
 	test: {

@@ -1,11 +1,12 @@
 // Client-facing view-model types mirroring the API envelope `data` shapes.
 
-export type UserRole = "BUYER" | "VENDOR" | "SUPER_ADMIN";
-
 export interface PublicUser {
 	id: string;
 	campusId: string;
-	role: UserRole;
+	/** IAM group names the user belongs to (e.g. "Vendors", "Administrators"). */
+	groups: string[];
+	/** Resolved effective permission action strings, for UI gating. */
+	permissions: string[];
 	firstName: string;
 	lastName: string;
 	phone: string;
@@ -43,7 +44,15 @@ export interface VendorProfile {
 	businessName?: string;
 	description?: string;
 	email: string;
-	status: "INCOMPLETE" | "ACTIVE" | "SUSPENDED";
+	status:
+		| "INCOMPLETE"
+		| "PENDING_REVIEW"
+		| "CHANGES_REQUESTED"
+		| "ACTIVE"
+		| "SUSPENDED";
+	submittedAt?: string;
+	reviewedAt?: string;
+	rejectionReason?: string;
 	locationType?: string;
 	categories: string[];
 	profileImageUrl?: string;
@@ -53,6 +62,12 @@ export interface VendorProfile {
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
 	paystackSubaccountCode?: string;
+	notifyNewOrders?: boolean;
+	notifyPayouts?: boolean;
+	notifyReviews?: boolean;
+	defaultPickupAvailable?: boolean;
+	defaultDeliveryAvailable?: boolean;
+	defaultDeliveryFeeKobo?: number;
 }
 
 export interface DailyOrderItemAddon {

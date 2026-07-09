@@ -1,7 +1,27 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { LocationType, MenuCategory, VendorStatus } from "@/server/models/enums";
+import {
+	DayOfWeek,
+	LocationType,
+	MenuCategory,
+	VendorStatus,
+} from "@/server/models/enums";
 import { getVendorProfileByIdDB } from "@/server/models/vendorProfiles";
 import { resendProvider } from "@/server/providers/resend";
+import {
+	setMenuItemAvailability,
+	setMenuItemSoldOut,
+} from "@/server/services/menu/availability";
+import { createMenuItem } from "@/server/services/menu/createMenu";
+import { deleteMenuItem } from "@/server/services/menu/deleteMenu";
+import { listMenu } from "@/server/services/menu/listMenu";
+import { reorderMenu } from "@/server/services/menu/reorder";
+import { updateMenuItem } from "@/server/services/menu/updateMenu";
+import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
+import { deleteTimetableEntry } from "@/server/services/timetable/deleteEntry";
+import {
+	upsertTimetableEntries,
+	upsertTimetableEntry,
+} from "@/server/services/timetable/upsertEntry";
 import {
 	getMyVendorProfile,
 	resolveVendorByUserId,
@@ -11,22 +31,6 @@ import {
 	updateVendorLocation,
 	vendorIdOf,
 } from "@/server/services/vendors";
-import { createMenuItem } from "@/server/services/menu/createMenu";
-import { deleteMenuItem } from "@/server/services/menu/deleteMenu";
-import { listMenu } from "@/server/services/menu/listMenu";
-import { reorderMenu } from "@/server/services/menu/reorder";
-import {
-	setMenuItemAvailability,
-	setMenuItemSoldOut,
-} from "@/server/services/menu/availability";
-import { updateMenuItem } from "@/server/services/menu/updateMenu";
-import {
-	upsertTimetableEntries,
-	upsertTimetableEntry,
-} from "@/server/services/timetable/upsertEntry";
-import { deleteTimetableEntry } from "@/server/services/timetable/deleteEntry";
-import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
-import { DayOfWeek } from "@/server/models/enums";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeVendor } from "../helpers/factories";
 
@@ -34,6 +38,12 @@ beforeAll(async () => {
 	await connectTestDB();
 	invalidateSiteConfigsCache();
 	vi.spyOn(resendProvider, "sendVendorWelcome").mockResolvedValue(
+		undefined as never,
+	);
+	vi.spyOn(resendProvider, "sendVendorSubmissionReceived").mockResolvedValue(
+		undefined as never,
+	);
+	vi.spyOn(resendProvider, "sendVendorApproved").mockResolvedValue(
 		undefined as never,
 	);
 });
@@ -109,7 +119,9 @@ describe("vendor onboarding services", () => {
 		});
 		expect(res.isOpenForOrders).toBe(true);
 
-		const incomplete = await makeVendor({ status: VendorStatus.INCOMPLETE });
+		const incomplete = await makeVendor({
+			status: VendorStatus.INCOMPLETE,
+		});
 		await expect(
 			setOpenStatus({
 				userId: incomplete.userId,
@@ -118,7 +130,7 @@ describe("vendor onboarding services", () => {
 		).rejects.toThrow();
 	});
 
-	it("promotes an INCOMPLETE vendor to ACTIVE once complete (welcome email)", async () => {
+	it("gates activation behind submit + admin approval (no auto-activate)", async () => {
 		// Build a fully complete profile so recompute crosses the threshold.
 		const { userId, vendorId, campusId } = await makeVendor({
 			status: VendorStatus.INCOMPLETE,
@@ -156,10 +168,29 @@ describe("vendor onboarding services", () => {
 		const { recomputeVendorCompleteness } = await import(
 			"@/server/services/vendors/recomputeVendorCompleteness"
 		);
+		// Completeness reaches 100 but the vendor stays INCOMPLETE — no auto-activate.
 		const result = await recomputeVendorCompleteness({ vendorId, userId });
 		expect(result.profileCompleteness).toBe(100);
-		expect(result.status).toBe(VendorStatus.ACTIVE);
-		expect(resendProvider.sendVendorWelcome).toHaveBeenCalled();
+		expect(result.status).toBe(VendorStatus.INCOMPLETE);
+
+		// Vendor submits → PENDING_REVIEW (received email).
+		const { submitVendorForReview } = await import(
+			"@/server/services/vendors/submitForReview"
+		);
+		const submitted = await submitVendorForReview({ vendorId, userId });
+		expect(submitted.status).toBe(VendorStatus.PENDING_REVIEW);
+		expect(resendProvider.sendVendorSubmissionReceived).toHaveBeenCalled();
+
+		// Admin approves → ACTIVE (approved email).
+		const { approveVendor } = await import(
+			"@/server/services/admin/onboarding"
+		);
+		const approved = await approveVendor({
+			id: vendorId,
+			actor: { userId: oid(), role: "Administrators" },
+		});
+		expect(approved.status).toBe(VendorStatus.ACTIVE);
+		expect(resendProvider.sendVendorApproved).toHaveBeenCalled();
 		void campusId;
 	});
 });
@@ -186,8 +217,13 @@ describe("menu services", () => {
 		expect(updated.name).toBe("Fried Rice");
 
 		expect(
-			(await setMenuItemAvailability({ userId, itemId, isAvailable: false }))
-				.isAvailable,
+			(
+				await setMenuItemAvailability({
+					userId,
+					itemId,
+					isAvailable: false,
+				})
+			).isAvailable,
 		).toBe(false);
 		expect(
 			(await setMenuItemSoldOut({ userId, itemId, isSoldOut: true }))

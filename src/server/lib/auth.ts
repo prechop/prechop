@@ -1,8 +1,13 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import { decodeJwtToken, ErrForbidden, ErrUnauthorized } from "../constants";
-import { getUserByIdDB, UserRole } from "../models";
+import { getUserByIdDB, type IPolicyStatement } from "../models";
 import reLoginUserWithRefreshToken from "../services/auth/reLoginUserWithRefreshToken";
+import {
+	can,
+	type PermissionContext,
+	resolvePermissions,
+} from "../services/iam";
 import type { IJwtPayload } from "../types";
 import { getClientIp } from "./clientIp";
 import {
@@ -18,9 +23,14 @@ export interface AuthResult {
 	token: IJwtPayload;
 	/** True when the access token was refreshed during this request. */
 	refreshed: boolean;
-	role: UserRole;
 	campusId: string;
 	isActive: boolean;
+	/** Names of the IAM groups the user belongs to (for audit labels & UI). */
+	groups: string[];
+	/** Concrete allowed action strings (for coarse UI-style checks). */
+	permissions: string[];
+	/** Resolved policy statements — the source of truth for `requirePermission`. */
+	statements: IPolicyStatement[];
 }
 
 function readAccessToken(req: Request | NextRequest, cookieVal: string | null) {
@@ -31,17 +41,22 @@ function readAccessToken(req: Request | NextRequest, cookieVal: string | null) {
 }
 
 async function resolveScope(userId: string): Promise<{
-	role: UserRole;
 	campusId: string;
 	isActive: boolean;
+	groups: string[];
+	permissions: string[];
+	statements: IPolicyStatement[];
 }> {
 	const user = await getUserByIdDB({ id: userId });
 	if (!user) throw ErrUnauthorized;
 	if (!user.isActive) throw ErrUnauthorized;
+	const resolved = await resolvePermissions(userId);
 	return {
-		role: user.role,
 		campusId: user.campusId?.toString() ?? "",
 		isActive: user.isActive,
+		groups: resolved.groups,
+		permissions: resolved.actions,
+		statements: resolved.statements,
 	};
 }
 
@@ -93,22 +108,58 @@ export async function verifyAuthToken(
 	};
 }
 
-// ── Role guards ─────────────────────────────────────────────────────────────
+// ── Permission guards ────────────────────────────────────────────────────────
 
-export function assertRole(auth: AuthResult, roles: UserRole[]): void {
-	if (!roles.includes(auth.role)) throw ErrForbidden;
+/**
+ * Throw `ErrForbidden` unless the caller's resolved policies permit `action`.
+ * The caller's own `campusId` is injected into the condition context so
+ * campus-scoped policies (`{ campusId: "$user.campusId" }`) evaluate correctly.
+ */
+export function requirePermission(
+	auth: AuthResult,
+	action: string,
+	ctx: PermissionContext = {},
+): void {
+	const context: PermissionContext = {
+		...ctx,
+		user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
+	};
+	if (!can(auth.statements, action, context)) throw ErrForbidden;
 }
 
-export function assertAdmin(auth: AuthResult): void {
-	if (auth.role !== UserRole.SUPER_ADMIN) throw ErrForbidden;
+/** Non-throwing capability check (for branching, not gating). */
+export function hasPermission(
+	auth: AuthResult,
+	action: string,
+	ctx: PermissionContext = {},
+): boolean {
+	const context: PermissionContext = {
+		...ctx,
+		user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
+	};
+	return can(auth.statements, action, context);
 }
+
+/** Membership check against a group name. */
+export function isInGroup(auth: AuthResult, groupName: string): boolean {
+	return auth.groups.includes(groupName);
+}
+
+// ── App-role guards (re-expressed as permission probes) ──────────────────────
+// These keep the existing call-sites working while sourcing their answer from
+// IAM: every vendor has `vendorApp:manage`, every buyer has `buyer:order:read`.
 
 export function assertVendor(auth: AuthResult): void {
-	if (auth.role !== UserRole.VENDOR) throw ErrForbidden;
+	requirePermission(auth, "vendorApp:manage");
 }
 
 export function assertBuyer(auth: AuthResult): void {
-	if (auth.role !== UserRole.BUYER) throw ErrForbidden;
+	requirePermission(auth, "buyer:order:read");
+}
+
+/** Audit label for an actor derived from their group memberships. */
+export function auditRoleLabel(auth: AuthResult): string {
+	return auth.groups.join(",");
 }
 
 // ── withAuth wrapper ─────────────────────────────────────────────────────────

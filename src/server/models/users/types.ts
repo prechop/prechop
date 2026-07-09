@@ -1,5 +1,4 @@
 import type { IJwtPayload } from "../../types";
-import type { UserRole } from "../enums";
 
 export interface IRefreshTokenEntry {
 	refreshToken: string;
@@ -8,7 +7,10 @@ export interface IRefreshTokenEntry {
 
 export interface IUserCreateInput {
 	campusId: string;
-	role?: UserRole;
+	/** IAM group ids assigned at creation (e.g. the Buyers or Vendors group). */
+	groupIds?: string[];
+	/** Managed policy ids attached directly to the user (rarely set at signup). */
+	directPolicyIds?: string[];
 	firstName: string;
 	lastName: string;
 	// `phone` is provided in plaintext to the create fn, which encrypts it and
@@ -22,7 +24,10 @@ export interface IUser {
 	_id: string;
 	id?: string;
 	campusId: string;
-	role: UserRole;
+	/** IAM group ids the user belongs to. */
+	groupIds: string[];
+	/** Managed policy ids attached directly to the user. */
+	directPolicyIds: string[];
 	firstName: string;
 	lastName: string;
 	// AES-256-GCM ciphertext. Decrypt with `constants/crypto.decrypt` only when
@@ -46,7 +51,10 @@ export interface IUserMethods extends IUser {
 export interface IUserPublic {
 	id: string;
 	campusId: string;
-	role: UserRole;
+	/** Resolved group names, for UI labelling. */
+	groups: string[];
+	/** Resolved effective permission action strings, for UI gating. */
+	permissions: string[];
 	firstName: string;
 	lastName: string;
 	phone: string;

@@ -35,6 +35,9 @@ export default defineConfig({
 			MONGODB_URI: process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017",
 			DB_NAME: process.env.DB_NAME ?? "prechop",
 			REDIS_URI: process.env.REDIS_URI ?? "redis://127.0.0.1:6379",
+			// Log OTPs instead of calling the SMS provider so authenticated
+			// e2e flows can complete login against the local stack.
+			OTP_PROVIDER: process.env.OTP_PROVIDER ?? "console",
 		},
 	},
 });

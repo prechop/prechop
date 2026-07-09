@@ -15,3 +15,4 @@ export { Loader, PageLoader } from "./Loader";
 export { default as PwaRegistrar } from "./PwaRegistrar";
 export { default as StyledComponentsRegistry } from "./StyledComponentsRegistry";
 export { Badge, Heading, Text, Title } from "./Text";
+export { ThemeToggle } from "./ThemeToggle";

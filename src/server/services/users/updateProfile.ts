@@ -1,6 +1,7 @@
 import { ErrUserNotFound } from "../../constants";
 import { updateUserProfileDB } from "../../models";
 import type { IUserPublic } from "../../models/users/types";
+import { resolvePermissions } from "../iam";
 import { toPublicUser } from "./toPublicUser";
 
 /** Update the authenticated user's first/last name. */
@@ -19,5 +20,9 @@ export async function updateProfile({
 		lastName,
 	});
 	if (!updated) throw ErrUserNotFound;
-	return toPublicUser(updated);
+	const resolved = await resolvePermissions(userId);
+	return toPublicUser(updated, {
+		groups: resolved.groups,
+		permissions: resolved.actions,
+	});
 }

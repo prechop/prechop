@@ -164,12 +164,25 @@ export default function LoginWrapper() {
 		setLoading(true);
 		try {
 			const res = await api.post("/auth/otp/verify", { phone, otp });
-			const role = res.data?.data?.user?.role as string;
+			const u = res.data?.data?.user as
+				| {
+						groups?: string[];
+						permissions?: string[];
+				  }
+				| undefined;
+			const groups = u?.groups ?? [];
+			const permissions = u?.permissions ?? [];
 			await refresh();
 			const next = params.get("next");
+			// Staff (anyone who can read the IAM or onboarding console) → /admin.
+			const isStaff =
+				permissions.includes("iam:user:read") ||
+				permissions.includes("onboarding:read") ||
+				permissions.includes("analytics:read") ||
+				groups.includes("Administrators");
 			if (next) router.replace(next);
-			else if (role === "VENDOR") router.replace("/dashboard");
-			else if (role === "SUPER_ADMIN") router.replace("/admin");
+			else if (isStaff) router.replace("/admin");
+			else if (groups.includes("Vendors")) router.replace("/dashboard");
 			else router.replace("/marketplace");
 		} catch (e) {
 			toast(errMsg(e), "error");

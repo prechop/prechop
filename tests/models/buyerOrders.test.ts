@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateOrderNumber } from "@/server/constants/orderNumber";
-import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import {
 	countBuyerOrdersDB,
 	createBuyerOrderDB,
@@ -14,6 +13,7 @@ import {
 	markBuyerOrderRefundedDB,
 	setBuyerOrderStatusDB,
 } from "@/server/models/buyerOrders";
+import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
 beforeAll(async () => {

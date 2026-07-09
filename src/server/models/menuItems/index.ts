@@ -192,6 +192,66 @@ export async function listMenuItemsByVendorDB({
 	}
 }
 
+/** Admin cross-vendor catalog listing with optional campus/text filters. */
+export async function listAllMenuItemsDB({
+	campusId,
+	search,
+	skip = 0,
+	limit = 50,
+	session,
+}: {
+	campusId?: string;
+	search?: string;
+	skip?: number;
+	limit?: number;
+	session?: ClientSession;
+} = {}): Promise<{ items: IMenuItem[]; total: number }> {
+	const match: Record<string, unknown> = { deleted: false };
+	if (campusId && mongoose.Types.ObjectId.isValid(campusId))
+		match.campusId = new mongoose.Types.ObjectId(campusId);
+	if (search)
+		match.name = {
+			$regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+			$options: "i",
+		};
+	const [items, total] = await Promise.all([
+		MenuItem.aggregate<IMenuItem>(
+			[
+				{ $match: match },
+				{ $sort: { createdAt: -1 } },
+				{ $skip: skip },
+				{ $limit: Math.min(limit, 100) },
+			],
+			{ session },
+		),
+		MenuItem.countDocuments(match, { session }),
+	]);
+	return { items, total };
+}
+
+/** Admin takedown / restore of any vendor's menu item. */
+export async function adminSetMenuAvailabilityDB({
+	id,
+	isAvailable,
+	session,
+}: {
+	id: string;
+	isAvailable: boolean;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await MenuItem.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { isAvailable } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
 export async function countMenuItemsByVendorDB({
 	vendorId,
 	session,

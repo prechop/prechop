@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	calculateCompleteness,
 	type CompletenessInput,
+	calculateCompleteness,
 } from "@/server/helpers/completeness";
 
 const empty: CompletenessInput = {
@@ -32,21 +32,21 @@ describe("calculateCompleteness", () => {
 	});
 
 	it("weights each field correctly in isolation", () => {
-		expect(
-			calculateCompleteness({ ...empty, isPhoneVerified: true }),
-		).toBe(10);
-		expect(
-			calculateCompleteness({ ...empty, hasProfileImage: true }),
-		).toBe(15);
-		expect(
-			calculateCompleteness({ ...empty, hasMenuCategory: true }),
-		).toBe(10);
+		expect(calculateCompleteness({ ...empty, isPhoneVerified: true })).toBe(
+			10,
+		);
+		expect(calculateCompleteness({ ...empty, hasProfileImage: true })).toBe(
+			15,
+		);
+		expect(calculateCompleteness({ ...empty, hasMenuCategory: true })).toBe(
+			10,
+		);
 		expect(
 			calculateCompleteness({ ...empty, hasTimetableEntry: true }),
 		).toBe(15);
-		expect(
-			calculateCompleteness({ ...empty, hasBankDetails: true }),
-		).toBe(25);
+		expect(calculateCompleteness({ ...empty, hasBankDetails: true })).toBe(
+			25,
+		);
 	});
 
 	it("only awards menu-item weight at the 3-item threshold", () => {

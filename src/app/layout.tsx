@@ -45,6 +45,13 @@ export default function RootLayout({
 			<head>
 				<link rel="apple-touch-icon" href="/icons/icon-192.svg" />
 				<style>{`html,body{background:#FFF6EC}:root[data-theme="dark"] body{background:#14100C}`}</style>
+				{/* Apply the saved theme before first paint to avoid a flash. */}
+				<script
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: tiny inline theme bootstrap must run pre-hydration
+					dangerouslySetInnerHTML={{
+						__html: `(function(){try{var t=localStorage.getItem('pc-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
+					}}
+				/>
 			</head>
 			<body className={jakarta.className}>
 				<div id="modal-root" />

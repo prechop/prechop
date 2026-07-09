@@ -62,6 +62,20 @@ const schema = new mongoose.Schema<any>(
 		completionRate: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
+		// Notification preferences (default opted-in).
+		notifyNewOrders: { type: Boolean, default: true },
+		notifyPayouts: { type: Boolean, default: true },
+		notifyReviews: { type: Boolean, default: true },
+		// Daily-order composer defaults.
+		defaultPickupAvailable: { type: Boolean, default: true },
+		defaultDeliveryAvailable: { type: Boolean, default: false },
+		defaultDeliveryFeeKobo: { type: Number, default: 0 },
+		// ── Onboarding review trail ──────────────────────────────────────
+		submittedAt: { type: Date },
+		reviewedAt: { type: Date },
+		reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+		rejectionReason: { type: String },
+		reviewNotes: { type: String },
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
@@ -165,6 +179,68 @@ export async function setVendorStatusDB({
 		const res = await VendorProfile.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $set: { status } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Move a vendor into PENDING_REVIEW and stamp the submission time. */
+export async function submitVendorForReviewDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await VendorProfile.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					status: VendorStatus.PENDING_REVIEW,
+					submittedAt: new Date(),
+					rejectionReason: null,
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Record an admin review decision (approve → ACTIVE, reject → CHANGES_REQUESTED). */
+export async function reviewVendorDB({
+	id,
+	status,
+	reviewedBy,
+	rejectionReason,
+	reviewNotes,
+	session,
+}: {
+	id: string;
+	status: VendorStatus;
+	reviewedBy: string;
+	rejectionReason?: string;
+	reviewNotes?: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await VendorProfile.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					status,
+					reviewedAt: new Date(),
+					reviewedBy: new mongoose.Types.ObjectId(reviewedBy),
+					rejectionReason: rejectionReason ?? null,
+					reviewNotes: reviewNotes ?? null,
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return !!res;

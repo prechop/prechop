@@ -4,18 +4,107 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import styled from "styled-components";
-import { Avatar, PageLoader } from "@/components";
+import { Avatar, PageLoader, ThemeToggle } from "@/components";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
-const nav = [
+/**
+ * Each nav item declares the permission that unlocks it. The Overview has no
+ * permission — it shows whenever any other item is visible (i.e. the user is
+ * staff). The shell as a whole is gated on having ≥1 visible item.
+ */
+interface NavItemDef {
+	href: string;
+	label: string;
+	icon: string;
+	permission?: string;
+}
+
+const nav: NavItemDef[] = [
 	{ href: "/admin", label: "Overview", icon: "📊" },
-	{ href: "/admin/vendors", label: "Vendors", icon: "🍳" },
-	{ href: "/admin/orders", label: "Orders", icon: "🧾" },
-	{ href: "/admin/reviews", label: "Reviews", icon: "⭐" },
-	{ href: "/admin/campuses", label: "Campuses", icon: "🏫" },
-	{ href: "/admin/schools", label: "Schools", icon: "🎓" },
-	{ href: "/admin/whatsapp-tvs", label: "WhatsApp TVs", icon: "📺" },
-	{ href: "/admin/settings", label: "Settings", icon: "⚙️" },
+	{
+		href: "/admin/onboarding",
+		label: "Onboarding",
+		icon: "📥",
+		permission: "onboarding:read",
+	},
+	{
+		href: "/admin/vendors",
+		label: "Vendors",
+		icon: "🍳",
+		permission: "vendor:read",
+	},
+	{
+		href: "/admin/orders",
+		label: "Orders",
+		icon: "🧾",
+		permission: "order:read",
+	},
+	{
+		href: "/admin/catalog",
+		label: "Catalog",
+		icon: "🍽️",
+		permission: "menu:read",
+	},
+	{
+		href: "/admin/payments",
+		label: "Payments",
+		icon: "💳",
+		permission: "payment:read",
+	},
+	{
+		href: "/admin/reviews",
+		label: "Reviews",
+		icon: "⭐",
+		permission: "review:read",
+	},
+	{
+		href: "/admin/analytics",
+		label: "Analytics",
+		icon: "📈",
+		permission: "analytics:read",
+	},
+	{
+		href: "/admin/notifications",
+		label: "Notifications",
+		icon: "🔔",
+		permission: "notification:send",
+	},
+	{
+		href: "/admin/campuses",
+		label: "Campuses",
+		icon: "🏫",
+		permission: "campus:read",
+	},
+	{
+		href: "/admin/schools",
+		label: "Schools",
+		icon: "🎓",
+		permission: "school:read",
+	},
+	{
+		href: "/admin/whatsapp-tvs",
+		label: "WhatsApp TVs",
+		icon: "📺",
+		permission: "whatsappTv:read",
+	},
+	{
+		href: "/admin/audit",
+		label: "Audit log",
+		icon: "🛡️",
+		permission: "audit:read",
+	},
+	{
+		href: "/admin/iam",
+		label: "Access (IAM)",
+		icon: "🔐",
+		permission: "iam:user:read",
+	},
+	{
+		href: "/admin/settings",
+		label: "Settings",
+		icon: "⚙️",
+		permission: "siteConfig:read",
+	},
 ];
 
 const Layout = styled.div`
@@ -220,19 +309,24 @@ export default function AdminShell({
 }: {
 	children: React.ReactNode;
 }) {
-	const { user, isLoading, isAuthenticated, logout } = useAuth();
+	const { user, isLoading, isAuthenticated, logout, can } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
 	const [open, setOpen] = useState(false);
+
+	// Nav items the user is permitted to see. Overview shows whenever any other
+	// item is visible; the shell is accessible iff ≥1 item is visible.
+	const visibleNav = nav.filter((n) => !n.permission || can(n.permission));
+	const hasAdminAccess = visibleNav.some((n) => n.permission);
 
 	useEffect(() => {
 		if (isLoading) return;
 		if (!isAuthenticated) {
 			router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-		} else if (user && user.role !== "SUPER_ADMIN") {
+		} else if (user && !hasAdminAccess) {
 			router.replace("/");
 		}
-	}, [isLoading, isAuthenticated, user, router, pathname]);
+	}, [isLoading, isAuthenticated, user, router, pathname, hasAdminAccess]);
 
 	// Close the mobile drawer on navigation.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-run purely to react to route changes
@@ -240,9 +334,14 @@ export default function AdminShell({
 		setOpen(false);
 	}, [pathname]);
 
-	if (isLoading || !isAuthenticated || user?.role !== "SUPER_ADMIN") {
+	if (isLoading || !isAuthenticated || !user || !hasAdminAccess) {
 		return <PageLoader />;
 	}
+
+	const staffLabel = user.groups.includes("Administrators")
+		? "Administrator"
+		: (user.groups.find((g) => g !== "Buyers" && g !== "Vendors") ??
+			"Staff");
 
 	const isActive = (href: string) =>
 		href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
@@ -257,7 +356,7 @@ export default function AdminShell({
 				</Brand>
 				<NavLabel>Management</NavLabel>
 				<NavList>
-					{nav.map((n) => (
+					{visibleNav.map((n) => (
 						<NavItem
 							key={n.href}
 							href={n.href}
@@ -278,10 +377,13 @@ export default function AdminShell({
 							<UserName>
 								{user.firstName} {user.lastName}
 							</UserName>
-							<UserRole>Super Admin</UserRole>
+							<UserRole>{staffLabel}</UserRole>
 						</UserMeta>
 					</UserRow>
-					<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+					<div style={{ display: "flex", gap: 8 }}>
+						<ThemeToggle />
+						<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+					</div>
 				</SideFooter>
 			</Sidebar>
 			<div style={{ minWidth: 0 }}>
@@ -293,6 +395,9 @@ export default function AdminShell({
 						☰
 					</Burger>
 					<MobileBrand>Prechop Admin</MobileBrand>
+					<div style={{ marginLeft: "auto" }}>
+						<ThemeToggle />
+					</div>
 				</MobileBar>
 				<Main>{children}</Main>
 			</div>

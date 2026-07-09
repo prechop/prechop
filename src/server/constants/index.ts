@@ -9,4 +9,5 @@ export { default as isOriginAllowed } from "./isOriginAllowed";
 export * from "./kobo";
 export * from "./orderNumber";
 export * from "./otp";
+export * from "./permissions";
 export { default as wait } from "./wait";

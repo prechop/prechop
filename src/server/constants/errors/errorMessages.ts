@@ -38,6 +38,12 @@ export const ErrProfileIncomplete: Error = new Error(
 export const ErrCampusMismatch: Error = new Error(
 	"This resource belongs to a different campus.",
 );
+export const ErrBuiltInImmutable: Error = new Error(
+	"Built-in groups and policies cannot be modified or deleted.",
+);
+export const ErrSelfLockout: Error = new Error(
+	"You cannot remove your own administrative access.",
+);
 
 // ── 404 ──────────────────────────────────────────────────────────────────
 export const ErrResourceNotFound: Error = new Error("Resource not found");
@@ -48,6 +54,8 @@ export const ErrDailyOrderNotFound: Error = new Error(
 );
 export const ErrOrderNotFound: Error = new Error("Order not found.");
 export const ErrMenuItemNotFound: Error = new Error("Menu item not found.");
+export const ErrPolicyNotFound: Error = new Error("Policy not found.");
+export const ErrGroupNotFound: Error = new Error("Group not found.");
 
 // ── 409 ──────────────────────────────────────────────────────────────────
 export const ErrResourceAlreadyExist: Error = new Error(

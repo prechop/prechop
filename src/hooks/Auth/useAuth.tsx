@@ -13,6 +13,10 @@ interface AuthCtx {
 	isAuthenticated: boolean;
 	refresh: () => void;
 	logout: () => Promise<void>;
+	/** True if the user's resolved permissions include `action`. */
+	can: (action: string) => boolean;
+	/** True if the user belongs to the named IAM group. */
+	inGroup: (group: string) => boolean;
 }
 
 const Ctx = createContext<AuthCtx>({
@@ -21,6 +25,8 @@ const Ctx = createContext<AuthCtx>({
 	isAuthenticated: false,
 	refresh: () => {},
 	logout: async () => {},
+	can: () => false,
+	inGroup: () => false,
 });
 
 export function useAuth(): AuthCtx {
@@ -45,12 +51,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		router.push("/login");
 	};
 
+	const currentUser = error ? null : (data ?? null);
 	const value: AuthCtx = {
-		user: error ? null : (data ?? null),
+		user: currentUser,
 		isLoading,
 		isAuthenticated: !error && !!data,
 		refresh: () => mutate(),
 		logout,
+		can: (action: string) => !!currentUser?.permissions?.includes(action),
+		inGroup: (group: string) => !!currentUser?.groups?.includes(group),
 	};
 
 	return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

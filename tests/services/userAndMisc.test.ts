@@ -1,22 +1,27 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { encrypt } from "@/server/constants/crypto";
+import { createNotificationDB } from "@/server/models/notifications";
 import { getUserByIdDB } from "@/server/models/users";
 import { createWhatsappTvDB } from "@/server/models/whatsappTvs";
-import { getMe } from "@/server/services/users/getMe";
-import { updateProfile } from "@/server/services/users/updateProfile";
-import { updateCampus } from "@/server/services/users/updateCampus";
-import { deactivateAccount } from "@/server/services/users/deactivateAccount";
 import { listActiveCampuses } from "@/server/services/campus/listActiveCampuses";
-import { listVendorWhatsappTvs } from "@/server/services/whatsappTvs/listVendorWhatsappTvs";
+import { createUserNotification } from "@/server/services/notifications/createUserNotification";
 import {
 	getUnreadCount,
 	listNotifications,
 	markAllNotificationsRead,
 	markNotificationRead,
 } from "@/server/services/notifications/listNotifications";
-import { createUserNotification } from "@/server/services/notifications/createUserNotification";
-import { createNotificationDB } from "@/server/models/notifications";
-import { connectTestDB, dropAndDisconnect, oid, uniquePhone } from "../helpers/db";
+import { deactivateAccount } from "@/server/services/users/deactivateAccount";
+import { getMe } from "@/server/services/users/getMe";
+import { updateCampus } from "@/server/services/users/updateCampus";
+import { updateProfile } from "@/server/services/users/updateProfile";
+import { listVendorWhatsappTvs } from "@/server/services/whatsappTvs/listVendorWhatsappTvs";
+import {
+	connectTestDB,
+	dropAndDisconnect,
+	oid,
+	uniquePhone,
+} from "../helpers/db";
 import { makeCampus, makeUser } from "../helpers/factories";
 
 beforeAll(async () => {

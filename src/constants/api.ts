@@ -39,6 +39,14 @@ api.interceptors.response.use(
 			const isAuthProbe = reqUrl.includes("/users/me");
 			if (isAuthProbe) return Promise.reject(error);
 
+			// Auth endpoints must never trigger a refresh: a 401 from OTP verify,
+			// login, register or the refresh call itself is a genuine failure, not
+			// an expired session. Attempting a refresh here deadlocks (the refresh
+			// call's own 401 re-enters this interceptor and awaits the in-flight
+			// refresh promise) — which is what made OTP verify spin forever.
+			const isAuthEndpoint = reqUrl.startsWith("/auth/");
+			if (isAuthEndpoint) return Promise.reject(error);
+
 			const ok = await tryRefresh();
 			if (ok) return api(original);
 			if (typeof window !== "undefined") {

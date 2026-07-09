@@ -33,7 +33,9 @@ describe("encrypt/decrypt", () => {
 	it("rejects tampered ciphertext (auth tag mismatch)", () => {
 		const cipher = encrypt("secret");
 		const [iv, tag, data] = cipher.split(":");
-		const flipped = data.startsWith("0") ? `1${data.slice(1)}` : `0${data.slice(1)}`;
+		const flipped = data.startsWith("0")
+			? `1${data.slice(1)}`
+			: `0${data.slice(1)}`;
 		expect(() => decrypt(`${iv}:${tag}:${flipped}`)).toThrow();
 	});
 });

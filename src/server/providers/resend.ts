@@ -65,6 +65,46 @@ class ResendProvider {
 			}),
 		);
 	}
+
+	async sendVendorSubmissionReceived(
+		to: string,
+		businessName: string,
+	): Promise<void> {
+		await safeSend(() =>
+			resend.emails.send({
+				from: RESEND_FROM_EMAIL,
+				to,
+				subject: "We've received your PreChop vendor application",
+				html: `<p>Hi ${businessName},</p><p>Thanks for submitting your vendor application. Our team will review your details and get back to you shortly. You'll be able to go live once approved.</p><p>— The PreChop Team</p>`,
+			}),
+		);
+	}
+
+	async sendVendorApproved(to: string, businessName: string): Promise<void> {
+		await safeSend(() =>
+			resend.emails.send({
+				from: RESEND_FROM_EMAIL,
+				to,
+				subject: "You're approved — welcome to PreChop! 🎉",
+				html: `<p>Hi ${businessName},</p><p>Great news — your vendor application has been approved and your storefront is now live. Open your dashboard to start taking orders.</p><p>— The PreChop Team</p>`,
+			}),
+		);
+	}
+
+	async sendVendorChangesRequested(
+		to: string,
+		businessName: string,
+		reason: string,
+	): Promise<void> {
+		await safeSend(() =>
+			resend.emails.send({
+				from: RESEND_FROM_EMAIL,
+				to,
+				subject: "Action needed on your PreChop vendor application",
+				html: `<p>Hi ${businessName},</p><p>We reviewed your application and need a few changes before we can approve it.</p><p><strong>What to fix:</strong> ${reason}</p><p>Update your profile and resubmit — we'll take another look right away.</p><p>— The PreChop Team</p>`,
+			}),
+		);
+	}
 }
 
 export const resendProvider = new ResendProvider();

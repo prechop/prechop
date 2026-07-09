@@ -3,22 +3,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PAYSTACK_SECRET_KEY } from "@/server/constants/environments";
 import { generateOrderNumber } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
-import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import {
 	createBuyerOrderDB,
 	getBuyerOrderByIdDB,
 	setBuyerOrderStatusDB,
 } from "@/server/models/buyerOrders";
+import { DayOfWeek, FulfillmentType, OrderStatus } from "@/server/models/enums";
 import { paystackProvider } from "@/server/providers/paystack";
-import { cancelOrderAsVendor } from "@/server/services/buyerOrders/cancel";
 import { rebuildDailySnapshots } from "@/server/services/analyticsJobs";
+import { cancelOrderAsVendor } from "@/server/services/buyerOrders/cancel";
 import {
 	bulkEntriesSchema,
 	dayOfWeekParamSchema,
 	deleteEntrySchema,
 	upsertEntrySchema,
 } from "@/server/validators/timetable/validate";
-import { DayOfWeek } from "@/server/models/enums";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeUser, makeVendor } from "../helpers/factories";
 
@@ -41,12 +40,12 @@ describe("paystack verifyWebhookSignature", () => {
 			.update(body)
 			.digest("hex");
 		expect(paystackProvider.verifyWebhookSignature(body, sig)).toBe(true);
-		expect(
-			paystackProvider.verifyWebhookSignature(`${body} `, sig),
-		).toBe(false);
-		expect(
-			paystackProvider.verifyWebhookSignature(body, undefined),
-		).toBe(false);
+		expect(paystackProvider.verifyWebhookSignature(`${body} `, sig)).toBe(
+			false,
+		);
+		expect(paystackProvider.verifyWebhookSignature(body, undefined)).toBe(
+			false,
+		);
 		// wrong-length hex signature
 		expect(paystackProvider.verifyWebhookSignature(body, "abcd")).toBe(
 			false,
@@ -154,11 +153,7 @@ describe("rebuildDailySnapshots (analytics job)", () => {
 		// an order dated within yesterday's window
 		const now = new Date();
 		const to = new Date(
-			Date.UTC(
-				now.getUTCFullYear(),
-				now.getUTCMonth(),
-				now.getUTCDate(),
-			),
+			Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
 		);
 		const yesterdayNoon = new Date(to.getTime() - 12 * 60 * 60 * 1000);
 
@@ -209,19 +204,21 @@ describe("timetable validators", () => {
 			dayOfWeekParamSchema.safeParse({ dayOfWeek: DayOfWeek.MONDAY })
 				.success,
 		).toBe(true);
-		expect(dayOfWeekParamSchema.safeParse({ dayOfWeek: "FUNDAY" }).success).toBe(
-			false,
-		);
+		expect(
+			dayOfWeekParamSchema.safeParse({ dayOfWeek: "FUNDAY" }).success,
+		).toBe(false);
 		const entry = {
 			menuItemId: "m1",
 			dayOfWeek: DayOfWeek.MONDAY,
 			isOpen: true,
 		};
 		expect(upsertEntrySchema.safeParse(entry).success).toBe(true);
-		expect(
-			bulkEntriesSchema.safeParse({ entries: [entry] }).success,
-		).toBe(true);
-		expect(bulkEntriesSchema.safeParse({ entries: [] }).success).toBe(false);
+		expect(bulkEntriesSchema.safeParse({ entries: [entry] }).success).toBe(
+			true,
+		);
+		expect(bulkEntriesSchema.safeParse({ entries: [] }).success).toBe(
+			false,
+		);
 		expect(deleteEntrySchema.safeParse({ id: "x" }).success).toBe(true);
 	});
 });

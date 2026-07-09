@@ -15,7 +15,13 @@ export enum VendorType {
 }
 
 export enum VendorStatus {
+	/** Vendor is still filling in their onboarding details. */
 	INCOMPLETE = "INCOMPLETE",
+	/** Submitted; awaiting admin review. Locked read-only. */
+	PENDING_REVIEW = "PENDING_REVIEW",
+	/** Admin rejected the submission with feedback; vendor edits & resubmits. */
+	CHANGES_REQUESTED = "CHANGES_REQUESTED",
+	/** Approved and live. */
 	ACTIVE = "ACTIVE",
 	SUSPENDED = "SUSPENDED",
 }

@@ -6,16 +6,15 @@ import {
 	getVendorProfileByIdDB,
 	hasAnyTimetableEntryDB,
 	setVendorCompletenessDB,
-	setVendorStatusDB,
-	VendorStatus,
+	type VendorStatus,
 } from "@/server/models";
-import { resendProvider } from "@/server/providers";
-import { getSiteConfigs } from "@/server/services/siteConfigs";
 
 /**
  * Recompute a vendor's profile completeness from its current onboarding state.
- * When the score meets the configured threshold and the vendor is still
- * INCOMPLETE, promote it to ACTIVE and send the welcome email.
+ *
+ * NOTE: completeness no longer auto-activates a vendor. A complete profile only
+ * unlocks the "Submit for review" action; going ACTIVE requires explicit admin
+ * approval (see `submitVendorForReview` + the admin onboarding service).
  */
 export async function recomputeVendorCompleteness({
 	vendorId,
@@ -44,19 +43,5 @@ export async function recomputeVendorCompleteness({
 
 	await setVendorCompletenessDB({ id: vendorId, profileCompleteness });
 
-	let status = vendor.status;
-	const { profileCompletenessRequired } = await getSiteConfigs();
-	if (
-		profileCompleteness >= profileCompletenessRequired &&
-		vendor.status === VendorStatus.INCOMPLETE
-	) {
-		await setVendorStatusDB({ id: vendorId, status: VendorStatus.ACTIVE });
-		status = VendorStatus.ACTIVE;
-		await resendProvider.sendVendorWelcome(
-			vendor.email,
-			vendor.businessName ?? "there",
-		);
-	}
-
-	return { profileCompleteness, status };
+	return { profileCompleteness, status: vendor.status };
 }

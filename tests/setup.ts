@@ -5,7 +5,8 @@
 // run in parallel without clobbering each other.
 
 (process.env as Record<string, string>).NODE_ENV = "test";
-process.env.MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
+process.env.MONGODB_URI =
+	process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
 process.env.REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 // Include the pid: pool ids are only unique WITHIN one vitest process, so two
 // concurrent `vitest run` invocations would otherwise share scratch DBs and

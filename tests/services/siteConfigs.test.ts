@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_SITE_CONFIGS } from "@/server/models/siteConfigs/types";
 import { upsertSiteConfigsDB } from "@/server/models/siteConfigs";
+import { DEFAULT_SITE_CONFIGS } from "@/server/models/siteConfigs/types";
 import {
 	getSiteConfigs,
 	invalidateSiteConfigsCache,

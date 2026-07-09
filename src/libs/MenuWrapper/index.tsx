@@ -69,14 +69,22 @@ const Overlay = styled.div`
 	align-items: flex-end;
 	justify-content: center;
 	animation: pc-fade-up var(--pc-dur) var(--pc-ease);
+	@media (min-width: 760px) {
+		align-items: center;
+		padding: var(--pc-space-4);
+	}
 `;
 const Sheet = styled(Card)`
 	width: 100%;
-	max-width: var(--pc-maxw);
+	max-width: 540px;
 	border-radius: var(--pc-radius-lg) var(--pc-radius-lg) 0 0;
 	max-height: 92dvh;
 	overflow-y: auto;
 	box-shadow: var(--pc-shadow-lg);
+	@media (min-width: 760px) {
+		border-radius: var(--pc-radius-lg);
+		max-height: 88dvh;
+	}
 `;
 const Handle = styled.div`
 	width: 40px;
@@ -84,6 +92,38 @@ const Handle = styled.div`
 	border-radius: 999px;
 	background: var(--pc-surface-3);
 	margin: 0 auto var(--pc-space-2);
+	@media (min-width: 760px) {
+		display: none;
+	}
+`;
+const ReorderCol = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex-shrink: 0;
+`;
+const ArrowBtn = styled.button`
+	all: unset;
+	box-sizing: border-box;
+	cursor: pointer;
+	width: 30px;
+	height: 24px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--pc-radius-sm);
+	color: var(--pc-text-muted);
+	font-size: 13px;
+	background: var(--pc-surface-2);
+	transition: background var(--pc-dur) var(--pc-ease),
+		color var(--pc-dur) var(--pc-ease);
+	&:hover:not(:disabled) {
+		background: var(--pc-color-primary-50);
+		color: var(--pc-color-primary);
+	}
+	&:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
 `;
 const ItemCard = styled(Card)`
 	padding: var(--pc-space-4);
@@ -169,6 +209,7 @@ export default function MenuWrapper() {
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [uploadingId, setUploadingId] = useState<string | null>(null);
+	const [reordering, setReordering] = useState(false);
 
 	const items = data ?? [];
 
@@ -211,6 +252,8 @@ export default function MenuWrapper() {
 				await api.patch(`/menu/${draft.id}`, body);
 				toast("Menu item updated", "success");
 			} else {
+				// Append new items to the end of the current order.
+				body.displayOrder = items.length;
 				await api.post("/menu", body);
 				toast("Menu item added", "success");
 			}
@@ -231,6 +274,46 @@ export default function MenuWrapper() {
 			await mutate();
 		} catch (e) {
 			toast(errMsg(e), "error");
+		}
+	}
+
+	/**
+	 * Move an item up/down within its category group. Reassigns a clean,
+	 * sequential `displayOrder` across the whole (category-ordered) list so the
+	 * new order survives a reload, and optimistically updates the SWR cache.
+	 */
+	async function moveItem(catItems: MenuItem[], index: number, dir: -1 | 1) {
+		const target = index + dir;
+		if (target < 0 || target >= catItems.length || reordering) return;
+
+		const reorderedCat = [...catItems];
+		const [moved] = reorderedCat.splice(index, 1);
+		reorderedCat.splice(target, 0, moved);
+
+		const movedCat = moved.category;
+		const nextList = CATEGORY_ORDER.flatMap((cat) =>
+			cat === movedCat
+				? reorderedCat
+				: items
+						.filter((i) => i.category === cat)
+						.sort((a, b) => a.displayOrder - b.displayOrder),
+		).map((it, i) => ({ ...it, displayOrder: i }));
+
+		setReordering(true);
+		try {
+			await mutate(nextList, { revalidate: false });
+			await api.post("/menu/reorder", {
+				items: nextList.map((it) => ({
+					id: it.id,
+					displayOrder: it.displayOrder,
+				})),
+			});
+			await mutate();
+		} catch (e) {
+			toast(errMsg(e), "error");
+			await mutate();
+		} finally {
+			setReordering(false);
 		}
 	}
 
@@ -309,7 +392,9 @@ export default function MenuWrapper() {
 	const grouped = CATEGORY_ORDER.map((cat) => ({
 		cat,
 		label: CATEGORIES.find((c) => c.value === cat)?.label ?? cat,
-		items: items.filter((i) => i.category === cat),
+		items: items
+			.filter((i) => i.category === cat)
+			.sort((a, b) => a.displayOrder - b.displayOrder),
 	})).filter((g) => g.items.length > 0);
 
 	const availableCount = items.filter((i) => i.isAvailable).length;
@@ -375,10 +460,48 @@ export default function MenuWrapper() {
 										</Badge>
 									}
 								/>
-								{g.items.map((it) => (
+								{g.items.map((it, idx) => (
 									<ItemCard key={it.id}>
 										<Stack $gap={12}>
 											<Row $gap={12} $align="flex-start">
+												<ReorderCol>
+													<ArrowBtn
+														type="button"
+														aria-label={`Move ${it.name} up`}
+														disabled={
+															idx === 0 ||
+															reordering
+														}
+														onClick={() =>
+															moveItem(
+																g.items,
+																idx,
+																-1,
+															)
+														}
+													>
+														▲
+													</ArrowBtn>
+													<ArrowBtn
+														type="button"
+														aria-label={`Move ${it.name} down`}
+														disabled={
+															idx ===
+																g.items.length -
+																	1 ||
+															reordering
+														}
+														onClick={() =>
+															moveItem(
+																g.items,
+																idx,
+																1,
+															)
+														}
+													>
+														▼
+													</ArrowBtn>
+												</ReorderCol>
 												<label
 													style={{
 														cursor: "pointer",

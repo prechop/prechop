@@ -1,18 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { decrypt } from "@/server/constants/crypto";
+import { createSchoolDB } from "@/server/models/schools";
 import { getVendorWithSecretsDB } from "@/server/models/vendorProfiles";
 import { paystackProvider } from "@/server/providers/paystack";
 import { resendProvider } from "@/server/providers/resend";
-import { s3Provider } from "@/server/providers/s3";
+import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { setBankDetails } from "@/server/services/vendors/bankDetails";
 import { listBanks } from "@/server/services/vendors/banks";
-import { listVendorSchools } from "@/server/services/vendors/schools";
 import {
 	confirmProfileImage,
 	presignProfileImage,
 } from "@/server/services/vendors/profileImage";
-import { createSchoolDB } from "@/server/models/schools";
-import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
+import { listVendorSchools } from "@/server/services/vendors/schools";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeVendor } from "../helpers/factories";
 
@@ -94,7 +93,10 @@ describe("profileImage", () => {
 	it("rejects an unsupported mime type", async () => {
 		const { userId } = await makeVendor();
 		await expect(
-			presignProfileImage({ userId, mimeType: "application/x-msdownload" }),
+			presignProfileImage({
+				userId,
+				mimeType: "application/x-msdownload",
+			}),
 		).rejects.toThrow();
 	});
 });

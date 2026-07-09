@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DB_NAME } from "@/server/constants/environments";
-import { Redis } from "@/server/databases/redis";
-import { ok } from "@/server/lib/response";
-import { withApiHandler } from "@/server/lib/handler";
 import { validationError } from "@/server/constants/errors";
+import { Redis } from "@/server/databases/redis";
+import { withApiHandler } from "@/server/lib/handler";
+import { ok } from "@/server/lib/response";
 import { connectTestDB, dropAndDisconnect } from "../helpers/db";
 
 const rlKeys = new Set<string>();
@@ -33,7 +33,10 @@ describe("withApiHandler", () => {
 		const ip = `8.8.8.${Math.floor(Math.random() * 255)}`;
 		rlKeys.add(`rate-limit:${DB_NAME}:${ip}`);
 		const wrapped = withApiHandler(
-			{ route: "/api/x", rateLimit: { windowMs: 60_000, maxRequests: 10 } },
+			{
+				route: "/api/x",
+				rateLimit: { windowMs: 60_000, maxRequests: 10 },
+			},
 			async () => ok({ hello: true }),
 		);
 		const res = await wrapped(nextReq({ "x-real-ip": ip }), {});

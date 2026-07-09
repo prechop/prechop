@@ -19,6 +19,7 @@ import {
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { useToast } from "@/hooks/useToast";
+import BankDetailsForm from "@/libs/BankDetailsForm";
 import type { VendorProfile } from "@/types";
 
 // The /vendors/me payload carries more fields than the shared VendorProfile
@@ -35,11 +36,6 @@ export interface VendorMe extends VendorProfile {
 	accountName?: string;
 }
 
-interface Bank {
-	name: string;
-	code: string;
-	active: boolean;
-}
 interface School {
 	id: string;
 	name: string;
@@ -210,6 +206,22 @@ const DropIcon = styled.span`
 	font-size: 26px;
 	line-height: 1;
 `;
+const ReviewBanner = styled.div<{ $tone: "info" | "warning" }>`
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 14px 16px;
+	border-radius: var(--pc-radius);
+	border: 1px solid
+		${(p) =>
+			p.$tone === "warning"
+				? "var(--pc-color-gold)"
+				: "var(--pc-color-primary)"};
+	background: ${(p) =>
+		p.$tone === "warning"
+			? "var(--pc-color-gold-50)"
+			: "var(--pc-color-primary-50)"};
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -250,18 +262,13 @@ export default function VendorOnboardingWrapper({
 		vendor.areaOrAddress ?? "",
 	);
 
-	// Step 4 — bank details
-	const [bankCode, setBankCode] = useState(vendor.bankCode ?? "");
-	const [accountNumber, setAccountNumber] = useState("");
-
-	const { data: banks } = useSWR<Bank[]>(
-		open === "bank" ? "/vendors/banks" : null,
-		fetcher,
-	);
 	const { data: schools } = useSWR<School[]>(
 		open === "location" ? "/vendors/schools" : null,
 		fetcher,
 	);
+
+	const isPending = vendor.status === "PENDING_REVIEW";
+	const needsChanges = vendor.status === "CHANGES_REQUESTED";
 
 	const done = {
 		identity: !!vendor.businessName,
@@ -269,8 +276,18 @@ export default function VendorOnboardingWrapper({
 		location: !!vendor.locationType,
 		bank: !!vendor.bankCode || !!vendor.paystackSubaccountCode,
 		image: !!vendor.profileImageUrl,
-		open: vendor.isOpenForOrders,
+		open: isPending || vendor.status === "ACTIVE",
 	};
+
+	// Every step except the final "submit" one must be complete before the
+	// vendor can send their application for review.
+	const detailsComplete =
+		done.identity &&
+		done.categories &&
+		done.location &&
+		done.bank &&
+		done.image &&
+		(vendor.profileCompleteness ?? 0) >= 100;
 
 	async function submit(fn: () => Promise<void>) {
 		setBusy(true);
@@ -331,19 +348,6 @@ export default function VendorOnboardingWrapper({
 		});
 	}
 
-	async function saveBank() {
-		await submit(async () => {
-			const chosen = banks?.find((b) => b.code === bankCode);
-			await api.post("/vendors/me/bank-details", {
-				bankCode,
-				accountNumber: accountNumber.trim(),
-				...(chosen ? { bankName: chosen.name } : {}),
-			});
-			toast("Bank details saved", "success");
-			setOpen("image");
-		});
-	}
-
 	async function uploadImage(file: File) {
 		await submit(async () => {
 			const presign = await apiData<{
@@ -368,12 +372,10 @@ export default function VendorOnboardingWrapper({
 		});
 	}
 
-	async function setOpenForOrders(next: boolean) {
+	async function submitForReview() {
 		await submit(async () => {
-			await api.patch("/vendors/me/open-status", {
-				isOpenForOrders: next,
-			});
-			toast(next ? "You're open for orders" : "Marked closed", "success");
+			await api.post("/vendors/me/submit", {});
+			toast("Application submitted for review", "success");
 		});
 	}
 
@@ -391,7 +393,11 @@ export default function VendorOnboardingWrapper({
 		{ key: "location", label: "Location", hint: "Where buyers find you" },
 		{ key: "bank", label: "Bank details", hint: "Where you get paid" },
 		{ key: "image", label: "Profile image", hint: "Your storefront photo" },
-		{ key: "open", label: "Go live", hint: "Open for orders" },
+		{
+			key: "open",
+			label: "Submit for review",
+			hint: "Admin approval before you go live",
+		},
 	];
 
 	const doneCount = rows.filter(
@@ -405,8 +411,28 @@ export default function VendorOnboardingWrapper({
 				<PageHeader
 					eyebrow="Welcome to Prechop"
 					title="Finish setting up your kitchen"
-					subtitle="Complete every step below to start posting daily orders. You've got this — it only takes a few minutes."
+					subtitle="Complete every step below and submit for review. An admin approves your kitchen before it goes live."
 				/>
+
+				{isPending && (
+					<ReviewBanner $tone="info">
+						<Text $weight={700}>⏳ Application under review</Text>
+						<Text $muted $size={13}>
+							Thanks for submitting! Our team is reviewing your
+							details and will email you once you're approved.
+						</Text>
+					</ReviewBanner>
+				)}
+				{needsChanges && (
+					<ReviewBanner $tone="warning">
+						<Text $weight={700}>✏️ Changes requested</Text>
+						<Text $muted $size={13}>
+							{vendor.rejectionReason
+								? `Reviewer note: ${vendor.rejectionReason}`
+								: "Please review your details and resubmit."}
+						</Text>
+					</ReviewBanner>
+				)}
 
 				<ProgressCard>
 					<ProgressInner>
@@ -656,47 +682,24 @@ export default function VendorOnboardingWrapper({
 
 									{r.key === "bank" && (
 										<Stack $gap={12}>
-											<Select
-												label="Bank"
-												value={bankCode}
-												onChange={(e) =>
-													setBankCode(e.target.value)
+											<Text $muted $size={13}>
+												Verify your account, confirm the
+												name, then save. This is where
+												your payouts land.
+											</Text>
+											<BankDetailsForm
+												initialBankCode={
+													vendor.bankCode
 												}
-											>
-												<option value="">
-													Select bank…
-												</option>
-												{(banks ?? []).map((b) => (
-													<option
-														key={b.code}
-														value={b.code}
-													>
-														{b.name}
-													</option>
-												))}
-											</Select>
-											<Input
-												label="Account number"
-												inputMode="numeric"
-												value={accountNumber}
-												onChange={(e) =>
-													setAccountNumber(
-														e.target.value,
-													)
+												initialAccountName={
+													vendor.accountName
 												}
-												placeholder="0123456789"
+												saveLabel="Save & continue"
+												onSaved={() => {
+													onChanged();
+													setOpen("image");
+												}}
 											/>
-											<Button
-												$full
-												$loading={busy}
-												onClick={saveBank}
-												disabled={
-													!bankCode ||
-													!accountNumber.trim()
-												}
-											>
-												Save & continue
-											</Button>
 										</Stack>
 									)}
 
@@ -734,27 +737,37 @@ export default function VendorOnboardingWrapper({
 
 									{r.key === "open" && (
 										<Stack $gap={12}>
-											<Text $muted $size={13}>
-												When you're ready, open your
-												kitchen so buyers can order.
-											</Text>
+											{isPending ? (
+												<Text $muted $size={13}>
+													Your application is being
+													reviewed by our team. We'll
+													email you as soon as it's
+													approved.
+												</Text>
+											) : (
+												<Text $muted $size={13}>
+													Once every step above is
+													complete, submit your
+													kitchen for review. An admin
+													will check your details
+													before you go live.
+												</Text>
+											)}
 											<Button
 												$full
 												$loading={busy}
-												$variant={
-													vendor.isOpenForOrders
-														? "secondary"
-														: "primary"
+												disabled={
+													busy ||
+													isPending ||
+													!detailsComplete
 												}
-												onClick={() =>
-													setOpenForOrders(
-														!vendor.isOpenForOrders,
-													)
-												}
+												onClick={submitForReview}
 											>
-												{vendor.isOpenForOrders
-													? "Close for orders"
-													: "Open for orders"}
+												{isPending
+													? "Under review…"
+													: detailsComplete
+														? "Submit for review"
+														: "Complete all steps first"}
 											</Button>
 										</Stack>
 									)}

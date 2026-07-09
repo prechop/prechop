@@ -48,6 +48,15 @@ export async function bootstrap(): Promise<void> {
 		console.error("[bootstrap] MongoDB connect failed:", error);
 	}
 
+	// Ensure the IAM built-in policies & groups exist (idempotent). New vendor/
+	// buyer registrations depend on the Vendors/Buyers groups being present.
+	try {
+		const { seedBuiltInIam } = await import("../services/iam");
+		await seedBuiltInIam();
+	} catch (error) {
+		console.error("[bootstrap] IAM bootstrap failed:", error);
+	}
+
 	try {
 		await cron();
 	} catch (error) {

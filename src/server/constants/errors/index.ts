@@ -2,11 +2,13 @@ export * from "./errorMessages";
 
 import {
 	AppError,
+	ErrBuiltInImmutable,
 	ErrCampusMismatch,
 	ErrCutoffPassed,
 	ErrDailyOrderNotActive,
 	ErrDailyOrderNotFound,
 	ErrForbidden,
+	ErrGroupNotFound,
 	ErrInternalServerError,
 	ErrInvalidAction,
 	ErrInvalidCredentials,
@@ -19,11 +21,13 @@ import {
 	ErrOtpRateLimited,
 	ErrPaymentAmountMismatch,
 	ErrPaymentVerification,
+	ErrPolicyNotFound,
 	ErrProfileIncomplete,
 	ErrResourceAlreadyExist,
 	ErrResourceNotFound,
 	ErrReviewAlreadyExists,
 	ErrReviewWindowExpired,
+	ErrSelfLockout,
 	ErrSlotUnavailable,
 	ErrTokenCompromised,
 	ErrTooManyRequests,
@@ -83,6 +87,8 @@ export function getErrorResponse(error: Error): IErrorResponse {
 		case ErrVendorNotActive:
 		case ErrProfileIncomplete:
 		case ErrCampusMismatch:
+		case ErrBuiltInImmutable:
+		case ErrSelfLockout:
 			code = 403;
 			break;
 
@@ -92,6 +98,8 @@ export function getErrorResponse(error: Error): IErrorResponse {
 		case ErrDailyOrderNotFound:
 		case ErrOrderNotFound:
 		case ErrMenuItemNotFound:
+		case ErrPolicyNotFound:
+		case ErrGroupNotFound:
 			code = 404;
 			break;
 

@@ -8,7 +8,6 @@ import {
 } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import type { IJwtPayload } from "../../types";
-import { UserRole } from "../enums";
 import { IOperationType } from "../utils";
 import type { IUser, IUserCreateInput } from "./types";
 import { generateAuthToken } from "./utils";
@@ -25,11 +24,17 @@ const schema = new mongoose.Schema<any>(
 			required: true,
 			index: true,
 		},
-		role: {
-			type: String,
-			enum: Object.values(UserRole),
-			default: UserRole.BUYER,
+		// Authorization is driven entirely by IAM: the union of policies from a
+		// user's groups plus any directly-attached managed policies. There is no
+		// role enum — "is a vendor" derives from Vendors-group membership.
+		groupIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "groups" }],
+			default: [],
 			index: true,
+		},
+		directPolicyIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "policies" }],
+			default: [],
 		},
 		firstName: { type: String, required: true, trim: true },
 		lastName: { type: String, required: true, trim: true },
@@ -118,7 +123,12 @@ export async function createUserDB({
 	try {
 		const doc = await new User({
 			campusId: payload.campusId,
-			role: payload.role ?? UserRole.BUYER,
+			groupIds: (payload.groupIds ?? []).map(
+				(g) => new mongoose.Types.ObjectId(g),
+			),
+			directPolicyIds: (payload.directPolicyIds ?? []).map(
+				(p) => new mongoose.Types.ObjectId(p),
+			),
 			firstName: payload.firstName,
 			lastName: payload.lastName,
 			phone: encrypt(payload.phone),
@@ -343,6 +353,183 @@ export async function getUserByPhoneDB({
 		});
 		return null;
 	}
+}
+
+// ── IAM attachments (groups & direct policies) ─────────────────────────────
+
+export async function setUserGroupsDB({
+	id,
+	groupIds,
+	session,
+}: {
+	id: string;
+	groupIds: string[];
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					groupIds: groupIds
+						.filter((g) => mongoose.Types.ObjectId.isValid(g))
+						.map((g) => new mongoose.Types.ObjectId(g)),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function setUserDirectPoliciesDB({
+	id,
+	policyIds,
+	session,
+}: {
+	id: string;
+	policyIds: string[];
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					directPolicyIds: policyIds
+						.filter((p) => mongoose.Types.ObjectId.isValid(p))
+						.map((p) => new mongoose.Types.ObjectId(p)),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Add a group to a user if not already present (used by registration/seed). */
+export async function addUserToGroupDB({
+	id,
+	groupId,
+	session,
+}: {
+	id: string;
+	groupId: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (
+			!mongoose.Types.ObjectId.isValid(id) ||
+			!mongoose.Types.ObjectId.isValid(groupId)
+		)
+			return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $addToSet: { groupIds: new mongoose.Types.ObjectId(groupId) } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Pull a group from every user that has it (used when deleting a group). */
+export async function removeGroupFromAllUsersDB({
+	groupId,
+	session,
+}: {
+	groupId: string;
+	session?: ClientSession;
+}): Promise<number> {
+	if (!mongoose.Types.ObjectId.isValid(groupId)) return 0;
+	const res = await User.updateMany(
+		{ groupIds: new mongoose.Types.ObjectId(groupId) },
+		{ $pull: { groupIds: new mongoose.Types.ObjectId(groupId) } },
+		{ session },
+	);
+	return res.modifiedCount ?? 0;
+}
+
+/** Pull a policy from every user's direct attachments (used when deleting one). */
+export async function removePolicyFromAllUsersDB({
+	policyId,
+	session,
+}: {
+	policyId: string;
+	session?: ClientSession;
+}): Promise<number> {
+	if (!mongoose.Types.ObjectId.isValid(policyId)) return 0;
+	const res = await User.updateMany(
+		{ directPolicyIds: new mongoose.Types.ObjectId(policyId) },
+		{ $pull: { directPolicyIds: new mongoose.Types.ObjectId(policyId) } },
+		{ session },
+	);
+	return res.modifiedCount ?? 0;
+}
+
+export async function countUsersInGroupDB({
+	groupId,
+	session,
+}: {
+	groupId: string;
+	session?: ClientSession;
+}): Promise<number> {
+	if (!mongoose.Types.ObjectId.isValid(groupId)) return 0;
+	return User.countDocuments(
+		{ groupIds: new mongoose.Types.ObjectId(groupId), deleted: false },
+		{ session },
+	);
+}
+
+/** Paginated user listing for the admin IAM screen. */
+export async function listUsersDB({
+	search,
+	groupId,
+	campusId,
+	skip = 0,
+	limit = 25,
+	session,
+}: {
+	search?: string;
+	groupId?: string;
+	campusId?: string;
+	skip?: number;
+	limit?: number;
+	session?: ClientSession;
+} = {}): Promise<{ users: IUser[]; total: number }> {
+	const match: Record<string, unknown> = { deleted: false };
+	if (groupId && mongoose.Types.ObjectId.isValid(groupId))
+		match.groupIds = new mongoose.Types.ObjectId(groupId);
+	if (campusId && mongoose.Types.ObjectId.isValid(campusId))
+		match.campusId = new mongoose.Types.ObjectId(campusId);
+	if (search) {
+		const safe = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		match.$or = [
+			{ firstName: { $regex: safe, $options: "i" } },
+			{ lastName: { $regex: safe, $options: "i" } },
+		];
+	}
+
+	const [users, total] = await Promise.all([
+		User.aggregate<IUser>(
+			[
+				{ $match: match },
+				{ $sort: { createdAt: -1 } },
+				{ $skip: skip },
+				{ $limit: Math.min(limit, 100) },
+			],
+			{ session },
+		),
+		User.countDocuments(match, { session }),
+	]);
+	return { users, total };
 }
 
 // ── Auth token lifecycle (embedded refresh tokens) ─────────────────────────

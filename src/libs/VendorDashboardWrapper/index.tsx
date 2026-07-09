@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 import useSWR from "swr";
 import {
 	Badge,
@@ -22,12 +22,27 @@ import {
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
-import { formatDate, statusLabel, timeUntil } from "@/constants/formatters";
+import {
+	formatDate,
+	formatKobo,
+	statusLabel,
+	timeUntil,
+} from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
 import VendorOnboardingWrapper, {
 	type VendorMe,
 } from "@/libs/VendorOnboardingWrapper";
-import type { DailyOrder } from "@/types";
+import type { DailyOrder, OrderStatus } from "@/types";
+
+interface IncomingOrder {
+	id: string;
+	orderNumber: string;
+	status: OrderStatus;
+	fulfillmentType: "PICKUP" | "DELIVERY";
+	totalKobo: number;
+	createdAt?: string;
+	items: Array<{ snapshotName: string; quantity: number }>;
+}
 
 const OpenCard = styled(Card)`
 	display: flex;
@@ -108,6 +123,37 @@ const CookLink = styled(Link)`
 	font-weight: 800;
 	font-size: 14px;
 `;
+const IncomingItem = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 11px 0;
+	border-bottom: 1px solid var(--pc-border);
+	&:last-child {
+		border-bottom: none;
+	}
+`;
+const pulse = keyframes`
+	0%, 100% { opacity: 1; transform: scale(1); }
+	50% { opacity: 0.4; transform: scale(0.7); }
+`;
+const LivePulse = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--pc-color-accent);
+	&::before {
+		content: "";
+		width: 8px;
+		height: 8px;
+		border-radius: 999px;
+		background: var(--pc-color-accent);
+		animation: ${pulse} 1.6s ease-in-out infinite;
+	}
+`;
 const Toggle = styled.button<{ $on: boolean }>`
 	position: relative;
 	width: 56px;
@@ -149,6 +195,23 @@ function statusTone(
 	}
 }
 
+function orderTone(
+	s: OrderStatus,
+): "primary" | "success" | "warning" | "danger" | "muted" {
+	switch (s) {
+		case "PAID":
+			return "warning";
+		case "READY":
+		case "COMPLETED":
+			return "success";
+		case "CANCELLED":
+		case "REFUNDED":
+			return "danger";
+		default:
+			return "primary";
+	}
+}
+
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
 		?.data?.message;
@@ -170,6 +233,17 @@ export default function VendorDashboardWrapper() {
 	const { data: orders, isLoading: ordersLoading } = useSWR<DailyOrder[]>(
 		isActive ? "/daily-orders/my-orders?limit=50" : null,
 		fetcher,
+		// Poll so newly-placed/paid orders and counts stay live (#17).
+		{ refreshInterval: 15_000 },
+	);
+
+	// Live incoming buyer orders for the vendor's current active daily order.
+	const activeDailyId =
+		orders?.find((o) => o.status === "ACTIVE")?.id ?? null;
+	const { data: incoming } = useSWR<IncomingOrder[]>(
+		activeDailyId ? `/vendor/daily-orders/${activeDailyId}/orders` : null,
+		fetcher,
+		{ refreshInterval: 15_000 },
 	);
 
 	const [toggling, setToggling] = useState(false);
@@ -267,6 +341,51 @@ export default function VendorDashboardWrapper() {
 				<NewButton href="/dashboard/new">
 					<span aria-hidden>＋</span> New daily order
 				</NewButton>
+
+				{activeDailyId && (incoming?.length ?? 0) > 0 && (
+					<Card>
+						<SectionHeader
+							title="Incoming orders"
+							icon="🔔"
+							action={<LivePulse>Live</LivePulse>}
+						/>
+						<div>
+							{(incoming ?? []).slice(0, 6).map((o) => (
+								<IncomingItem key={o.id}>
+									<Stack $gap={3}>
+										<Row $gap={8} $align="center">
+											<Text $weight={700} $size={14}>
+												#{o.orderNumber}
+											</Text>
+											<Badge $tone={orderTone(o.status)}>
+												{statusLabel(o.status)}
+											</Badge>
+										</Row>
+										<Text $muted $size={12}>
+											{o.fulfillmentType === "DELIVERY"
+												? "🛵 Delivery"
+												: "🥡 Pickup"}{" "}
+											·{" "}
+											{o.items.reduce(
+												(n, it) => n + it.quantity,
+												0,
+											)}{" "}
+											item(s)
+										</Text>
+									</Stack>
+									<Text $weight={800} $size={14}>
+										{formatKobo(o.totalKobo)}
+									</Text>
+								</IncomingItem>
+							))}
+						</div>
+						<Row $justify="flex-end" style={{ marginTop: 12 }}>
+							<CookLink href="/pipeline">
+								Open kitchen <span aria-hidden>→</span>
+							</CookLink>
+						</Row>
+					</Card>
+				)}
 
 				<div>
 					<SectionHeader title="Today's orders" icon="📋" />

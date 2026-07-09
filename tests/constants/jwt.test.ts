@@ -1,10 +1,10 @@
 import { sign } from "jsonwebtoken";
 import { describe, expect, it } from "vitest";
+import decodeJwtToken from "@/server/constants/decodeJwtToken";
 import {
 	JWT_ACCESS_TOKEN_SECRET,
 	JWT_REFRESH_TOKEN_SECRET,
 } from "@/server/constants/environments";
-import decodeJwtToken from "@/server/constants/decodeJwtToken";
 import { generateAuthToken } from "@/server/models/users/utils";
 
 describe("decodeJwtToken", () => {

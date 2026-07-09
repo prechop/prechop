@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateShareableToken } from "@/server/constants/orderNumber";
-import { DailyOrderStatus } from "@/server/models/enums";
 import {
 	closeExpiredDailyOrdersDB,
 	createDailyOrderDB,
@@ -13,6 +12,7 @@ import {
 	setDailyOrderStatusDB,
 	updateDailyOrderDraftDB,
 } from "@/server/models/dailyOrders";
+import { DailyOrderStatus } from "@/server/models/enums";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
 beforeAll(async () => {

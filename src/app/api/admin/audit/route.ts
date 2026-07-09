@@ -1,8 +1,8 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -15,7 +15,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/audit" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "audit:read");
 			const url = new URL(req.url);
 			const parsed = auditQuerySchema.safeParse(
 				Object.fromEntries(url.searchParams),

@@ -144,9 +144,9 @@ describe("releaseSlots / commitSlots", () => {
 	it("never lets the counter go negative", async () => {
 		const id = itemId();
 		await releaseSlots([{ dailyOrderItemId: id, quantity: 5 }]);
-		expect(Number(await Redis.get(`slot:reserved:${id}`))).toBeGreaterThanOrEqual(
-			0,
-		);
+		expect(
+			Number(await Redis.get(`slot:reserved:${id}`)),
+		).toBeGreaterThanOrEqual(0);
 	});
 
 	it("commitSlots drops the hold (alias of releaseSlots)", async () => {

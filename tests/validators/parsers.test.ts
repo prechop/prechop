@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	parseListNotificationsQuery,
-	listNotificationsQuerySchema,
-} from "@/server/validators/notifications/validate";
-import {
-	parseSubscribePush,
-	subscribePushSchema,
-} from "@/server/validators/push/validate";
-import { parseUpdateCampus } from "@/server/validators/users/validate";
+import { OrderStatus, VendorStatus } from "@/server/models/enums";
 import {
 	createCampusSchema,
 	createWhatsappTvSchema,
@@ -15,7 +7,15 @@ import {
 	updateSiteConfigsSchema,
 	vendorsQuerySchema,
 } from "@/server/validators/admin/validate";
-import { OrderStatus, VendorStatus } from "@/server/models/enums";
+import {
+	listNotificationsQuerySchema,
+	parseListNotificationsQuery,
+} from "@/server/validators/notifications/validate";
+import {
+	parseSubscribePush,
+	subscribePushSchema,
+} from "@/server/validators/push/validate";
+import { parseUpdateCampus } from "@/server/validators/users/validate";
 
 describe("notifications validator", () => {
 	it("coerces and transforms the query", () => {
@@ -81,7 +81,8 @@ describe("admin validators", () => {
 
 	it("vendorsQuerySchema / ordersQuerySchema accept enums and coerce paging", () => {
 		expect(
-			vendorsQuerySchema.safeParse({ status: VendorStatus.ACTIVE }).success,
+			vendorsQuerySchema.safeParse({ status: VendorStatus.ACTIVE })
+				.success,
 		).toBe(true);
 		const parsed = ordersQuerySchema.safeParse({
 			status: OrderStatus.PAID,

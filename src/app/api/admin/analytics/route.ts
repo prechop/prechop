@@ -1,7 +1,7 @@
 import {
-	assertAdmin,
 	handleError,
 	ok,
+	requirePermission,
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
@@ -13,7 +13,7 @@ export const GET = withApiHandler(
 	{ route: "/api/admin/analytics" },
 	withAuth(async ({ auth }) => {
 		try {
-			assertAdmin(auth);
+			requirePermission(auth, "analytics:read");
 			const summary = await getPlatformAnalytics();
 			return ok(summary);
 		} catch (error) {
