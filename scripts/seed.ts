@@ -17,6 +17,7 @@ import {
 	BUYERS_GROUP,
 	generateShareableToken,
 	nairaToKobo,
+	PAYSTACK_SECRET_KEY,
 	SEED_ADMIN_PHONE,
 	VENDORS_GROUP,
 } from "../src/server/constants";
@@ -45,10 +46,45 @@ import {
 	VendorStatus,
 	VendorType,
 } from "../src/server/models";
+import { paystackProvider } from "../src/server/providers";
 import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 
 function log(msg: string): void {
 	process.stdout.write(`  ${msg}\n`);
+}
+
+/**
+ * Best-effort real Paystack subaccount for a seeded vendor. When a Paystack
+ * secret key is configured we create a real (test-mode) subaccount so the
+ * checkout split works end-to-end; otherwise — or if the API call fails — we
+ * fall back to a seed placeholder. `initializeTransaction` skips the split for
+ * placeholder codes outside production, so local checkout still succeeds.
+ */
+async function resolveSeedSubaccount(input: {
+	businessName: string;
+	bankCode: string;
+	accountNumber: string;
+	fallbackCode: string;
+}): Promise<string> {
+	if (!PAYSTACK_SECRET_KEY) {
+		log(`no PAYSTACK_SECRET_KEY — using placeholder ${input.fallbackCode}`);
+		return input.fallbackCode;
+	}
+	try {
+		const sub = await paystackProvider.createSubaccount({
+			businessName: input.businessName,
+			bankCode: input.bankCode,
+			accountNumber: input.accountNumber,
+		});
+		log(`created Paystack subaccount ${sub.subaccount_code}`);
+		return sub.subaccount_code;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(
+			`Paystack subaccount creation failed (${message}) — using placeholder ${input.fallbackCode}`,
+		);
+		return input.fallbackCode;
+	}
 }
 
 async function seedCampus(input: {
@@ -236,6 +272,14 @@ async function main(): Promise<void> {
 	});
 	if (vendorProfile) {
 		vendorId = vendorProfile._id.toString();
+		const demoSubaccountCode = await resolveSeedSubaccount({
+			businessName: "Ada's Kitchen",
+			bankCode: "044", // Access Bank
+			accountNumber: "0690000031",
+			// Placeholder used when no Paystack key is configured; the payment
+			// provider skips the split for this code outside production.
+			fallbackCode: "ACCT_seeddemo0001",
+		});
 		await updateVendorProfileDB({
 			id: vendorId,
 			payload: {
@@ -246,8 +290,8 @@ async function main(): Promise<void> {
 				categories: [MenuCategory.MEALS, MenuCategory.DRINKS],
 				isOpenForOrders: true,
 				profileCompleteness: 100,
-				// Sandbox subaccount — replace with a real Paystack subaccount code.
-				paystackSubaccountCode: "ACCT_seeddemo0001",
+				paystackSubaccountCode: demoSubaccountCode,
+				bankCode: "044",
 				bankName: "Access Bank",
 				accountName: "Ada's Kitchen",
 				accountNumber: "0690000031",

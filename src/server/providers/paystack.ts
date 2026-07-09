@@ -1,9 +1,56 @@
 import "server-only";
 import crypto from "node:crypto";
 import axios, { type AxiosInstance } from "axios";
-import { APP_URL, PAYSTACK_SECRET_KEY } from "../constants";
+import { APP_URL, IS_PROD, PAYSTACK_SECRET_KEY } from "../constants";
 
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
+
+/**
+ * Subaccount codes minted by the seed script (`scripts/seed.ts`) use this
+ * prefix. They are placeholders that don't exist in any real Paystack account,
+ * so they can never be used for a live split.
+ */
+export const SEED_SUBACCOUNT_PREFIX = "ACCT_seed";
+
+export function isSeedPlaceholderSubaccount(code: string): boolean {
+	return code.startsWith(SEED_SUBACCOUNT_PREFIX);
+}
+
+/**
+ * Build the `/transaction/initialize` request body. Split fields
+ * (`subaccount`, `transaction_charge`, `bearer`) are attached only for a real
+ * subaccount. When `allowUnsplit` is set (non-production) and the code is a
+ * seed placeholder, we fall back to a plain charge so local checkout works
+ * without a real Paystack subaccount — Paystack rejects a fake subaccount with
+ * a 404 "Invalid Subaccount." In production `allowUnsplit` is false so bad seed
+ * data surfaces loudly instead of silently skipping the vendor split.
+ */
+export function buildInitializePayload(
+	input: InitializeTransactionInput,
+	opts: { allowUnsplit: boolean },
+): Record<string, unknown> {
+	const base = {
+		email: input.email,
+		amount: input.amountKobo,
+		reference: input.reference,
+		callback_url: `${APP_URL}/order/confirmation`,
+		metadata: input.metadata,
+	};
+	if (
+		opts.allowUnsplit &&
+		isSeedPlaceholderSubaccount(input.subaccountCode)
+	) {
+		return base;
+	}
+	return {
+		...base,
+		subaccount: input.subaccountCode,
+		// Platform keeps (total − vendorAmount); vendor gets vendorAmount.
+		transaction_charge: input.amountKobo - input.vendorAmountKobo,
+		// Platform absorbs the Paystack processing fee, not the vendor.
+		bearer: "account",
+	};
+}
 
 interface CreateSubaccountInput {
 	businessName: string;
@@ -87,18 +134,13 @@ class PaystackProvider {
 	async initializeTransaction(
 		input: InitializeTransactionInput,
 	): Promise<InitializeTransactionResponse> {
-		const response = await this.client.post("/transaction/initialize", {
-			email: input.email,
-			amount: input.amountKobo,
-			reference: input.reference,
-			subaccount: input.subaccountCode,
-			// Platform keeps (total − vendorAmount); vendor gets vendorAmount.
-			transaction_charge: input.amountKobo - input.vendorAmountKobo,
-			// Platform absorbs the Paystack processing fee, not the vendor.
-			bearer: "account",
-			callback_url: `${APP_URL}/order/confirmation`,
-			metadata: input.metadata,
+		const payload = buildInitializePayload(input, {
+			allowUnsplit: !IS_PROD,
 		});
+		const response = await this.client.post(
+			"/transaction/initialize",
+			payload,
+		);
 		return response.data.data;
 	}
 
