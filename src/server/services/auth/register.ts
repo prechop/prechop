@@ -1,12 +1,53 @@
-import { BUYERS_GROUP, VENDORS_GROUP } from "../../constants";
+import { BUYERS_GROUP, VENDORS_GROUP, validationError } from "../../constants";
 import {
 	createUserDB,
 	createVendorProfileDB,
 	getUserByPhoneDB,
+	listCampusesDB,
 } from "../../models";
+import type { IUser } from "../../models/users/types";
 import { recordAudit } from "../audit";
 import { getBuiltInGroupId } from "../iam";
 import { requestOtp } from "./requestOtp";
+
+/**
+ * Create a lightweight Buyer account for a phone that just verified an OTP but
+ * has never registered. This backs the single unified login: anyone who can
+ * receive a code becomes a buyer on first sign-in and can set their name and
+ * campus afterwards from /account. Vendors still apply explicitly via /sell.
+ */
+export async function autoProvisionBuyer(phone: string): Promise<IUser | null> {
+	const [buyersGroupId, campuses] = await Promise.all([
+		getBuiltInGroupId(BUYERS_GROUP),
+		listCampusesDB({ activeOnly: true }),
+	]);
+	const campus = campuses[0];
+	if (!campus) {
+		throw validationError(
+			"No campus is configured yet. Please try again later.",
+		);
+	}
+	const user = await createUserDB({
+		payload: {
+			firstName: "Guest",
+			lastName: "Buyer",
+			phone,
+			campusId: campus._id.toString(),
+			groupIds: buyersGroupId ? [buyersGroupId] : [],
+			isPhoneVerified: true,
+		},
+	});
+	if (user) {
+		recordAudit({
+			userId: user._id.toString(),
+			role: BUYERS_GROUP,
+			action: "BUYER_REGISTER",
+			resourceType: "users",
+			resourceId: user._id.toString(),
+		});
+	}
+	return user;
+}
 
 /**
  * Register a buyer, then send the first OTP. If the phone already exists this

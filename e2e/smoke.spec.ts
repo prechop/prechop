@@ -32,15 +32,30 @@ test.describe("public pages", () => {
 		).toBeVisible();
 	});
 
-	test("login page shows the form and reveals vendor fields", async ({
+	test("unified login shows a single phone form (no role tabs)", async ({
 		page,
 	}) => {
 		await page.goto("/login");
 		await expect(
 			page.getByRole("heading", { name: /^prechop$/i }),
 		).toBeVisible();
-		// Switch to the vendor sign-up tab → business fields appear.
-		await page.getByRole("button", { name: "Vendor" }).click();
+		// One login for everyone: just a phone field, no Buyer/Vendor tabs.
+		await expect(page.getByPlaceholder("08012345678")).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Vendor" }),
+		).toHaveCount(0);
+		await expect(
+			page.getByRole("link", { name: /apply as a vendor/i }),
+		).toBeVisible();
+	});
+
+	test("vendor application (/sell) shows the business fields", async ({
+		page,
+	}) => {
+		await page.goto("/sell");
+		await expect(
+			page.getByRole("heading", { name: /sell on prechop/i }),
+		).toBeVisible();
 		await expect(page.getByPlaceholder("Ada's Kitchen")).toBeVisible();
 		await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
 	});

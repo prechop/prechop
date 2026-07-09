@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -10,6 +10,7 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
+	Input,
 	PageHeader,
 	Row,
 	SectionHeader,
@@ -78,7 +79,44 @@ export default function AccountWrapper() {
 	const [savingCampus, setSavingCampus] = useState(false);
 	const [enabling, setEnabling] = useState(false);
 
+	const [firstName, setFirstName] = useState("");
+	const [lastName, setLastName] = useState("");
+	const [savingName, setSavingName] = useState(false);
+
+	// Keep the editable fields in sync with the loaded/refreshed profile.
+	useEffect(() => {
+		if (user) {
+			setFirstName(user.firstName ?? "");
+			setLastName(user.lastName ?? "");
+		}
+	}, [user]);
+
 	if (isLoading || !user) return <PageLoader />;
+
+	const nameChanged =
+		firstName.trim() !== user.firstName ||
+		lastName.trim() !== (user.lastName ?? "");
+
+	async function saveName() {
+		if (!firstName.trim()) {
+			toast("Enter your first name", "error");
+			return;
+		}
+		setSavingName(true);
+		try {
+			await api.patch("/users/me", {
+				firstName: firstName.trim(),
+				// lastName must be non-empty when sent; omit to leave unchanged.
+				...(lastName.trim() ? { lastName: lastName.trim() } : {}),
+			});
+			toast("Profile updated.", "success");
+			refresh();
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setSavingName(false);
+		}
+	}
 
 	async function changeCampus(campusId: string) {
 		if (!campusId || campusId === user?.campusId) return;
@@ -152,6 +190,33 @@ export default function AccountWrapper() {
 						</Badge>
 					</Row>
 				</ProfileCard>
+
+				<Section>
+					<SectionHeader title="Your details" icon="🪪" />
+					<Stack $gap={12}>
+						<Input
+							label="First name"
+							value={firstName}
+							onChange={(e) => setFirstName(e.target.value)}
+							placeholder="Ada"
+						/>
+						<Input
+							label="Last name"
+							value={lastName}
+							onChange={(e) => setLastName(e.target.value)}
+							placeholder="Obi"
+						/>
+						<Button
+							$variant="secondary"
+							onClick={saveName}
+							$loading={savingName}
+							disabled={savingName || !nameChanged}
+							style={{ alignSelf: "flex-start" }}
+						>
+							Save details
+						</Button>
+					</Stack>
+				</Section>
 
 				<Section>
 					<SectionHeader title="Campus" icon="📍" />

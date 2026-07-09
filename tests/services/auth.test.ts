@@ -2,9 +2,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { BUYERS_GROUP, VENDORS_GROUP } from "@/server/constants";
 import { hashOtp } from "@/server/constants/otp";
 import { Redis } from "@/server/databases/redis";
+import { createCampusDB } from "@/server/models/campuses";
 import { getUserByPhoneDB } from "@/server/models/users";
 import { getVendorProfileByUserIdDB } from "@/server/models/vendorProfiles";
-import { registerBuyer, registerVendor } from "@/server/services/auth/register";
+import {
+	autoProvisionBuyer,
+	registerBuyer,
+	registerVendor,
+} from "@/server/services/auth/register";
 import {
 	otpKey,
 	otpRateLimitKey,
@@ -90,6 +95,56 @@ describe("verifyOtpService", () => {
 		// snapshot reflects pre-update state by design)
 		const persisted = await getUserByPhoneDB({ phone: p });
 		expect(persisted!.isPhoneVerified).toBe(true);
+	});
+
+	it("auto-provisions a buyer for a first-time phone (unified login)", async () => {
+		// Auto-provisioning assigns the first active campus, so one must exist.
+		await createCampusDB({
+			payload: {
+				name: "Auto Campus",
+				shortCode: `AUTO${Math.floor(Math.random() * 100000)}`,
+				state: "Lagos",
+			},
+		});
+		const p = phone();
+		// No prior registration — the phone verifies straight through.
+		await Redis.setex(otpKey(p), 600, await hashOtp("123456"));
+
+		const result = await verifyOtpService({
+			phone: p,
+			otp: "123456",
+			ip: "9.9.9.9",
+		});
+		expect(result.token.accessToken).toBeTruthy();
+		// A Buyers-group account now exists for that phone.
+		const created = await getUserByPhoneDB({ phone: p });
+		expect(created).not.toBeNull();
+		const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+		expect(created!.groupIds.map((g) => g.toString())).toContain(
+			buyersGroupId,
+		);
+		expect(result.user.groups).toContain("Buyers");
+	});
+
+	it("auto-provision helper is idempotent by phone (no duplicate account)", async () => {
+		await createCampusDB({
+			payload: {
+				name: "Auto Campus 2",
+				shortCode: `AUT2${Math.floor(Math.random() * 100000)}`,
+				state: "Lagos",
+			},
+		});
+		const p = phone();
+		const first = await autoProvisionBuyer(p);
+		expect(first).not.toBeNull();
+		// A second verify for the same phone must reuse the account, not duplicate.
+		await Redis.setex(otpKey(p), 600, await hashOtp("123456"));
+		const result = await verifyOtpService({
+			phone: p,
+			otp: "123456",
+			ip: "9.9.9.9",
+		});
+		expect(result.user.id).toBe(first!._id.toString());
 	});
 
 	it("rejects a wrong OTP", async () => {

@@ -14,6 +14,7 @@ import type { IUserPublic } from "../../models/users/types";
 import type { IJwtPayload } from "../../types";
 import { resolvePermissions } from "../iam";
 import { toPublicUser } from "../users/toPublicUser";
+import { autoProvisionBuyer } from "./register";
 import { otpKey, otpRateLimitKey } from "./requestOtp";
 
 export interface VerifyOtpResult {
@@ -40,7 +41,11 @@ export async function verifyOtpService({
 	await Redis.del(otpKey(phone));
 	await Redis.del(otpRateLimitKey(phone));
 
-	const user = await getUserByPhoneDB({ phone });
+	// A verified phone with no account is a first-time sign-in: provision a
+	// lightweight buyer so there is a single login for everyone (unified login).
+	const user =
+		(await getUserByPhoneDB({ phone })) ??
+		(await autoProvisionBuyer(phone));
 	if (!user) throw ErrUnauthorized;
 	if (!user.isActive) throw ErrUnauthorized;
 

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import {
 	Button,
@@ -10,14 +10,16 @@ import {
 	Container,
 	FadeIn,
 	Input,
+	Select,
 	Stack,
 	Text,
 } from "@/components";
 import { api } from "@/constants/api";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
+import type { Campus } from "@/types";
 
-type Step = "phone" | "otp";
+type Step = "form" | "otp";
 
 const Screen = styled.div`
 	min-height: 100dvh;
@@ -50,7 +52,7 @@ const Mark = styled.div`
 `;
 const Wordmark = styled.h1`
 	font-family: var(--pc-font-display);
-	font-size: clamp(28px, 6vw, 34px);
+	font-size: clamp(26px, 6vw, 32px);
 	font-weight: 800;
 	letter-spacing: -0.03em;
 	color: var(--pc-text);
@@ -75,30 +77,53 @@ const Foot = styled(Text)`
 `;
 
 /**
- * Single unified login for every user. Enter a phone, receive an OTP, and on
- * verify the server auto-provisions a buyer for first-time phones; existing
- * accounts (buyer, vendor, staff) are redirected by their resolved permissions.
- * Vendors who want to sell apply separately via /sell.
+ * Vendor application ("Sell on Prechop"). Separate from the unified login: a
+ * vendor supplies their business details, which creates an INCOMPLETE vendor
+ * account, then verifies an OTP and lands on the vendor dashboard to finish
+ * onboarding. Buyers never see this — they just log in.
  */
-export default function LoginWrapper() {
+export default function SellApplicationWrapper() {
 	const router = useRouter();
-	const params = useSearchParams();
 	const { refresh } = useAuth();
 	const { toast } = useToast();
 
-	const [step, setStep] = useState<Step>("phone");
+	const [step, setStep] = useState<Step>("form");
 	const [loading, setLoading] = useState(false);
+	const [campuses, setCampuses] = useState<Campus[]>([]);
+
+	const [firstName, setFirstName] = useState("");
+	const [lastName, setLastName] = useState("");
+	const [businessName, setBusinessName] = useState("");
+	const [email, setEmail] = useState("");
 	const [phone, setPhone] = useState("");
+	const [campusId, setCampusId] = useState("");
 	const [otp, setOtp] = useState("");
 
-	async function sendCode() {
-		if (!phone.trim()) {
-			toast("Enter your phone number", "error");
+	useEffect(() => {
+		api.get("/campuses")
+			.then((r) => {
+				const list = (r.data?.data ?? []) as Campus[];
+				setCampuses(list);
+				if (list[0]) setCampusId((c) => c || list[0].id);
+			})
+			.catch(() => {});
+	}, []);
+
+	async function submit() {
+		if (!firstName.trim() || !businessName.trim() || !phone.trim()) {
+			toast("Fill in your name, business and phone", "error");
 			return;
 		}
 		setLoading(true);
 		try {
-			await api.post("/auth/otp/request", { phone: phone.trim() });
+			await api.post("/auth/register/vendor", {
+				firstName: firstName.trim(),
+				lastName: lastName.trim(),
+				phone: phone.trim(),
+				campusId,
+				email: email.trim(),
+				businessName: businessName.trim(),
+			});
 			toast("Code sent to your phone", "success");
 			setStep("otp");
 		} catch (e) {
@@ -111,27 +136,9 @@ export default function LoginWrapper() {
 	async function verify() {
 		setLoading(true);
 		try {
-			const res = await api.post("/auth/otp/verify", {
-				phone: phone.trim(),
-				otp,
-			});
-			const u = res.data?.data?.user as
-				| { groups?: string[]; permissions?: string[] }
-				| undefined;
-			const groups = u?.groups ?? [];
-			const permissions = u?.permissions ?? [];
+			await api.post("/auth/otp/verify", { phone: phone.trim(), otp });
 			await refresh();
-			const next = params.get("next");
-			// Staff (anyone who can read the IAM or onboarding console) → /admin.
-			const isStaff =
-				permissions.includes("iam:user:read") ||
-				permissions.includes("onboarding:read") ||
-				permissions.includes("analytics:read") ||
-				groups.includes("Administrators");
-			if (next) router.replace(next);
-			else if (isStaff) router.replace("/admin");
-			else if (groups.includes("Vendors")) router.replace("/dashboard");
-			else router.replace("/marketplace");
+			router.replace("/dashboard");
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
@@ -144,42 +151,74 @@ export default function LoginWrapper() {
 			<Wrap>
 				<FadeIn>
 					<Brand>
-						<Mark aria-hidden>🍲</Mark>
+						<Mark aria-hidden>🍳</Mark>
 						<Stack $gap={2}>
-							<Wordmark>Prechop</Wordmark>
-							<Text $muted>Order before they cook.</Text>
+							<Wordmark>Sell on Prechop</Wordmark>
+							<Text $muted>Cook only to confirmed orders.</Text>
 						</Stack>
 					</Brand>
 
 					<AuthCard>
-						{step === "phone" ? (
+						{step === "form" ? (
 							<Stack $gap={14}>
-								<Stack $gap={2}>
-									<Text $weight={700} $size={18}>
-										Log in or sign up
-									</Text>
-									<Text $muted $size={14}>
-										Enter your phone number — we&apos;ll
-										text you a code.
-									</Text>
-								</Stack>
+								<Input
+									label="First name"
+									value={firstName}
+									onChange={(e) =>
+										setFirstName(e.target.value)
+									}
+									placeholder="Ada"
+								/>
+								<Input
+									label="Last name"
+									value={lastName}
+									onChange={(e) =>
+										setLastName(e.target.value)
+									}
+									placeholder="Obi"
+								/>
+								<Input
+									label="Business name"
+									value={businessName}
+									onChange={(e) =>
+										setBusinessName(e.target.value)
+									}
+									placeholder="Ada's Kitchen"
+								/>
+								<Input
+									label="Email"
+									type="email"
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+									placeholder="you@example.com"
+								/>
 								<Input
 									label="Phone number"
 									value={phone}
 									onChange={(e) => setPhone(e.target.value)}
 									placeholder="08012345678"
 									inputMode="tel"
-									onKeyDown={(e) => {
-										if (e.key === "Enter") sendCode();
-									}}
 								/>
+								<Select
+									label="Campus"
+									value={campusId}
+									onChange={(e) =>
+										setCampusId(e.target.value)
+									}
+								>
+									{campuses.map((c) => (
+										<option key={c.id} value={c.id}>
+											{c.name}
+										</option>
+									))}
+								</Select>
 								<Button
 									$full
 									$size="lg"
 									$loading={loading}
-									onClick={sendCode}
+									onClick={submit}
 								>
-									Send code
+									Apply &amp; send code
 								</Button>
 							</Stack>
 						) : (
@@ -200,9 +239,6 @@ export default function LoginWrapper() {
 									placeholder="123456"
 									inputMode="numeric"
 									maxLength={6}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") verify();
-									}}
 								/>
 								<Button
 									$full
@@ -215,24 +251,24 @@ export default function LoginWrapper() {
 								<Button
 									$variant="ghost"
 									$size="sm"
-									onClick={() => setStep("phone")}
+									onClick={() => setStep("form")}
 								>
-									Use a different number
+									Change details
 								</Button>
 							</Stack>
 						)}
 					</AuthCard>
 
 					<Foot $muted $size={13}>
-						Want to sell?{" "}
+						Already have an account?{" "}
 						<Link
-							href="/sell"
+							href="/login"
 							style={{
 								color: "var(--pc-color-primary)",
 								fontWeight: 700,
 							}}
 						>
-							Apply as a vendor
+							Log in
 						</Link>
 					</Foot>
 				</FadeIn>

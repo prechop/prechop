@@ -212,7 +212,7 @@ export default function LandingPage() {
 								Browse food 🍛
 							</Button>
 						</Link>
-						<Link href="/login?intent=vendor">
+						<Link href="/sell">
 							<Button $size="lg" $variant="secondary" $pill>
 								Sell on Prechop
 							</Button>
