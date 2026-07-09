@@ -13,11 +13,23 @@ const collectionName = "dailyOrders";
 
 export type DailyOrderModel = Model<any>;
 
-const addonSchema = new mongoose.Schema(
+const optionSchema = new mongoose.Schema(
 	{
 		name: { type: String, required: true },
 		priceKobo: { type: Number, required: true, min: 0 },
 		displayOrder: { type: Number, default: 0 },
+	},
+	{ _id: true },
+);
+
+const optionGroupSchema = new mongoose.Schema(
+	{
+		sourceGroupId: { type: mongoose.Schema.Types.ObjectId, default: null },
+		name: { type: String, required: true },
+		required: { type: Boolean, default: false },
+		minSelect: { type: Number, default: 0, min: 0 },
+		maxSelect: { type: Number, default: null },
+		options: { type: [optionSchema], default: [] },
 	},
 	{ _id: true },
 );
@@ -35,7 +47,7 @@ const itemSchema = new mongoose.Schema(
 		snapshotPrepMin: { type: Number, default: 20 },
 		maxQuantity: { type: Number, default: null },
 		orderedQuantity: { type: Number, default: 0 },
-		addons: { type: [addonSchema], default: [] },
+		optionGroups: { type: [optionGroupSchema], default: [] },
 	},
 	{ _id: true },
 );
@@ -95,14 +107,38 @@ const withEmbeddedIds = {
 					"$$it",
 					{
 						id: { $toString: "$$it._id" },
-						addons: {
+						optionGroups: {
 							$map: {
-								input: { $ifNull: ["$$it.addons", []] },
-								as: "ad",
+								input: { $ifNull: ["$$it.optionGroups", []] },
+								as: "g",
 								in: {
 									$mergeObjects: [
-										"$$ad",
-										{ id: { $toString: "$$ad._id" } },
+										"$$g",
+										{
+											id: { $toString: "$$g._id" },
+											options: {
+												$map: {
+													input: {
+														$ifNull: [
+															"$$g.options",
+															[],
+														],
+													},
+													as: "op",
+													in: {
+														$mergeObjects: [
+															"$$op",
+															{
+																id: {
+																	$toString:
+																		"$$op._id",
+																},
+															},
+														],
+													},
+												},
+											},
+										},
 									],
 								},
 							},
@@ -133,10 +169,21 @@ function mapItems(items: IDailyOrderItemInput[]) {
 		snapshotPrepMin: it.snapshotPrepMin,
 		maxQuantity: it.maxQuantity ?? null,
 		orderedQuantity: 0,
-		addons: (it.addons ?? []).map((a, i) => ({
-			name: a.name,
-			priceKobo: a.priceKobo,
-			displayOrder: a.displayOrder ?? i,
+		optionGroups: (it.optionGroups ?? []).map((g) => ({
+			sourceGroupId:
+				g.sourceGroupId &&
+				mongoose.Types.ObjectId.isValid(g.sourceGroupId)
+					? new mongoose.Types.ObjectId(g.sourceGroupId)
+					: null,
+			name: g.name,
+			required: g.required ?? false,
+			minSelect: g.minSelect ?? 0,
+			maxSelect: g.maxSelect ?? null,
+			options: (g.options ?? []).map((o, i) => ({
+				name: o.name,
+				priceKobo: o.priceKobo,
+				displayOrder: o.displayOrder ?? i,
+			})),
 		})),
 	}));
 }

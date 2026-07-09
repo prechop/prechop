@@ -26,7 +26,8 @@ import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
-import type { MenuItem } from "@/types";
+import OptionGroupsManager from "@/libs/OptionGroupsManager";
+import type { MenuItem, MenuOptionGroup } from "@/types";
 
 const CATEGORIES = [
 	{ value: "MEALS", label: "Meals" },
@@ -49,6 +50,7 @@ interface Draft {
 	priceNaira: string;
 	description: string;
 	estimatedPrepMin: string;
+	optionGroupIds: string[];
 }
 
 const emptyDraft: Draft = {
@@ -57,6 +59,7 @@ const emptyDraft: Draft = {
 	priceNaira: "",
 	description: "",
 	estimatedPrepMin: "",
+	optionGroupIds: [],
 };
 
 const Overlay = styled.div`
@@ -195,6 +198,23 @@ const IconBtn = styled.button`
 	}
 `;
 
+const GroupChip = styled.button<{ $on: boolean }>`
+	all: unset;
+	box-sizing: border-box;
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 600;
+	padding: 7px 12px;
+	border-radius: var(--pc-radius-pill);
+	border: 1.5px solid
+		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+	background: ${(p) =>
+		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+	color: ${(p) =>
+		p.$on ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+	transition: all var(--pc-dur) var(--pc-ease);
+`;
+
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
 		?.data?.message;
@@ -204,15 +224,21 @@ function errMsg(e: unknown): string {
 export default function MenuWrapper() {
 	const { toast } = useToast();
 	const { data, isLoading, mutate } = useSWR<MenuItem[]>("/menu", fetcher);
+	const { data: groupsData } = useSWR<MenuOptionGroup[]>(
+		"/menu/option-groups",
+		fetcher,
+	);
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [uploadingId, setUploadingId] = useState<string | null>(null);
 	const [reordering, setReordering] = useState(false);
+	const [managingGroups, setManagingGroups] = useState(false);
 
 	const items = data ?? [];
+	const optionGroups = groupsData ?? [];
 
 	function openCreate() {
-		setDraft({ ...emptyDraft });
+		setDraft({ ...emptyDraft, optionGroupIds: [] });
 	}
 	function openEdit(it: MenuItem) {
 		setDraft({
@@ -224,6 +250,7 @@ export default function MenuWrapper() {
 			estimatedPrepMin: it.estimatedPrepMin
 				? String(it.estimatedPrepMin)
 				: "",
+			optionGroupIds: it.optionGroupIds ?? [],
 		});
 	}
 
@@ -240,6 +267,7 @@ export default function MenuWrapper() {
 				name: draft.name.trim(),
 				category: draft.category,
 				priceNaira: price,
+				optionGroupIds: draft.optionGroupIds,
 			};
 			if (draft.description.trim())
 				body.description = draft.description.trim();
@@ -407,9 +435,19 @@ export default function MenuWrapper() {
 					subtitle="Add and manage the dishes you sell. Keep prices and availability fresh."
 					actions={
 						items.length > 0 && (
-							<Button $size="sm" $pill onClick={openCreate}>
-								＋ Add item
-							</Button>
+							<Row $gap={8}>
+								<Button
+									$size="sm"
+									$pill
+									$variant="secondary"
+									onClick={() => setManagingGroups(true)}
+								>
+									🧩 Option groups
+								</Button>
+								<Button $size="sm" $pill onClick={openCreate}>
+									＋ Add item
+								</Button>
+							</Row>
 						)
 					}
 				/>
@@ -702,12 +740,83 @@ export default function MenuWrapper() {
 									}
 									placeholder="Smoky party jollof with grilled chicken."
 								/>
+
+								<Stack $gap={8}>
+									<Row
+										$justify="space-between"
+										$align="center"
+									>
+										<Text $weight={600} $size={14}>
+											Option groups
+										</Text>
+										<IconBtn
+											type="button"
+											onClick={() =>
+												setManagingGroups(true)
+											}
+										>
+											Manage
+										</IconBtn>
+									</Row>
+									{optionGroups.length === 0 ? (
+										<Text $muted $size={13}>
+											Create reusable choices (e.g.
+											“Protein”) with “Manage”, then
+											attach them here so buyers can pick
+											when ordering.
+										</Text>
+									) : (
+										<Row $gap={8} $wrap>
+											{optionGroups.map((g) => {
+												const on =
+													draft.optionGroupIds.includes(
+														g.id,
+													);
+												return (
+													<GroupChip
+														key={g.id}
+														type="button"
+														$on={on}
+														onClick={() =>
+															setDraft({
+																...draft,
+																optionGroupIds:
+																	on
+																		? draft.optionGroupIds.filter(
+																				(
+																					x,
+																				) =>
+																					x !==
+																					g.id,
+																			)
+																		: [
+																				...draft.optionGroupIds,
+																				g.id,
+																			],
+															})
+														}
+													>
+														{on ? "✓ " : ""}
+														{g.name}
+													</GroupChip>
+												);
+											})}
+										</Row>
+									)}
+								</Stack>
+
 								<Button $full $loading={busy} onClick={save}>
 									{draft.id ? "Save changes" : "Add item"}
 								</Button>
 							</Stack>
 						</Sheet>
 					</Overlay>
+				)}
+
+				{managingGroups && (
+					<OptionGroupsManager
+						onClose={() => setManagingGroups(false)}
+					/>
 				)}
 			</Stack>
 		</FadeIn>

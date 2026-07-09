@@ -38,7 +38,15 @@ function makePayload(overrides: Record<string, unknown> = {}) {
 				snapshotPriceKobo: 150000,
 				snapshotPrepMin: 20,
 				maxQuantity: 10,
-				addons: [{ name: "Extra Meat", priceKobo: 50000 }],
+				optionGroups: [
+					{
+						name: "Extras",
+						required: false,
+						minSelect: 0,
+						maxSelect: null,
+						options: [{ name: "Extra Meat", priceKobo: 50000 }],
+					},
+				],
 			},
 		],
 		...overrides,
@@ -46,12 +54,13 @@ function makePayload(overrides: Record<string, unknown> = {}) {
 }
 
 describe("dailyOrders model", () => {
-	it("creates a DRAFT listing with mapped items + addons", async () => {
+	it("creates a DRAFT listing with mapped items + option groups", async () => {
 		const d = await createDailyOrderDB({ payload: makePayload() });
 		expect(d).not.toBeNull();
 		expect(d!.status).toBe(DailyOrderStatus.DRAFT);
 		expect(d!.items[0].orderedQuantity).toBe(0);
-		expect(d!.items[0].addons[0].name).toBe("Extra Meat");
+		expect(d!.items[0].optionGroups[0].name).toBe("Extras");
+		expect(d!.items[0].optionGroups[0].options[0].name).toBe("Extra Meat");
 	});
 
 	it("reads by id (with embedded string ids) and by token", async () => {

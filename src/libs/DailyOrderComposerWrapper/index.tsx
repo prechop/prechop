@@ -24,7 +24,7 @@ import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
-import type { DailyOrder, MenuItem } from "@/types";
+import type { DailyOrder, MenuItem, MenuOptionGroup } from "@/types";
 
 interface TemplateEntry {
 	menuItem: { id?: string; _id?: string } | null;
@@ -109,6 +109,27 @@ const Switch = styled.button<{ $on: boolean }>`
 `;
 const QtyWrap = styled.div`
 	padding-left: 36px;
+`;
+const GroupsWrap = styled.div`
+	padding-left: 36px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+`;
+const GroupToggle = styled.button<{ $on: boolean }>`
+	all: unset;
+	box-sizing: border-box;
+	cursor: pointer;
+	font-size: 12.5px;
+	font-weight: 600;
+	padding: 6px 11px;
+	border-radius: var(--pc-radius-pill);
+	border: 1.5px solid
+		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+	background: ${(p) =>
+		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+	color: ${(p) =>
+		p.$on ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
 `;
 const SubmitBar = styled.div`
 	position: sticky;
@@ -241,6 +262,10 @@ export default function DailyOrderComposerWrapper({
 	const { toast } = useToast();
 	const isEdit = !!orderId;
 	const { data: menu, isLoading } = useSWR<MenuItem[]>("/menu", fetcher);
+	const { data: groupsData } = useSWR<MenuOptionGroup[]>(
+		"/menu/option-groups",
+		fetcher,
+	);
 	const { data: vendor } = useSWR<VendorMe>("/vendors/me", fetcher);
 	// Edit mode: load the listing being edited so the form can hydrate from it.
 	const { data: editing, isLoading: editingLoading } = useSWR<DailyOrder>(
@@ -263,6 +288,11 @@ export default function DailyOrderComposerWrapper({
 	const [delivery, setDelivery] = useState(false);
 	const [deliveryFee, setDeliveryFee] = useState("");
 	const [selected, setSelected] = useState<Record<string, string>>({});
+	// Per-listing exclusions: menuItemId → set of attached group ids turned off
+	// for this listing. Empty/absent means all attached groups are included.
+	const [excludedGroups, setExcludedGroups] = useState<
+		Record<string, Set<string>>
+	>({});
 	const [busy, setBusy] = useState(false);
 	const [published, setPublished] = useState<Published | null>(null);
 	const [copied, setCopied] = useState(false);
@@ -358,6 +388,23 @@ export default function DailyOrderComposerWrapper({
 	}
 
 	const menuItems = (menu ?? []).filter((m) => m.isAvailable);
+	const groupById = new Map((groupsData ?? []).map((g) => [g.id, g]));
+
+	/** Library option groups attached to a menu item, in attach order. */
+	function attachedGroups(item: MenuItem): MenuOptionGroup[] {
+		return (item.optionGroupIds ?? [])
+			.map((id) => groupById.get(id))
+			.filter((g): g is MenuOptionGroup => Boolean(g));
+	}
+
+	function toggleGroupForItem(itemId: string, groupId: string) {
+		setExcludedGroups((prev) => {
+			const cur = new Set(prev[itemId] ?? []);
+			if (cur.has(groupId)) cur.delete(groupId);
+			else cur.add(groupId);
+			return { ...prev, [itemId]: cur };
+		});
+	}
 
 	function toggle(id: string) {
 		setSelected((s) => {
@@ -425,9 +472,25 @@ export default function DailyOrderComposerWrapper({
 		try {
 			const items = ids.map((id) => {
 				const q = Number(selected[id]);
+				const item = menuItems.find((m) => m.id === id);
+				const excluded = excludedGroups[id] ?? new Set<string>();
+				const optionGroups = (item ? attachedGroups(item) : [])
+					.filter((g) => !excluded.has(g.id))
+					.map((g) => ({
+						sourceGroupId: g.id,
+						name: g.name,
+						required: g.required,
+						minSelect: g.minSelect,
+						maxSelect: g.maxSelect,
+						options: g.options.map((o) => ({
+							name: o.name,
+							priceNaira: (o.priceKobo ?? 0) / 100,
+						})),
+					}));
 				return {
 					menuItemId: id,
 					...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
+					...(optionGroups.length > 0 ? { optionGroups } : {}),
 				};
 			});
 			const body = {
@@ -785,6 +848,54 @@ export default function DailyOrderComposerWrapper({
 													/>
 												</QtyWrap>
 											)}
+											{on &&
+												attachedGroups(m).length >
+													0 && (
+													<GroupsWrap
+														onClick={(e) =>
+															e.stopPropagation()
+														}
+													>
+														<Text $muted $size={12}>
+															Buyer options for
+															this listing
+														</Text>
+														<Row $gap={6} $wrap>
+															{attachedGroups(
+																m,
+															).map((g) => {
+																const off =
+																	excludedGroups[
+																		m.id
+																	]?.has(
+																		g.id,
+																	) ?? false;
+																return (
+																	<GroupToggle
+																		key={
+																			g.id
+																		}
+																		type="button"
+																		$on={
+																			!off
+																		}
+																		onClick={() =>
+																			toggleGroupForItem(
+																				m.id,
+																				g.id,
+																			)
+																		}
+																	>
+																		{off
+																			? ""
+																			: "✓ "}
+																		{g.name}
+																	</GroupToggle>
+																);
+															})}
+														</Row>
+													</GroupsWrap>
+												)}
 										</Stack>
 									</ItemRow>
 								);

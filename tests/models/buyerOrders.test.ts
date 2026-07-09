@@ -44,7 +44,7 @@ function makePayload(overrides: Record<string, unknown> = {}) {
 				snapshotPriceKobo: 150000,
 				quantity: 1,
 				subtotalKobo: 150000,
-				addons: [],
+				selectedOptions: [],
 			},
 		],
 		...overrides,

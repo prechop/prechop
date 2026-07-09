@@ -17,7 +17,7 @@ export const placeOrderBodySchema = zod
 					.object({
 						dailyOrderItemId: zod.string().min(1),
 						quantity: zod.coerce.number().int().min(1).max(50),
-						selectedAddonIds: zod.array(zod.string()).optional(),
+						selectedOptionIds: zod.array(zod.string()).optional(),
 					})
 					.strict(),
 			)

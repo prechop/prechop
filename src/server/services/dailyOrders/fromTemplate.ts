@@ -10,13 +10,33 @@ import {
 	DayOfWeek,
 	getDailyOrderByIdDB,
 	getMenuItemsByIdsDB,
+	getOptionGroupsByIdsDB,
 	getVendorProfileByUserIdDB,
+	type IOptionGroup,
 	listTimetableByVendorDB,
 	setDailyOrderStatusDB,
 	VendorStatus,
 } from "../../models";
-import type { IDailyOrderItemInput } from "../../models/dailyOrders/types";
+import type {
+	IDailyOrderItemInput,
+	IDailyOrderOptionGroupInput,
+} from "../../models/dailyOrders/types";
 import type { CreateFromTemplateInput } from "../../validators/dailyOrders/validate";
+
+function groupFromLibrary(group: IOptionGroup): IDailyOrderOptionGroupInput {
+	return {
+		sourceGroupId: (group.id ?? group._id).toString(),
+		name: group.name,
+		required: group.required,
+		minSelect: group.minSelect,
+		maxSelect: group.maxSelect ?? null,
+		options: group.options.map((o, i) => ({
+			name: o.name,
+			priceKobo: o.priceKobo,
+			displayOrder: o.displayOrder ?? i,
+		})),
+	};
+}
 
 const DAY_OF_WEEK_BY_INDEX: DayOfWeek[] = [
 	DayOfWeek.SUNDAY,
@@ -55,6 +75,17 @@ export async function createDailyOrderFromTemplate({
 	});
 	const byId = new Map(menuItems.map((m) => [(m.id ?? m._id).toString(), m]));
 
+	// Auto-resolve each scheduled item's attached option groups from the library.
+	const referencedGroupIds = Array.from(
+		new Set(menuItems.flatMap((m) => m.optionGroupIds ?? [])),
+	);
+	const libraryGroups = referencedGroupIds.length
+		? await getOptionGroupsByIdsDB({ ids: referencedGroupIds, vendorId })
+		: [];
+	const groupById = new Map(
+		libraryGroups.map((g) => [(g.id ?? g._id).toString(), g]),
+	);
+
 	const items: IDailyOrderItemInput[] = [];
 	for (const entry of todaysEntries) {
 		const menuItem = byId.get(entry.menuItemId.toString());
@@ -66,7 +97,10 @@ export async function createDailyOrderFromTemplate({
 			snapshotImageUrl: menuItem.imageUrl,
 			snapshotPrepMin: menuItem.estimatedPrepMin,
 			maxQuantity: null,
-			addons: [],
+			optionGroups: (menuItem.optionGroupIds ?? [])
+				.map((gid: string) => groupById.get(gid.toString()))
+				.filter((g): g is IOptionGroup => Boolean(g))
+				.map(groupFromLibrary),
 		});
 	}
 	if (items.length === 0) {

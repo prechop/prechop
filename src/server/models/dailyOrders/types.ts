@@ -1,11 +1,22 @@
 import type { DailyOrderStatus } from "../enums";
 
-export interface IDailyOrderItemAddon {
+export interface IDailyOrderOption {
 	_id?: string;
 	id?: string;
 	name: string;
 	priceKobo: number;
 	displayOrder: number;
+}
+
+export interface IDailyOrderOptionGroup {
+	_id?: string;
+	id?: string;
+	sourceGroupId?: string | null;
+	name: string;
+	required: boolean;
+	minSelect: number;
+	maxSelect: number | null;
+	options: IDailyOrderOption[];
 }
 
 export interface IDailyOrderItem {
@@ -19,7 +30,16 @@ export interface IDailyOrderItem {
 	// null / undefined = unlimited
 	maxQuantity?: number | null;
 	orderedQuantity: number;
-	addons: IDailyOrderItemAddon[];
+	optionGroups: IDailyOrderOptionGroup[];
+}
+
+export interface IDailyOrderOptionGroupInput {
+	sourceGroupId?: string | null;
+	name: string;
+	required?: boolean;
+	minSelect?: number;
+	maxSelect?: number | null;
+	options: Array<{ name: string; priceKobo: number; displayOrder?: number }>;
 }
 
 export interface IDailyOrderItemInput {
@@ -29,7 +49,7 @@ export interface IDailyOrderItemInput {
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;
-	addons?: Array<{ name: string; priceKobo: number; displayOrder?: number }>;
+	optionGroups?: IDailyOrderOptionGroupInput[];
 }
 
 export interface IDailyOrderCreateInput {

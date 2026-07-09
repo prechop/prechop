@@ -5,6 +5,7 @@ import {
 	updateMenuItemDB,
 } from "@/server/models";
 import { resolveVendorByUserId, vendorIdOf } from "@/server/services/vendors";
+import { resolveOwnedOptionGroupIds } from "./optionGroupsResolve";
 
 export async function updateMenuItem({
 	userId,
@@ -15,6 +16,7 @@ export async function updateMenuItem({
 	description,
 	estimatedPrepMin,
 	displayOrder,
+	optionGroupIds,
 }: {
 	userId: string;
 	itemId: string;
@@ -24,6 +26,7 @@ export async function updateMenuItem({
 	description?: string;
 	estimatedPrepMin?: number;
 	displayOrder?: number;
+	optionGroupIds?: string[];
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
@@ -36,6 +39,12 @@ export async function updateMenuItem({
 	if (estimatedPrepMin !== undefined)
 		payload.estimatedPrepMin = estimatedPrepMin;
 	if (displayOrder !== undefined) payload.displayOrder = displayOrder;
+	const resolvedGroupIds = await resolveOwnedOptionGroupIds({
+		vendorId,
+		optionGroupIds,
+	});
+	if (resolvedGroupIds !== undefined)
+		payload.optionGroupIds = resolvedGroupIds;
 
 	const updated = await updateMenuItemDB({ id: itemId, vendorId, payload });
 	if (!updated) throw ErrMenuItemNotFound;

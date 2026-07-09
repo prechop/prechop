@@ -5,6 +5,7 @@ import {
 	resolveVendorByUserId,
 	vendorIdOf,
 } from "@/server/services/vendors";
+import { resolveOwnedOptionGroupIds } from "./optionGroupsResolve";
 
 export async function createMenuItem({
 	userId,
@@ -14,6 +15,7 @@ export async function createMenuItem({
 	description,
 	estimatedPrepMin,
 	displayOrder,
+	optionGroupIds,
 }: {
 	userId: string;
 	name: string;
@@ -22,6 +24,7 @@ export async function createMenuItem({
 	description?: string;
 	estimatedPrepMin?: number;
 	displayOrder?: number;
+	optionGroupIds?: string[];
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
@@ -36,6 +39,10 @@ export async function createMenuItem({
 			description,
 			estimatedPrepMin,
 			displayOrder,
+			optionGroupIds: await resolveOwnedOptionGroupIds({
+				vendorId,
+				optionGroupIds,
+			}),
 		},
 	});
 

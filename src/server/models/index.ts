@@ -8,6 +8,7 @@ export * from "./groups";
 export * from "./iamMeta";
 export * from "./menuItems";
 export * from "./notifications";
+export * from "./optionGroups";
 export * from "./payments";
 export * from "./policies";
 export * from "./pushSubscriptions";

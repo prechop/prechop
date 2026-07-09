@@ -34,6 +34,25 @@ export interface MenuItem {
 	isAvailable: boolean;
 	isSoldOut: boolean;
 	displayOrder: number;
+	optionGroupIds: string[];
+}
+
+export interface MenuOption {
+	id: string;
+	name: string;
+	priceKobo: number;
+	displayOrder: number;
+}
+
+export interface MenuOptionGroup {
+	id: string;
+	vendorId: string;
+	name: string;
+	required: boolean;
+	minSelect: number;
+	maxSelect: number | null;
+	displayOrder: number;
+	options: MenuOption[];
 }
 
 export interface VendorProfile {
@@ -70,11 +89,21 @@ export interface VendorProfile {
 	defaultDeliveryFeeKobo?: number;
 }
 
-export interface DailyOrderItemAddon {
+export interface DailyOrderOption {
 	id: string;
 	name: string;
 	priceKobo: number;
 	displayOrder: number;
+}
+
+export interface DailyOrderOptionGroup {
+	id: string;
+	sourceGroupId?: string | null;
+	name: string;
+	required: boolean;
+	minSelect: number;
+	maxSelect: number | null;
+	options: DailyOrderOption[];
 }
 
 export interface DailyOrderItem {
@@ -86,7 +115,7 @@ export interface DailyOrderItem {
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;
 	orderedQuantity: number;
-	addons: DailyOrderItemAddon[];
+	optionGroups: DailyOrderOptionGroup[];
 }
 
 export interface DailyOrder {
@@ -113,7 +142,8 @@ export interface BuyerOrderItem {
 	snapshotPriceKobo: number;
 	quantity: number;
 	subtotalKobo: number;
-	addons: Array<{
+	selectedOptions: Array<{
+		groupName: string;
 		snapshotName: string;
 		quantity: number;
 		subtotalKobo: number;

@@ -23,10 +23,14 @@ import { fetcher } from "@/constants/fetcher";
 import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
-import type { DailyOrder, DailyOrderItem } from "@/types";
+import type {
+	DailyOrder,
+	DailyOrderItem,
+	DailyOrderOptionGroup,
+} from "@/types";
 
 type Fulfillment = "PICKUP" | "DELIVERY";
-type Line = { quantity: number; addonIds: Set<string> };
+type Line = { quantity: number; optionIds: Set<string> };
 
 const Wrap = styled(Stack)`
 	max-width: 640px;
@@ -111,6 +115,19 @@ const AddonBox = styled.div`
 	padding-top: var(--pc-space-2);
 	margin-top: var(--pc-space-1);
 `;
+const GroupHead = styled(Row)`
+	justify-content: space-between;
+	align-items: baseline;
+	margin-top: var(--pc-space-2);
+`;
+const GroupRule = styled.span<{ $unmet?: boolean }>`
+	font-size: 11.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	color: ${(p) =>
+		p.$unmet ? "var(--pc-color-danger)" : "var(--pc-text-muted)"};
+`;
 const Qty = styled(Row)`
 	background: var(--pc-surface-2);
 	border-radius: var(--pc-radius-pill);
@@ -153,11 +170,50 @@ const Toggle = styled.button<{ $active: boolean }>`
 	transition: all var(--pc-dur) var(--pc-ease);
 `;
 
+function allOptions(item: DailyOrderItem) {
+	return (item.optionGroups ?? []).flatMap((g) => g.options);
+}
+
 function lineSubtotal(item: DailyOrderItem, line: Line): number {
-	const addonSum = item.addons
-		.filter((a) => line.addonIds.has(a.id))
-		.reduce((s, a) => s + a.priceKobo, 0);
-	return (item.snapshotPriceKobo + addonSum) * line.quantity;
+	const optionSum = allOptions(item)
+		.filter((o) => line.optionIds.has(o.id))
+		.reduce((s, o) => s + o.priceKobo, 0);
+	return (item.snapshotPriceKobo + optionSum) * line.quantity;
+}
+
+/** Effective minimum selections for a group (required ⇒ at least 1). */
+function groupMin(group: DailyOrderOptionGroup): number {
+	return group.required
+		? Math.max(1, group.minSelect ?? 0)
+		: (group.minSelect ?? 0);
+}
+
+function groupSelectedCount(group: DailyOrderOptionGroup, line: Line): number {
+	return group.options.filter((o) => line.optionIds.has(o.id)).length;
+}
+
+/** A group is satisfied when its selection count is within [min, max]. */
+function groupSatisfied(group: DailyOrderOptionGroup, line: Line): boolean {
+	const count = groupSelectedCount(group, line);
+	if (count < groupMin(group)) return false;
+	if (group.maxSelect != null && count > group.maxSelect) return false;
+	return true;
+}
+
+/** Every selected item must satisfy all of its required/bounded groups. */
+function itemOptionsValid(item: DailyOrderItem, line: Line): boolean {
+	return (item.optionGroups ?? []).every((g) => groupSatisfied(g, line));
+}
+
+/** Short human hint describing a group's selection rule. */
+function ruleLabel(group: DailyOrderOptionGroup, min: number): string {
+	if (min > 0 && group.maxSelect === min)
+		return min === 1 ? "Required · pick 1" : `Required · pick ${min}`;
+	if (min > 0 && group.maxSelect != null)
+		return `Required · pick ${min}–${group.maxSelect}`;
+	if (min > 0) return `Required · pick at least ${min}`;
+	if (group.maxSelect != null) return `Optional · up to ${group.maxSelect}`;
+	return "Optional";
 }
 
 export default function OrderDetailWrapper({ token }: { token: string }) {
@@ -184,17 +240,19 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		? new Date(data.availableFrom).getTime() > Date.now()
 		: false;
 
-	const { subtotal, itemCount } = useMemo(() => {
-		if (!data) return { subtotal: 0, itemCount: 0 };
+	const { subtotal, itemCount, optionsValid } = useMemo(() => {
+		if (!data) return { subtotal: 0, itemCount: 0, optionsValid: true };
 		let sub = 0;
 		let count = 0;
+		let valid = true;
 		for (const item of data.items) {
 			const line = lines[item.id];
 			if (!line || line.quantity <= 0) continue;
 			sub += lineSubtotal(item, line);
 			count += line.quantity;
+			if (!itemOptionsValid(item, line)) valid = false;
 		}
-		return { subtotal: sub, itemCount: count };
+		return { subtotal: sub, itemCount: count, optionsValid: valid };
 	}, [data, lines]);
 
 	if (isLoading || authLoading) return <PageLoader />;
@@ -214,11 +272,12 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	}
 
 	const deliveryFee = fulfillment === "DELIVERY" ? data.deliveryFeeKobo : 0;
-	const canOrder = !closed && !inactive && !notStarted && itemCount > 0;
+	const canOrder =
+		!closed && !inactive && !notStarted && itemCount > 0 && optionsValid;
 
 	function setQty(item: DailyOrderItem, delta: number) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 0, addonIds: new Set() };
+			const cur = prev[item.id] ?? { quantity: 0, optionIds: new Set() };
 			const next = Math.max(
 				0,
 				Math.min(item.maxQuantity ?? 50, cur.quantity + delta),
@@ -227,14 +286,39 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		});
 	}
 
-	function toggleAddon(item: DailyOrderItem, addonId: string) {
+	/**
+	 * Toggle an option within a group. Single-select groups (maxSelect === 1)
+	 * behave like radios — picking one clears the group's other choices; picking
+	 * the current one again clears it only when the group is optional. Multi-
+	 * select groups honour `maxSelect` by ignoring picks past the cap.
+	 */
+	function toggleOption(
+		item: DailyOrderItem,
+		group: DailyOrderOptionGroup,
+		optionId: string,
+	) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 1, addonIds: new Set() };
-			const ids = new Set(cur.addonIds);
-			if (ids.has(addonId)) ids.delete(addonId);
-			else ids.add(addonId);
+			const cur = prev[item.id] ?? { quantity: 1, optionIds: new Set() };
+			const ids = new Set(cur.optionIds);
+			const groupIds = group.options.map((o) => o.id);
+			const single = group.maxSelect === 1;
+
+			if (ids.has(optionId)) {
+				if (single && group.required) {
+					// keep it selected (radio can't be emptied when required)
+				} else {
+					ids.delete(optionId);
+				}
+			} else if (single) {
+				for (const gid of groupIds) ids.delete(gid);
+				ids.add(optionId);
+			} else {
+				const count = groupIds.filter((gid) => ids.has(gid)).length;
+				if (group.maxSelect == null || count < group.maxSelect)
+					ids.add(optionId);
+			}
 			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return { ...prev, [item.id]: { quantity, addonIds: ids } };
+			return { ...prev, [item.id]: { quantity, optionIds: ids } };
 		});
 	}
 
@@ -242,6 +326,13 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		if (!data) return;
 		if (!isAuthenticated) {
 			router.push(`/login?next=${encodeURIComponent(`/o/${token}`)}`);
+			return;
+		}
+		if (itemCount > 0 && !optionsValid) {
+			toast(
+				"Please complete the required options on your items.",
+				"error",
+			);
 			return;
 		}
 		if (!canOrder) return;
@@ -254,7 +345,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			.map(([dailyOrderItemId, l]) => ({
 				dailyOrderItemId,
 				quantity: l.quantity,
-				selectedAddonIds: Array.from(l.addonIds),
+				selectedOptionIds: Array.from(l.optionIds),
 			}));
 
 		setPlacing(true);
@@ -416,32 +507,118 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 										</Qty>
 									)}
 								</Row>
-								{qty > 0 && item.addons.length > 0 && (
-									<AddonBox>
-										<Stack $gap={2}>
-											{item.addons.map((a) => (
-												<AddonRow key={a.id}>
-													<input
-														type="checkbox"
-														checked={
-															line?.addonIds.has(
-																a.id,
-															) ?? false
-														}
-														onChange={() =>
-															toggleAddon(
-																item,
-																a.id,
-															)
-														}
-													/>
-													{a.name} ·{" "}
-													{formatKobo(a.priceKobo)}
-												</AddonRow>
-											))}
-										</Stack>
-									</AddonBox>
-								)}
+								{qty > 0 &&
+									(item.optionGroups ?? []).length > 0 && (
+										<AddonBox>
+											<Stack $gap={8}>
+												{item.optionGroups.map(
+													(group) => {
+														const min =
+															groupMin(group);
+														const satisfied =
+															!line ||
+															groupSatisfied(
+																group,
+																line,
+															);
+														const single =
+															group.maxSelect ===
+															1;
+														return (
+															<Stack
+																key={group.id}
+																$gap={2}
+															>
+																<GroupHead>
+																	<Text
+																		$weight={
+																			700
+																		}
+																		$size={
+																			13.5
+																		}
+																	>
+																		{
+																			group.name
+																		}
+																	</Text>
+																	<GroupRule
+																		$unmet={
+																			!satisfied
+																		}
+																	>
+																		{ruleLabel(
+																			group,
+																			min,
+																		)}
+																	</GroupRule>
+																</GroupHead>
+																{group.options.map(
+																	(o) => {
+																		const checked =
+																			line?.optionIds.has(
+																				o.id,
+																			) ??
+																			false;
+																		const count =
+																			line
+																				? groupSelectedCount(
+																						group,
+																						line,
+																					)
+																				: 0;
+																		const capHit =
+																			!single &&
+																			!checked &&
+																			group.maxSelect !=
+																				null &&
+																			count >=
+																				group.maxSelect;
+																		return (
+																			<AddonRow
+																				key={
+																					o.id
+																				}
+																			>
+																				<input
+																					type={
+																						single
+																							? "radio"
+																							: "checkbox"
+																					}
+																					name={`grp-${group.id}`}
+																					checked={
+																						checked
+																					}
+																					disabled={
+																						capHit
+																					}
+																					onChange={() =>
+																						toggleOption(
+																							item,
+																							group,
+																							o.id,
+																						)
+																					}
+																				/>
+																				{
+																					o.name
+																				}
+																				{o.priceKobo >
+																				0
+																					? ` · ${formatKobo(o.priceKobo)}`
+																					: ""}
+																			</AddonRow>
+																		);
+																	},
+																)}
+															</Stack>
+														);
+													},
+												)}
+											</Stack>
+										</AddonBox>
+									)}
 							</Stack>
 						</Wrapper>
 					);
@@ -525,7 +702,9 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 									? "Ordering closed"
 									: itemCount === 0
 										? "Select items"
-										: `Pay ${formatKobo(subtotal + deliveryFee)} →`}
+										: !optionsValid
+											? "Complete required options"
+											: `Pay ${formatKobo(subtotal + deliveryFee)} →`}
 					</Button>
 				</Stack>
 			</Sticky>

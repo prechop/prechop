@@ -334,8 +334,8 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 									{formatKobo(it.subtotalKobo)}
 								</Text>
 							</Line>
-							{it.addons.map((a) => (
-								<Line key={a.snapshotName}>
+							{it.selectedOptions.map((a) => (
+								<Line key={`${a.groupName}-${a.snapshotName}`}>
 									<Text $muted $size={13}>
 										+ {a.snapshotName}
 									</Text>

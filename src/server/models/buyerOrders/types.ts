@@ -1,7 +1,8 @@
 import type { FulfillmentType, OrderStatus } from "../enums";
 
-export interface IBuyerOrderItemAddon {
-	dailyOrderItemAddonId?: string;
+export interface IBuyerOrderItemSelectedOption {
+	dailyOrderOptionId?: string;
+	groupName: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
 	quantity: number;
@@ -15,7 +16,7 @@ export interface IBuyerOrderItem {
 	snapshotPriceKobo: number;
 	quantity: number;
 	subtotalKobo: number;
-	addons: IBuyerOrderItemAddon[];
+	selectedOptions: IBuyerOrderItemSelectedOption[];
 }
 
 export interface IBuyerOrderCreateInput {

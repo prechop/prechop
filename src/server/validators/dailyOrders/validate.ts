@@ -1,15 +1,42 @@
 import { z } from "zod";
 import { DailyOrderStatus } from "@/server/models";
 
-const addonInputSchema = z.object({
-	name: z.string().min(1),
+const optionInputSchema = z.object({
+	name: z.string().min(1).max(120),
 	priceNaira: z.number().nonnegative(),
 });
+
+const optionGroupInputSchema = z
+	.object({
+		sourceGroupId: z.string().nullish(),
+		name: z.string().min(1).max(120),
+		required: z.boolean().optional(),
+		minSelect: z.number().int().min(0).optional(),
+		maxSelect: z.number().int().positive().nullish(),
+		options: z.array(optionInputSchema).min(1),
+	})
+	.superRefine((g, ctx) => {
+		if (g.required && (g.minSelect ?? 0) < 1)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "A required group must allow at least one selection.",
+			});
+		if ((g.minSelect ?? 0) > g.options.length)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "minSelect cannot exceed the number of options.",
+			});
+		if (g.maxSelect != null && g.maxSelect < (g.minSelect ?? 0))
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "maxSelect cannot be less than minSelect.",
+			});
+	});
 
 const dailyOrderItemInputSchema = z.object({
 	menuItemId: z.string().min(1),
 	maxQuantity: z.number().int().positive().nullish(),
-	addons: z.array(addonInputSchema).optional(),
+	optionGroups: z.array(optionGroupInputSchema).optional(),
 });
 
 export const createDailyOrderSchema = z.object({

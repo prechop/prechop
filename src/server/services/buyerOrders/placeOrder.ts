@@ -37,7 +37,7 @@ export interface PlaceOrderInput {
 	items: Array<{
 		dailyOrderItemId: string;
 		quantity: number;
-		selectedAddonIds?: string[];
+		selectedOptionIds?: string[];
 	}>;
 }
 
@@ -85,33 +85,59 @@ export async function placeOrder({
 		throw validationError("Delivery is not available for this order.");
 	}
 
-	// ── 2. Resolve requested items + addons against the snapshotted listing ─
+	// ── 2. Resolve requested items + options against the snapshotted listing ─
 	const resolvedItems: IBuyerOrderItem[] = input.items.map((req) => {
 		const orderItem = dailyOrder.items.find(
 			(i) => (i.id ?? i._id)?.toString() === req.dailyOrderItemId,
 		);
 		if (!orderItem) throw notFound("Item");
 
-		const resolvedAddons = (req.selectedAddonIds ?? []).map((addonId) => {
-			const addon = orderItem.addons.find(
-				(a) => (a.id ?? a._id)?.toString() === addonId,
-			);
-			if (!addon) throw notFound("Add-on");
-			return {
-				dailyOrderItemAddonId: (addon.id ?? addon._id)?.toString(),
-				snapshotName: addon.name,
-				snapshotPriceKobo: addon.priceKobo,
-				quantity: req.quantity,
-				subtotalKobo: addon.priceKobo * req.quantity,
-			};
-		});
+		const selectedIds = new Set(req.selectedOptionIds ?? []);
+		const resolvedOptions: IBuyerOrderItem["selectedOptions"] = [];
 
-		const addonSubtotal = resolvedAddons.reduce(
+		// Walk the item's option groups, enforcing each group's rules and
+		// collecting the buyer's chosen options (server-authoritative pricing).
+		for (const group of orderItem.optionGroups ?? []) {
+			const chosen = group.options.filter((o) =>
+				selectedIds.has((o.id ?? o._id)?.toString() ?? ""),
+			);
+			const min = group.required
+				? Math.max(1, group.minSelect ?? 0)
+				: (group.minSelect ?? 0);
+			if (chosen.length < min) {
+				throw validationError(
+					`Please choose ${min} option${min === 1 ? "" : "s"} for "${group.name}".`,
+				);
+			}
+			if (group.maxSelect != null && chosen.length > group.maxSelect) {
+				throw validationError(
+					`You can choose at most ${group.maxSelect} option${
+						group.maxSelect === 1 ? "" : "s"
+					} for "${group.name}".`,
+				);
+			}
+			for (const o of chosen) {
+				(o.id ?? o._id)?.toString() &&
+					selectedIds.delete((o.id ?? o._id)?.toString() ?? "");
+				resolvedOptions.push({
+					dailyOrderOptionId: (o.id ?? o._id)?.toString(),
+					groupName: group.name,
+					snapshotName: o.name,
+					snapshotPriceKobo: o.priceKobo,
+					quantity: req.quantity,
+					subtotalKobo: o.priceKobo * req.quantity,
+				});
+			}
+		}
+		// Any leftover selected id didn't belong to this item's groups.
+		if (selectedIds.size > 0) throw notFound("Option");
+
+		const optionsSubtotal = resolvedOptions.reduce(
 			(s, a) => s + a.subtotalKobo,
 			0,
 		);
 		const itemSubtotal =
-			orderItem.snapshotPriceKobo * req.quantity + addonSubtotal;
+			orderItem.snapshotPriceKobo * req.quantity + optionsSubtotal;
 
 		return {
 			dailyOrderItemId: (orderItem.id ?? orderItem._id)?.toString() ?? "",
@@ -120,7 +146,7 @@ export async function placeOrder({
 			snapshotPriceKobo: orderItem.snapshotPriceKobo,
 			quantity: req.quantity,
 			subtotalKobo: itemSubtotal,
-			addons: resolvedAddons,
+			selectedOptions: resolvedOptions,
 		};
 	});
 

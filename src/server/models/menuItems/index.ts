@@ -36,6 +36,11 @@ const schema = new mongoose.Schema<any>(
 		isAvailable: { type: Boolean, default: true },
 		isSoldOut: { type: Boolean, default: false },
 		displayOrder: { type: Number, default: 0 },
+		optionGroupIds: {
+			type: [mongoose.Schema.Types.ObjectId],
+			ref: "optionGroups",
+			default: [],
+		},
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
@@ -43,7 +48,18 @@ const schema = new mongoose.Schema<any>(
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
-	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
+	this.pipeline().push({
+		$addFields: {
+			id: { $toString: "$_id" },
+			optionGroupIds: {
+				$map: {
+					input: { $ifNull: ["$optionGroupIds", []] },
+					as: "g",
+					in: { $toString: "$$g" },
+				},
+			},
+		},
+	});
 	this.pipeline().push({ $project: { deleted: 0, __v: 0 } });
 });
 

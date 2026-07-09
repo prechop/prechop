@@ -10,6 +10,7 @@ export interface IMenuItemCreateInput {
 	imageUrl?: string;
 	estimatedPrepMin?: number;
 	displayOrder?: number;
+	optionGroupIds?: string[];
 }
 
 export interface IMenuItem {
@@ -26,6 +27,7 @@ export interface IMenuItem {
 	isAvailable: boolean;
 	isSoldOut: boolean;
 	displayOrder: number;
+	optionGroupIds: string[];
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

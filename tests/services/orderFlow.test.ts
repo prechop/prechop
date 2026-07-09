@@ -68,7 +68,7 @@ async function makeOrder({
 					snapshotPriceKobo: 150000,
 					quantity: 1,
 					subtotalKobo: 150000,
-					addons: [],
+					selectedOptions: [],
 				},
 			],
 		},

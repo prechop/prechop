@@ -9,6 +9,7 @@ export const createMenuItemSchema = zod
 		description: zod.string().trim().max(2000).optional(),
 		estimatedPrepMin: zod.number().int().positive().optional(),
 		displayOrder: zod.number().int().min(0).optional(),
+		optionGroupIds: zod.array(zod.string().trim().min(1)).optional(),
 	})
 	.strict();
 
@@ -20,6 +21,7 @@ export const updateMenuItemSchema = zod
 		description: zod.string().trim().max(2000).optional(),
 		estimatedPrepMin: zod.number().int().positive().optional(),
 		displayOrder: zod.number().int().min(0).optional(),
+		optionGroupIds: zod.array(zod.string().trim().min(1)).optional(),
 	})
 	.strict();
 

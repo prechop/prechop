@@ -9,9 +9,10 @@ const collectionName = "buyerOrders";
 
 export type BuyerOrderModel = Model<any>;
 
-const addonSchema = new mongoose.Schema(
+const selectedOptionSchema = new mongoose.Schema(
 	{
-		dailyOrderItemAddonId: { type: mongoose.Schema.Types.ObjectId },
+		dailyOrderOptionId: { type: mongoose.Schema.Types.ObjectId },
+		groupName: { type: String, required: true },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true },
 		quantity: { type: Number, required: true },
@@ -31,7 +32,7 @@ const itemSchema = new mongoose.Schema(
 		snapshotPriceKobo: { type: Number, required: true },
 		quantity: { type: Number, required: true, min: 1 },
 		subtotalKobo: { type: Number, required: true },
-		addons: { type: [addonSchema], default: [] },
+		selectedOptions: { type: [selectedOptionSchema], default: [] },
 	},
 	{ _id: false },
 );
@@ -135,10 +136,13 @@ function mapItems(items: IBuyerOrderCreateInput["items"]) {
 		snapshotPriceKobo: it.snapshotPriceKobo,
 		quantity: it.quantity,
 		subtotalKobo: it.subtotalKobo,
-		addons: (it.addons ?? []).map((a) => ({
-			dailyOrderItemAddonId: a.dailyOrderItemAddonId
-				? new mongoose.Types.ObjectId(a.dailyOrderItemAddonId)
-				: undefined,
+		selectedOptions: (it.selectedOptions ?? []).map((a) => ({
+			dailyOrderOptionId:
+				a.dailyOrderOptionId &&
+				mongoose.Types.ObjectId.isValid(a.dailyOrderOptionId)
+					? new mongoose.Types.ObjectId(a.dailyOrderOptionId)
+					: undefined,
+			groupName: a.groupName,
 			snapshotName: a.snapshotName,
 			snapshotPriceKobo: a.snapshotPriceKobo,
 			quantity: a.quantity,
