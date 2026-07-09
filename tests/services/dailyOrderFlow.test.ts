@@ -20,7 +20,7 @@ import {
 	cancelDailyOrder,
 	closeDailyOrder,
 } from "@/server/services/dailyOrders/status";
-import { updateDailyOrderDraft } from "@/server/services/dailyOrders/update";
+import { updateDailyOrder } from "@/server/services/dailyOrders/update";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeMenuItem, makeVendor } from "../helpers/factories";
@@ -60,7 +60,7 @@ describe("createDailyOrder", () => {
 		expect(listing.items[0].snapshotName).toBe("Jollof");
 	});
 
-	it("creates a DRAFT when draft:true and can update it", async () => {
+	it("edits a listing while it has not yet opened for orders", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const item = await makeMenuItem({ vendorId, campusId });
 		const draft = await createDailyOrder({
@@ -68,18 +68,67 @@ describe("createDailyOrder", () => {
 			input: {
 				title: "Draft Lunch",
 				scheduledDate: futureISO(3_600_000),
+				// Opens in 10 min → still editable now.
+				availableFrom: futureISO(600_000),
 				cutoffTime: futureISO(1_800_000),
 				draft: true,
 				items: [{ menuItemId: item!._id.toString() }],
 			},
 		});
 		expect(draft.status).toBe(DailyOrderStatus.DRAFT);
-		const updated = await updateDailyOrderDraft({
+		const updated = await updateDailyOrder({
 			userId,
 			orderId: draft._id.toString(),
 			input: { title: "Renamed Draft" },
 		});
 		expect(updated.title).toBe("Renamed Draft");
+	});
+
+	it("locks editing once orders have opened", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const item = await makeMenuItem({ vendorId, campusId });
+		const listing = await createDailyOrder({
+			userId,
+			input: {
+				title: "Open now",
+				scheduledDate: futureISO(3_600_000),
+				// Opened a second ago → editing is closed.
+				availableFrom: new Date(Date.now() - 1000).toISOString(),
+				cutoffTime: futureISO(1_800_000),
+				items: [{ menuItemId: item!._id.toString() }],
+			},
+		});
+		await expect(
+			updateDailyOrder({
+				userId,
+				orderId: listing._id.toString(),
+				input: { title: "Too late" },
+			}),
+		).rejects.toThrow();
+	});
+
+	it("rejects edits from a non-active vendor", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const item = await makeMenuItem({ vendorId, campusId });
+		const draft = await createDailyOrder({
+			userId,
+			input: {
+				title: "Draft Lunch",
+				scheduledDate: futureISO(3_600_000),
+				availableFrom: futureISO(600_000),
+				cutoffTime: futureISO(1_800_000),
+				draft: true,
+				items: [{ menuItemId: item!._id.toString() }],
+			},
+		});
+		const stranger = await makeVendor();
+		await expect(
+			updateDailyOrder({
+				userId: stranger.userId,
+				orderId: draft._id.toString(),
+				input: { title: "Not yours" },
+			}),
+		).rejects.toThrow();
 	});
 
 	it("rejects an inactive vendor and non-owned menu items", async () => {

@@ -88,30 +88,59 @@ describe("dailyOrders model", () => {
 		expect(again).toBe(false);
 	});
 
-	it("only updates DRAFT listings", async () => {
+	it("edits a listing (DRAFT or ACTIVE) until it opens, then locks", async () => {
 		const vendorId = oid();
+		const opensAt = new Date(Date.now() + 3_600_000); // opens in 1h
 		const d = await createDailyOrderDB({
-			payload: makePayload({ vendorId }),
+			payload: makePayload({ vendorId, availableFrom: opensAt }),
 		});
 		const id = d!._id.toString();
-		const draftUpdate = await updateDailyOrderDraftDB({
+
+		// Editable while it hasn't opened — as a DRAFT…
+		const edited = await updateDailyOrderDraftDB({
 			id,
 			vendorId,
 			payload: { title: "Updated" },
+			now: new Date(),
 		});
-		expect(draftUpdate!.title).toBe("Updated");
+		expect(edited!.title).toBe("Updated");
 
+		// …and still editable once ACTIVE, as long as orders haven't opened.
 		await setDailyOrderStatusDB({
 			id,
 			vendorId,
 			status: DailyOrderStatus.ACTIVE,
 		});
-		const frozen = await updateDailyOrderDraftDB({
+		const stillEditable = await updateDailyOrderDraftDB({
+			id,
+			vendorId,
+			payload: { title: "Updated again" },
+			now: new Date(),
+		});
+		expect(stillEditable!.title).toBe("Updated again");
+
+		// Once orders have opened (now past availableFrom) editing is locked.
+		const locked = await updateDailyOrderDraftDB({
 			id,
 			vendorId,
 			payload: { title: "Nope" },
+			now: new Date(opensAt.getTime() + 1000),
 		});
-		expect(frozen).toBeNull();
+		expect(locked).toBeNull();
+	});
+
+	it("never edits a listing that has no open time (opens immediately)", async () => {
+		const vendorId = oid();
+		const d = await createDailyOrderDB({
+			payload: makePayload({ vendorId }),
+		});
+		const locked = await updateDailyOrderDraftDB({
+			id: d!._id.toString(),
+			vendorId,
+			payload: { title: "Nope" },
+			now: new Date(),
+		});
+		expect(locked).toBeNull();
 	});
 
 	it("increments an item quantity via the positional operator", async () => {

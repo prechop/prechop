@@ -299,11 +299,14 @@ export async function updateDailyOrderDraftDB({
 	id,
 	vendorId,
 	payload,
+	now,
 	session,
 }: {
 	id: string;
 	vendorId: string;
 	payload: Partial<IDailyOrderCreateInput>;
+	/** Edits are only accepted while `availableFrom` is still in the future. */
+	now: Date;
 	session?: ClientSession;
 }): Promise<IDailyOrder | null> {
 	try {
@@ -324,12 +327,19 @@ export async function updateDailyOrderDraftDB({
 			set.deliveryFeeKobo = payload.deliveryFeeKobo;
 		if (payload.items !== undefined) set.items = mapItems(payload.items);
 
-		// Only DRAFT listings are editable — once ACTIVE the snapshots are frozen.
+		// A listing is editable only until it opens for orders: it must not be
+		// closed/cancelled and its `availableFrom` must still be in the future.
+		// Guarding on `availableFrom > now` at the write makes the lock atomic —
+		// a listing whose open time elapses between the service check and here
+		// simply matches nothing rather than being edited out from under buyers.
 		const res = await DailyOrder.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				vendorId: new mongoose.Types.ObjectId(vendorId),
-				status: DailyOrderStatus.DRAFT,
+				status: {
+					$in: [DailyOrderStatus.DRAFT, DailyOrderStatus.ACTIVE],
+				},
+				availableFrom: { $gt: now },
 			},
 			{ $set: set },
 			{ session, returnDocument: "after" },

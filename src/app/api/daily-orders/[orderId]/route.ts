@@ -6,7 +6,7 @@ import {
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
-import { updateDailyOrderDraft } from "@/server/services/dailyOrders";
+import { updateDailyOrder } from "@/server/services/dailyOrders";
 import { updateDailyOrderDraftSchema } from "@/server/validators/dailyOrders/validate";
 
 export const runtime = "nodejs";
@@ -24,7 +24,7 @@ export const PATCH = withApiHandler(
 			);
 			if (!parsed.success) throw ErrInvalidFields;
 			return ok(
-				await updateDailyOrderDraft({
+				await updateDailyOrder({
 					userId: auth.userId,
 					orderId,
 					input: parsed.data,

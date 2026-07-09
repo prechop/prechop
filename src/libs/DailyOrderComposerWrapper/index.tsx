@@ -214,17 +214,39 @@ function defaultCutoff(): string {
 		d.getHours(),
 	)}:${pad(d.getMinutes())}`;
 }
+// ISO → the local `YYYY-MM-DD` / `YYYY-MM-DDTHH:mm` shapes the date inputs need,
+// used to hydrate the form when editing an existing listing.
+function isoToDate(iso: string): string {
+	const d = new Date(iso);
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function isoToLocal(iso: string): string {
+	const d = new Date(iso);
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+		d.getHours(),
+	)}:${pad(d.getMinutes())}`;
+}
 
 interface Published {
 	token: string;
 	title: string;
 }
 
-export default function DailyOrderComposerWrapper() {
+export default function DailyOrderComposerWrapper({
+	orderId,
+}: {
+	orderId?: string;
+} = {}) {
 	const router = useRouter();
 	const { toast } = useToast();
+	const isEdit = !!orderId;
 	const { data: menu, isLoading } = useSWR<MenuItem[]>("/menu", fetcher);
 	const { data: vendor } = useSWR<VendorMe>("/vendors/me", fetcher);
+	// Edit mode: load the listing being edited so the form can hydrate from it.
+	const { data: editing, isLoading: editingLoading } = useSWR<DailyOrder>(
+		orderId ? `/daily-orders/my-orders/${orderId}` : null,
+		fetcher,
+	);
 
 	const [title, setTitle] = useState("");
 	const [scheduledDate, setScheduledDate] = useState(defaultDate());
@@ -246,21 +268,42 @@ export default function DailyOrderComposerWrapper() {
 	const [copied, setCopied] = useState(false);
 
 	// Seed fulfilment toggles from the vendor's saved delivery defaults, once.
+	// Skipped when editing — there the existing listing's values win.
 	const seededDefaults = useRef(false);
 	useEffect(() => {
-		if (!vendor || seededDefaults.current) return;
+		if (isEdit || !vendor || seededDefaults.current) return;
 		seededDefaults.current = true;
 		setPickup(vendor.defaultPickupAvailable ?? true);
 		setDelivery(vendor.defaultDeliveryAvailable ?? false);
 		if (vendor.defaultDeliveryFeeKobo)
 			setDeliveryFee(String(vendor.defaultDeliveryFeeKobo / 100));
-	}, [vendor]);
+	}, [isEdit, vendor]);
+
+	// Hydrate the whole form from the listing being edited, once.
+	const hydrated = useRef(false);
+	useEffect(() => {
+		if (!isEdit || !editing || hydrated.current) return;
+		hydrated.current = true;
+		setTitle(editing.title);
+		setScheduledDate(isoToDate(editing.scheduledDate));
+		if (editing.availableFrom)
+			setAvailableFrom(isoToLocal(editing.availableFrom));
+		setCutoff(isoToLocal(editing.cutoffTime));
+		setPickup(editing.pickupAvailable);
+		setDelivery(editing.deliveryAvailable);
+		if (editing.deliveryFeeKobo)
+			setDeliveryFee(String(editing.deliveryFeeKobo / 100));
+		const sel: Record<string, string> = {};
+		for (const it of editing.items)
+			sel[it.menuItemId] = it.maxQuantity ? String(it.maxQuantity) : "";
+		setSelected(sel);
+	}, [isEdit, editing]);
 
 	// Pre-fill the item selection from today's timetable, once, if the vendor
-	// hasn't picked anything yet.
+	// hasn't picked anything yet. Skipped when editing.
 	const seededItems = useRef(false);
 	useEffect(() => {
-		if (!template || seededItems.current) return;
+		if (isEdit || !template || seededItems.current) return;
 		seededItems.current = true;
 		const ids = template
 			.map((e) => e.menuItem?.id ?? e.menuItem?._id)
@@ -273,9 +316,46 @@ export default function DailyOrderComposerWrapper() {
 			return next;
 		});
 		setTitle((t) => t || "Today's menu");
-	}, [template]);
+	}, [template, isEdit]);
 
-	if (isLoading) return <PageLoader />;
+	if (isLoading || (isEdit && editingLoading)) return <PageLoader />;
+
+	// A listing can only be edited before it opens for orders. Mirror the server
+	// lock (`assertActiveVendor` + the availableFrom window) so an already-open
+	// or closed listing shows a clear message instead of a form that would 409.
+	const opensAt = editing?.availableFrom
+		? new Date(editing.availableFrom).getTime()
+		: null;
+	const editLocked =
+		isEdit &&
+		!!editing &&
+		(editing.status === "CLOSED" ||
+			editing.status === "CANCELLED" ||
+			opensAt === null ||
+			opensAt <= Date.now());
+	if (editLocked) {
+		return (
+			<FadeIn>
+				<Stack $gap={20}>
+					<PageHeader
+						eyebrow="Vendor · Kitchen"
+						title="Edit daily order"
+						subtitle="This listing can no longer be changed."
+					/>
+					<EmptyState
+						icon="🔒"
+						title="Editing is closed"
+						description="Orders have already opened for this listing, so it can’t be edited. You can still close or cancel it from your dashboard."
+						action={
+							<Button onClick={() => router.push("/dashboard")}>
+								Back to dashboard
+							</Button>
+						}
+					/>
+				</Stack>
+			</FadeIn>
+		);
+	}
 
 	const menuItems = (menu ?? []).filter((m) => m.isAvailable);
 
@@ -350,21 +430,29 @@ export default function DailyOrderComposerWrapper() {
 					...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
 				};
 			});
+			const body = {
+				title: title.trim(),
+				scheduledDate: new Date(scheduledDate).toISOString(),
+				availableFrom: new Date(availableFrom).toISOString(),
+				cutoffTime: new Date(cutoff).toISOString(),
+				pickupAvailable: pickup,
+				deliveryAvailable: delivery,
+				deliveryFeeKobo:
+					delivery && Number(deliveryFee) > 0
+						? Math.round(Number(deliveryFee) * 100)
+						: 0,
+				items,
+			};
+
+			if (isEdit) {
+				await api.patch(`/daily-orders/${orderId}`, body);
+				toast("Changes saved", "success");
+				router.push("/dashboard");
+				return;
+			}
+
 			const order = await apiData<DailyOrder>(
-				api.post("/daily-orders", {
-					title: title.trim(),
-					scheduledDate: new Date(scheduledDate).toISOString(),
-					availableFrom: new Date(availableFrom).toISOString(),
-					cutoffTime: new Date(cutoff).toISOString(),
-					pickupAvailable: pickup,
-					deliveryAvailable: delivery,
-					deliveryFeeKobo:
-						delivery && Number(deliveryFee) > 0
-							? Math.round(Number(deliveryFee) * 100)
-							: 0,
-					draft: false,
-					items,
-				}),
+				api.post("/daily-orders", { ...body, draft: false }),
 			);
 			toast("Daily order posted", "success");
 			setPublished({ token: order.shareableToken, title: order.title });
@@ -516,8 +604,12 @@ export default function DailyOrderComposerWrapper() {
 			<Stack $gap={20}>
 				<PageHeader
 					eyebrow="Vendor · Kitchen"
-					title="New daily order"
-					subtitle="Pick today's dishes, set availability, and open the kitchen for orders."
+					title={isEdit ? "Edit daily order" : "New daily order"}
+					subtitle={
+						isEdit
+							? "Update this listing. You can edit it until orders open."
+							: "Pick today's dishes, set availability, and open the kitchen for orders."
+					}
 				/>
 
 				<Card>
@@ -710,7 +802,9 @@ export default function DailyOrderComposerWrapper() {
 						<Text $muted $size={12}>
 							{selectedCount === 0
 								? "Select dishes to post"
-								: "Looks good — post it live"}
+								: isEdit
+									? "Save your changes"
+									: "Looks good — post it live"}
 						</Text>
 					</Stack>
 					<SubmitAction>
@@ -720,7 +814,7 @@ export default function DailyOrderComposerWrapper() {
 							$loading={busy}
 							onClick={submit}
 						>
-							Post daily order
+							{isEdit ? "Save changes" : "Post daily order"}
 						</Button>
 					</SubmitAction>
 				</SubmitBar>

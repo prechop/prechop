@@ -123,6 +123,17 @@ const CookLink = styled(Link)`
 	font-weight: 800;
 	font-size: 14px;
 `;
+const EditLink = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--pc-text-muted);
+	font-weight: 700;
+	font-size: 13.5px;
+	&:hover {
+		color: var(--pc-text);
+	}
+`;
 const IncomingItem = styled.div`
 	display: flex;
 	align-items: center;
@@ -417,6 +428,13 @@ export default function VendorDashboardWrapper() {
 									? new Date(o.availableFrom).getTime() >
 										Date.now()
 									: false;
+								// Editable only until orders open (mirrors the
+								// server lock): a future `availableFrom`, not
+								// closed/cancelled.
+								const editable =
+									comingSoon &&
+									o.status !== "CLOSED" &&
+									o.status !== "CANCELLED";
 								return (
 									<FadeIn key={o.id} $delay={i * 40}>
 										<OrderCard>
@@ -494,12 +512,29 @@ export default function VendorDashboardWrapper() {
 															: "s"}{" "}
 														placed
 													</Text>
-													<CookLink href="/pipeline">
-														Cooking{" "}
-														<span aria-hidden>
-															→
-														</span>
-													</CookLink>
+													<Row
+														$gap={14}
+														$align="center"
+													>
+														{editable && (
+															<EditLink
+																href={`/dashboard/${o.id}/edit`}
+															>
+																<span
+																	aria-hidden
+																>
+																	✏️
+																</span>{" "}
+																Edit
+															</EditLink>
+														)}
+														<CookLink href="/pipeline">
+															Cooking{" "}
+															<span aria-hidden>
+																→
+															</span>
+														</CookLink>
+													</Row>
 												</Row>
 											</Stack>
 										</OrderCard>
