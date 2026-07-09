@@ -1,6 +1,16 @@
 "use client";
 
-import type { InputHTMLAttributes, SelectHTMLAttributes } from "react";
+import {
+	Children,
+	type CSSProperties,
+	type InputHTMLAttributes,
+	isValidElement,
+	type ReactNode,
+	useEffect,
+	useId,
+	useState,
+} from "react";
+import ReactSelect, { type StylesConfig } from "react-select";
 import styled from "styled-components";
 
 const Field = styled.div`
@@ -39,16 +49,6 @@ const StyledInput = styled.input`
 	${controlStyles}
 `;
 
-const StyledSelect = styled.select`
-	${controlStyles}
-	cursor: pointer;
-	appearance: none;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%237A6E62' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-	background-repeat: no-repeat;
-	background-position: right 15px center;
-	padding-right: 40px;
-`;
-
 const StyledTextarea = styled.textarea`
 	${controlStyles}
 	resize: vertical;
@@ -68,15 +68,173 @@ export function Input({
 	);
 }
 
+/* -------------------------------------------------------------------- Select */
+
+type SelectOption = { value: string; label: string; node: ReactNode };
+
+/** Flatten a React node to its plain-text content, for react-select's
+ *  string-based option filtering while `node` carries the rich rendering. */
+function nodeToText(node: ReactNode): string {
+	if (node === null || node === undefined || typeof node === "boolean")
+		return "";
+	if (typeof node === "string" || typeof node === "number")
+		return String(node);
+	if (Array.isArray(node)) return node.map(nodeToText).join("");
+	if (isValidElement(node))
+		return nodeToText((node.props as { children?: ReactNode }).children);
+	return "";
+}
+
+/** Read `<option>` children (arrays/fragments from `.map()` are flattened by
+ *  `Children.toArray`) into react-select options. */
+function optionsFromChildren(children: ReactNode): SelectOption[] {
+	return Children.toArray(children)
+		.filter((c) => isValidElement(c) && c.type === "option")
+		.map((c) => {
+			const props = (
+				c as { props: { value?: unknown; children?: ReactNode } }
+			).props;
+			return {
+				value: String(props.value ?? ""),
+				label: nodeToText(props.children),
+				node: props.children,
+			};
+		});
+}
+
+const selectStyles: StylesConfig<SelectOption, false> = {
+	control: (base, state) => ({
+		...base,
+		minHeight: 48,
+		width: "100%",
+		backgroundColor: "var(--pc-surface)",
+		borderWidth: 1.5,
+		borderStyle: "solid",
+		borderColor: state.isFocused
+			? "var(--pc-color-primary)"
+			: "var(--pc-border)",
+		borderRadius: "var(--pc-radius-sm)",
+		boxShadow: state.isFocused
+			? "0 0 0 4px var(--pc-color-primary-50)"
+			: "none",
+		opacity: state.isDisabled ? 0.6 : 1,
+		cursor: state.isDisabled ? "not-allowed" : "pointer",
+		transition:
+			"border-color var(--pc-dur) var(--pc-ease), box-shadow var(--pc-dur) var(--pc-ease)",
+		"&:hover": {
+			borderColor: state.isFocused
+				? "var(--pc-color-primary)"
+				: "var(--pc-border)",
+		},
+	}),
+	valueContainer: (base) => ({ ...base, padding: "2px 15px" }),
+	singleValue: (base) => ({ ...base, color: "var(--pc-text)", fontSize: 15 }),
+	input: (base) => ({ ...base, color: "var(--pc-text)", fontSize: 15 }),
+	placeholder: (base) => ({
+		...base,
+		color: "var(--pc-text-faint)",
+		fontSize: 15,
+	}),
+	indicatorSeparator: () => ({ display: "none" }),
+	dropdownIndicator: (base, state) => ({
+		...base,
+		color: "var(--pc-text-faint)",
+		paddingRight: 12,
+		transition: "transform var(--pc-dur) var(--pc-ease)",
+		transform: state.selectProps.menuIsOpen ? "rotate(180deg)" : "none",
+		"&:hover": { color: "var(--pc-text-muted)" },
+	}),
+	menu: (base) => ({
+		...base,
+		marginTop: 6,
+		backgroundColor: "var(--pc-surface)",
+		border: "1px solid var(--pc-border)",
+		borderRadius: "var(--pc-radius-sm)",
+		boxShadow: "var(--pc-shadow)",
+		overflow: "hidden",
+	}),
+	menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+	option: (base, state) => ({
+		...base,
+		fontSize: 15,
+		cursor: "pointer",
+		color: state.isSelected ? "var(--pc-text-inverse)" : "var(--pc-text)",
+		backgroundColor: state.isSelected
+			? "var(--pc-color-primary)"
+			: state.isFocused
+				? "var(--pc-color-primary-50)"
+				: "transparent",
+		"&:active": {
+			backgroundColor: state.isSelected
+				? "var(--pc-color-primary)"
+				: "var(--pc-color-primary-50)",
+		},
+	}),
+	noOptionsMessage: (base) => ({ ...base, color: "var(--pc-text-muted)" }),
+};
+
 export function Select({
 	label,
 	children,
-	...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { label?: string }) {
+	value,
+	onChange,
+	disabled,
+	style,
+	className,
+	placeholder = "Select…",
+	name,
+	required,
+}: {
+	label?: string;
+	children?: ReactNode;
+	value?: string | number;
+	/** Kept event-shaped so existing `(e) => e.target.value` handlers work. */
+	onChange?: (event: { target: { value: string } }) => void;
+	disabled?: boolean;
+	style?: CSSProperties;
+	className?: string;
+	placeholder?: string;
+	name?: string;
+	required?: boolean;
+}) {
+	const generatedId = useId();
+	const inputId = `${generatedId}-select`;
+
+	// Portal the menu to <body> so it escapes overflow/stacking contexts.
+	// Only client-side (menu is closed on the server, so no hydration diff).
+	const [menuPortalTarget, setMenuPortalTarget] = useState<
+		HTMLElement | undefined
+	>(undefined);
+	useEffect(() => {
+		setMenuPortalTarget(document.body);
+	}, []);
+
+	const options = optionsFromChildren(children);
+	const selected =
+		options.find((o) => o.value === String(value ?? "")) ?? null;
+
 	return (
-		<Field>
-			{label && <Label>{label}</Label>}
-			<StyledSelect {...rest}>{children}</StyledSelect>
+		<Field className={className} style={style}>
+			{label && <Label htmlFor={inputId}>{label}</Label>}
+			<ReactSelect<SelectOption, false>
+				instanceId={generatedId}
+				inputId={inputId}
+				name={name}
+				required={required}
+				isDisabled={disabled}
+				options={options}
+				value={selected}
+				placeholder={placeholder}
+				onChange={(option) =>
+					onChange?.({
+						target: { value: option ? option.value : "" },
+					})
+				}
+				formatOptionLabel={(option) => option.node}
+				menuPortalTarget={menuPortalTarget}
+				menuPosition="fixed"
+				styles={selectStyles}
+			/>
 		</Field>
 	);
 }
