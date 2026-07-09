@@ -1,7 +1,18 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { decodeJwtToken, ErrForbidden, ErrUnauthorized } from "../constants";
-import { getUserByIdDB, type IPolicyStatement } from "../models";
+import {
+	decodeJwtToken,
+	ErrForbidden,
+	ErrUnauthorized,
+	ErrVendorNotActive,
+} from "../constants";
+import {
+	getUserByIdDB,
+	getVendorProfileByUserIdDB,
+	type IPolicyStatement,
+	type IVendorProfile,
+	VendorStatus,
+} from "../models";
 import reLoginUserWithRefreshToken from "../services/auth/reLoginUserWithRefreshToken";
 import {
 	can,
@@ -151,6 +162,25 @@ export function isInGroup(auth: AuthResult, groupName: string): boolean {
 
 export function assertVendor(auth: AuthResult): void {
 	requirePermission(auth, "vendorApp:manage");
+}
+
+/**
+ * Assert the caller is a vendor whose application has been approved (status
+ * ACTIVE), and return their profile. Unverified vendors (INCOMPLETE,
+ * PENDING_REVIEW, CHANGES_REQUESTED) and SUSPENDED vendors are rejected with
+ * `ErrVendorNotActive` — this is the authoritative gate behind the client-side
+ * `VendorStatusGate`: it stops a not-yet-approved vendor from mutating their
+ * menu, timetable, or listings by calling the API directly. Use it on every
+ * vendor *write*; reads keep the lighter `assertVendor`.
+ */
+export async function assertActiveVendor(
+	auth: AuthResult,
+): Promise<IVendorProfile> {
+	assertVendor(auth);
+	const vendor = await getVendorProfileByUserIdDB({ userId: auth.userId });
+	if (!vendor) throw ErrForbidden;
+	if (vendor.status !== VendorStatus.ACTIVE) throw ErrVendorNotActive;
+	return vendor;
 }
 
 export function assertBuyer(auth: AuthResult): void {

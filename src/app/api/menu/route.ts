@@ -1,5 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
+	assertActiveVendor,
 	assertVendor,
 	created,
 	handleError,
@@ -29,7 +30,7 @@ export const POST = withApiHandler(
 	{ route: "/api/menu" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const parsed = createMenuItemSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const item = await createMenuItem({

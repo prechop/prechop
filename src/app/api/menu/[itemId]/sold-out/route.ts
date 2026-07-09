@@ -1,6 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertVendor,
+	assertActiveVendor,
 	handleError,
 	ok,
 	withApiHandler,
@@ -15,7 +15,7 @@ export const PATCH = withApiHandler(
 	{ route: "/api/menu/[itemId]/sold-out" },
 	withAuth(async ({ req, auth, context }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const { itemId } = await (
 				context as { params: Promise<{ itemId: string }> }
 			).params;

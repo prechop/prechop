@@ -1,0 +1,132 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
+import { Badge, Button, Card, FadeIn, Stack, Text } from "@/components";
+import { PageLoader } from "@/components/Loader";
+import { useVendor } from "@/hooks/Vendor/useVendor";
+import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
+
+interface GateView {
+	icon: string;
+	badge: { label: string; tone: "warning" | "primary" | "danger" };
+	title: string;
+	description: string;
+	cta?: { label: string; href: string };
+}
+
+/**
+ * Wrap the interactive body of a vendor-only page (menu, cooking, timetable,
+ * earnings, the daily-order composer). Until the vendor is approved (status
+ * ACTIVE with a complete profile) it renders a status screen explaining that
+ * their submission is incomplete or still pending — instead of the editor — so
+ * a not-yet-verified vendor can see *why* they're blocked. This is the UX side
+ * of the gate; the API enforces the same rule via `assertActiveVendor`.
+ */
+export default function VendorStatusGate({
+	children,
+}: {
+	children: ReactNode;
+}) {
+	const { vendor, isLoading } = useVendor();
+
+	if (isLoading && !vendor) return <PageLoader />;
+
+	const complete = (vendor?.profileCompleteness ?? 0) >= 100;
+	if (vendor?.status === "ACTIVE" && complete) {
+		return <>{children}</>;
+	}
+
+	const view = resolveView(vendor);
+	return (
+		<FadeIn>
+			<Card
+				style={{
+					maxWidth: 560,
+					margin: "var(--pc-space-6) auto",
+					textAlign: "center",
+					padding: "var(--pc-space-7) var(--pc-space-6)",
+				}}
+			>
+				<Stack $gap={4} style={{ alignItems: "center" }}>
+					<div style={{ fontSize: 46, lineHeight: 1 }} aria-hidden>
+						{view.icon}
+					</div>
+					<Badge $tone={view.badge.tone}>{view.badge.label}</Badge>
+					<Text $weight={800} $size={22}>
+						{view.title}
+					</Text>
+					<Text $muted $size={15} style={{ maxWidth: "46ch" }}>
+						{view.description}
+					</Text>
+					{view.cta && (
+						<CtaButton
+							label={view.cta.label}
+							href={view.cta.href}
+						/>
+					)}
+				</Stack>
+			</Card>
+		</FadeIn>
+	);
+}
+
+function CtaButton({ label, href }: { label: string; href: string }) {
+	const router = useRouter();
+	return (
+		<Button
+			$size="lg"
+			style={{ marginTop: 8 }}
+			onClick={() => router.push(href)}
+		>
+			{label}
+		</Button>
+	);
+}
+
+function resolveView(vendor: VendorMe | null): GateView {
+	const status = vendor?.status;
+
+	if (status === "PENDING_REVIEW") {
+		return {
+			icon: "🕒",
+			badge: { label: "Under review", tone: "primary" },
+			title: "Your application is under review",
+			description:
+				"We're checking over your submission. You'll be able to manage your menu, cooking, timetable and earnings as soon as it's approved — we'll notify you.",
+		};
+	}
+
+	if (status === "CHANGES_REQUESTED") {
+		const reason = vendor?.rejectionReason?.trim();
+		return {
+			icon: "✏️",
+			badge: { label: "Changes requested", tone: "warning" },
+			title: "A few changes are needed",
+			description: reason
+				? `Our team asked for some updates before approving your store: “${reason}” Update your details and resubmit to unlock this.`
+				: "Our team asked for some updates before approving your store. Update your details and resubmit for review to unlock this.",
+			cta: { label: "Update & resubmit", href: "/dashboard" },
+		};
+	}
+
+	if (status === "SUSPENDED") {
+		return {
+			icon: "⛔",
+			badge: { label: "Suspended", tone: "danger" },
+			title: "Your store is suspended",
+			description:
+				"This vendor account is currently suspended, so store actions are unavailable. Please contact support if you think this is a mistake.",
+		};
+	}
+
+	// INCOMPLETE, ACTIVE-but-not-complete, or no profile yet.
+	return {
+		icon: "📝",
+		badge: { label: "Incomplete", tone: "warning" },
+		title: "Finish your vendor submission",
+		description:
+			"Complete your store profile and submit it for review to start managing your menu, cooking, timetable and earnings.",
+		cta: { label: "Continue setup", href: "/dashboard" },
+	};
+}

@@ -1,6 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertVendor,
+	assertActiveVendor,
 	handleError,
 	ok,
 	withApiHandler,
@@ -15,7 +15,7 @@ export const POST = withApiHandler(
 	{ route: "/api/vendors/me/notification-prefs" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const parsed = notificationPrefsSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const result = await updateNotificationPrefs({

@@ -1,6 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertVendor,
+	assertActiveVendor,
 	handleError,
 	ok,
 	withApiHandler,
@@ -21,7 +21,7 @@ export const PUT = withApiHandler(
 	{ route: "/api/timetable/entry" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const parsed = upsertEntrySchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const result = await upsertTimetableEntry({
@@ -39,7 +39,7 @@ export const DELETE = withApiHandler(
 	{ route: "/api/timetable/entry" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const parsed = deleteEntrySchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const result = await deleteTimetableEntry({

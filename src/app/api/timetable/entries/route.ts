@@ -1,6 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
 import {
-	assertVendor,
+	assertActiveVendor,
 	handleError,
 	ok,
 	withApiHandler,
@@ -15,7 +15,7 @@ export const PUT = withApiHandler(
 	{ route: "/api/timetable/entries" },
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
+			await assertActiveVendor(auth);
 			const parsed = bulkEntriesSchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
 			const result = await upsertTimetableEntries({
