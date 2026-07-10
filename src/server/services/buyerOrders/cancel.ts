@@ -5,6 +5,7 @@ import {
 	tryDecrypt,
 } from "../../constants";
 import {
+	decrementDailyOrderItemQuantityDB,
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
 	getUserByIdWithPhoneDB,
@@ -14,7 +15,6 @@ import {
 } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
-import { releaseSlots } from "./slots";
 
 const CANCELLABLE: OrderStatus[] = [OrderStatus.PAID, OrderStatus.CONFIRMED];
 
@@ -33,13 +33,18 @@ export async function cancelOrderAsBuyer({
 	if (!CANCELLABLE.includes(order.status as OrderStatus))
 		throw ErrOrderNotCancellable;
 
-	await markBuyerOrderCancelledDB({
+	const cancelled = await markBuyerOrderCancelledDB({
 		id: orderId,
 		reason,
 		cancelledBy: "buyer",
 		fromStatuses: CANCELLABLE,
 	});
-	await releaseHolds(order);
+	// Only the caller that actually flipped the status runs the side-effects, so
+	// a concurrent double-cancel can neither double-refund nor double-return
+	// capacity. A lost race means someone else already cancelled it.
+	if (!cancelled) throw ErrOrderNotCancellable;
+
+	await returnCapacity(order);
 	await refundOrder(order);
 
 	return {
@@ -66,13 +71,15 @@ export async function cancelOrderAsVendor({
 	if (!CANCELLABLE.includes(order.status as OrderStatus))
 		throw ErrOrderNotCancellable;
 
-	await markBuyerOrderCancelledDB({
+	const cancelled = await markBuyerOrderCancelledDB({
 		id: orderId,
 		reason,
 		cancelledBy: "vendor",
 		fromStatuses: CANCELLABLE,
 	});
-	await releaseHolds(order);
+	if (!cancelled) throw ErrOrderNotCancellable;
+
+	await returnCapacity(order);
 	await refundOrder(order);
 
 	// Notify the buyer by SMS (fire-and-forget).
@@ -109,13 +116,27 @@ async function refundOrder(order: {
 	}
 }
 
-async function releaseHolds(order: {
-	items: Array<{ dailyOrderItemId: string; quantity: number }>;
+/**
+ * Return a settled order's capacity to its listing. PAID/CONFIRMED orders had
+ * their capacity committed to `orderedQuantity` (the Redis reservation was
+ * already dropped at payment), so cancellation decrements orderedQuantity — it
+ * must NOT touch the reserved counter, which tracks only in-flight holds.
+ */
+async function returnCapacity(order: {
+	dailyOrderId: { toString(): string };
+	items: Array<{
+		dailyOrderItemId: { toString(): string };
+		quantity: number;
+	}>;
 }): Promise<void> {
-	await releaseSlots(
-		order.items.map((i) => ({
-			dailyOrderItemId: i.dailyOrderItemId.toString(),
-			quantity: i.quantity,
-		})),
+	const dailyOrderId = order.dailyOrderId.toString();
+	await Promise.allSettled(
+		order.items.map((i) =>
+			decrementDailyOrderItemQuantityDB({
+				dailyOrderId,
+				dailyOrderItemId: i.dailyOrderItemId.toString(),
+				by: i.quantity,
+			}),
+		),
 	);
 }

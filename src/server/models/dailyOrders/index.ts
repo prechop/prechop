@@ -454,6 +454,54 @@ export async function incrementDailyOrderItemQuantityDB({
 	}
 }
 
+/**
+ * Return capacity to a listing item when a settled (PAID/CONFIRMED) order is
+ * cancelled. Clamps at 0 via an aggregation-pipeline update so a stray double
+ * call can never drive `orderedQuantity` negative (which would silently inflate
+ * available capacity and permit oversell).
+ */
+export async function decrementDailyOrderItemQuantityDB({
+	dailyOrderId,
+	dailyOrderItemId,
+	by,
+	session,
+}: {
+	dailyOrderId: string;
+	dailyOrderItemId: string;
+	by: number;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const dailyOrderObjectId = new mongoose.Types.ObjectId(dailyOrderId);
+		const itemObjectId = new mongoose.Types.ObjectId(dailyOrderItemId);
+		// Normal path: the item has at least `by` units committed, so decrement.
+		const dec = await DailyOrder.updateOne(
+			{
+				_id: dailyOrderObjectId,
+				items: {
+					$elemMatch: {
+						_id: itemObjectId,
+						orderedQuantity: { $gte: by },
+					},
+				},
+			},
+			{ $inc: { "items.$.orderedQuantity": -by } },
+			{ session },
+		);
+		if (dec.modifiedCount > 0) return true;
+		// Underflow guard (double call / drift): floor at 0 rather than negative,
+		// since a negative orderedQuantity would inflate availability and oversell.
+		const floor = await DailyOrder.updateOne(
+			{ _id: dailyOrderObjectId, "items._id": itemObjectId },
+			{ $set: { "items.$.orderedQuantity": 0 } },
+			{ session },
+		);
+		return floor.modifiedCount > 0;
+	} catch {
+		return false;
+	}
+}
+
 export async function incrementDailyOrderTotalCountDB({
 	dailyOrderId,
 	by = 1,

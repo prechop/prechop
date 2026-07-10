@@ -32,6 +32,20 @@ import type {
 type Fulfillment = "PICKUP" | "DELIVERY";
 type Line = { quantity: number; optionIds: Set<string> };
 
+// Per-order server limit — placeOrderBodySchema caps each item's quantity at 50.
+const MAX_PER_ORDER = 50;
+
+/** Units of an item the buyer may still add: the smaller of the remaining
+ *  listing capacity (maxQuantity − orderedQuantity) and the per-order limit.
+ *  Infinite-capacity items (null maxQuantity) are bounded only by the limit. */
+function remainingCap(item: DailyOrderItem): number {
+	if (item.maxQuantity == null) return MAX_PER_ORDER;
+	return Math.max(
+		0,
+		Math.min(MAX_PER_ORDER, item.maxQuantity - item.orderedQuantity),
+	);
+}
+
 const Wrap = styled(Stack)`
 	max-width: 640px;
 	margin: 0 auto;
@@ -278,9 +292,12 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	function setQty(item: DailyOrderItem, delta: number) {
 		setLines((prev) => {
 			const cur = prev[item.id] ?? { quantity: 0, optionIds: new Set() };
+			// Cap at what's actually still available (maxQuantity − already
+			// ordered), and never above the server's per-order limit of 50, so
+			// the buyer can't select more than checkout would accept.
 			const next = Math.max(
 				0,
-				Math.min(item.maxQuantity ?? 50, cur.quantity + delta),
+				Math.min(remainingCap(item), cur.quantity + delta),
 			);
 			return { ...prev, [item.id]: { ...cur, quantity: next } };
 		});
@@ -499,7 +516,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 												disabled={
 													closed ||
 													inactive ||
-													notStarted
+													notStarted ||
+													qty >= remainingCap(item)
 												}
 											>
 												＋
