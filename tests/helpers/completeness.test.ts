@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	type CompletenessInput,
 	calculateCompleteness,
+	type OnboardingChecklistInput,
+	onboardingChecklist,
 } from "@/server/helpers/completeness";
 
 const empty: CompletenessInput = {
@@ -63,5 +65,74 @@ describe("calculateCompleteness", () => {
 				hasBankDetails: true,
 			}),
 		).toBe(35);
+	});
+});
+
+const emptyChecklist: OnboardingChecklistInput = {
+	isPhoneVerified: false,
+	hasBusinessIdentity: false,
+	hasCategory: false,
+	hasLocation: false,
+	hasBankDetails: false,
+	hasProfileImage: false,
+};
+
+const fullChecklist: OnboardingChecklistInput = {
+	isPhoneVerified: true,
+	hasBusinessIdentity: true,
+	hasCategory: true,
+	hasLocation: true,
+	hasBankDetails: true,
+	hasProfileImage: true,
+};
+
+describe("onboardingChecklist", () => {
+	it("is incomplete and lists every step for an empty profile", () => {
+		const res = onboardingChecklist(emptyChecklist);
+		expect(res.complete).toBe(false);
+		expect(res.missing).toEqual([
+			"phone",
+			"identity",
+			"categories",
+			"location",
+			"bank",
+			"image",
+		]);
+	});
+
+	it("is complete with no missing steps when every step is done", () => {
+		const res = onboardingChecklist(fullChecklist);
+		expect(res.complete).toBe(true);
+		expect(res.missing).toEqual([]);
+		expect(res).toMatchObject({
+			phone: true,
+			identity: true,
+			categories: true,
+			location: true,
+			bank: true,
+			image: true,
+		});
+	});
+
+	it("does not depend on menu items or timetable (unlike completeness)", () => {
+		// The whole point of the checklist: it can be satisfied without the
+		// active-vendor-gated tasks, so an applicant is never deadlocked.
+		const res = onboardingChecklist(fullChecklist);
+		expect(res.complete).toBe(true);
+	});
+
+	it("reports exactly the one missing step when a single item is absent", () => {
+		expect(
+			onboardingChecklist({ ...fullChecklist, hasLocation: false })
+				.missing,
+		).toEqual(["location"]);
+		expect(
+			onboardingChecklist({ ...fullChecklist, hasBankDetails: false })
+				.missing,
+		).toEqual(["bank"]);
+		expect(
+			onboardingChecklist({ ...fullChecklist, isPhoneVerified: false })
+				.complete,
+		).toBe(false);
 	});
 });

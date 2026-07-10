@@ -280,14 +280,18 @@ export default function VendorOnboardingWrapper({
 	};
 
 	// Every step except the final "submit" one must be complete before the
-	// vendor can send their application for review.
+	// vendor can send their application for review. This mirrors the server's
+	// onboarding-checklist gate (see submitForReview). It intentionally does
+	// NOT require profileCompleteness === 100: that score also rewards menu
+	// items + timetable entries, which live behind the active-vendor gate and
+	// can only be added after approval — requiring them here would deadlock
+	// every applicant.
 	const detailsComplete =
 		done.identity &&
 		done.categories &&
 		done.location &&
 		done.bank &&
-		done.image &&
-		(vendor.profileCompleteness ?? 0) >= 100;
+		done.image;
 
 	async function submit(fn: () => Promise<void>) {
 		setBusy(true);

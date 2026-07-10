@@ -32,3 +32,49 @@ export function calculateCompleteness(input: CompletenessInput): number {
 	if (input.hasBankDetails) score += WEIGHTS.bankDetails;
 	return score;
 }
+
+// The onboarding checklist — the steps a vendor completes to submit their
+// application for review. This is deliberately SEPARATE from the marketplace
+// completeness score above: that score also rewards menu items and timetable
+// entries, but those live behind the `assertActiveVendor` gate and cannot be
+// added until an admin approves the vendor. Gating submission on the full 100%
+// score would deadlock every applicant at ~60%. Submission therefore requires
+// only the steps an applicant can actually perform pre-approval.
+export interface OnboardingChecklistInput {
+	isPhoneVerified: boolean;
+	hasBusinessIdentity: boolean;
+	hasCategory: boolean;
+	hasLocation: boolean;
+	hasBankDetails: boolean;
+	hasProfileImage: boolean;
+}
+
+export interface OnboardingChecklist {
+	phone: boolean;
+	identity: boolean;
+	categories: boolean;
+	location: boolean;
+	bank: boolean;
+	image: boolean;
+	/** True once every step above is satisfied — the submit todo unlocks. */
+	complete: boolean;
+	/** Keys of the steps still outstanding (for messaging). */
+	missing: string[];
+}
+
+export function onboardingChecklist(
+	input: OnboardingChecklistInput,
+): OnboardingChecklist {
+	const steps = {
+		phone: input.isPhoneVerified,
+		identity: input.hasBusinessIdentity,
+		categories: input.hasCategory,
+		location: input.hasLocation,
+		bank: input.hasBankDetails,
+		image: input.hasProfileImage,
+	};
+	const missing = Object.entries(steps)
+		.filter(([, done]) => !done)
+		.map(([key]) => key);
+	return { ...steps, complete: missing.length === 0, missing };
+}

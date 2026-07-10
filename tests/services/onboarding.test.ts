@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
 	DayOfWeek,
 	getVendorProfileByIdDB,
+	LocationType,
 	MenuCategory,
 	updateVendorProfileDB,
 	upsertTimetableEntryDB,
@@ -38,8 +39,17 @@ beforeEach(async () => {
 	await seedBuiltInIam();
 });
 
-/** Build a vendor whose completeness reaches 100 so it can be submitted. */
-async function makeSubmittableVendor() {
+/**
+ * Build a vendor that has completed every onboarding step (business identity,
+ * categories, location, bank, profile image) — the checklist the submit gate
+ * actually requires. Optionally also add menu items + timetable entries so the
+ * marketplace completeness score reaches 100.
+ */
+async function makeOnboardedVendor({
+	withMenuAndTimetable = false,
+}: {
+	withMenuAndTimetable?: boolean;
+} = {}) {
 	const { userId, vendorId, campusId } = await makeVendor({
 		status: VendorStatus.INCOMPLETE,
 	});
@@ -48,22 +58,31 @@ async function makeSubmittableVendor() {
 		payload: {
 			profileImageUrl: "https://cdn.test/v.png",
 			categories: [MenuCategory.MEALS],
+			locationType: LocationType.ON_CAMPUS,
+			hostelOrStallName: "Block C",
 			paystackSubaccountCode: "ACCT_test",
 		},
 	});
-	for (let i = 0; i < 3; i++) {
-		const item = await makeMenuItem({
-			vendorId,
-			campusId,
-			name: `Item ${i}`,
-		});
-		await upsertTimetableEntryDB({
-			vendorId,
-			menuItemId: item!._id.toString(),
-			dayOfWeek: DayOfWeek.MONDAY,
-		});
+	if (withMenuAndTimetable) {
+		for (let i = 0; i < 3; i++) {
+			const item = await makeMenuItem({
+				vendorId,
+				campusId,
+				name: `Item ${i}`,
+			});
+			await upsertTimetableEntryDB({
+				vendorId,
+				menuItemId: item!._id.toString(),
+				dayOfWeek: DayOfWeek.MONDAY,
+			});
+		}
 	}
 	return { userId, vendorId, campusId };
+}
+
+/** A fully onboarded vendor whose completeness also reaches 100. */
+function makeSubmittableVendor() {
+	return makeOnboardedVendor({ withMenuAndTimetable: true });
 }
 
 describe("vendor onboarding gate", () => {
@@ -86,6 +105,38 @@ describe("vendor onboarding gate", () => {
 		const after = await getVendorProfileByIdDB({ id: vendorId });
 		expect(after!.status).toBe(VendorStatus.PENDING_REVIEW);
 		expect(after!.submittedAt).toBeTruthy();
+	});
+
+	it("allows submission once the onboarding steps are done, even below 100% completeness", async () => {
+		// Regression: menu items + timetable entries live behind the
+		// active-vendor gate, so an applicant maxes out at ~60% completeness.
+		// Submission must NOT require them — only the onboarding checklist.
+		const { userId, vendorId } = await makeOnboardedVendor();
+		const res = await submitVendorForReview({ vendorId, userId });
+		expect(res.status).toBe(VendorStatus.PENDING_REVIEW);
+		expect(res.profileCompleteness).toBeLessThan(100);
+		const after = await getVendorProfileByIdDB({ id: vendorId });
+		expect(after!.status).toBe(VendorStatus.PENDING_REVIEW);
+	});
+
+	it("blocks submission when a single onboarding step (location) is missing", async () => {
+		const { userId, vendorId } = await makeVendor({
+			status: VendorStatus.INCOMPLETE,
+		});
+		// Everything except location.
+		await updateVendorProfileDB({
+			id: vendorId,
+			payload: {
+				profileImageUrl: "https://cdn.test/v.png",
+				categories: [MenuCategory.MEALS],
+				paystackSubaccountCode: "ACCT_test",
+			},
+		});
+		await expect(
+			submitVendorForReview({ vendorId, userId }),
+		).rejects.toThrow();
+		const after = await getVendorProfileByIdDB({ id: vendorId });
+		expect(after!.status).toBe(VendorStatus.INCOMPLETE);
 	});
 
 	it("rejects a second submission while pending", async () => {

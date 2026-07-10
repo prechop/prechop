@@ -163,6 +163,8 @@ describe("vendor onboarding services", () => {
 			payload: {
 				profileImageUrl: "https://img.test/x.jpg",
 				paystackSubaccountCode: "ACCT_x",
+				locationType: LocationType.ON_CAMPUS,
+				hostelOrStallName: "Block C",
 			},
 		});
 		const { recomputeVendorCompleteness } = await import(

@@ -237,9 +237,12 @@ export default function VendorDashboardWrapper() {
 		mutate: mutateVendor,
 	} = useSWR<VendorMe>("/vendors/me", fetcher);
 
-	const isActive =
-		vendor?.status === "ACTIVE" &&
-		(vendor?.profileCompleteness ?? 0) >= 100;
+	// Approved vendors see the live dashboard; the onboarding wrapper is only for
+	// not-yet-approved statuses. Gate on status alone (matching the server's
+	// `assertActiveVendor`) — completeness is a marketplace metric, not an
+	// access gate, and requiring it here would strand a just-approved vendor on
+	// the onboarding screen with no way to add menu items.
+	const isActive = vendor?.status === "ACTIVE";
 
 	const { data: orders, isLoading: ordersLoading } = useSWR<DailyOrder[]>(
 		isActive ? "/daily-orders/my-orders?limit=50" : null,

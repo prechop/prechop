@@ -1,12 +1,13 @@
 import { AppError, ErrVendorNotFound } from "@/server/constants";
+import { onboardingChecklist } from "@/server/helpers";
 import {
+	getUserByIdDB,
 	getVendorProfileByIdDB,
 	submitVendorForReviewDB,
 	VendorStatus,
 } from "@/server/models";
 import { resendProvider } from "@/server/providers";
 import { recordAudit } from "@/server/services/audit";
-import { getSiteConfigs } from "@/server/services/siteConfigs";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
 
 const ErrNotSubmittable = new AppError(
@@ -46,15 +47,28 @@ export async function submitVendorForReview({
 		throw ErrAlreadySubmitted;
 	}
 
-	// Recompute against live onboarding state so the gate can't be bypassed.
+	// Gate on the onboarding checklist — the steps an applicant can actually
+	// complete before approval — NOT the marketplace completeness score (which
+	// also requires menu items + timetable entries that live behind the
+	// active-vendor gate and would otherwise deadlock every applicant).
+	const user = await getUserByIdDB({ id: userId });
+	const checklist = onboardingChecklist({
+		isPhoneVerified: user?.isPhoneVerified ?? false,
+		hasBusinessIdentity: !!vendor.businessName,
+		hasCategory: (vendor.categories?.length ?? 0) > 0,
+		hasLocation: !!vendor.locationType,
+		hasBankDetails: !!vendor.paystackSubaccountCode,
+		hasProfileImage: !!vendor.profileImageUrl,
+	});
+	if (!checklist.complete) {
+		throw ErrNotSubmittable;
+	}
+
+	// Recompute the marketplace completeness for display/audit (does not gate).
 	const { profileCompleteness } = await recomputeVendorCompleteness({
 		vendorId,
 		userId,
 	});
-	const { profileCompletenessRequired } = await getSiteConfigs();
-	if (profileCompleteness < profileCompletenessRequired) {
-		throw ErrNotSubmittable;
-	}
 
 	await submitVendorForReviewDB({ id: vendorId });
 

@@ -19,10 +19,10 @@ interface GateView {
 /**
  * Wrap the interactive body of a vendor-only page (menu, cooking, timetable,
  * earnings, the daily-order composer). Until the vendor is approved (status
- * ACTIVE with a complete profile) it renders a status screen explaining that
- * their submission is incomplete or still pending — instead of the editor — so
- * a not-yet-verified vendor can see *why* they're blocked. This is the UX side
- * of the gate; the API enforces the same rule via `assertActiveVendor`.
+ * ACTIVE) it renders a status screen explaining that their submission is
+ * incomplete or still pending — instead of the editor — so a not-yet-verified
+ * vendor can see *why* they're blocked. This is the UX side of the gate; the
+ * API enforces the same status rule via `assertActiveVendor`.
  */
 export default function VendorStatusGate({
 	children,
@@ -33,8 +33,11 @@ export default function VendorStatusGate({
 
 	if (isLoading && !vendor) return <PageLoader />;
 
-	const complete = (vendor?.profileCompleteness ?? 0) >= 100;
-	if (vendor?.status === "ACTIVE" && complete) {
+	// Unlock on ACTIVE status alone — the same rule the server enforces via
+	// `assertActiveVendor`. Marketplace completeness is a separate readiness
+	// metric; requiring it here would lock an approved vendor out of the very
+	// menu/timetable editors they need to raise it.
+	if (vendor?.status === "ACTIVE") {
 		return <>{children}</>;
 	}
 
@@ -146,7 +149,7 @@ function resolveView(vendor: VendorMe | null): GateView {
 		};
 	}
 
-	// INCOMPLETE, ACTIVE-but-not-complete, or no profile yet.
+	// INCOMPLETE or no profile yet (ACTIVE is unlocked above).
 	return {
 		icon: "📝",
 		badge: { label: "Incomplete", tone: "warning" },
