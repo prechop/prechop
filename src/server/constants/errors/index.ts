@@ -4,6 +4,7 @@ import {
 	AppError,
 	ErrBuiltInImmutable,
 	ErrCampusMismatch,
+	ErrCannotOrderOwnListing,
 	ErrCutoffPassed,
 	ErrDailyOrderNotActive,
 	ErrDailyOrderNotFound,
@@ -89,6 +90,7 @@ export function getErrorResponse(error: Error): IErrorResponse {
 		case ErrCampusMismatch:
 		case ErrBuiltInImmutable:
 		case ErrSelfLockout:
+		case ErrCannotOrderOwnListing:
 			code = 403;
 			break;
 

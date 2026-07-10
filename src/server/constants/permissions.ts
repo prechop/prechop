@@ -147,6 +147,25 @@ export function isKnownAction(action: string): boolean {
 	return ALL_ACTIONS.includes(action);
 }
 
+// ── Base capabilities every authenticated user has ──────────────────────────
+// Buying is a universal capability: every active account is a buyer by default,
+// and "vendor" is purely additive on top. Rather than attach the Buyers group to
+// everyone, the permission resolver unions these statements in for any user, so
+// `assertBuyer` (which probes `buyer:order:read`) passes for vendors too. The
+// only thing separating a seller from their own listings is the self-order
+// domain guard in `placeOrder`, not a missing permission. Suspended/inactive
+// accounts are rejected upstream in `resolveScope` before permissions matter.
+export const BASE_AUTHENTICATED_STATEMENTS: PolicyStatementSeed[] = [
+	{
+		effect: "Allow",
+		actions: [
+			"buyer:order:create",
+			"buyer:order:read",
+			"buyer:review:create",
+		],
+	},
+];
+
 // ── Built-in policy statement sets ──────────────────────────────────────────
 // Referenced by the IAM seed. Kept here so the catalog and the built-ins that
 // depend on it stay in one place.

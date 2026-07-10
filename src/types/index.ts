@@ -134,6 +134,8 @@ export interface DailyOrder {
 	deliveryFeeKobo: number;
 	totalOrdersCount: number;
 	items: DailyOrderItem[];
+	/** True on the public listing response when the signed-in caller owns it. */
+	isOwnListing?: boolean;
 }
 
 export interface BuyerOrderItem {

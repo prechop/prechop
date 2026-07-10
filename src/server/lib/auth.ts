@@ -119,6 +119,25 @@ export async function verifyAuthToken(
 	};
 }
 
+/**
+ * Best-effort caller identity for otherwise-public endpoints. Reads and decodes
+ * the access token only — it deliberately does NOT fall back to the refresh
+ * token (that path rotates the refresh token, and since this runs outside
+ * `withAuth` we couldn't persist the new cookie, which would silently log the
+ * user out). Returns the userId when a valid access token is present, else
+ * undefined. Never throws. Used to personalise public reads (e.g. hide a
+ * vendor's own listings from the marketplace) without gating anonymous access.
+ */
+export async function optionalUserId(
+	req: Request | NextRequest,
+): Promise<string | undefined> {
+	const accessFromCookie = await getCookieValue(ACCESS_COOKIE);
+	const accessToken = readAccessToken(req, accessFromCookie);
+	if (!accessToken) return undefined;
+	const decoded = await decodeJwtToken({ accessToken }).catch(() => null);
+	return decoded?.userId;
+}
+
 // ── Permission guards ────────────────────────────────────────────────────────
 
 /**

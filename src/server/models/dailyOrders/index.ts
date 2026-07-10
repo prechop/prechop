@@ -312,25 +312,35 @@ export async function listActiveDailyOrdersByCampusDB({
 	campusId,
 	limit = MAX_LIMIT,
 	offset = 0,
+	excludeVendorId,
 	session,
 }: {
 	campusId: string;
 	limit?: number;
 	offset?: number;
+	/** Drop listings owned by this vendor profile (a vendor never sees their own). */
+	excludeVendorId?: string;
 	session?: ClientSession;
 }): Promise<IDailyOrder[]> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(campusId)) return [];
+		const match: Record<string, unknown> = {
+			campusId: new mongoose.Types.ObjectId(campusId),
+			status: DailyOrderStatus.ACTIVE,
+			isPublic: true,
+			cutoffTime: { $gt: new Date() },
+		};
+		if (
+			excludeVendorId &&
+			mongoose.Types.ObjectId.isValid(excludeVendorId)
+		) {
+			match.vendorId = {
+				$ne: new mongoose.Types.ObjectId(excludeVendorId),
+			};
+		}
 		return await DailyOrder.aggregate<IDailyOrder>(
 			[
-				{
-					$match: {
-						campusId: new mongoose.Types.ObjectId(campusId),
-						status: DailyOrderStatus.ACTIVE,
-						isPublic: true,
-						cutoffTime: { $gt: new Date() },
-					},
-				},
+				{ $match: match },
 				{ $sort: { cutoffTime: 1 } },
 				{ $skip: offset },
 				{ $limit: Math.min(limit, MAX_LIMIT) },

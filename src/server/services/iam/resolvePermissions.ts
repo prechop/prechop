@@ -1,4 +1,4 @@
-import { ALL_ACTIONS } from "../../constants";
+import { ALL_ACTIONS, BASE_AUTHENTICATED_STATEMENTS } from "../../constants";
 import {
 	Redis,
 	redisRetrieveKeyString,
@@ -105,7 +105,12 @@ export async function resolvePermissions(
 	const policies = allPolicyIds.length
 		? await listPoliciesDB({ ids: allPolicyIds })
 		: [];
-	const statements = policies.flatMap((p) => p.statements ?? []);
+	// Every active user is a buyer by default: union the base capabilities in
+	// ahead of their group/direct-policy statements. See BASE_AUTHENTICATED_STATEMENTS.
+	const statements: IPolicyStatement[] = [
+		...(BASE_AUTHENTICATED_STATEMENTS as IPolicyStatement[]),
+		...policies.flatMap((p) => p.statements ?? []),
+	];
 
 	const resolved: ResolvedPermissions = {
 		statements,

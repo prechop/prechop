@@ -61,6 +61,31 @@ const Right = styled.div`
 	align-items: center;
 	gap: 14px;
 `;
+const ModeSwitch = styled.div`
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px;
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-pill);
+`;
+const ModeBtn = styled.button<{ $active: boolean }>`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: none;
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 700;
+	padding: 6px 13px;
+	border-radius: var(--pc-radius-pill);
+	color: ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)")};
+	background: ${(p) => (p.$active ? "var(--pc-surface)" : "transparent")};
+	box-shadow: ${(p) => (p.$active ? "var(--pc-shadow-sm)" : "none")};
+	transition: background var(--pc-dur) var(--pc-ease), color var(--pc-dur) var(--pc-ease);
+	&:hover { color: var(--pc-text); }
+`;
 const NavRow = styled.nav`
 	display: none;
 	@media (min-width: 760px) {
@@ -154,6 +179,11 @@ export default function AppShell({
 		shellRole === "VENDOR" ||
 		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
 	const nav = isVendor ? vendorNav : buyerNav;
+	// Vendors can also shop as buyers (from other kitchens). The mode switcher
+	// lets them cross between their selling area and the buyer marketplace; it is
+	// hidden from plain buyers. Its state is derived from the current area, so it
+	// can never desync from the route.
+	const canSell = !!user?.groups?.includes("Vendors");
 	const fullName = user
 		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
 		: undefined;
@@ -181,6 +211,31 @@ export default function AppShell({
 						))}
 					</NavRow>
 					<Right>
+						{canSell && (
+							<ModeSwitch
+								role="tablist"
+								aria-label="Selling or buying mode"
+							>
+								<ModeBtn
+									type="button"
+									role="tab"
+									aria-selected={isVendor}
+									$active={isVendor}
+									onClick={() => router.push("/dashboard")}
+								>
+									🧑‍🍳 Selling
+								</ModeBtn>
+								<ModeBtn
+									type="button"
+									role="tab"
+									aria-selected={!isVendor}
+									$active={!isVendor}
+									onClick={() => router.push("/marketplace")}
+								>
+									🛒 Buying
+								</ModeBtn>
+							</ModeSwitch>
+						)}
 						<ThemeToggle />
 						<Avatar name={fullName} size={34} />
 						<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>

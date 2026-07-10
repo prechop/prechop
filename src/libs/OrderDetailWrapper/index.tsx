@@ -284,6 +284,36 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			</Wrap>
 		);
 	}
+	// A seller can't order from their own kitchen. The server flags this on the
+	// listing response and enforces it in placeOrder; here we simply refuse to
+	// render the cart/checkout and point them at their vendor tools instead.
+	if (data.isOwnListing) {
+		return (
+			<Wrap>
+				<Card $accent>
+					<Stack $gap={10}>
+						<Title $size={20}>This is your listing</Title>
+						<Text $muted>
+							You can't place an order from your own kitchen.
+							Manage this listing from your dashboard, or head to
+							the marketplace to order from other vendors.
+						</Text>
+						<Row $gap={10}>
+							<Button onClick={() => router.push("/dashboard")}>
+								Go to dashboard
+							</Button>
+							<Button
+								$variant="secondary"
+								onClick={() => router.push("/marketplace")}
+							>
+								Browse marketplace
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
 
 	const deliveryFee = fulfillment === "DELIVERY" ? data.deliveryFeeKobo : 0;
 	const canOrder =

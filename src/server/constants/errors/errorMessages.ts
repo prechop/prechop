@@ -44,6 +44,9 @@ export const ErrBuiltInImmutable: Error = new Error(
 export const ErrSelfLockout: Error = new Error(
 	"You cannot remove your own administrative access.",
 );
+export const ErrCannotOrderOwnListing: Error = new Error(
+	"You cannot place an order from your own listing.",
+);
 
 // ── 404 ──────────────────────────────────────────────────────────────────
 export const ErrResourceNotFound: Error = new Error("Resource not found");

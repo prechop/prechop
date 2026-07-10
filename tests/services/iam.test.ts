@@ -144,12 +144,17 @@ describe("seedBuiltInIam + resolvePermissions", () => {
 		const user = await makeUser();
 		const id = user!._id.toString();
 		let resolved = await resolvePermissions(id);
-		expect(can(resolved.statements, "buyer:order:read")).toBe(false);
+		// Buying is a universal capability: even with no groups attached the
+		// user can already place & read orders (see BASE_AUTHENTICATED_STATEMENTS).
+		expect(can(resolved.statements, "buyer:order:read")).toBe(true);
+		// A group-only capability (menu:read, granted via BuyerBaseAccess) is
+		// absent until the Buyers group is attached — proving the bump is applied.
+		expect(can(resolved.statements, "menu:read")).toBe(false);
 
 		const buyers = await getBuiltInGroupId(BUYERS_GROUP);
 		await setUserGroups({ targetId: id, groupIds: [buyers!], actor });
 		resolved = await resolvePermissions(id);
-		expect(can(resolved.statements, "buyer:order:read")).toBe(true);
+		expect(can(resolved.statements, "menu:read")).toBe(true);
 	});
 });
 

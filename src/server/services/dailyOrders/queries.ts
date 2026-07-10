@@ -8,26 +8,55 @@ import {
 	listDailyOrdersByVendorDB,
 } from "../../models";
 
-export function getMarketplace({
+export async function getMarketplace({
 	campusId,
 	limit,
 	offset,
+	viewerUserId,
 }: {
 	campusId: string;
 	limit?: number;
 	offset?: number;
+	/** The signed-in caller (if any); their own listings are excluded. */
+	viewerUserId?: string;
 }) {
-	return listActiveDailyOrdersByCampusDB({ campusId, limit, offset });
+	let excludeVendorId: string | undefined;
+	if (viewerUserId) {
+		const vendor = await getVendorProfileByUserIdDB({
+			userId: viewerUserId,
+		});
+		if (vendor) excludeVendorId = vendor._id.toString();
+	}
+	return listActiveDailyOrdersByCampusDB({
+		campusId,
+		limit,
+		offset,
+		excludeVendorId,
+	});
 }
 
 export async function getPublicDailyOrder({
 	shareableToken,
+	viewerUserId,
 }: {
 	shareableToken: string;
+	/** The signed-in caller (if any); used to flag their own listing. */
+	viewerUserId?: string;
 }) {
 	const order = await getDailyOrderByTokenDB({ shareableToken });
 	if (!order) throw ErrDailyOrderNotFound;
-	return order;
+	// Flag when the caller owns this listing so the client can block ordering.
+	// The authoritative block is the self-order guard in `placeOrder`.
+	let isOwnListing = false;
+	if (viewerUserId) {
+		const vendor = await getVendorProfileByUserIdDB({
+			userId: viewerUserId,
+		});
+		if (vendor && vendor._id.toString() === order.vendorId.toString()) {
+			isOwnListing = true;
+		}
+	}
+	return { ...order, isOwnListing };
 }
 
 export async function getMyDailyOrders({

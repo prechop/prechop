@@ -1,5 +1,5 @@
 import { ErrInvalidFields } from "@/server/constants";
-import { handleError, ok, withApiHandler } from "@/server/lib";
+import { handleError, ok, optionalUserId, withApiHandler } from "@/server/lib";
 import { getMarketplace } from "@/server/services/dailyOrders";
 import { marketplaceQuerySchema } from "@/server/validators/dailyOrders/validate";
 
@@ -14,7 +14,10 @@ export const GET = withApiHandler(
 				Object.fromEntries(url.searchParams),
 			);
 			if (!parsed.success) throw ErrInvalidFields;
-			return ok(await getMarketplace(parsed.data));
+			// Public endpoint, but personalise for a signed-in caller: a vendor
+			// never sees their own listings in the marketplace grid.
+			const viewerUserId = await optionalUserId(req);
+			return ok(await getMarketplace({ ...parsed.data, viewerUserId }));
 		} catch (error) {
 			return handleError(error);
 		}

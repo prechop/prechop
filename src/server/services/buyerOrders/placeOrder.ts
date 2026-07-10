@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import {
 	conflict,
+	ErrCannotOrderOwnListing,
 	ErrCutoffPassed,
 	ErrDailyOrderNotActive,
 	ErrDailyOrderNotFound,
@@ -166,6 +167,12 @@ export async function placeOrder({
 	// ── 4. Vendor payout account ─────────────────────────────────────────
 	const vendor = await getVendorProfileByIdDB({ id: dailyOrder.vendorId });
 	if (!vendor) throw ErrVendorNotFound;
+	// A seller cannot buy from their own kitchen. This is the authoritative,
+	// modeled invariant protecting every entry point (public order page, API,
+	// anything future) — checked before any slot reservation or payment side
+	// effect. `buyerId` refs `users`; the listing's `vendorId` refs
+	// `vendorProfiles`, so we compare against the profile's owning `userId`.
+	if (vendor.userId?.toString() === buyerId) throw ErrCannotOrderOwnListing;
 	if (!vendor.paystackSubaccountCode) {
 		throw validationError("Vendor payment account is not configured.");
 	}
