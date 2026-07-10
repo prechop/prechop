@@ -60,6 +60,39 @@ export function Input({
 	label,
 	...rest
 }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
+	// No field in this app accepts a negative number (prices, quantities,
+	// counts, fees, TTLs, percentages — all ≥ 0). For `type="number"` inputs we
+	// therefore floor the value at 0 by default and strip any negative sign the
+	// user manages to type or paste, so a negative can never reach component
+	// state. Callers that need a higher floor (e.g. a max-quantity of at least 1)
+	// can still pass their own `min`; only the anti-negative sanitising is forced.
+	if (rest.type === "number") {
+		const { min, onChange, onKeyDown, ...numberRest } = rest;
+		return (
+			<Field>
+				{label && <Label>{label}</Label>}
+				<StyledInput
+					{...numberRest}
+					type="number"
+					min={min ?? 0}
+					onKeyDown={(e) => {
+						// Block the characters that introduce a negative value
+						// (or exponent) before they ever land in the field.
+						if (e.key === "-" || e.key === "e" || e.key === "E")
+							e.preventDefault();
+						onKeyDown?.(e);
+					}}
+					onChange={(e) => {
+						// Belt-and-suspenders for paste/spinner/programmatic input:
+						// drop any minus sign so the stored value stays ≥ 0.
+						if (e.target.value.includes("-"))
+							e.target.value = e.target.value.replace(/-/g, "");
+						onChange?.(e);
+					}}
+				/>
+			</Field>
+		);
+	}
 	return (
 		<Field>
 			{label && <Label>{label}</Label>}

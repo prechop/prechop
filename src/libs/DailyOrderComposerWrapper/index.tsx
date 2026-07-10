@@ -901,6 +901,8 @@ export default function DailyOrderComposerWrapper({
 														label="Max quantity (blank = unlimited)"
 														type="number"
 														inputMode="numeric"
+														min={1}
+														step={1}
 														value={selected[m.id]}
 														onChange={(e) =>
 															setSelected(

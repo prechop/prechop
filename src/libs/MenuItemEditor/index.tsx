@@ -387,6 +387,8 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 							label="Price (₦)"
 							type="number"
 							inputMode="decimal"
+							min={0}
+							step="0.01"
 							value={draft.priceNaira}
 							onChange={(e) =>
 								setDraft({
@@ -400,6 +402,8 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 							label="Prep time (mins, optional)"
 							type="number"
 							inputMode="numeric"
+							min={1}
+							step={1}
 							value={draft.estimatedPrepMin}
 							onChange={(e) =>
 								setDraft({

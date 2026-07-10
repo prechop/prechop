@@ -368,6 +368,8 @@ export default function OptionGroupsManager({
 									label="Min selections"
 									type="number"
 									inputMode="numeric"
+									min={0}
+									step={1}
 									value={draft.minSelect}
 									onChange={(e) =>
 										setDraft({
@@ -381,6 +383,8 @@ export default function OptionGroupsManager({
 									label="Max (blank = any)"
 									type="number"
 									inputMode="numeric"
+									min={1}
+									step={1}
 									value={draft.maxSelect}
 									onChange={(e) =>
 										setDraft({

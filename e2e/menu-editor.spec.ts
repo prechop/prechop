@@ -109,6 +109,15 @@ test("add & edit menu items on their own pages", async ({ page }) => {
 	await expect(page).toHaveURL(/\/menu\/new$/);
 	await expect(page.getByRole("heading", { name: "New item" })).toBeVisible();
 
+	// The shared numeric Input blocks negative entry: a pasted/typed negative
+	// price is stripped of its sign before it can reach the field's value, so a
+	// negative can never be submitted.
+	const priceField = page.getByPlaceholder("1500");
+	await priceField.fill("-1800");
+	await expect(priceField, "negative price sign stripped").toHaveValue(
+		"1800",
+	);
+
 	// Fill and submit the create form.
 	createdItemName = `E2E Suya Wrap ${Date.now()}`;
 	await page.getByPlaceholder("Jollof rice & chicken").fill(createdItemName);
