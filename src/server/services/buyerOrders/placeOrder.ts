@@ -173,6 +173,14 @@ export async function placeOrder({
 	// effect. `buyerId` refs `users`; the listing's `vendorId` refs
 	// `vendorProfiles`, so we compare against the profile's owning `userId`.
 	if (vendor.userId?.toString() === buyerId) throw ErrCannotOrderOwnListing;
+	// The vendor's open/closed switch is authoritative: a closed kitchen accepts
+	// no new orders, whatever its listings' individual cutoffs say. Checked before
+	// any slot reservation or payment side effect.
+	if (!vendor.isOpenForOrders) {
+		throw conflict(
+			"This kitchen isn't accepting orders right now. Please try again later.",
+		);
+	}
 	if (!vendor.paystackSubaccountCode) {
 		throw validationError("Vendor payment account is not configured.");
 	}

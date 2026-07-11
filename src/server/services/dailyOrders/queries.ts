@@ -3,6 +3,7 @@ import {
 	type DailyOrderStatus,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
+	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	listActiveDailyOrdersByCampusDB,
 	listDailyOrdersByVendorDB,
@@ -45,18 +46,17 @@ export async function getPublicDailyOrder({
 }) {
 	const order = await getDailyOrderByTokenDB({ shareableToken });
 	if (!order) throw ErrDailyOrderNotFound;
-	// Flag when the caller owns this listing so the client can block ordering.
-	// The authoritative block is the self-order guard in `placeOrder`.
-	let isOwnListing = false;
-	if (viewerUserId) {
-		const vendor = await getVendorProfileByUserIdDB({
-			userId: viewerUserId,
-		});
-		if (vendor && vendor._id.toString() === order.vendorId.toString()) {
-			isOwnListing = true;
-		}
-	}
-	return { ...order, isOwnListing };
+	// Resolve the listing's vendor once, for two client flags:
+	//  - isOwnListing: the caller owns it (self-order block); and
+	//  - vendorOpen: the kitchen is currently accepting orders.
+	// Both are authoritatively re-enforced server-side in `placeOrder`.
+	const vendor = await getVendorProfileByIdDB({
+		id: order.vendorId.toString(),
+	});
+	const vendorOpen = vendor?.isOpenForOrders ?? false;
+	const isOwnListing =
+		!!viewerUserId && vendor?.userId?.toString() === viewerUserId;
+	return { ...order, isOwnListing, vendorOpen };
 }
 
 export async function getMyDailyOrders({

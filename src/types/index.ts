@@ -136,6 +136,8 @@ export interface DailyOrder {
 	items: DailyOrderItem[];
 	/** True on the public listing response when the signed-in caller owns it. */
 	isOwnListing?: boolean;
+	/** On the public listing response: is the vendor currently accepting orders? */
+	vendorOpen?: boolean;
 }
 
 export interface BuyerOrderItem {

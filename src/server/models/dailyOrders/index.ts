@@ -341,6 +341,20 @@ export async function listActiveDailyOrdersByCampusDB({
 		return await DailyOrder.aggregate<IDailyOrder>(
 			[
 				{ $match: match },
+				// Only surface listings from vendors currently open for orders —
+				// a closed kitchen is hidden from the marketplace until it reopens.
+				{
+					$lookup: {
+						// Mongoose derives the collection name by lowercasing the
+						// model name ("vendorProfiles" → "vendorprofiles").
+						from: "vendorprofiles",
+						localField: "vendorId",
+						foreignField: "_id",
+						as: "_vendor",
+					},
+				},
+				{ $match: { "_vendor.isOpenForOrders": true } },
+				{ $unset: "_vendor" },
 				{ $sort: { cutoffTime: 1 } },
 				{ $skip: offset },
 				{ $limit: Math.min(limit, MAX_LIMIT) },

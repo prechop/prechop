@@ -55,7 +55,10 @@ async function activeListing({
 	const vendorId = vendor!._id.toString();
 	await updateVendorProfileDB({
 		id: vendorId,
-		payload: { paystackSubaccountCode: "ACCT_test123" },
+		payload: {
+			paystackSubaccountCode: "ACCT_test123",
+			isOpenForOrders: true,
+		},
 	});
 
 	const listing = await createDailyOrderDB({

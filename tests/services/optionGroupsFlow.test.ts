@@ -50,7 +50,10 @@ async function vendorWithMenu(campusId: string) {
 	const vendorId = vendor!._id.toString();
 	await updateVendorProfileDB({
 		id: vendorId,
-		payload: { paystackSubaccountCode: "ACCT_test123" },
+		payload: {
+			paystackSubaccountCode: "ACCT_test123",
+			isOpenForOrders: true,
+		},
 	});
 	return vendorId;
 }

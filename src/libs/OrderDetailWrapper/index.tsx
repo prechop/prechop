@@ -314,6 +314,30 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			</Wrap>
 		);
 	}
+	// The vendor has closed their kitchen — no new orders until they reopen. The
+	// server enforces this in placeOrder; here we refuse to render checkout.
+	if (data.vendorOpen === false) {
+		return (
+			<Wrap>
+				<Card $accent>
+					<Stack $gap={10}>
+						<Title $size={20}>{data.title}</Title>
+						<Badge $tone="danger">Kitchen closed</Badge>
+						<Text $muted>
+							This kitchen isn't accepting orders right now. Check
+							back later, or browse other campus kitchens cooking
+							today.
+						</Text>
+						<Row>
+							<Button onClick={() => router.push("/marketplace")}>
+								Browse marketplace
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
 
 	const deliveryFee = fulfillment === "DELIVERY" ? data.deliveryFeeKobo : 0;
 	const canOrder =

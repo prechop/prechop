@@ -11,6 +11,7 @@ import {
 	DailyOrderStatus,
 	MenuCategory,
 	setDailyOrderStatusDB,
+	setVendorOpenForOrdersDB,
 	setVendorStatusDB,
 	updateVendorProfileDB,
 	VendorStatus,
@@ -87,6 +88,12 @@ export async function makeVendor({
 	const vendorId = profile!._id.toString();
 	if (status !== VendorStatus.INCOMPLETE) {
 		await setVendorStatusDB({ id: vendorId, status });
+	}
+	// An active vendor fixture represents an operating kitchen: open for orders
+	// (the schema default is closed, which would otherwise fail the placeOrder
+	// open-status gate). Tests that need a closed vendor set it explicitly.
+	if (status === VendorStatus.ACTIVE) {
+		await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
 	}
 	if (withSubaccount) {
 		await updateVendorProfileDB({

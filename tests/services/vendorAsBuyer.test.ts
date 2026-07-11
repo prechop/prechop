@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Redis } from "@/server/databases/redis";
-import { createVendorProfileDB, FulfillmentType } from "@/server/models";
+import {
+	createVendorProfileDB,
+	FulfillmentType,
+	setVendorOpenForOrdersDB,
+} from "@/server/models";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
 import {
@@ -65,7 +69,11 @@ async function vendorOnCampus(campusId: string) {
 			businessName: "Test Kitchen",
 		},
 	});
-	return { userId, vendorId: profile!._id.toString() };
+	const vendorId = profile!._id.toString();
+	// Open for orders so its listings surface in the marketplace (closed vendors
+	// are now hidden) — see the open-status enforcement in openStatusFlow.test.
+	await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
+	return { userId, vendorId };
 }
 
 describe("buying is a universal capability", () => {

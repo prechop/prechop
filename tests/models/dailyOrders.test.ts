@@ -13,6 +13,10 @@ import {
 	updateDailyOrderDraftDB,
 } from "@/server/models/dailyOrders";
 import { DailyOrderStatus } from "@/server/models/enums";
+import {
+	createVendorProfileDB,
+	setVendorOpenForOrdersDB,
+} from "@/server/models/vendorProfiles";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
 beforeAll(async () => {
@@ -174,7 +178,13 @@ describe("dailyOrders model", () => {
 
 	it("lists active listings by campus and by vendor", async () => {
 		const campusId = oid();
-		const vendorId = oid();
+		// The marketplace query only surfaces listings from vendors open for
+		// orders, so back the listing with a real, open vendor profile.
+		const vendor = await createVendorProfileDB({
+			payload: { userId: oid(), campusId, email: `v-${oid()}@t.test` },
+		});
+		const vendorId = vendor!._id.toString();
+		await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
 		const active = await createDailyOrderDB({
 			payload: makePayload({ campusId, vendorId }),
 		});
