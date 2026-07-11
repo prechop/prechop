@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import styled from "styled-components";
-import { Button, Container } from "@/components";
+import { Avatar, Button, Container } from "@/components";
+import { useAuth } from "@/hooks/Auth/useAuth";
 
 const Page = styled.div`
 	min-height: 100dvh;
@@ -176,6 +177,54 @@ const Footer = styled(Container)`
 	font-weight: 600;
 	border-top: 1px solid var(--pc-border);
 `;
+const AuthCluster = styled.div`
+	/* Reserve the row height so the nav never jumps while auth resolves or
+	   between the logged-out and logged-in states. */
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 40px;
+`;
+
+/** Auth-aware nav control: reflects whether the visitor is signed in. */
+function HeaderAuth() {
+	const { user, isLoading, isAuthenticated } = useAuth();
+
+	// Don't flash "Log in" before we know — just hold the space.
+	if (isLoading) return <AuthCluster aria-hidden />;
+
+	if (!isAuthenticated) {
+		return (
+			<AuthCluster>
+				<Link href="/login">
+					<Button $variant="ghost" $size="sm" $pill>
+						Log in
+					</Button>
+				</Link>
+			</AuthCluster>
+		);
+	}
+
+	const isVendor = !!user?.groups?.includes("Vendors");
+	const primaryHref = isVendor ? "/dashboard" : "/my-orders";
+	const primaryLabel = isVendor ? "Dashboard" : "My orders";
+	const fullName = user
+		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+		: undefined;
+
+	return (
+		<AuthCluster>
+			<Link href={primaryHref}>
+				<Button $variant="ghost" $size="sm" $pill>
+					{primaryLabel}
+				</Button>
+			</Link>
+			<Link href="/account" aria-label="Your account">
+				<Avatar name={fullName} size={38} />
+			</Link>
+		</AuthCluster>
+	);
+}
 
 export default function LandingPage() {
 	return (
@@ -185,11 +234,7 @@ export default function LandingPage() {
 					<Logo aria-hidden>🍲</Logo>
 					Prechop
 				</Brand>
-				<Link href="/login">
-					<Button $variant="ghost" $size="sm" $pill>
-						Log in
-					</Button>
-				</Link>
+				<HeaderAuth />
 			</Nav>
 			<Hero>
 				<Copy>
