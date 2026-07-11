@@ -173,8 +173,12 @@ describe("dailyOrders queries", () => {
 				items: [{ menuItemId: item!._id.toString() }],
 			},
 		});
+		// The marketplace is state-scoped (every campus in the buyer's state), so
+		// assert the new listing surfaces rather than pinning an exact count.
 		const market = await getMarketplace({ campusId });
-		expect(market.length).toBe(1);
+		expect(
+			market.some((o) => o._id.toString() === listing._id.toString()),
+		).toBe(true);
 
 		const publicView = await getPublicDailyOrder({
 			shareableToken: listing.shareableToken,

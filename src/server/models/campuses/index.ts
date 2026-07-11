@@ -33,6 +33,11 @@ export const Campus: CampusModel =
 	(mongoose.models[collectionName] as CampusModel | undefined) ??
 	mongoose.model<any>(collectionName, schema);
 
+/** Escape user input so it's matched as a literal inside a $regex. */
+function escapeRegExp(input: string): string {
+	return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ── Writes ────────────────────────────────────────────────────────────────
 
 export async function createCampusDB({
@@ -185,15 +190,23 @@ export async function getCampusByShortCodeDB({
 
 export async function listCampusesDB({
 	activeOnly,
+	state,
 	session,
 }: {
 	activeOnly?: boolean;
+	/** Restrict to campuses in this state (case-insensitive exact match). */
+	state?: string;
 	session?: ClientSession;
 } = {}): Promise<ICampus[]> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
 		const match: Record<string, unknown> = {};
 		if (activeOnly) match.isActive = true;
+		if (state?.trim())
+			match.state = {
+				$regex: `^${escapeRegExp(state.trim())}$`,
+				$options: "i",
+			};
 		const result = await Campus.aggregate<ICampus>(
 			[{ $match: match }, { $sort: { name: 1 } }],
 			{ session },

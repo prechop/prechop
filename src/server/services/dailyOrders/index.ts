@@ -3,4 +3,5 @@ export * from "./fromTemplate";
 export * from "./queries";
 export * from "./snapshot";
 export * from "./status";
+export * from "./storefront";
 export * from "./update";

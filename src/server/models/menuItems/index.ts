@@ -208,6 +208,45 @@ export async function listMenuItemsByVendorDB({
 	}
 }
 
+/**
+ * Distinct vendorIds within `campusIds` that have an available menu item whose
+ * name matches `q` (case-insensitive, literal). Powers the marketplace search's
+ * "by menu" dimension.
+ */
+export async function findVendorIdsByMenuSearchDB({
+	campusIds,
+	q,
+}: {
+	campusIds: string[];
+	q: string;
+}): Promise<string[]> {
+	try {
+		const ids = campusIds
+			.filter((c) => mongoose.Types.ObjectId.isValid(c))
+			.map((c) => new mongoose.Types.ObjectId(c));
+		const term = q.trim();
+		if (ids.length === 0 || !term) return [];
+		const rows = await MenuItem.aggregate<{ _id: mongoose.Types.ObjectId }>(
+			[
+				{
+					$match: {
+						campusId: { $in: ids },
+						isAvailable: true,
+						name: {
+							$regex: term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+							$options: "i",
+						},
+					},
+				},
+				{ $group: { _id: "$vendorId" } },
+			],
+		);
+		return rows.map((r) => r._id.toString());
+	} catch {
+		return [];
+	}
+}
+
 /** Admin cross-vendor catalog listing with optional campus/text filters. */
 export async function listAllMenuItemsDB({
 	campusId,

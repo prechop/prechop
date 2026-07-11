@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import styled from "styled-components";
@@ -81,6 +82,23 @@ const HeroBody = styled(Stack)`
 `;
 const Chips = styled(Row)`
 	flex-wrap: wrap;
+`;
+const ShopLink = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	align-self: flex-start;
+	padding: 6px 12px;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	font-size: 13.5px;
+	font-weight: 700;
+	color: var(--pc-color-primary);
+	transition: border-color var(--pc-dur) var(--pc-ease);
+	&:hover {
+		border-color: var(--pc-color-primary);
+	}
 `;
 const Chip = styled.span`
 	display: inline-flex;
@@ -488,6 +506,12 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 											: timeUntil(data.cutoffTime)}
 							</Badge>
 						</Row>
+						{data.vendorId && (
+							<ShopLink href={`/v/${data.vendorId}`}>
+								🏪 {data.vendorName ?? "View shop"} · See all
+								listings →
+							</ShopLink>
+						)}
 						<Chips $gap={8}>
 							{data.pickupAvailable && <Chip>🥡 Pickup</Chip>}
 							{data.deliveryAvailable && (

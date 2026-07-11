@@ -335,12 +335,16 @@ export async function listDailyOrdersByVendorDB({
 
 export async function listActiveDailyOrdersByCampusDB({
 	campusId,
+	campusIds,
 	limit = MAX_LIMIT,
 	offset = 0,
 	excludeVendorId,
 	session,
 }: {
-	campusId: string;
+	/** Single campus. Ignored when `campusIds` is provided. */
+	campusId?: string;
+	/** Multiple campuses (e.g. every campus in the buyer's state). */
+	campusIds?: string[];
 	limit?: number;
 	offset?: number;
 	/** Drop listings owned by this vendor profile (a vendor never sees their own). */
@@ -348,9 +352,12 @@ export async function listActiveDailyOrdersByCampusDB({
 	session?: ClientSession;
 }): Promise<IDailyOrder[]> {
 	try {
-		if (!mongoose.Types.ObjectId.isValid(campusId)) return [];
+		const ids = (campusIds?.length ? campusIds : campusId ? [campusId] : [])
+			.filter((c) => mongoose.Types.ObjectId.isValid(c))
+			.map((c) => new mongoose.Types.ObjectId(c));
+		if (ids.length === 0) return [];
 		const match: Record<string, unknown> = {
-			campusId: new mongoose.Types.ObjectId(campusId),
+			campusId: ids.length === 1 ? ids[0] : { $in: ids },
 			status: DailyOrderStatus.ACTIVE,
 			isPublic: true,
 			cutoffTime: { $gt: new Date() },
@@ -379,6 +386,14 @@ export async function listActiveDailyOrdersByCampusDB({
 					},
 				},
 				{ $match: { "_vendor.isOpenForOrders": true } },
+				// Surface the shop name on each card without a second round-trip.
+				{
+					$addFields: {
+						vendorName: {
+							$arrayElemAt: ["$_vendor.businessName", 0],
+						},
+					},
+				},
 				{ $unset: "_vendor" },
 				{ $sort: { cutoffTime: 1 } },
 				{ $skip: offset },
@@ -386,6 +401,45 @@ export async function listActiveDailyOrdersByCampusDB({
 			],
 			{ session },
 		);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Distinct vendorIds within `campusIds` running an active, public, still-open
+ * listing whose title or any item name matches `q` (case-insensitive, literal).
+ * Powers the marketplace search's "by listing" dimension.
+ */
+export async function findVendorIdsByListingSearchDB({
+	campusIds,
+	q,
+}: {
+	campusIds: string[];
+	q: string;
+}): Promise<string[]> {
+	try {
+		const ids = campusIds
+			.filter((c) => mongoose.Types.ObjectId.isValid(c))
+			.map((c) => new mongoose.Types.ObjectId(c));
+		const term = q.trim();
+		if (ids.length === 0 || !term) return [];
+		const rx = { $regex: escapeRegExp(term), $options: "i" };
+		const rows = await DailyOrder.aggregate<{
+			_id: mongoose.Types.ObjectId;
+		}>([
+			{
+				$match: {
+					campusId: { $in: ids },
+					status: DailyOrderStatus.ACTIVE,
+					isPublic: true,
+					cutoffTime: { $gt: new Date() },
+					$or: [{ title: rx }, { "items.snapshotName": rx }],
+				},
+			},
+			{ $group: { _id: "$vendorId" } },
+		]);
+		return rows.map((r) => r._id.toString());
 	} catch {
 		return [];
 	}

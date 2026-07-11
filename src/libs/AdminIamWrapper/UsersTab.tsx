@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
-import { Button, Card, Input, Skeleton, Stack, Text } from "@/components";
+import { Button, Card, Input, Row, Skeleton, Stack, Text } from "@/components";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { useToast } from "@/hooks/useToast";
@@ -132,13 +133,20 @@ export default function UsersTab() {
 										policy(ies)
 									</Text>
 								</div>
-								<Button
-									$variant="ghost"
-									$size="sm"
-									onClick={() => beginEdit(u)}
-								>
-									{editing === u.id ? "Close" : "Manage"}
-								</Button>
+								<Row $gap={8} $align="center">
+									<Link href={`/admin/iam/users/${u.id}`}>
+										<Button $variant="secondary" $size="sm">
+											View
+										</Button>
+									</Link>
+									<Button
+										$variant="ghost"
+										$size="sm"
+										onClick={() => beginEdit(u)}
+									>
+										{editing === u.id ? "Close" : "Manage"}
+									</Button>
+								</Row>
 							</RowEl>
 							{editing === u.id && (
 								<Card

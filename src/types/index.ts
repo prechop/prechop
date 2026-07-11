@@ -138,6 +138,110 @@ export interface DailyOrder {
 	isOwnListing?: boolean;
 	/** On the public listing response: is the vendor currently accepting orders? */
 	vendorOpen?: boolean;
+	/** On the public listing response: the shop's display name (may be null). */
+	vendorName?: string | null;
+}
+
+export interface PublicVendor {
+	id: string;
+	businessName: string | null;
+	description: string | null;
+	profileImageUrl: string | null;
+	campusId: string;
+	state: string | null;
+	areaOrAddress: string | null;
+	categories: string[];
+	rating: number;
+	totalReviews: number;
+	totalOrders: number;
+	isOpenForOrders: boolean;
+}
+
+export interface VendorStorefront {
+	vendor: PublicVendor;
+	listings: DailyOrder[];
+	menu: MenuItem[];
+}
+
+export interface VendorSearchHit {
+	vendor: PublicVendor;
+	listings: DailyOrder[];
+	matchedOn: string[];
+}
+
+export interface AdminUserDetail {
+	user: {
+		id: string;
+		firstName: string;
+		lastName: string;
+		phone: string | null;
+		campusId: string;
+		campusName: string | null;
+		campusState: string | null;
+		isActive: boolean;
+		isPhoneVerified: boolean;
+		lastLoginAt: string | null;
+		activeSessions: number;
+		createdAt: string;
+		updatedAt: string;
+	};
+	access: {
+		groups: string[];
+		actionCount: number;
+		directPolicyCount: number;
+	};
+	vendor: null | {
+		id: string;
+		businessName: string | null;
+		status: string;
+		rating: number;
+		totalReviews: number;
+		totalOrders: number;
+		completionRate: number;
+		isOpenForOrders: boolean;
+		reviewsReceived: { avg: number; count: number };
+	};
+	orders: {
+		total: number;
+		byStatus: Record<string, number>;
+		totalSpentKobo: number;
+		recent: Array<{
+			id: string;
+			orderNumber: string;
+			status: string;
+			totalKobo: number;
+			createdAt: string;
+		}>;
+	};
+	reviewsWritten: {
+		count: number;
+		recent: Array<{
+			id: string;
+			vendorId: string;
+			rating: number;
+			comment: string | null;
+			createdAt: string;
+		}>;
+	};
+	notifications: {
+		unread: number;
+		recent: Array<{
+			id: string;
+			title: string;
+			body: string;
+			isRead: boolean;
+			createdAt: string;
+		}>;
+	};
+	activity: {
+		recent: Array<{
+			id?: string;
+			action: string;
+			resourceType: string;
+			ipAddress: string | null;
+			createdAt: string;
+		}>;
+	};
 }
 
 export interface BuyerOrderItem {

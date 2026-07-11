@@ -290,6 +290,65 @@ export async function listBuyerOrdersByBuyerDB({
 	}
 }
 
+/**
+ * Per-buyer order analytics: total orders, a status breakdown, and lifetime
+ * spend (sum of totalKobo over PAID and beyond). Powers the admin user view.
+ */
+export async function aggregateBuyerOrderStatsDB({
+	buyerId,
+}: {
+	buyerId: string;
+}): Promise<{
+	total: number;
+	byStatus: Record<string, number>;
+	totalSpentKobo: number;
+}> {
+	const empty = { total: 0, byStatus: {}, totalSpentKobo: 0 };
+	try {
+		if (!mongoose.Types.ObjectId.isValid(buyerId)) return empty;
+		const spentStatuses = [
+			OrderStatus.PAID,
+			OrderStatus.CONFIRMED,
+			OrderStatus.PREPARING,
+			OrderStatus.READY,
+			OrderStatus.COMPLETED,
+		];
+		const rows = await BuyerOrder.aggregate<{
+			_id: string;
+			count: number;
+			spent: number;
+		}>([
+			{ $match: { buyerId: new mongoose.Types.ObjectId(buyerId) } },
+			{
+				$group: {
+					_id: "$status",
+					count: { $sum: 1 },
+					spent: {
+						$sum: {
+							$cond: [
+								{ $in: ["$status", spentStatuses] },
+								"$totalKobo",
+								0,
+							],
+						},
+					},
+				},
+			},
+		]);
+		const byStatus: Record<string, number> = {};
+		let total = 0;
+		let totalSpentKobo = 0;
+		for (const r of rows) {
+			byStatus[r._id] = r.count;
+			total += r.count;
+			totalSpentKobo += r.spent;
+		}
+		return { total, byStatus, totalSpentKobo };
+	} catch {
+		return empty;
+	}
+}
+
 export async function listBuyerOrdersByVendorAndDailyOrderDB({
 	vendorId,
 	dailyOrderId,

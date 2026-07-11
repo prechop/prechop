@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -9,6 +10,7 @@ import {
 	EmptyState,
 	FadeIn,
 	Grid,
+	Input,
 	PageHeader,
 	Row,
 	Skeleton,
@@ -19,7 +21,7 @@ import {
 import { fetcher } from "@/constants/fetcher";
 import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
-import type { Campus, DailyOrder } from "@/types";
+import type { Campus, DailyOrder, VendorSearchHit } from "@/types";
 
 const CampusTag = styled.span`
 	display: inline-flex;
@@ -100,6 +102,37 @@ const OrderCta = styled.span`
 const Chips = styled(Row)`
 	flex-wrap: wrap;
 `;
+const ShopName = styled.span`
+	font-size: 12.5px;
+	font-weight: 700;
+	color: var(--pc-text-muted);
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+`;
+const SearchWrap = styled.div`
+	margin: var(--pc-space-2) 0 var(--pc-space-4);
+`;
+const HitCard = styled(Card)`
+	transition: box-shadow var(--pc-dur) var(--pc-ease);
+	&:hover {
+		box-shadow: var(--pc-shadow-lg);
+	}
+`;
+const HitLink = styled(Link)`
+	color: inherit;
+	display: block;
+`;
+const MatchTag = styled.span`
+	display: inline-flex;
+	padding: 2px 8px;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-color-primary-50);
+	color: var(--pc-color-primary);
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: capitalize;
+`;
 
 function priceRange(o: DailyOrder): string {
 	const prices = o.items.map((i) => i.snapshotPriceKobo);
@@ -119,6 +152,21 @@ export default function MarketplaceWrapper() {
 	const { data, isLoading } = useSWR<DailyOrder[]>(
 		campusId
 			? `/daily-orders/marketplace?campusId=${campusId}&limit=20`
+			: null,
+		fetcher,
+	);
+
+	// Comprehensive vendor search (shop name / menu / listing), across the state.
+	const [search, setSearch] = useState("");
+	const [debounced, setDebounced] = useState("");
+	useEffect(() => {
+		const t = setTimeout(() => setDebounced(search.trim()), 300);
+		return () => clearTimeout(t);
+	}, [search]);
+	const searching = debounced.length > 0;
+	const { data: hits, isLoading: hitsLoading } = useSWR<VendorSearchHit[]>(
+		campusId && searching
+			? `/daily-orders/marketplace/search?campusId=${campusId}&q=${encodeURIComponent(debounced)}`
 			: null,
 		fetcher,
 	);
@@ -162,7 +210,23 @@ export default function MarketplaceWrapper() {
 				}
 			/>
 
-			{listings.length === 0 ? (
+			<SearchWrap>
+				<Input
+					type="search"
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+					placeholder="🔍 Search shops, dishes or listings near you…"
+					aria-label="Search vendors"
+				/>
+			</SearchWrap>
+
+			{searching ? (
+				<SearchResults
+					hits={hits}
+					loading={hitsLoading}
+					q={debounced}
+				/>
+			) : listings.length === 0 ? (
 				<EmptyState
 					icon="🍲"
 					title="No kitchens open right now"
@@ -220,6 +284,11 @@ export default function MarketplaceWrapper() {
 										</Media>
 										<Body $gap={10}>
 											<Title $size={17}>{o.title}</Title>
+											{o.vendorName && (
+												<ShopName>
+													🏪 {o.vendorName}
+												</ShopName>
+											)}
 											<Chips $gap={6}>
 												<Badge $tone="muted">
 													{o.items.length} item
@@ -258,6 +327,109 @@ export default function MarketplaceWrapper() {
 					})}
 				</Grid>
 			)}
+		</Stack>
+	);
+}
+
+/** Vendor-grouped results for the comprehensive marketplace search. */
+function SearchResults({
+	hits,
+	loading,
+	q,
+}: {
+	hits?: VendorSearchHit[];
+	loading: boolean;
+	q: string;
+}) {
+	if (loading) {
+		return (
+			<Stack $gap={12}>
+				{[0, 1, 2].map((n) => (
+					<Card key={n}>
+						<Stack $gap={10}>
+							<Skeleton $w="55%" $h={18} />
+							<Skeleton $w="35%" $h={13} />
+						</Stack>
+					</Card>
+				))}
+			</Stack>
+		);
+	}
+	const results = hits ?? [];
+	if (results.length === 0) {
+		return (
+			<EmptyState
+				icon="🔍"
+				title={`No matches for “${q}”`}
+				description="Try another shop name, dish or listing — we search kitchens across your state."
+			/>
+		);
+	}
+	return (
+		<Stack $gap={12}>
+			<Text $muted $size={13}>
+				{results.length} shop{results.length === 1 ? "" : "s"} match “
+				{q}”
+			</Text>
+			{results.map((hit, i) => (
+				<FadeIn key={hit.vendor.id} $delay={i * 40}>
+					<HitCard>
+						<HitLink href={`/v/${hit.vendor.id}`}>
+							<Row
+								$justify="space-between"
+								$align="center"
+								$gap={10}
+							>
+								<Stack $gap={4}>
+									<Row $gap={8} $align="center" $wrap>
+										<Text $weight={700} $size={16}>
+											🏪{" "}
+											{hit.vendor.businessName ??
+												"Campus kitchen"}
+										</Text>
+										{hit.matchedOn.map((m) => (
+											<MatchTag key={m}>{m}</MatchTag>
+										))}
+									</Row>
+									<Text $muted $size={12.5}>
+										⭐ {hit.vendor.rating.toFixed(1)} ·{" "}
+										{hit.listings.length} live listing
+										{hit.listings.length === 1 ? "" : "s"}
+										{hit.vendor.state
+											? ` · ${hit.vendor.state}`
+											: ""}
+									</Text>
+								</Stack>
+								<OrderCta>View shop →</OrderCta>
+							</Row>
+							{hit.listings.length > 0 && (
+								<Chips $gap={6} style={{ marginTop: 10 }}>
+									{hit.listings.slice(0, 3).map((o) => {
+										const closed =
+											timeUntil(o.cutoffTime) ===
+											"closed";
+										return (
+											<Badge
+												key={o.id}
+												$tone={
+													closed
+														? "danger"
+														: "warning"
+												}
+											>
+												{o.title} ·{" "}
+												{closed
+													? "closed"
+													: timeUntil(o.cutoffTime)}
+											</Badge>
+										);
+									})}
+								</Chips>
+							)}
+						</HitLink>
+					</HitCard>
+				</FadeIn>
+			))}
 		</Stack>
 	);
 }

@@ -506,6 +506,11 @@ export default function DailyOrderComposerWrapper({
 			toast("Orders must open before they close", "error");
 			return;
 		}
+		// Orders must close on or before the menu date (same-day close is fine).
+		if (cutoff.slice(0, 10) > scheduledDate) {
+			toast("Orders must close on or before the menu date", "error");
+			return;
+		}
 		// Build each item's option groups from the (possibly edited) attached
 		// library groups, dropping any the vendor excluded for this listing and
 		// validating that each kept group still has enough named options.
@@ -780,6 +785,8 @@ export default function DailyOrderComposerWrapper({
 									label="Orders close (end)"
 									type="datetime-local"
 									min={availableFrom || nowLocal()}
+									// Orders can't close past the menu date's day.
+									max={`${scheduledDate}T23:59`}
 									value={cutoff}
 									onChange={(e) => setCutoff(e.target.value)}
 								/>

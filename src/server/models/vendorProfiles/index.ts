@@ -475,6 +475,44 @@ export async function listVendorsDB({
 	}
 }
 
+/**
+ * Distinct ACTIVE vendorIds within `campusIds` whose business name matches `q`
+ * (case-insensitive, literal). Powers the marketplace search's "by shop" dimension.
+ */
+export async function findVendorIdsByNameDB({
+	campusIds,
+	q,
+}: {
+	campusIds: string[];
+	q: string;
+}): Promise<string[]> {
+	try {
+		const ids = campusIds
+			.filter((c) => mongoose.Types.ObjectId.isValid(c))
+			.map((c) => new mongoose.Types.ObjectId(c));
+		const term = q.trim();
+		if (ids.length === 0 || !term) return [];
+		const rows = await VendorProfile.aggregate<{
+			_id: mongoose.Types.ObjectId;
+		}>([
+			{
+				$match: {
+					campusId: { $in: ids },
+					status: VendorStatus.ACTIVE,
+					businessName: {
+						$regex: term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+						$options: "i",
+					},
+				},
+			},
+			{ $project: { _id: 1 } },
+		]);
+		return rows.map((r) => r._id.toString());
+	} catch {
+		return [];
+	}
+}
+
 export async function countVendorsDB({
 	filter,
 }: {

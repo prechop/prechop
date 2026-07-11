@@ -87,6 +87,27 @@ export async function createAuditLogDB({
 
 // ── Reads ─────────────────────────────────────────────────────────────────
 
+/** Recent audit entries for actions a given user performed. */
+export async function listAuditLogsByUserDB({
+	userId,
+	limit,
+	offset,
+	session,
+}: {
+	userId: string;
+	limit?: number;
+	offset?: number;
+	session?: ClientSession;
+}): Promise<IAuditLog[]> {
+	if (!mongoose.Types.ObjectId.isValid(userId)) return [];
+	return listAuditLogsDB({
+		filter: { userId: new mongoose.Types.ObjectId(userId) },
+		limit,
+		offset,
+		session,
+	});
+}
+
 export async function listAuditLogsDB({
 	filter,
 	limit,

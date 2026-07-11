@@ -215,6 +215,34 @@ export async function listReviewsByVendorDB({
 	}
 }
 
+/** Reviews a user WROTE (as a buyer), newest first. */
+export async function listReviewsByBuyerDB({
+	buyerId,
+	limit = MAX_LIMIT,
+	offset = 0,
+	session,
+}: {
+	buyerId: string;
+	limit?: number;
+	offset?: number;
+	session?: ClientSession;
+}): Promise<IReview[]> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(buyerId)) return [];
+		return await Review.aggregate<IReview>(
+			[
+				{ $match: { buyerId: new mongoose.Types.ObjectId(buyerId) } },
+				{ $sort: { createdAt: -1 } },
+				{ $skip: offset },
+				{ $limit: Math.min(limit, MAX_LIMIT) },
+			],
+			{ session },
+		);
+	} catch {
+		return [];
+	}
+}
+
 export async function getVendorRatingAggregateDB({
 	vendorId,
 	session,

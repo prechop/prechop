@@ -13,7 +13,10 @@ import {
 	VendorStatus,
 } from "../../models";
 import type { IDailyOrderCreateInput } from "../../models/dailyOrders/types";
-import type { UpdateDailyOrderDraftInput } from "../../validators/dailyOrders/validate";
+import {
+	isCutoffWithinMenuDay,
+	type UpdateDailyOrderDraftInput,
+} from "../../validators/dailyOrders/validate";
 import { buildSnapshotItems } from "./snapshot";
 
 /**
@@ -82,11 +85,16 @@ export async function updateDailyOrder({
 	// otherwise): orders must still open in the future and before they close.
 	const effAvailableFrom = payload.availableFrom ?? opensAt;
 	const effCutoff = payload.cutoffTime ?? new Date(existing.cutoffTime);
+	const effScheduled =
+		payload.scheduledDate ?? new Date(existing.scheduledDate);
 	if (effAvailableFrom.getTime() <= now.getTime()) {
 		throw validationError("Orders must open at a future time.");
 	}
 	if (effAvailableFrom.getTime() >= effCutoff.getTime()) {
 		throw validationError("Orders must open before they close.");
+	}
+	if (!isCutoffWithinMenuDay(effScheduled, effCutoff)) {
+		throw validationError("Orders must close on or before the menu date.");
 	}
 
 	const updated = await updateDailyOrderDraftDB({

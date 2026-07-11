@@ -13,6 +13,7 @@ import {
 } from "@/server/validators/buyerOrders/validate";
 import {
 	createDailyOrderSchema,
+	marketplaceSearchSchema,
 	myDailyOrdersQuerySchema,
 } from "@/server/validators/dailyOrders/validate";
 import { createMenuItemSchema } from "@/server/validators/menu/validate";
@@ -314,6 +315,58 @@ describe("dailyOrders createDailyOrderSchema", () => {
 				scheduledDate: new Date().toISOString(),
 				cutoffTime: new Date().toISOString(),
 				items: [],
+			}).success,
+		).toBe(false);
+	});
+
+	it("accepts a same-day close but rejects a close past the menu date", () => {
+		const menu = new Date("2026-07-11T00:00:00.000Z");
+		const sameDayClose = new Date("2026-07-11T18:00:00.000Z"); // same calendar day
+		const nextDayClose = new Date("2026-07-12T09:00:00.000Z"); // day after menu
+		const base = {
+			title: "Lunch",
+			scheduledDate: menu.toISOString(),
+			items: [{ menuItemId: "m1" }],
+		};
+		expect(
+			createDailyOrderSchema.safeParse({
+				...base,
+				cutoffTime: sameDayClose.toISOString(),
+			}).success,
+		).toBe(true);
+		expect(
+			createDailyOrderSchema.safeParse({
+				...base,
+				cutoffTime: nextDayClose.toISOString(),
+			}).success,
+		).toBe(false);
+	});
+});
+
+describe("dailyOrders marketplaceSearchSchema", () => {
+	it("requires campusId and a non-empty query, coercing limit", () => {
+		const ok = marketplaceSearchSchema.safeParse({
+			campusId: "c1",
+			q: "  jollof ",
+			limit: "10",
+		});
+		expect(ok.success).toBe(true);
+		if (ok.success) {
+			expect(ok.data.q).toBe("jollof");
+			expect(ok.data.limit).toBe(10);
+		}
+		expect(
+			marketplaceSearchSchema.safeParse({ campusId: "c1", q: "" })
+				.success,
+		).toBe(false);
+		expect(marketplaceSearchSchema.safeParse({ q: "x" }).success).toBe(
+			false,
+		);
+		expect(
+			marketplaceSearchSchema.safeParse({
+				campusId: "c1",
+				q: "x",
+				extra: 1,
 			}).success,
 		).toBe(false);
 	});

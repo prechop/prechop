@@ -1,13 +1,31 @@
 import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
 import {
 	type DailyOrderStatus,
+	getCampusByIdDB,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	listActiveDailyOrdersByCampusDB,
+	listCampusesDB,
 	listDailyOrdersByVendorDB,
 } from "../../models";
+
+/**
+ * Every campus in the same state as `campusId` (including it). Buyers browse
+ * kitchens across their whole state, not just their own campus. Falls back to
+ * just the given campus if its state can't be resolved.
+ */
+export async function campusIdsInSameState(
+	campusId: string,
+): Promise<string[]> {
+	const campus = await getCampusByIdDB({ id: campusId });
+	if (!campus?.state) return [campusId];
+	const siblings = await listCampusesDB({ state: campus.state });
+	const ids = siblings.map((c) => c._id.toString());
+	if (!ids.includes(campusId)) ids.push(campusId);
+	return ids;
+}
 
 export async function getMarketplace({
 	campusId,
@@ -28,8 +46,9 @@ export async function getMarketplace({
 		});
 		if (vendor) excludeVendorId = vendor._id.toString();
 	}
+	const campusIds = await campusIdsInSameState(campusId);
 	return listActiveDailyOrdersByCampusDB({
-		campusId,
+		campusIds,
 		limit,
 		offset,
 		excludeVendorId,
@@ -56,7 +75,10 @@ export async function getPublicDailyOrder({
 	const vendorOpen = vendor?.isOpenForOrders ?? false;
 	const isOwnListing =
 		!!viewerUserId && vendor?.userId?.toString() === viewerUserId;
-	return { ...order, isOwnListing, vendorOpen };
+	// Shop identity for the storefront link on the public order page.
+	const vendorId = order.vendorId.toString();
+	const vendorName = vendor?.businessName ?? null;
+	return { ...order, isOwnListing, vendorOpen, vendorId, vendorName };
 }
 
 export async function getMyDailyOrders({
