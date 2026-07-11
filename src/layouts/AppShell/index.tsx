@@ -60,6 +60,10 @@ const Right = styled.div`
 	display: flex;
 	align-items: center;
 	gap: 14px;
+	/* Keep the right cluster a constant width pinned to the edge so its
+	   contents (incl. the mode switcher) never shift when the middle nav
+	   changes width between Selling (6 items) and Buying (3 items) pages. */
+	flex-shrink: 0;
 `;
 const ModeSwitch = styled.div`
 	display: inline-flex;
@@ -69,16 +73,19 @@ const ModeSwitch = styled.div`
 	background: var(--pc-surface-2);
 	border: 1px solid var(--pc-border);
 	border-radius: var(--pc-radius-pill);
+	flex-shrink: 0;
 `;
 const ModeBtn = styled.button<{ $active: boolean }>`
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	justify-content: center;
+	gap: 5px;
+	white-space: nowrap;
 	border: none;
 	cursor: pointer;
 	font-size: 13px;
 	font-weight: 700;
-	padding: 6px 13px;
+	padding: 6px 11px;
 	border-radius: var(--pc-radius-pill);
 	color: ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)")};
 	background: ${(p) => (p.$active ? "var(--pc-surface)" : "transparent")};
@@ -91,14 +98,18 @@ const NavRow = styled.nav`
 	@media (min-width: 760px) {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 2px;
+		/* Absorb width changes here (6 selling items vs 3 buying items) and never
+		   push the right-hand cluster past the content edge, so the mode switcher
+		   keeps a fixed position across pages. */
+		min-width: 0;
 	}
 `;
 const TopLink = styled(Link)<{ $active: boolean }>`
 	display: inline-flex;
 	align-items: center;
-	gap: 7px;
-	padding: 8px 14px;
+	gap: 6px;
+	padding: 8px 11px;
 	border-radius: var(--pc-radius-pill);
 	font-size: 14px;
 	font-weight: 700;
@@ -115,6 +126,9 @@ const LogoutBtn = styled.button`
 	cursor: pointer;
 	font-weight: 700;
 	padding: 6px 4px;
+	/* Never wrap to two lines — a changing label height/width would shift the
+	   rest of the right cluster. */
+	white-space: nowrap;
 	&:hover { color: var(--pc-color-danger); }
 `;
 const Main = styled.main`

@@ -124,7 +124,11 @@ export const GlobalStyle = createGlobalStyle`
   }
 
   *, *::before, *::after { box-sizing: border-box; }
-  html { height: 100%; }
+  /* Always reserve the scrollbar gutter so page width is identical whether or
+     not a page scrolls — otherwise sticky/right-pinned header content (e.g. the
+     Selling/Buying switcher) jumps horizontally between scrolling and
+     non-scrolling routes. */
+  html { height: 100%; scrollbar-gutter: stable; }
   html, body { padding: 0; margin: 0; }
   body {
     min-height: 100dvh;
