@@ -200,6 +200,109 @@ describe("dailyOrders model", () => {
 		expect(byVendor.length).toBe(1);
 	});
 
+	it("filters a vendor's listings by title search (case-insensitive, escaped)", async () => {
+		const vendorId = oid();
+		await createDailyOrderDB({
+			payload: makePayload({ vendorId, title: "Friday Jollof Lunch" }),
+		});
+		await createDailyOrderDB({
+			payload: makePayload({ vendorId, title: "Monday Rice Bowl" }),
+		});
+		await createDailyOrderDB({
+			payload: makePayload({ vendorId, title: "Buy 1 (get 1 free)" }),
+		});
+
+		// Case-insensitive substring match.
+		const jollof = await listDailyOrdersByVendorDB({
+			vendorId,
+			q: "jollof",
+		});
+		expect(jollof.map((o) => o.title)).toEqual(["Friday Jollof Lunch"]);
+
+		// Regex metacharacters are matched literally, not as a pattern.
+		const literal = await listDailyOrdersByVendorDB({
+			vendorId,
+			q: "(get 1 free)",
+		});
+		expect(literal.map((o) => o.title)).toEqual(["Buy 1 (get 1 free)"]);
+
+		// A wildcard that WOULD match everything if left unescaped matches nothing.
+		const wildcard = await listDailyOrdersByVendorDB({ vendorId, q: ".*" });
+		expect(wildcard).toHaveLength(0);
+	});
+
+	it("filters a vendor's listings by an inclusive scheduledDate range", async () => {
+		const vendorId = oid();
+		await createDailyOrderDB({
+			payload: makePayload({
+				vendorId,
+				title: "Early",
+				scheduledDate: new Date("2026-07-10T12:00:00Z"),
+			}),
+		});
+		await createDailyOrderDB({
+			payload: makePayload({
+				vendorId,
+				title: "Middle",
+				scheduledDate: new Date("2026-07-12T12:00:00Z"),
+			}),
+		});
+		await createDailyOrderDB({
+			payload: makePayload({
+				vendorId,
+				title: "Late",
+				scheduledDate: new Date("2026-07-14T12:00:00Z"),
+			}),
+		});
+
+		// Bounded both ends → only the middle listing.
+		const mid = await listDailyOrdersByVendorDB({
+			vendorId,
+			from: new Date("2026-07-11T00:00:00Z"),
+			to: new Date("2026-07-13T00:00:00Z"),
+		});
+		expect(mid.map((o) => o.title)).toEqual(["Middle"]);
+
+		// Lower bound only → Middle + Late, sorted by scheduledDate desc.
+		const fromOnly = await listDailyOrdersByVendorDB({
+			vendorId,
+			from: new Date("2026-07-12T00:00:00Z"),
+		});
+		expect(fromOnly.map((o) => o.title)).toEqual(["Late", "Middle"]);
+	});
+
+	it("combines status, title and date-range filters", async () => {
+		const vendorId = oid();
+		await createDailyOrderDB({
+			payload: makePayload({
+				vendorId,
+				title: "Special Draft",
+				scheduledDate: new Date("2026-07-12T10:00:00Z"),
+			}),
+		});
+		const activeDoc = await createDailyOrderDB({
+			payload: makePayload({
+				vendorId,
+				title: "Special Active",
+				scheduledDate: new Date("2026-07-12T10:00:00Z"),
+			}),
+		});
+		await setDailyOrderStatusDB({
+			id: activeDoc!._id.toString(),
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+		});
+
+		const res = await listDailyOrdersByVendorDB({
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+			q: "special",
+			from: new Date("2026-07-11T00:00:00Z"),
+			to: new Date("2026-07-13T00:00:00Z"),
+		});
+		expect(res.map((o) => o.title)).toEqual(["Special Active"]);
+	});
+
 	it("closes expired ACTIVE listings via the cron sweep", async () => {
 		const vendorId = oid();
 		const d = await createDailyOrderDB({

@@ -62,11 +62,19 @@ export async function getPublicDailyOrder({
 export async function getMyDailyOrders({
 	userId,
 	status,
+	q,
+	from,
+	to,
 	limit,
 	offset,
 }: {
 	userId: string;
 	status?: DailyOrderStatus;
+	/** Case-insensitive title search. */
+	q?: string;
+	/** Inclusive scheduledDate lower/upper bounds. */
+	from?: Date;
+	to?: Date;
 	limit?: number;
 	offset?: number;
 }) {
@@ -75,6 +83,9 @@ export async function getMyDailyOrders({
 	return listDailyOrdersByVendorDB({
 		vendorId: vendor._id.toString(),
 		status,
+		q,
+		from,
+		to,
 		limit,
 		offset,
 	});

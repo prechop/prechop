@@ -84,10 +84,19 @@ export const marketplaceQuerySchema = z
 export const myDailyOrdersQuerySchema = z
 	.object({
 		status: z.nativeEnum(DailyOrderStatus).optional(),
+		// Case-insensitive title search.
+		q: z.string().trim().min(1).max(80).optional(),
+		// Inclusive scheduledDate range (coerced from ISO/date strings).
+		from: z.coerce.date().optional(),
+		to: z.coerce.date().optional(),
 		limit: z.coerce.number().int().positive().max(100).optional(),
 		offset: z.coerce.number().int().min(0).optional(),
 	})
-	.strict();
+	.strict()
+	.refine((v) => !(v.from && v.to) || v.from <= v.to, {
+		message: "`from` must not be after `to`.",
+		path: ["from"],
+	});
 
 export type CreateDailyOrderInput = z.infer<typeof createDailyOrderSchema>;
 export type CreateFromTemplateInput = z.infer<typeof createFromTemplateSchema>;

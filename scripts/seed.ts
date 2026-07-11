@@ -15,9 +15,11 @@
 import {
 	ADMINISTRATORS_GROUP,
 	BUYERS_GROUP,
+	generateOrderNumber,
 	generateShareableToken,
 	nairaToKobo,
 	PAYSTACK_SECRET_KEY,
+	PLATFORM_FEE_BUYER_KOBO,
 	SEED_ADMIN_PHONE,
 	VENDORS_GROUP,
 } from "../src/server/constants";
@@ -27,23 +29,37 @@ import {
 } from "../src/server/databases/mongoDB";
 import {
 	addUserToGroupDB,
+	createBuyerOrderDB,
 	createCampusDB,
 	createDailyOrderDB,
 	createMenuItemDB,
+	createNotificationDB,
 	createOptionGroupDB,
+	createReviewDB,
 	createSchoolDB,
 	createUserDB,
 	createVendorProfileDB,
 	DailyOrderStatus,
+	DayOfWeek,
+	FulfillmentType,
 	getCampusByShortCodeDB,
 	getSiteConfigsDocDB,
 	getUserByPhoneDB,
 	getVendorProfileByUserIdDB,
+	incrementDailyOrderItemQuantityDB,
+	incrementDailyOrderTotalCountDB,
 	LocationType,
+	listDailyOrdersByVendorDB,
 	MenuCategory,
+	markBuyerOrderCancelledDB,
+	markBuyerOrderPaidDB,
+	OrderStatus,
+	setBuyerOrderStatusDB,
 	setDailyOrderStatusDB,
 	updateVendorProfileDB,
+	upsertAnalyticsSnapshotDB,
 	upsertSiteConfigsDB,
+	upsertTimetableEntryDB,
 	VendorStatus,
 	VendorType,
 } from "../src/server/models";
@@ -159,6 +175,449 @@ async function ensureUser(input: {
 	if (!created) throw new Error(`failed to create user ${input.phone}`);
 	log(`user ${input.phone} (${input.groupName}) created`);
 	return { _id: created._id.toString(), created: true };
+}
+
+/**
+ * Rich demo data layered on top of the core fixtures so every screen has
+ * something realistic to show: a second active vendor with listings in every
+ * status, buyer orders spanning the whole lifecycle (with reviews on the
+ * completed ones), a weekly timetable, notifications and analytics snapshots.
+ *
+ * Runs once — keyed off the second vendor's phone — so re-seeding never piles
+ * up duplicate orders. Uses model helpers directly (bypassing payment) so it
+ * can place orders in any target status without a live Paystack call.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: aggregated listing/order docs are loosely typed here.
+type Loose = any;
+
+async function enrichDemoData({
+	unilagId,
+}: {
+	unilagId: string;
+}): Promise<void> {
+	const SENTINEL_PHONE = "08144444444";
+	if (await getUserByPhoneDB({ phone: SENTINEL_PHONE })) {
+		log("demo data already enriched — skipping orders/reviews/2nd vendor");
+		return;
+	}
+
+	const HOUR = 60 * 60 * 1000;
+
+	// Extra buyers so orders come from a believable spread of students.
+	const buyers: string[] = [];
+	const demoBuyer = await getUserByPhoneDB({ phone: "08111111111" });
+	if (demoBuyer) buyers.push(demoBuyer._id.toString());
+	for (const b of [
+		{ firstName: "Emeka", lastName: "Okafor", phone: "08150000001" },
+		{ firstName: "Ngozi", lastName: "Ade", phone: "08150000002" },
+		{ firstName: "Yusuf", lastName: "Bello", phone: "08150000003" },
+	]) {
+		const u = await ensureUser({
+			campusId: unilagId,
+			groupName: BUYERS_GROUP,
+			...b,
+		});
+		buyers.push(u._id);
+	}
+	const pick = (i: number) => buyers[i % buyers.length];
+	log(`${buyers.length} demo buyers available for orders`);
+
+	// ── Second active vendor: Bola's Buka ───────────────────────────────
+	const bolaUser = await ensureUser({
+		campusId: unilagId,
+		groupName: VENDORS_GROUP,
+		firstName: "Bola",
+		lastName: "Adeyemi",
+		phone: SENTINEL_PHONE,
+	});
+	const bolaProfile = await createVendorProfileDB({
+		payload: {
+			userId: bolaUser._id,
+			campusId: unilagId,
+			email: "bola@bolasbuka.ng",
+			businessName: "Bola's Buka",
+			vendorType: VendorType.STUDENT_COOK,
+		},
+	});
+	if (!bolaProfile) {
+		log("Bola's Buka profile already exists — skipping enrichment");
+		return;
+	}
+	const bolaVendorId = bolaProfile._id.toString();
+	await updateVendorProfileDB({
+		id: bolaVendorId,
+		payload: {
+			status: VendorStatus.ACTIVE,
+			locationType: LocationType.ON_CAMPUS,
+			description: "Hearty swallow and soups at student prices.",
+			categories: [MenuCategory.MEALS, MenuCategory.DRINKS],
+			isOpenForOrders: true,
+			profileCompleteness: 100,
+			paystackSubaccountCode: "ACCT_seedbola0002",
+			bankName: "Zenith Bank",
+			accountName: "Bola's Buka",
+			accountNumber: "1010101010",
+		},
+	});
+	log("vendor 'Bola's Buka' created + activated");
+
+	const bolaMenuSpecs = [
+		{
+			category: MenuCategory.MEALS,
+			name: "Egusi & Pounded Yam",
+			priceKobo: nairaToKobo(2800),
+			estimatedPrepMin: 20,
+		},
+		{
+			category: MenuCategory.MEALS,
+			name: "Suya Platter",
+			priceKobo: nairaToKobo(3500),
+			estimatedPrepMin: 15,
+		},
+		{
+			category: MenuCategory.DRINKS,
+			name: "Chilled Zobo",
+			priceKobo: nairaToKobo(700),
+			estimatedPrepMin: 5,
+		},
+	];
+	const bolaMenu: Loose[] = [];
+	for (let i = 0; i < bolaMenuSpecs.length; i += 1) {
+		const created = await createMenuItemDB({
+			payload: {
+				vendorId: bolaVendorId,
+				campusId: unilagId,
+				displayOrder: i,
+				...bolaMenuSpecs[i],
+			},
+		});
+		if (created) bolaMenu.push(created);
+	}
+	log(`${bolaMenu.length} menu items for Bola's Buka`);
+
+	const snapItems = (items: Loose[]) =>
+		items.map((m) => ({
+			menuItemId: m._id.toString(),
+			snapshotName: m.name,
+			snapshotPriceKobo: m.priceKobo,
+			snapshotPrepMin: m.estimatedPrepMin ?? 20,
+			maxQuantity: 25,
+		}));
+
+	async function makeListing(input: {
+		title: string;
+		status: DailyOrderStatus;
+		availableFrom: Date | null;
+		cutoffMs: number;
+		items: Loose[];
+		delivery?: boolean;
+	}): Promise<Loose> {
+		const daily = await createDailyOrderDB({
+			payload: {
+				vendorId: bolaVendorId,
+				campusId: unilagId,
+				shareableToken: generateShareableToken(),
+				title: input.title,
+				scheduledDate: new Date(),
+				availableFrom: input.availableFrom ?? undefined,
+				cutoffTime: new Date(Date.now() + input.cutoffMs),
+				pickupAvailable: true,
+				deliveryAvailable: input.delivery ?? false,
+				deliveryFeeKobo: input.delivery ? nairaToKobo(250) : 0,
+				items: snapItems(input.items),
+			},
+		});
+		if (daily && input.status !== DailyOrderStatus.DRAFT) {
+			await setDailyOrderStatusDB({
+				id: daily._id.toString(),
+				vendorId: bolaVendorId,
+				status: input.status,
+				fromStatuses:
+					input.status === DailyOrderStatus.ACTIVE
+						? [DailyOrderStatus.DRAFT]
+						: undefined,
+			});
+		}
+		return daily;
+	}
+
+	const bolaLive = await makeListing({
+		title: "Bola's Lunch Special",
+		status: DailyOrderStatus.ACTIVE,
+		availableFrom: null,
+		cutoffMs: 5 * HOUR,
+		items: bolaMenu,
+		delivery: true,
+	});
+	await makeListing({
+		title: "Weekend Peppersoup (coming soon)",
+		status: DailyOrderStatus.ACTIVE,
+		availableFrom: new Date(Date.now() + 2 * HOUR),
+		cutoffMs: 6 * HOUR,
+		items: bolaMenu.slice(0, 2),
+	});
+	await makeListing({
+		title: "Draft Dinner Menu",
+		status: DailyOrderStatus.DRAFT,
+		availableFrom: new Date(Date.now() + 3 * HOUR),
+		cutoffMs: 7 * HOUR,
+		items: bolaMenu,
+	});
+	await makeListing({
+		title: "Yesterday's Special",
+		status: DailyOrderStatus.CLOSED,
+		availableFrom: null,
+		cutoffMs: -1 * HOUR,
+		items: bolaMenu.slice(0, 1),
+	});
+	await makeListing({
+		title: "Cancelled Party Pack",
+		status: DailyOrderStatus.CANCELLED,
+		availableFrom: null,
+		cutoffMs: 4 * HOUR,
+		items: bolaMenu,
+	});
+	log("Bola's Buka listings: live, coming-soon, draft, closed, cancelled");
+
+	// ── Buyer orders across the whole lifecycle ─────────────────────────
+	const adaUser = await getUserByPhoneDB({ phone: "08122222222" });
+	const adaVendor = adaUser
+		? await getVendorProfileByUserIdDB({ userId: adaUser._id.toString() })
+		: null;
+	const adaVendorId = adaVendor?._id.toString();
+	const adaListings = adaVendorId
+		? await listDailyOrdersByVendorDB({
+				vendorId: adaVendorId,
+				status: DailyOrderStatus.ACTIVE,
+			})
+		: [];
+	const adaLive = adaListings[0] as Loose;
+
+	const completed: Array<{
+		orderId: string;
+		buyerId: string;
+		vendorId: string;
+	}> = [];
+
+	async function seedOrder(input: {
+		listing: Loose;
+		vendorId: string;
+		buyerId: string;
+		qty: number;
+		fulfillment: FulfillmentType;
+		target: OrderStatus;
+	}): Promise<void> {
+		const listingId = input.listing.id ?? input.listing._id.toString();
+		const item = input.listing.items[0];
+		const itemId = item.id ?? item._id.toString();
+		const subtotal = item.snapshotPriceKobo * input.qty;
+		const deliveryFee =
+			input.fulfillment === FulfillmentType.DELIVERY
+				? (input.listing.deliveryFeeKobo ?? 0)
+				: 0;
+		const created = await createBuyerOrderDB({
+			payload: {
+				orderNumber: generateOrderNumber(),
+				dailyOrderId: listingId,
+				vendorId: input.vendorId,
+				buyerId: input.buyerId,
+				campusId: unilagId,
+				fulfillmentType: input.fulfillment,
+				...(input.fulfillment === FulfillmentType.DELIVERY
+					? {
+							deliveryHostelName: "Kofo Hall",
+							deliveryRoomNumber: "B12",
+						}
+					: {}),
+				subtotalKobo: subtotal,
+				deliveryFeeKobo: deliveryFee,
+				platformFeeKobo: PLATFORM_FEE_BUYER_KOBO,
+				totalKobo: subtotal + deliveryFee + PLATFORM_FEE_BUYER_KOBO,
+				items: [
+					{
+						dailyOrderItemId: itemId,
+						menuItemId: item.menuItemId?.toString(),
+						snapshotName: item.snapshotName,
+						snapshotPriceKobo: item.snapshotPriceKobo,
+						quantity: input.qty,
+						subtotalKobo: subtotal,
+						selectedOptions: [],
+					},
+				],
+			},
+		});
+		if (!created) return;
+		const id = created._id.toString();
+		if (input.target === OrderStatus.CANCELLED) {
+			await markBuyerOrderCancelledDB({
+				id,
+				reason: "Changed my mind",
+				cancelledBy: "buyer",
+			});
+			return;
+		}
+		if (input.target === OrderStatus.PENDING_PAYMENT) return; // abandoned cart
+		// Everything else was paid → advance to the target and reflect the
+		// placed units on the listing's capacity + order counters.
+		await markBuyerOrderPaidDB({ id });
+		if (input.target !== OrderStatus.PAID)
+			await setBuyerOrderStatusDB({ id, status: input.target });
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId: listingId,
+			dailyOrderItemId: itemId,
+			by: input.qty,
+		});
+		await incrementDailyOrderTotalCountDB({
+			dailyOrderId: listingId,
+			by: 1,
+		});
+		if (input.target === OrderStatus.COMPLETED)
+			completed.push({
+				orderId: id,
+				buyerId: input.buyerId,
+				vendorId: input.vendorId,
+			});
+	}
+
+	if (adaLive && adaVendorId) {
+		const plan: Array<[OrderStatus, FulfillmentType, number]> = [
+			[OrderStatus.PENDING_PAYMENT, FulfillmentType.PICKUP, 1],
+			[OrderStatus.PAID, FulfillmentType.PICKUP, 2],
+			[OrderStatus.PREPARING, FulfillmentType.DELIVERY, 1],
+			[OrderStatus.READY, FulfillmentType.PICKUP, 1],
+			[OrderStatus.COMPLETED, FulfillmentType.PICKUP, 3],
+			[OrderStatus.COMPLETED, FulfillmentType.DELIVERY, 1],
+			[OrderStatus.CANCELLED, FulfillmentType.PICKUP, 1],
+		];
+		for (let i = 0; i < plan.length; i += 1) {
+			const [target, ff, qty] = plan[i];
+			await seedOrder({
+				listing: adaLive,
+				vendorId: adaVendorId,
+				buyerId: pick(i),
+				qty,
+				fulfillment: ff,
+				target,
+			});
+		}
+		log(`${plan.length} buyer orders on Ada's live listing (all statuses)`);
+	}
+	if (bolaLive) {
+		await seedOrder({
+			listing: bolaLive,
+			vendorId: bolaVendorId,
+			buyerId: pick(1),
+			qty: 1,
+			fulfillment: FulfillmentType.PICKUP,
+			target: OrderStatus.PAID,
+		});
+		await seedOrder({
+			listing: bolaLive,
+			vendorId: bolaVendorId,
+			buyerId: pick(2),
+			qty: 2,
+			fulfillment: FulfillmentType.PICKUP,
+			target: OrderStatus.COMPLETED,
+		});
+	}
+
+	// ── Reviews on the completed orders ─────────────────────────────────
+	const reviewSpecs = [
+		{ rating: 5, comment: "Absolutely delicious — will order again!" },
+		{ rating: 4, comment: "Great food, delivery was a little slow." },
+		{ rating: 5, comment: "Best jollof on campus." },
+	];
+	for (let i = 0; i < completed.length; i += 1) {
+		const c = completed[i];
+		const spec = reviewSpecs[i % reviewSpecs.length];
+		await createReviewDB({
+			payload: {
+				buyerOrderId: c.orderId,
+				vendorId: c.vendorId,
+				buyerId: c.buyerId,
+				rating: spec.rating,
+				comment: spec.comment,
+			},
+		});
+	}
+	log(`${completed.length} reviews on completed orders`);
+
+	// ── Weekly timetable for Ada ────────────────────────────────────────
+	const adaMenuItemId = adaLive?.items?.[0]?.menuItemId?.toString();
+	if (adaVendorId && adaMenuItemId) {
+		const weekdays = [
+			DayOfWeek.MONDAY,
+			DayOfWeek.TUESDAY,
+			DayOfWeek.WEDNESDAY,
+			DayOfWeek.THURSDAY,
+			DayOfWeek.FRIDAY,
+		];
+		for (const day of weekdays)
+			await upsertTimetableEntryDB({
+				vendorId: adaVendorId,
+				menuItemId: adaMenuItemId,
+				dayOfWeek: day,
+				isOpen: true,
+			});
+		log(`${weekdays.length} timetable entries for Ada's Kitchen`);
+	}
+
+	// ── Notifications ───────────────────────────────────────────────────
+	if (demoBuyer) {
+		await createNotificationDB({
+			payload: {
+				userId: demoBuyer._id.toString(),
+				title: "Order ready 🎉",
+				body: "Your order from Ada's Kitchen is ready for pickup.",
+				type: "ORDER_READY",
+				isRead: false,
+			},
+		});
+		await createNotificationDB({
+			payload: {
+				userId: demoBuyer._id.toString(),
+				title: "Welcome to Prechop",
+				body: "Browse campus kitchens and order lunch in minutes.",
+				type: "SYSTEM",
+				isRead: true,
+			},
+		});
+	}
+	if (adaUser) {
+		await createNotificationDB({
+			payload: {
+				userId: adaUser._id.toString(),
+				title: "New order received",
+				body: "You have a new paid order — check your kitchen pipeline.",
+				type: "NEW_ORDER",
+				isRead: false,
+			},
+		});
+	}
+	log("demo notifications created");
+
+	// ── Analytics snapshots for Ada (last 5 days) ───────────────────────
+	if (adaVendorId) {
+		for (let d = 1; d <= 5; d += 1) {
+			const date = new Date();
+			date.setDate(date.getDate() - d);
+			date.setHours(0, 0, 0, 0);
+			await upsertAnalyticsSnapshotDB({
+				vendorId: adaVendorId,
+				date,
+				payload: {
+					totalOrders: 6 + d,
+					completedOrders: 4 + d,
+					cancelledOrders: 1,
+					totalRevenueKobo: nairaToKobo(12000 + d * 1500),
+					avgOrderValueKobo: nairaToKobo(2500),
+					newReviewCount: d % 2,
+					avgRatingForDay: 4.5,
+				},
+			});
+		}
+		log("5 days of analytics snapshots for Ada's Kitchen");
+	}
 }
 
 async function main(): Promise<void> {
@@ -466,9 +925,12 @@ async function main(): Promise<void> {
 		}
 	}
 
+	// ── Rich demo data (2nd vendor, orders, reviews, timetable, …) ───────
+	await enrichDemoData({ unilagId: unilag._id });
+
 	process.stdout.write("\n✓ Seed complete.\n");
 	process.stdout.write(
-		`\n  Admin login phone : ${SEED_ADMIN_PHONE}\n  Buyer login phone : 08111111111\n  Vendor login phone: 08122222222\n  (OTP prints to server logs in dev.)\n\n`,
+		`\n  Admin login phone : ${SEED_ADMIN_PHONE}\n  Buyer login phone : 08111111111\n  Vendor login phone: 08122222222 (Ada's Kitchen)\n  Vendor login phone: 08144444444 (Bola's Buka)\n  Pending vendor    : 08133333333 (Campus Bites)\n  (OTP prints to server logs in dev.)\n\n`,
 	);
 
 	await disconnectMongoDB();

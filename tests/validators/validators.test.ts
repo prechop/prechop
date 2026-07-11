@@ -11,7 +11,10 @@ import {
 	placeOrderBodySchema,
 	updateOrderStatusBodySchema,
 } from "@/server/validators/buyerOrders/validate";
-import { createDailyOrderSchema } from "@/server/validators/dailyOrders/validate";
+import {
+	createDailyOrderSchema,
+	myDailyOrdersQuerySchema,
+} from "@/server/validators/dailyOrders/validate";
 import { createMenuItemSchema } from "@/server/validators/menu/validate";
 import { createReviewSchema } from "@/server/validators/reviews/validate";
 import {
@@ -311,6 +314,49 @@ describe("dailyOrders createDailyOrderSchema", () => {
 				scheduledDate: new Date().toISOString(),
 				cutoffTime: new Date().toISOString(),
 				items: [],
+			}).success,
+		).toBe(false);
+	});
+});
+
+describe("dailyOrders myDailyOrdersQuerySchema", () => {
+	it("accepts and coerces status, search, date range and paging", () => {
+		const parsed = myDailyOrdersQuerySchema.safeParse({
+			status: "ACTIVE",
+			q: "  jollof  ",
+			from: "2026-07-10",
+			to: "2026-07-14",
+			limit: "20",
+			offset: "0",
+		});
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			expect(parsed.data.q).toBe("jollof"); // trimmed
+			expect(parsed.data.from).toBeInstanceOf(Date);
+			expect(parsed.data.to).toBeInstanceOf(Date);
+			expect(parsed.data.limit).toBe(20); // coerced to number
+		}
+	});
+
+	it("accepts an empty query (no filters)", () => {
+		expect(myDailyOrdersQuerySchema.safeParse({}).success).toBe(true);
+	});
+
+	it("rejects unknown keys, bad status, and an inverted range", () => {
+		expect(myDailyOrdersQuerySchema.safeParse({ nope: "x" }).success).toBe(
+			false,
+		);
+		expect(
+			myDailyOrdersQuerySchema.safeParse({ status: "BOGUS" }).success,
+		).toBe(false);
+		expect(myDailyOrdersQuerySchema.safeParse({ q: "" }).success).toBe(
+			false,
+		);
+		// `from` after `to` is contradictory.
+		expect(
+			myDailyOrdersQuerySchema.safeParse({
+				from: "2026-07-20",
+				to: "2026-07-10",
 			}).success,
 		).toBe(false);
 	});

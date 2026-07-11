@@ -132,6 +132,33 @@ describe("self-order guard", () => {
 		});
 		expect(result.orderNumber).toMatch(/^PCH-/);
 	});
+
+	it("lets a vendor buy from ANOTHER vendor's listing", async () => {
+		// The seller and a second, distinct vendor share a campus. The second
+		// vendor — who owns their own vendor profile — acts as the buyer here, the
+		// exact "switched to buying" path: a seller ordering someone ELSE's food.
+		const { vendorId, campusId } = await makeVendor({
+			withSubaccount: true,
+		});
+		const listing = await makeActiveDailyOrder({ vendorId, campusId });
+		trackSlots(listing);
+		const itemId = listing.items[0]._id!.toString();
+
+		const buyerVendor = await vendorOnCampus(campusId);
+		// Sanity: the buyer really is a different vendor, not the seller.
+		expect(buyerVendor.vendorId).not.toBe(vendorId);
+
+		const result = await placeOrder({
+			buyerId: buyerVendor.userId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+			},
+		});
+		expect(result.orderNumber).toMatch(/^PCH-/);
+	});
 });
 
 describe("own listings are hidden from the vendor's buyer view", () => {

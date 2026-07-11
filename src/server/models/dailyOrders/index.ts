@@ -275,15 +275,28 @@ export async function getDailyOrderByTokenDB({
 	}
 }
 
+/** Escape user input so it's matched as a literal inside a $regex. */
+function escapeRegExp(input: string): string {
+	return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function listDailyOrdersByVendorDB({
 	vendorId,
 	status,
+	q,
+	from,
+	to,
 	limit = MAX_LIMIT,
 	offset = 0,
 	session,
 }: {
 	vendorId: string;
 	status?: DailyOrderStatus;
+	/** Case-insensitive title search (matched literally, not as a pattern). */
+	q?: string;
+	/** Inclusive scheduledDate lower/upper bounds. */
+	from?: Date;
+	to?: Date;
 	limit?: number;
 	offset?: number;
 	session?: ClientSession;
@@ -294,6 +307,18 @@ export async function listDailyOrdersByVendorDB({
 			vendorId: new mongoose.Types.ObjectId(vendorId),
 		};
 		if (status) match.status = status;
+		const term = q?.trim();
+		if (term) {
+			// Escape so a title containing regex metacharacters (e.g. "Buy 1 (get 1)")
+			// is searched literally rather than as a pattern.
+			match.title = { $regex: escapeRegExp(term), $options: "i" };
+		}
+		if (from || to) {
+			const range: Record<string, Date> = {};
+			if (from) range.$gte = from;
+			if (to) range.$lte = to;
+			match.scheduledDate = range;
+		}
 		return await DailyOrder.aggregate<IDailyOrder>(
 			[
 				{ $match: match },

@@ -193,6 +193,47 @@ describe("dailyOrders queries", () => {
 			getPublicDailyOrder({ shareableToken: "nope" }),
 		).rejects.toThrow();
 	});
+
+	it("filters my listings by title and date range, scoped to me", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const item = await makeMenuItem({ vendorId, campusId });
+		const menuItemId = item!._id.toString();
+
+		await createDailyOrder({
+			userId,
+			input: {
+				title: "Jollof Friday",
+				scheduledDate: "2026-07-12T10:00:00.000Z",
+				cutoffTime: futureISO(1_800_000),
+				items: [{ menuItemId }],
+			},
+		});
+		await createDailyOrder({
+			userId,
+			input: {
+				title: "Rice Monday",
+				scheduledDate: "2026-07-20T10:00:00.000Z",
+				cutoffTime: futureISO(1_800_000),
+				items: [{ menuItemId }],
+			},
+		});
+
+		// Title search narrows to the matching listing only …
+		const byTitle = await getMyDailyOrders({ userId, q: "jollof" });
+		expect(byTitle.map((o) => o.title)).toEqual(["Jollof Friday"]);
+		// … and everything returned belongs to the caller's vendor.
+		expect(byTitle.every((o) => o.vendorId.toString() === vendorId)).toBe(
+			true,
+		);
+
+		// Date range excludes the out-of-window listing.
+		const byRange = await getMyDailyOrders({
+			userId,
+			from: new Date("2026-07-11T00:00:00Z"),
+			to: new Date("2026-07-13T00:00:00Z"),
+		});
+		expect(byRange.map((o) => o.title)).toEqual(["Jollof Friday"]);
+	});
 });
 
 describe("dailyOrders status transitions", () => {

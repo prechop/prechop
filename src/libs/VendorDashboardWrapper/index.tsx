@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import useSWR from "swr";
 import {
 	Badge,
+	Button,
 	Card,
 	EmptyState,
 	FadeIn,
 	Grid,
+	Input,
 	PageHeader,
 	Row,
 	SectionHeader,
@@ -134,6 +136,13 @@ const EditLink = styled(Link)`
 		color: var(--pc-text);
 	}
 `;
+const TitleLink = styled(Link)`
+	color: inherit;
+	display: inline-block;
+	&:hover {
+		color: var(--pc-color-primary);
+	}
+`;
 const IncomingItem = styled.div`
 	display: flex;
 	align-items: center;
@@ -191,6 +200,44 @@ const Toggle = styled.button<{ $on: boolean }>`
 	}
 `;
 
+const FilterChips = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+`;
+const Chip = styled.button<{ $on: boolean }>`
+	padding: 7px 13px;
+	border-radius: var(--pc-radius-pill);
+	font-size: 13px;
+	font-weight: 700;
+	cursor: pointer;
+	transition: all var(--pc-dur) var(--pc-ease);
+	border: 1.5px solid
+		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+	background: ${(p) =>
+		p.$on ? "var(--pc-color-primary)" : "var(--pc-surface)"};
+	color: ${(p) => (p.$on ? "var(--pc-text-inverse)" : "var(--pc-text-muted)")};
+	&:hover {
+		border-color: var(--pc-color-primary);
+	}
+`;
+const DateRange = styled.div`
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+`;
+
+const STATUS_FILTERS: Array<{
+	label: string;
+	value: "" | DailyOrder["status"];
+}> = [
+	{ label: "All", value: "" },
+	{ label: "Draft", value: "DRAFT" },
+	{ label: "Active", value: "ACTIVE" },
+	{ label: "Closed", value: "CLOSED" },
+	{ label: "Cancelled", value: "CANCELLED" },
+];
+
 function statusTone(
 	s: DailyOrder["status"],
 ): "primary" | "success" | "warning" | "danger" | "muted" {
@@ -244,10 +291,54 @@ export default function VendorDashboardWrapper() {
 	// the onboarding screen with no way to add menu items.
 	const isActive = vendor?.status === "ACTIVE";
 
+	// Unfiltered fetch backs the stat cards + the "current active order" incoming
+	// panel, so those summaries stay stable regardless of the list filter below.
 	const { data: orders, isLoading: ordersLoading } = useSWR<DailyOrder[]>(
 		isActive ? "/daily-orders/my-orders?limit=50" : null,
 		fetcher,
 		// Poll so newly-placed/paid orders and counts stay live (#17).
+		{ refreshInterval: 15_000 },
+	);
+
+	// List filter state. Status/date filter server-side; the search box is
+	// debounced so typing doesn't fire a request per keystroke.
+	const [statusFilter, setStatusFilter] = useState<"" | DailyOrder["status"]>(
+		"",
+	);
+	const [search, setSearch] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
+	const [fromDate, setFromDate] = useState("");
+	const [toDate, setToDate] = useState("");
+
+	useEffect(() => {
+		const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+		return () => clearTimeout(t);
+	}, [search]);
+
+	const hasFilters = !!(
+		statusFilter ||
+		debouncedSearch ||
+		fromDate ||
+		toDate
+	);
+	const filterQuery = useMemo(() => {
+		const p = new URLSearchParams({ limit: "50" });
+		if (statusFilter) p.set("status", statusFilter);
+		if (debouncedSearch) p.set("q", debouncedSearch);
+		if (fromDate) p.set("from", new Date(fromDate).toISOString());
+		// Inclusive of the whole `to` day.
+		if (toDate)
+			p.set("to", new Date(`${toDate}T23:59:59.999`).toISOString());
+		return p.toString();
+	}, [statusFilter, debouncedSearch, fromDate, toDate]);
+
+	// Only hit the server for a filtered set when a filter is actually active;
+	// otherwise reuse the unfiltered `orders` above.
+	const { data: filtered, isLoading: filteredLoading } = useSWR<DailyOrder[]>(
+		isActive && hasFilters
+			? `/daily-orders/my-orders?${filterQuery}`
+			: null,
+		fetcher,
 		{ refreshInterval: 15_000 },
 	);
 
@@ -261,6 +352,14 @@ export default function VendorDashboardWrapper() {
 	);
 
 	const [toggling, setToggling] = useState(false);
+
+	function clearFilters() {
+		setStatusFilter("");
+		setSearch("");
+		setDebouncedSearch("");
+		setFromDate("");
+		setToDate("");
+	}
 
 	if (isLoading || !vendor) return <PageLoader />;
 
@@ -288,12 +387,16 @@ export default function VendorDashboardWrapper() {
 		}
 	}
 
-	const list = orders ?? [];
-	const activeCount = list.filter((o) => o.status === "ACTIVE").length;
-	const ordersPlaced = list.reduce(
+	// Stats summarise the whole kitchen (unfiltered); the list below reflects the
+	// active filter.
+	const statList = orders ?? [];
+	const activeCount = statList.filter((o) => o.status === "ACTIVE").length;
+	const ordersPlaced = statList.reduce(
 		(sum, o) => sum + (o.totalOrdersCount ?? 0),
 		0,
 	);
+	const list = hasFilters ? (filtered ?? []) : statList;
+	const listLoading = hasFilters ? filteredLoading : ordersLoading;
 
 	return (
 		<FadeIn>
@@ -332,7 +435,7 @@ export default function VendorDashboardWrapper() {
 				<Grid $min={150} $gap={12}>
 					<StatCard
 						label="Daily orders"
-						value={list.length}
+						value={statList.length}
 						icon="🍲"
 						hint="Posted this period"
 					/>
@@ -404,7 +507,59 @@ export default function VendorDashboardWrapper() {
 				<div>
 					<SectionHeader title="Today's orders" icon="📋" />
 
-					{ordersLoading ? (
+					<Stack $gap={10} style={{ marginBottom: 14 }}>
+						<FilterChips role="group" aria-label="Filter by status">
+							{STATUS_FILTERS.map((s) => (
+								<Chip
+									key={s.label}
+									type="button"
+									$on={statusFilter === s.value}
+									aria-pressed={statusFilter === s.value}
+									onClick={() => setStatusFilter(s.value)}
+								>
+									{s.label}
+								</Chip>
+							))}
+						</FilterChips>
+						<Input
+							type="search"
+							placeholder="Search by title…"
+							aria-label="Search daily orders by title"
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+						/>
+						<DateRange>
+							<Input
+								type="date"
+								label="From"
+								aria-label="Scheduled from date"
+								value={fromDate}
+								max={toDate || undefined}
+								onChange={(e) => setFromDate(e.target.value)}
+							/>
+							<Input
+								type="date"
+								label="To"
+								aria-label="Scheduled to date"
+								value={toDate}
+								min={fromDate || undefined}
+								onChange={(e) => setToDate(e.target.value)}
+							/>
+						</DateRange>
+						{hasFilters && (
+							<Row $justify="flex-end">
+								<Button
+									$size="sm"
+									$variant="secondary"
+									onClick={clearFilters}
+								>
+									Clear filters
+								</Button>
+							</Row>
+						)}
+					</Stack>
+
+					{listLoading ? (
 						<Stack $gap={12}>
 							{[0, 1, 2].map((i) => (
 								<Card key={i}>
@@ -419,8 +574,26 @@ export default function VendorDashboardWrapper() {
 					) : list.length === 0 ? (
 						<EmptyState
 							icon="🍲"
-							title="No daily orders yet"
-							description="Post your first daily order to start selling today."
+							title={
+								hasFilters
+									? "No matching daily orders"
+									: "No daily orders yet"
+							}
+							description={
+								hasFilters
+									? "No listings match these filters. Try widening your search."
+									: "Post your first daily order to start selling today."
+							}
+							action={
+								hasFilters ? (
+									<Button
+										$variant="secondary"
+										onClick={clearFilters}
+									>
+										Clear filters
+									</Button>
+								) : undefined
+							}
 						/>
 					) : (
 						<Stack $gap={12}>
@@ -447,9 +620,13 @@ export default function VendorDashboardWrapper() {
 													$align="flex-start"
 													$gap={8}
 												>
-													<Title $size={17}>
-														{o.title}
-													</Title>
+													<TitleLink
+														href={`/dashboard/${o.id}`}
+													>
+														<Title $size={17}>
+															{o.title}
+														</Title>
+													</TitleLink>
 													<Badge
 														$tone={statusTone(
 															o.status,
@@ -531,8 +708,10 @@ export default function VendorDashboardWrapper() {
 																Edit
 															</EditLink>
 														)}
-														<CookLink href="/pipeline">
-															Cooking{" "}
+														<CookLink
+															href={`/dashboard/${o.id}`}
+														>
+															View{" "}
 															<span aria-hidden>
 																→
 															</span>
