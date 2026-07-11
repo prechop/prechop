@@ -66,6 +66,8 @@ const OpenCard = styled(Card)`
 		height: 140px;
 		border-radius: 50%;
 		background: rgba(255, 255, 255, 0.12);
+		/* Decorative only — must never swallow clicks on the toggle beneath it. */
+		pointer-events: none;
 	}
 `;
 const OpenText = styled.div`
@@ -425,6 +427,9 @@ export default function VendorDashboardWrapper() {
 						</OpenSub>
 					</OpenText>
 					<Toggle
+						type="button"
+						role="switch"
+						aria-checked={vendor.isOpenForOrders}
 						$on={vendor.isOpenForOrders}
 						onClick={toggleOpen}
 						disabled={toggling}
