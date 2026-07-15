@@ -2,6 +2,9 @@ import {
 	verifyOtp as compareOtp,
 	ErrOtpInvalid,
 	ErrUnauthorized,
+	NIGERIAN_PHONE_ERROR_MESSAGE,
+	normalizeNigerianMobilePhone,
+	validationError,
 } from "../../constants";
 import { Redis } from "../../databases";
 import {
@@ -31,21 +34,24 @@ export async function verifyOtpService({
 	otp: string;
 	ip: string;
 }): Promise<VerifyOtpResult> {
-	const storedHash = await Redis.get(otpKey(phone));
+	const normalizedPhone = normalizeNigerianMobilePhone(phone);
+	if (!normalizedPhone) throw validationError(NIGERIAN_PHONE_ERROR_MESSAGE);
+
+	const storedHash = await Redis.get(otpKey(normalizedPhone));
 	if (!storedHash) throw ErrOtpInvalid;
 
 	const valid = await compareOtp(otp, storedHash);
 	if (!valid) throw ErrOtpInvalid;
 
 	// Single-use — delete immediately on success.
-	await Redis.del(otpKey(phone));
-	await Redis.del(otpRateLimitKey(phone));
+	await Redis.del(otpKey(normalizedPhone));
+	await Redis.del(otpRateLimitKey(normalizedPhone));
 
 	// A verified phone with no account is a first-time sign-in: provision a
 	// lightweight buyer so there is a single login for everyone (unified login).
 	const user =
-		(await getUserByPhoneDB({ phone })) ??
-		(await autoProvisionBuyer(phone));
+		(await getUserByPhoneDB({ phone: normalizedPhone })) ??
+		(await autoProvisionBuyer(normalizedPhone));
 	if (!user) throw ErrUnauthorized;
 	if (!user.isActive) throw ErrUnauthorized;
 

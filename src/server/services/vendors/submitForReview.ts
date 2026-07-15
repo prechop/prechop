@@ -56,7 +56,12 @@ export async function submitVendorForReview({
 		isPhoneVerified: user?.isPhoneVerified ?? false,
 		hasBusinessIdentity: !!vendor.businessName,
 		hasCategory: (vendor.categories?.length ?? 0) > 0,
-		hasLocation: !!vendor.locationType,
+		hasLocation:
+			vendor.locationType === "OFF_CAMPUS"
+				? !!vendor.state &&
+					!!vendor.areaOrAddress &&
+					(vendor.campusIds?.length ?? 0) > 0
+				: !!vendor.locationType,
 		hasBankDetails: !!vendor.paystackSubaccountCode,
 		hasProfileImage: !!vendor.profileImageUrl,
 	});

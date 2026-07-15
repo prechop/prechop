@@ -1,8 +1,16 @@
-import { BUYERS_GROUP, VENDORS_GROUP, validationError } from "../../constants";
+import {
+	AppError,
+	BUYERS_GROUP,
+	NIGERIAN_PHONE_ERROR_MESSAGE,
+	normalizeNigerianMobilePhone,
+	VENDORS_GROUP,
+	validationError,
+} from "../../constants";
 import {
 	createUserDB,
 	createVendorProfileDB,
 	getUserByPhoneDB,
+	getVendorProfileByUserIdDB,
 	listCampusesDB,
 } from "../../models";
 import type { IUser } from "../../models/users/types";
@@ -17,6 +25,7 @@ import { requestOtp } from "./requestOtp";
  * campus afterwards from /account. Vendors still apply explicitly via /sell.
  */
 export async function autoProvisionBuyer(phone: string): Promise<IUser | null> {
+	const normalizedPhone = requireNigerianMobilePhone(phone);
 	const [buyersGroupId, campuses] = await Promise.all([
 		getBuiltInGroupId(BUYERS_GROUP),
 		listCampusesDB({ activeOnly: true }),
@@ -31,7 +40,7 @@ export async function autoProvisionBuyer(phone: string): Promise<IUser | null> {
 		payload: {
 			firstName: "Guest",
 			lastName: "Buyer",
-			phone,
+			phone: normalizedPhone,
 			campusId: campus._id.toString(),
 			groupIds: buyersGroupId ? [buyersGroupId] : [],
 			isPhoneVerified: true,
@@ -64,14 +73,15 @@ export async function registerBuyer({
 	phone: string;
 	campusId: string;
 }): Promise<{ message: string }> {
-	const existing = await getUserByPhoneDB({ phone });
+	const normalizedPhone = requireNigerianMobilePhone(phone);
+	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
 	if (!existing) {
 		const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
 		const user = await createUserDB({
 			payload: {
 				firstName,
 				lastName,
-				phone,
+				phone: normalizedPhone,
 				campusId,
 				groupIds: buyersGroupId ? [buyersGroupId] : [],
 			},
@@ -86,7 +96,7 @@ export async function registerBuyer({
 			});
 		}
 	}
-	return requestOtp(phone);
+	return requestOtp(normalizedPhone);
 }
 
 /**
@@ -104,19 +114,47 @@ export async function registerVendor({
 	firstName: string;
 	lastName: string;
 	phone: string;
-	campusId: string;
+	campusId?: string;
 	email: string;
 	businessName?: string;
 }): Promise<{ message: string }> {
-	const existing = await getUserByPhoneDB({ phone });
+	const normalizedPhone = requireNigerianMobilePhone(phone);
+	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
+	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+	const existingVendor = existing
+		? await getVendorProfileByUserIdDB({ userId: existing._id.toString() })
+		: null;
+	if (
+		existing &&
+		buyersGroupId &&
+		!existingVendor &&
+		existing.groupIds.map((g) => g.toString()).includes(buyersGroupId)
+	) {
+		throw new AppError(
+			"This phone number is already registered as a buyer. Log in and apply to become a vendor from your account settings.",
+			409,
+			"BUYER_ACCOUNT_EXISTS",
+		);
+	}
 	if (!existing) {
-		const vendorsGroupId = await getBuiltInGroupId(VENDORS_GROUP);
+		const [vendorsGroupId, campuses] = await Promise.all([
+			getBuiltInGroupId(VENDORS_GROUP),
+			campusId
+				? Promise.resolve([])
+				: listCampusesDB({ activeOnly: true }),
+		]);
+		const selectedCampusId = campusId || campuses[0]?._id.toString();
+		if (!selectedCampusId) {
+			throw validationError(
+				"No campus is configured yet. Please try again later.",
+			);
+		}
 		const user = await createUserDB({
 			payload: {
 				firstName,
 				lastName,
-				phone,
-				campusId,
+				phone: normalizedPhone,
+				campusId: selectedCampusId,
 				groupIds: vendorsGroupId ? [vendorsGroupId] : [],
 			},
 		});
@@ -124,7 +162,7 @@ export async function registerVendor({
 			await createVendorProfileDB({
 				payload: {
 					userId: user._id.toString(),
-					campusId,
+					campusId: selectedCampusId,
 					email,
 					businessName,
 				},
@@ -138,5 +176,11 @@ export async function registerVendor({
 			});
 		}
 	}
-	return requestOtp(phone);
+	return requestOtp(normalizedPhone);
+}
+
+function requireNigerianMobilePhone(phone: string): string {
+	const normalizedPhone = normalizeNigerianMobilePhone(phone);
+	if (!normalizedPhone) throw validationError(NIGERIAN_PHONE_ERROR_MESSAGE);
+	return normalizedPhone;
 }

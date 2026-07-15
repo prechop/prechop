@@ -3,7 +3,7 @@ import MarketplaceWrapper from "@/libs/MarketplaceWrapper";
 
 export default function MarketplacePage() {
 	return (
-		<AppShell shellRole="BUYER">
+		<AppShell shellRole="BUYER" publicAccess>
 			<MarketplaceWrapper />
 		</AppShell>
 	);

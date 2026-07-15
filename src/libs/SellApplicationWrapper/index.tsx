@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import styled from "styled-components";
 import {
 	Button,
@@ -10,14 +10,12 @@ import {
 	Container,
 	FadeIn,
 	Input,
-	Select,
 	Stack,
 	Text,
 } from "@/components";
 import { api } from "@/constants/api";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
-import type { Campus } from "@/types";
 
 type Step = "form" | "otp";
 
@@ -89,25 +87,13 @@ export default function SellApplicationWrapper() {
 
 	const [step, setStep] = useState<Step>("form");
 	const [loading, setLoading] = useState(false);
-	const [campuses, setCampuses] = useState<Campus[]>([]);
 
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
 	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [phone, setPhone] = useState("");
-	const [campusId, setCampusId] = useState("");
 	const [otp, setOtp] = useState("");
-
-	useEffect(() => {
-		api.get("/campuses")
-			.then((r) => {
-				const list = (r.data?.data ?? []) as Campus[];
-				setCampuses(list);
-				if (list[0]) setCampusId((c) => c || list[0].id);
-			})
-			.catch(() => {});
-	}, []);
 
 	async function submit() {
 		if (!firstName.trim() || !businessName.trim() || !phone.trim()) {
@@ -120,13 +106,16 @@ export default function SellApplicationWrapper() {
 				firstName: firstName.trim(),
 				lastName: lastName.trim(),
 				phone: phone.trim(),
-				campusId,
 				email: email.trim(),
 				businessName: businessName.trim(),
 			});
 			toast("Code sent to your phone", "success");
 			setStep("otp");
 		} catch (e) {
+			if (appCode(e) === "BUYER_ACCOUNT_EXISTS") {
+				router.replace("/sell/account-exists");
+				return;
+			}
 			toast(errMsg(e), "error");
 		} finally {
 			setLoading(false);
@@ -199,19 +188,6 @@ export default function SellApplicationWrapper() {
 									placeholder="08012345678"
 									inputMode="tel"
 								/>
-								<Select
-									label="Campus"
-									value={campusId}
-									onChange={(e) =>
-										setCampusId(e.target.value)
-									}
-								>
-									{campuses.map((c) => (
-										<option key={c.id} value={c.id}>
-											{c.name}
-										</option>
-									))}
-								</Select>
 								<Button
 									$full
 									$size="lg"
@@ -280,4 +256,9 @@ export default function SellApplicationWrapper() {
 function errMsg(e: unknown): string {
 	const err = e as { response?: { data?: { message?: string } } };
 	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+}
+
+function appCode(e: unknown): string | undefined {
+	const err = e as { response?: { data?: { appCode?: string } } };
+	return err?.response?.data?.appCode;
 }

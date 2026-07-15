@@ -1,8 +1,12 @@
 import {
 	getPaymentByOrderIdDB,
 	listBuyerOrdersByVendorAndDailyOrderDB,
+	markBuyerOrderCancelledDB,
+	markPaymentExpiredDB,
+	OrderStatus,
 } from "../../models";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
+import { releaseSlots } from "./slots";
 
 /**
  * Bulk-refund every still-active paid order attached to a daily order. Called
@@ -12,9 +16,11 @@ import { refundBuyerOrder } from "../payments/refundBuyerOrder";
 export async function refundOrdersForDailyOrder({
 	vendorId,
 	dailyOrderId,
+	reason = "Vendor cancelled this listing.",
 }: {
 	vendorId: string;
 	dailyOrderId: string;
+	reason?: string;
 }): Promise<{ refunded: number; failed: number }> {
 	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
 		vendorId,
@@ -23,7 +29,17 @@ export async function refundOrdersForDailyOrder({
 	let refunded = 0;
 	let failed = 0;
 	for (const order of orders) {
+		if (![OrderStatus.PAID, OrderStatus.CONFIRMED].includes(order.status)) {
+			continue;
+		}
 		try {
+			const cancelled = await markBuyerOrderCancelledDB({
+				id: order._id.toString(),
+				reason,
+				cancelledBy: "vendor",
+				fromStatuses: [OrderStatus.PAID, OrderStatus.CONFIRMED],
+			});
+			if (!cancelled) continue;
 			const payment = await getPaymentByOrderIdDB({
 				buyerOrderId: order._id.toString(),
 			});
@@ -44,4 +60,39 @@ export async function refundOrdersForDailyOrder({
 		}
 	}
 	return { refunded, failed };
+}
+
+export async function expireExternalPaymentOrdersForDailyOrder({
+	vendorId,
+	dailyOrderId,
+	reason = "Listing closed before external payment was completed.",
+}: {
+	vendorId: string;
+	dailyOrderId: string;
+	reason?: string;
+}): Promise<number> {
+	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
+		vendorId,
+		dailyOrderId,
+	});
+	let expired = 0;
+	for (const order of orders) {
+		if (order.status !== OrderStatus.AWAITING_EXTERNAL_PAYMENT) continue;
+		const cancelled = await markBuyerOrderCancelledDB({
+			id: order._id.toString(),
+			reason,
+			cancelledBy: "system",
+			fromStatuses: [OrderStatus.AWAITING_EXTERNAL_PAYMENT],
+		});
+		if (!cancelled) continue;
+		await markPaymentExpiredDB({ buyerOrderId: order._id.toString() });
+		await releaseSlots(
+			order.items.map((item) => ({
+				dailyOrderItemId: item.dailyOrderItemId.toString(),
+				quantity: item.quantity,
+			})),
+		);
+		expired += 1;
+	}
+	return expired;
 }

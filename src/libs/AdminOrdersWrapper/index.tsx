@@ -401,10 +401,35 @@ export default function AdminOrdersWrapper() {
 											</Text>
 										</KV>
 										<KV>
-											<Text $muted>Platform fee</Text>
+											<Text $muted>
+												Service fee
+											</Text>
 											<Text $weight={600}>
 												{formatKobo(
-													detail.platformFeeKobo,
+													detail.paymentProcessingFeeKobo ??
+														detail.platformFeeKobo,
+												)}
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>
+												Prechop commission
+											</Text>
+											<Text $weight={600}>
+												{formatKobo(
+													detail.prechopCommissionKobo ??
+														0,
+												)}
+											</Text>
+										</KV>
+										<KV>
+											<Text $muted>
+												Vendor settlement
+											</Text>
+											<Text $weight={600}>
+												{formatKobo(
+													detail.vendorSettlementKobo ??
+														detail.totalKobo,
 												)}
 											</Text>
 										</KV>

@@ -69,12 +69,15 @@ export const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
 export const VAPID_SUBJECT =
 	process.env.VAPID_SUBJECT ?? "mailto:support@prechop.ng";
 
-// Platform fees fallback (kobo). Canonical source is siteConfigs.
-export const PLATFORM_FEE_BUYER_KOBO = Number(
-	process.env.PLATFORM_FEE_BUYER_KOBO ?? 5000,
+// Platform fee percentages.
+export const PLATFORM_FEE_VENDOR_PERCENT = Number(
+	process.env.PLATFORM_FEE_VENDOR_PERCENT ?? 8,
 );
-export const PLATFORM_FEE_VENDOR_KOBO = Number(
-	process.env.PLATFORM_FEE_VENDOR_KOBO ?? 10000,
+export const PLATFORM_FEE_BUYER_PERCENT = Number(
+	process.env.PLATFORM_FEE_BUYER_PERCENT ?? 3,
+);
+export const PLATFORM_FEE_BUYER_MAX_KOBO = Number(
+	process.env.PLATFORM_FEE_BUYER_MAX_KOBO ?? 20_000,
 );
 
 // Observability & ops

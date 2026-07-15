@@ -19,6 +19,7 @@ export interface ReceiptData {
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
+	paymentProcessingFeeKobo?: number;
 	totalKobo: number;
 }
 
@@ -91,7 +92,12 @@ export async function generateReceiptPdf(data: ReceiptData): Promise<Buffer> {
 				)}
 				<View style={styles.row}>
 					<Text>Service fee</Text>
-					<Text>{formatKobo(data.platformFeeKobo)}</Text>
+					<Text>
+						{formatKobo(
+							data.paymentProcessingFeeKobo ??
+								data.platformFeeKobo,
+						)}
+					</Text>
 				</View>
 				<View style={styles.hr} />
 				<View style={styles.row}>

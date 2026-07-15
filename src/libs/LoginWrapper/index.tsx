@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import styled from "styled-components";
 import {
 	Button,
@@ -18,6 +18,9 @@ import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 
 type Step = "phone" | "otp";
+const PHONE_DIGITS = 11;
+const OTP_DIGITS = 6;
+const PHONE_ERROR = "Enter a valid Nigerian phone number.";
 
 const Screen = styled.div`
 	min-height: 100dvh;
@@ -73,6 +76,39 @@ const Foot = styled(Text)`
 	text-align: center;
 	margin-top: var(--pc-space-5);
 `;
+const OtpBoxes = styled.div`
+	display: grid;
+	grid-template-columns: repeat(${OTP_DIGITS}, minmax(0, 1fr));
+	gap: 8px;
+`;
+const OtpBox = styled.input`
+	width: 100%;
+	aspect-ratio: 1;
+	border: 1.5px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface);
+	color: var(--pc-text);
+	font-family: inherit;
+	font-size: 20px;
+	font-weight: 800;
+	text-align: center;
+	outline: none;
+	transition:
+		border-color var(--pc-dur) var(--pc-ease),
+		box-shadow var(--pc-dur) var(--pc-ease);
+
+	&:focus {
+		border-color: var(--pc-color-primary);
+		box-shadow: 0 0 0 4px var(--pc-color-primary-50);
+	}
+
+	&::placeholder {
+		color: var(--pc-text-faint);
+	}
+`;
+const FieldError = styled(Text)`
+	color: var(--pc-color-danger);
+`;
 
 /**
  * Single unified login for every user. Enter a phone, receive an OTP, and on
@@ -89,17 +125,27 @@ export default function LoginWrapper() {
 	const [step, setStep] = useState<Step>("phone");
 	const [loading, setLoading] = useState(false);
 	const [phone, setPhone] = useState("");
-	const [otp, setOtp] = useState("");
+	const [phoneError, setPhoneError] = useState("");
+	const [otpDigits, setOtpDigits] = useState<string[]>(
+		Array(OTP_DIGITS).fill(""),
+	);
+	const [otpError, setOtpError] = useState("");
+	const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
+	const otp = otpDigits.join("");
+	const isOtpComplete = otp.length === OTP_DIGITS;
 
 	async function sendCode() {
-		if (!phone.trim()) {
-			toast("Enter your phone number", "error");
+		if (!isValidPhone(phone)) {
+			setPhoneError(PHONE_ERROR);
+			toast(PHONE_ERROR, "error");
 			return;
 		}
 		setLoading(true);
 		try {
-			await api.post("/auth/otp/request", { phone: phone.trim() });
+			await api.post("/auth/otp/request", { phone });
 			toast("Code sent to your phone", "success");
+			setOtpDigits(Array(OTP_DIGITS).fill(""));
+			setOtpError("");
 			setStep("otp");
 		} catch (e) {
 			toast(errMsg(e), "error");
@@ -109,10 +155,16 @@ export default function LoginWrapper() {
 	}
 
 	async function verify() {
+		if (!isOtpComplete) {
+			const message = "Enter the complete 6-digit verification code.";
+			setOtpError(message);
+			toast(message, "error");
+			return;
+		}
 		setLoading(true);
 		try {
 			const res = await api.post("/auth/otp/verify", {
-				phone: phone.trim(),
+				phone,
 				otp,
 			});
 			const u = res.data?.data?.user as
@@ -138,6 +190,47 @@ export default function LoginWrapper() {
 			setLoading(false);
 		}
 	}
+
+	function handlePhoneChange(value: string) {
+		const next = onlyDigits(value).slice(0, PHONE_DIGITS);
+		setPhone(next);
+		if (phoneError) setPhoneError("");
+	}
+
+	function handleOtpChange(index: number, value: string) {
+		const digit = onlyDigits(value).slice(-1);
+		const next = [...otpDigits];
+		next[index] = digit;
+		setOtpDigits(next);
+		if (otpError) setOtpError("");
+		if (digit && index < OTP_DIGITS - 1) {
+			otpRefs.current[index + 1]?.focus();
+		}
+	}
+
+	function handleOtpKeyDown(index: number, key: string) {
+		if (key === "Backspace" && !otpDigits[index] && index > 0) {
+			otpRefs.current[index - 1]?.focus();
+		}
+		if (key === "Enter") verify();
+	}
+
+	function handleOtpPaste(value: string) {
+		const pasted = onlyDigits(value).slice(0, OTP_DIGITS);
+		if (pasted.length !== OTP_DIGITS) {
+			setOtpError("Paste the full 6-digit verification code.");
+			return;
+		}
+		setOtpDigits(pasted.split(""));
+		setOtpError("");
+		otpRefs.current[OTP_DIGITS - 1]?.focus();
+	}
+
+	const otpValidationMessage =
+		otpError ||
+		(otp.length > 0 && !isOtpComplete
+			? "Enter all 6 digits to continue."
+			: "");
 
 	return (
 		<Screen>
@@ -166,13 +259,21 @@ export default function LoginWrapper() {
 								<Input
 									label="Phone number"
 									value={phone}
-									onChange={(e) => setPhone(e.target.value)}
+									onChange={(e) =>
+										handlePhoneChange(e.target.value)
+									}
 									placeholder="08012345678"
 									inputMode="tel"
+									maxLength={PHONE_DIGITS}
 									onKeyDown={(e) => {
 										if (e.key === "Enter") sendCode();
 									}}
 								/>
+								{phoneError && (
+									<FieldError $size={13}>
+										{phoneError}
+									</FieldError>
+								)}
 								<Button
 									$full
 									$size="lg"
@@ -193,21 +294,61 @@ export default function LoginWrapper() {
 										Enter the 6-digit code sent to {phone}.
 									</Text>
 								</Stack>
-								<Input
-									label="Verification code"
-									value={otp}
-									onChange={(e) => setOtp(e.target.value)}
-									placeholder="123456"
-									inputMode="numeric"
-									maxLength={6}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") verify();
-									}}
-								/>
+								<Stack $gap={7}>
+									<Text
+										as="label"
+										$weight={700}
+										$size={13}
+										htmlFor="otp-0"
+									>
+										Verification code
+									</Text>
+									<OtpBoxes>
+										{otpDigits.map((digit, index) => (
+											<OtpBox
+												key={`otp-${index}`}
+												id={`otp-${index}`}
+												ref={(el) => {
+													otpRefs.current[index] = el;
+												}}
+												value={digit}
+												inputMode="numeric"
+												maxLength={1}
+												aria-label={`Verification code digit ${index + 1}`}
+												onChange={(e) =>
+													handleOtpChange(
+														index,
+														e.target.value,
+													)
+												}
+												onKeyDown={(e) =>
+													handleOtpKeyDown(
+														index,
+														e.key,
+													)
+												}
+												onPaste={(e) => {
+													e.preventDefault();
+													handleOtpPaste(
+														e.clipboardData.getData(
+															"text",
+														),
+													);
+												}}
+											/>
+										))}
+									</OtpBoxes>
+									{otpValidationMessage && (
+										<FieldError $size={13}>
+											{otpValidationMessage}
+										</FieldError>
+									)}
+								</Stack>
 								<Button
 									$full
 									$size="lg"
 									$loading={loading}
+									disabled={!isOtpComplete}
 									onClick={verify}
 								>
 									Verify &amp; continue
@@ -244,4 +385,16 @@ export default function LoginWrapper() {
 function errMsg(e: unknown): string {
 	const err = e as { response?: { data?: { message?: string } } };
 	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+}
+
+function onlyDigits(value: string): string {
+	return value.replace(/\D/g, "");
+}
+
+function isValidPhone(value: string): boolean {
+	const nationalNumber = value.startsWith("0") ? value.slice(1) : "";
+	return (
+		/^\d{11}$/.test(value) &&
+		/^(?:70[1-9]|80[1-9]|81\d|90[1-9]|91[2-6])\d{7}$/.test(nationalNumber)
+	);
 }

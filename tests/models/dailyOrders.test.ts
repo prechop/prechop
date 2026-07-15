@@ -12,10 +12,11 @@ import {
 	setDailyOrderStatusDB,
 	updateDailyOrderDraftDB,
 } from "@/server/models/dailyOrders";
-import { DailyOrderStatus } from "@/server/models/enums";
+import { DailyOrderStatus, VendorStatus } from "@/server/models/enums";
 import {
 	createVendorProfileDB,
 	setVendorOpenForOrdersDB,
+	setVendorStatusDB,
 } from "@/server/models/vendorProfiles";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
@@ -184,6 +185,7 @@ describe("dailyOrders model", () => {
 			payload: { userId: oid(), campusId, email: `v-${oid()}@t.test` },
 		});
 		const vendorId = vendor!._id.toString();
+		await setVendorStatusDB({ id: vendorId, status: VendorStatus.ACTIVE });
 		await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
 		const active = await createDailyOrderDB({
 			payload: makePayload({ campusId, vendorId }),

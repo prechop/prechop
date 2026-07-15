@@ -133,3 +133,7 @@ export function notFound(resource: string): AppError {
 export function conflict(message: string): AppError {
 	return new AppError(message, 409, "CONFLICT");
 }
+
+export function serviceUnavailable(message: string, appCode = "SERVICE_UNAVAILABLE"): AppError {
+	return new AppError(message, 503, appCode);
+}

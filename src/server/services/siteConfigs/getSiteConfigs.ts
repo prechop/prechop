@@ -1,7 +1,3 @@
-import {
-	PLATFORM_FEE_BUYER_KOBO,
-	PLATFORM_FEE_VENDOR_KOBO,
-} from "../../constants";
 import { getSiteConfigsDocDB } from "../../models";
 import {
 	DEFAULT_SITE_CONFIGS,
@@ -25,8 +21,6 @@ declare global {
 function envFallback(): ISiteConfigs {
 	return {
 		...DEFAULT_SITE_CONFIGS,
-		platformFeeBuyerKobo: PLATFORM_FEE_BUYER_KOBO,
-		platformFeeVendorKobo: PLATFORM_FEE_VENDOR_KOBO,
 	};
 }
 

@@ -1,4 +1,4 @@
-import { ErrInvalidFields } from "@/server/constants";
+import { validationError } from "@/server/constants";
 import {
 	getClientIp,
 	handleError,
@@ -19,7 +19,11 @@ export const POST = withApiHandler(
 	async ({ req }) => {
 		try {
 			const parsed = verifyOtpBodySchema.safeParse(await req.json());
-			if (!parsed.success) throw ErrInvalidFields;
+			if (!parsed.success) {
+				throw validationError(
+					parsed.error.issues[0]?.message ?? "Invalid fields",
+				);
+			}
 			const { token, user } = await verifyOtpService({
 				phone: parsed.data.phone,
 				otp: parsed.data.otp,

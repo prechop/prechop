@@ -24,17 +24,27 @@ export async function confirmMenuItemImage({
 	userId,
 	itemId,
 	imageUrl,
+	key,
 }: {
 	userId: string;
 	itemId: string;
-	imageUrl: string;
+	imageUrl?: string;
+	key?: string;
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
+	const nextImageUrl = key ? imageProxyUrl(key) : imageUrl;
 	const updated = await updateMenuItemDB({
 		id: itemId,
 		vendorId: vendorIdOf(vendor),
-		payload: { imageUrl },
+		payload: { imageUrl: nextImageUrl },
 	});
 	if (!updated) throw ErrMenuItemNotFound;
 	return updated;
+}
+
+function imageProxyUrl(key: string): string {
+	return `/api/images/${key
+		.split("/")
+		.map((part) => encodeURIComponent(part))
+		.join("/")}`;
 }

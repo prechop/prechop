@@ -213,6 +213,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		const presign = await apiData<{
 			uploadUrl: string;
 			publicReadUrl: string;
+			key: string;
 		}>(api.post(`/menu/${id}/image/presign`, { mimeType: file.type }));
 		const put = await fetch(presign.uploadUrl, {
 			method: "PUT",
@@ -221,7 +222,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		});
 		if (!put.ok) throw new Error("Upload failed");
 		await api.post(`/menu/${id}/image/confirm`, {
-			imageUrl: presign.publicReadUrl,
+			key: presign.key,
 		});
 	}
 

@@ -33,9 +33,22 @@ const schema = new mongoose.Schema<any>(
 			index: true,
 		},
 		paystackAccessCode: { type: String },
+		paystackAuthorizationUrl: { type: String },
+		externalPaymentTokenHash: {
+			type: String,
+			unique: true,
+			sparse: true,
+			index: true,
+		},
+		externalPaymentExpiresAt: { type: Date, index: true },
 		amountKobo: { type: Number, required: true },
 		platformFeeKobo: { type: Number, required: true },
+		foodSubtotalKobo: { type: Number, default: 0 },
+		deliveryFeeKobo: { type: Number, default: 0 },
+		paymentProcessingFeeKobo: { type: Number, default: 0 },
+		prechopCommissionKobo: { type: Number, default: 0 },
 		vendorAmountKobo: { type: Number, required: true },
+		vendorSettlementKobo: { type: Number, default: 0 },
 		status: {
 			type: String,
 			enum: Object.values(PaymentStatus),
@@ -119,6 +132,66 @@ export async function listPaymentsDB({
 	return { payments, total };
 }
 
+export async function aggregatePaymentRevenueDB(): Promise<{
+	grossRevenueKobo: number;
+	platformFeeKobo: number;
+	serviceFeeKobo: number;
+	vendorPayoutKobo: number;
+	refundedRevenueKobo: number;
+	successfulPayments: number;
+	refundedPayments: number;
+}> {
+	try {
+		const rows = await Payment.aggregate<{
+			_id: string;
+			grossRevenueKobo: number;
+			platformFeeKobo: number;
+			serviceFeeKobo: number;
+			vendorPayoutKobo: number;
+			count: number;
+		}>([
+			{
+				$match: {
+					status: {
+						$in: [PaymentStatus.SUCCESS, PaymentStatus.REFUNDED],
+					},
+				},
+			},
+			{
+				$group: {
+					_id: "$status",
+					grossRevenueKobo: { $sum: "$amountKobo" },
+					platformFeeKobo: { $sum: "$platformFeeKobo" },
+					serviceFeeKobo: { $sum: "$paymentProcessingFeeKobo" },
+					vendorPayoutKobo: { $sum: "$vendorAmountKobo" },
+					count: { $sum: 1 },
+				},
+			},
+		]);
+		const success = rows.find((r) => r._id === PaymentStatus.SUCCESS);
+		const refunded = rows.find((r) => r._id === PaymentStatus.REFUNDED);
+		return {
+			grossRevenueKobo: success?.grossRevenueKobo ?? 0,
+			platformFeeKobo: success?.platformFeeKobo ?? 0,
+			serviceFeeKobo: success?.serviceFeeKobo ?? 0,
+			vendorPayoutKobo: success?.vendorPayoutKobo ?? 0,
+			refundedRevenueKobo: refunded?.grossRevenueKobo ?? 0,
+			successfulPayments: success?.count ?? 0,
+			refundedPayments: refunded?.count ?? 0,
+		};
+	} catch {
+		return {
+			grossRevenueKobo: 0,
+			platformFeeKobo: 0,
+			serviceFeeKobo: 0,
+			vendorPayoutKobo: 0,
+			refundedRevenueKobo: 0,
+			successfulPayments: 0,
+			refundedPayments: 0,
+		};
+	}
+}
+
 export async function getPaymentByRefDB({
 	paystackRef,
 	session,
@@ -168,6 +241,148 @@ export async function getPaymentByOrderIdDB({
 		);
 	} catch {
 		return null;
+	}
+}
+
+export async function getPaymentByExternalTokenHashDB({
+	tokenHash,
+	session,
+}: {
+	tokenHash: string;
+	session?: ClientSession;
+}): Promise<IPayment | null> {
+	try {
+		return (
+			(
+				await Payment.aggregate<IPayment>(
+					[{ $match: { externalPaymentTokenHash: tokenHash } }, { $limit: 1 }],
+					{ session },
+				)
+			).at(0) ?? null
+		);
+	} catch {
+		return null;
+	}
+}
+
+export async function markPaymentExternalInitializedDB({
+	paystackRef,
+	paystackAccessCode,
+	paystackAuthorizationUrl,
+	session,
+}: {
+	paystackRef: string;
+	paystackAccessCode: string;
+	paystackAuthorizationUrl: string;
+	session?: ClientSession;
+}): Promise<IPayment | null> {
+	try {
+		const res = await Payment.findOneAndUpdate(
+			{
+				paystackRef,
+				webhookVerified: false,
+				status: PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+			},
+			{
+				$set: {
+					status: PaymentStatus.INITIALIZED,
+					paystackAccessCode,
+					paystackAuthorizationUrl,
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IPayment) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function markPaymentBuyerInitializedDB({
+	buyerOrderId,
+	paystackAccessCode,
+	paystackAuthorizationUrl,
+	session,
+}: {
+	buyerOrderId: string;
+	paystackAccessCode: string;
+	paystackAuthorizationUrl: string;
+	session?: ClientSession;
+}): Promise<IPayment | null> {
+	try {
+		const res = await Payment.findOneAndUpdate(
+			{
+				buyerOrderId: new mongoose.Types.ObjectId(buyerOrderId),
+				webhookVerified: false,
+				status: PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+				paystackAuthorizationUrl: { $exists: false },
+			},
+			{
+				$set: {
+					status: PaymentStatus.INITIALIZED,
+					paystackAccessCode,
+					paystackAuthorizationUrl,
+				},
+				$unset: {
+					externalPaymentTokenHash: "",
+					externalPaymentExpiresAt: "",
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IPayment) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function markPaymentExpiredDB({
+	buyerOrderId,
+	session,
+}: {
+	buyerOrderId: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await Payment.findOneAndUpdate(
+			{
+				buyerOrderId: new mongoose.Types.ObjectId(buyerOrderId),
+				webhookVerified: false,
+				status: {
+					$in: [
+						PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+						PaymentStatus.INITIALIZED,
+					],
+				},
+			},
+			{ $set: { status: PaymentStatus.EXPIRED } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markPaymentCancelledDB({
+	buyerOrderId,
+	session,
+}: {
+	buyerOrderId: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await Payment.findOneAndUpdate(
+			{
+				buyerOrderId: new mongoose.Types.ObjectId(buyerOrderId),
+				webhookVerified: false,
+			},
+			{ $set: { status: PaymentStatus.CANCELLED } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
 	}
 }
 

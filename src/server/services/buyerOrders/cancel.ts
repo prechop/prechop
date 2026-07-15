@@ -11,12 +11,18 @@ import {
 	getUserByIdWithPhoneDB,
 	getVendorProfileByUserIdDB,
 	markBuyerOrderCancelledDB,
+	markPaymentCancelledDB,
 	OrderStatus,
 } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
+import { releaseSlots } from "./slots";
 
-const CANCELLABLE: OrderStatus[] = [OrderStatus.PAID, OrderStatus.CONFIRMED];
+const CANCELLABLE: OrderStatus[] = [
+	OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+	OrderStatus.PAID,
+	OrderStatus.CONFIRMED,
+];
 
 export async function cancelOrderAsBuyer({
 	buyerId,
@@ -44,8 +50,13 @@ export async function cancelOrderAsBuyer({
 	// capacity. A lost race means someone else already cancelled it.
 	if (!cancelled) throw ErrOrderNotCancellable;
 
-	await returnCapacity(order);
-	await refundOrder(order);
+	if (order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT) {
+		await releaseHeldCapacity(order);
+		await markPaymentCancelledDB({ buyerOrderId: orderId });
+	} else {
+		await returnCapacity(order);
+		await refundOrder(order);
+	}
 
 	return {
 		message:
@@ -79,8 +90,13 @@ export async function cancelOrderAsVendor({
 	});
 	if (!cancelled) throw ErrOrderNotCancellable;
 
-	await returnCapacity(order);
-	await refundOrder(order);
+	if (order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT) {
+		await releaseHeldCapacity(order);
+		await markPaymentCancelledDB({ buyerOrderId: orderId });
+	} else {
+		await returnCapacity(order);
+		await refundOrder(order);
+	}
 
 	// Notify the buyer by SMS (fire-and-forget).
 	const buyer = await getUserByIdWithPhoneDB({
@@ -138,5 +154,19 @@ async function returnCapacity(order: {
 				by: i.quantity,
 			}),
 		),
+	);
+}
+
+async function releaseHeldCapacity(order: {
+	items: Array<{
+		dailyOrderItemId: { toString(): string };
+		quantity: number;
+	}>;
+}): Promise<void> {
+	await releaseSlots(
+		order.items.map((item) => ({
+			dailyOrderItemId: item.dailyOrderItemId.toString(),
+			quantity: item.quantity,
+		})),
 	);
 }

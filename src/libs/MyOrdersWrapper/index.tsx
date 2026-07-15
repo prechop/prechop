@@ -30,6 +30,7 @@ const tone: Record<
 	"primary" | "success" | "warning" | "danger" | "muted"
 > = {
 	PENDING_PAYMENT: "warning",
+	AWAITING_EXTERNAL_PAYMENT: "warning",
 	PAID: "primary",
 	CONFIRMED: "primary",
 	PREPARING: "warning",

@@ -64,6 +64,13 @@ const LANE_ACCENT: Record<string, string> = {
 	READY: "var(--pc-color-accent)",
 };
 
+const PipelineShell = styled.div`
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+	overflow-x: clip;
+`;
+
 function statusTone(
 	s: OrderStatus,
 ): "primary" | "success" | "warning" | "danger" | "muted" {
@@ -86,6 +93,9 @@ const Board = styled.div`
 	grid-template-columns: 1fr;
 	gap: var(--pc-space-4);
 	align-items: start;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
 	@media (min-width: 720px) {
 		grid-template-columns: repeat(2, 1fr);
 	}
@@ -97,6 +107,8 @@ const Lane = styled.div<{ $accent: string }>`
 	display: flex;
 	flex-direction: column;
 	gap: var(--pc-space-3);
+	min-width: 0;
+	max-width: 100%;
 	background: var(--pc-surface-2);
 	border: 1px solid var(--pc-border);
 	border-radius: var(--pc-radius);
@@ -191,18 +203,20 @@ export default function PipelineWrapper() {
 	if (active.length === 0) {
 		return (
 			<FadeIn>
-				<Stack $gap={20}>
-					<PageHeader
-						eyebrow="Live kitchen"
-						title="Cooking"
-						subtitle="Move orders across the board as you cook and hand off."
-					/>
-					<EmptyState
-						icon="🍳"
-						title="No active daily orders"
-						description="Post a daily order to start receiving and cooking orders."
-					/>
-				</Stack>
+				<PipelineShell>
+					<Stack $gap={20}>
+						<PageHeader
+							eyebrow="Live kitchen"
+							title="Cooking"
+							subtitle="Move orders across the board as you cook and hand off."
+						/>
+						<EmptyState
+							icon="🍳"
+							title="No active daily orders"
+							description="Post a daily order to start receiving and cooking orders."
+						/>
+					</Stack>
+				</PipelineShell>
 			</FadeIn>
 		);
 	}
@@ -251,32 +265,35 @@ export default function PipelineWrapper() {
 
 	return (
 		<FadeIn>
-			<Stack $gap={20}>
-				<PageHeader
-					eyebrow="Live kitchen"
-					title="Cooking"
-					subtitle="Move orders across the board as you cook and hand off."
-					actions={
-						liveCount > 0 ? (
-							<Badge $tone="primary">🔴 {liveCount} live</Badge>
-						) : undefined
-					}
-				/>
+			<PipelineShell>
+				<Stack $gap={20}>
+					<PageHeader
+						eyebrow="Live kitchen"
+						title="Cooking"
+						subtitle="Move orders across the board as you cook and hand off."
+						actions={
+							liveCount > 0 ? (
+								<Badge $tone="primary">
+									🔴 {liveCount} live
+								</Badge>
+							) : undefined
+						}
+					/>
 
-				<Select
-					value={currentId ?? ""}
-					onChange={(e) => setSelectedId(e.target.value)}
-				>
-					{active.map((d) => (
-						<option key={d.id} value={d.id}>
-							{d.title} · {d.totalOrdersCount} order
-							{d.totalOrdersCount === 1 ? "" : "s"}
-						</option>
-					))}
-				</Select>
+					<Select
+						value={currentId ?? ""}
+						onChange={(e) => setSelectedId(e.target.value)}
+					>
+						{active.map((d) => (
+							<option key={d.id} value={d.id}>
+								{d.title} · {d.totalOrdersCount} order
+								{d.totalOrdersCount === 1 ? "" : "s"}
+							</option>
+						))}
+					</Select>
 
-				{ordersLoading ? (
-					<Board>
+					{ordersLoading ? (
+						<Board>
 						{COLUMNS.map((col) => (
 							<Lane
 								key={col.status}
@@ -297,15 +314,15 @@ export default function PipelineWrapper() {
 								</OrderCard>
 							</Lane>
 						))}
-					</Board>
-				) : liveCount === 0 ? (
-					<EmptyState
-						icon="🧾"
-						title="No orders to cook yet"
-						description="Paid orders will appear here as buyers order."
-					/>
-				) : (
-					<Board>
+						</Board>
+					) : liveCount === 0 ? (
+						<EmptyState
+							icon="🧾"
+							title="No orders to cook yet"
+							description="Paid orders will appear here as buyers order."
+						/>
+					) : (
+						<Board>
 						{COLUMNS.map((col) => {
 							const colOrders = list.filter(
 								(o) => o.status === col.status,
@@ -471,9 +488,10 @@ export default function PipelineWrapper() {
 								</Lane>
 							);
 						})}
-					</Board>
-				)}
-			</Stack>
+						</Board>
+					)}
+				</Stack>
+			</PipelineShell>
 		</FadeIn>
 	);
 }

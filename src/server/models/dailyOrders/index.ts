@@ -1,7 +1,7 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { ErrDailyOrderNotFound, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { DailyOrderStatus } from "../enums";
+import { DailyOrderStatus, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type {
 	IDailyOrder,
@@ -357,7 +357,6 @@ export async function listActiveDailyOrdersByCampusDB({
 			.map((c) => new mongoose.Types.ObjectId(c));
 		if (ids.length === 0) return [];
 		const match: Record<string, unknown> = {
-			campusId: ids.length === 1 ? ids[0] : { $in: ids },
 			status: DailyOrderStatus.ACTIVE,
 			isPublic: true,
 			cutoffTime: { $gt: new Date() },
@@ -385,7 +384,16 @@ export async function listActiveDailyOrdersByCampusDB({
 						as: "_vendor",
 					},
 				},
-				{ $match: { "_vendor.isOpenForOrders": true } },
+				{
+					$match: {
+						"_vendor.isOpenForOrders": true,
+						"_vendor.status": VendorStatus.ACTIVE,
+						$or: [
+							{ campusId: { $in: ids } },
+							{ "_vendor.campusIds": { $in: ids } },
+						],
+					},
+				},
 				// Surface the shop name on each card without a second round-trip.
 				{
 					$addFields: {
@@ -430,11 +438,27 @@ export async function findVendorIdsByListingSearchDB({
 		}>([
 			{
 				$match: {
-					campusId: { $in: ids },
 					status: DailyOrderStatus.ACTIVE,
 					isPublic: true,
 					cutoffTime: { $gt: new Date() },
 					$or: [{ title: rx }, { "items.snapshotName": rx }],
+				},
+			},
+			{
+				$lookup: {
+					from: "vendorprofiles",
+					localField: "vendorId",
+					foreignField: "_id",
+					as: "_vendor",
+				},
+			},
+			{
+				$match: {
+					"_vendor.status": VendorStatus.ACTIVE,
+					$or: [
+						{ campusId: { $in: ids } },
+						{ "_vendor.campusIds": { $in: ids } },
+					],
 				},
 			},
 			{ $group: { _id: "$vendorId" } },
@@ -528,6 +552,29 @@ export async function setDailyOrderStatusDB({
 		return !!res;
 	} catch {
 		return false;
+	}
+}
+
+export async function closeActiveDailyOrdersByVendorDB({
+	vendorId,
+	session,
+}: {
+	vendorId: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(vendorId)) return 0;
+		const res = await DailyOrder.updateMany(
+			{
+				vendorId: new mongoose.Types.ObjectId(vendorId),
+				status: DailyOrderStatus.ACTIVE,
+			},
+			{ $set: { status: DailyOrderStatus.CLOSED } },
+			{ session },
+		);
+		return res.modifiedCount;
+	} catch {
+		return 0;
 	}
 }
 

@@ -1,5 +1,4 @@
 import {
-	assertVendor,
 	getClientIp,
 	getUserAgent,
 	handleError,
@@ -22,7 +21,6 @@ export const POST = withApiHandler(
 	},
 	withAuth(async ({ req, auth }) => {
 		try {
-			assertVendor(auth);
 			const vendor = await getMyVendorProfile({ userId: auth.userId });
 			const result = await submitVendorForReview({
 				vendorId: vendorIdOf(vendor),

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
@@ -28,44 +29,65 @@ import { enablePushNotifications } from "@/libs/AccountWrapper/push";
 import type { AppNotification, Campus } from "@/types";
 
 const Section = styled(Card)`
-	padding: var(--pc-space-5);
+  padding: var(--pc-space-5);
 `;
 const ProfileCard = styled(Card)`
-	padding: var(--pc-space-5);
-	position: relative;
-	overflow: hidden;
-	&::after {
-		content: "";
-		position: absolute;
-		inset: 0 0 auto 0;
-		height: 4px;
-		background: var(--pc-gradient-hero);
-	}
+  padding: var(--pc-space-5);
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: var(--pc-gradient-hero);
+  }
 `;
 const NotifList = styled.div`
-	display: flex;
-	flex-direction: column;
+  display: flex;
+  flex-direction: column;
 `;
 const NotifItem = styled.div<{ $unread: boolean }>`
-	display: flex;
-	gap: 12px;
-	padding: 14px 0;
-	border-bottom: 1px solid var(--pc-border);
-	&:last-child {
-		border-bottom: none;
-	}
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--pc-border);
+  &:last-child {
+    border-bottom: none;
+  }
 `;
 const Dot = styled.span<{ $unread: boolean }>`
-	flex: 0 0 auto;
-	width: 9px;
-	height: 9px;
-	margin-top: 6px;
-	border-radius: 50%;
-	background: ${(p) =>
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: ${(p) =>
 		p.$unread ? "var(--pc-color-primary)" : "var(--pc-border)"};
+`;
+const CampusGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+`;
+const CampusChip = styled.button<{ $on: boolean }>`
+  all: unset;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border-radius: var(--pc-radius-sm);
+  border: 1.5px solid
+    ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  background: ${(p) =>
+		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+  color: ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-text)")};
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
 `;
 
 export default function AccountWrapper() {
+	const router = useRouter();
 	const { user, isLoading, refresh, logout } = useAuth();
 	const { toast } = useToast();
 
@@ -82,6 +104,14 @@ export default function AccountWrapper() {
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
 	const [savingName, setSavingName] = useState(false);
+	const [vendorBusinessName, setVendorBusinessName] = useState("");
+	const [vendorType, setVendorType] = useState("STUDENT_COOK");
+	const [locationType, setLocationType] = useState("ON_CAMPUS");
+	const [hostelOrStallName, setHostelOrStallName] = useState("");
+	const [state, setState] = useState("");
+	const [areaOrAddress, setAreaOrAddress] = useState("");
+	const [campusIds, setCampusIds] = useState<string[]>([]);
+	const [applyingVendor, setApplyingVendor] = useState(false);
 
 	// Keep the editable fields in sync with the loaded/refreshed profile.
 	useEffect(() => {
@@ -149,6 +179,53 @@ export default function AccountWrapper() {
 		}
 	}
 
+	async function applyToBecomeVendor() {
+		if (!vendorBusinessName.trim()) {
+			toast("Enter your business name", "error");
+			return;
+		}
+		if (locationType === "ON_CAMPUS" && !hostelOrStallName.trim()) {
+			toast("Enter your hostel or stall name", "error");
+			return;
+		}
+		if (
+			locationType === "OFF_CAMPUS" &&
+			(!state.trim() || !areaOrAddress.trim() || campusIds.length === 0)
+		) {
+			toast(
+				"Enter your state, address and select at least one campus",
+				"error",
+			);
+			return;
+		}
+		setApplyingVendor(true);
+		try {
+			await api.post("/users/me/become-vendor", {
+				businessName: vendorBusinessName.trim(),
+				vendorType,
+				location:
+					locationType === "ON_CAMPUS"
+						? {
+								locationType,
+								hostelOrStallName: hostelOrStallName.trim(),
+							}
+						: {
+								locationType,
+								state: state.trim(),
+								areaOrAddress: areaOrAddress.trim(),
+								campusIds,
+							},
+			});
+			toast("Vendor application started.", "success");
+			await refresh();
+			router.push("/vendor/settings");
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setApplyingVendor(false);
+		}
+	}
+
 	async function markAllRead() {
 		try {
 			await api.post("/notifications/read-all");
@@ -159,6 +236,23 @@ export default function AccountWrapper() {
 	}
 
 	const unreadCount = notifications.filter((n) => !n.isRead).length;
+	const isVendor = user.groups?.includes("Vendors");
+	const stateCampuses = (campuses ?? []).filter(
+		(c) =>
+			state.trim() &&
+			c.state.trim().toLowerCase() === state.trim().toLowerCase(),
+	);
+
+	function toggleCampus(id: string) {
+		setCampusIds((current) => {
+			if (current.includes(id)) return current.filter((x) => x !== id);
+			if (current.length >= 3) {
+				toast("Select up to 3 campuses", "error");
+				return current;
+			}
+			return [...current, id];
+		});
+	}
 
 	return (
 		<FadeIn>
@@ -238,6 +332,124 @@ export default function AccountWrapper() {
 						</Text>
 					</Stack>
 				</Section>
+
+				{!isVendor && (
+					<Section>
+						<SectionHeader title="Become a Vendor" icon="+" />
+						<Stack $gap={12}>
+							<Text $muted $size={14}>
+								Apply with this buyer account so your phone
+								number, orders and login stay together.
+							</Text>
+							<Input
+								label="Business name"
+								value={vendorBusinessName}
+								onChange={(e) =>
+									setVendorBusinessName(e.target.value)
+								}
+								placeholder="Ada's Kitchen"
+							/>
+							<Select
+								label="Vendor type"
+								value={vendorType}
+								onChange={(e) => setVendorType(e.target.value)}
+							>
+								<option value="STUDENT_COOK">
+									Student cook
+								</option>
+								<option value="CAMPUS_STALL">
+									Campus stall
+								</option>
+								<option value="RESTAURANT">Restaurant</option>
+								<option value="BAKERY">Bakery</option>
+							</Select>
+							<Select
+								label="Location"
+								value={locationType}
+								onChange={(e) =>
+									setLocationType(e.target.value)
+								}
+							>
+								<option value="ON_CAMPUS">On campus</option>
+								<option value="OFF_CAMPUS">Off campus</option>
+							</Select>
+							{locationType === "ON_CAMPUS" ? (
+								<Input
+									label="Hostel or stall name"
+									value={hostelOrStallName}
+									onChange={(e) =>
+										setHostelOrStallName(e.target.value)
+									}
+									placeholder="Moremi Hall, Block A"
+								/>
+							) : (
+								<>
+									<Input
+										label="State"
+										value={state}
+										onChange={(e) => {
+											setState(e.target.value);
+											setCampusIds([]);
+										}}
+										placeholder="Lagos"
+									/>
+									<Input
+										label="Area or address"
+										value={areaOrAddress}
+										onChange={(e) =>
+											setAreaOrAddress(e.target.value)
+										}
+										placeholder="Yaba, near campus gate"
+									/>
+									{state.trim() && (
+										<Stack $gap={8}>
+											<Text $weight={700} $size={13}>
+												Campuses to show your menu on
+											</Text>
+											{stateCampuses.length > 0 ? (
+												<CampusGrid>
+													{stateCampuses.map((c) => (
+														<CampusChip
+															key={c.id}
+															type="button"
+															$on={campusIds.includes(
+																c.id,
+															)}
+															onClick={() =>
+																toggleCampus(
+																	c.id,
+																)
+															}
+														>
+															{c.name}
+														</CampusChip>
+													))}
+												</CampusGrid>
+											) : (
+												<Text $muted $size={13}>
+													No active campuses found for
+													this state.
+												</Text>
+											)}
+											<Text $muted $size={12}>
+												{campusIds.length}/3 selected
+											</Text>
+										</Stack>
+									)}
+								</>
+							)}
+							<Button
+								$variant="secondary"
+								onClick={applyToBecomeVendor}
+								$loading={applyingVendor}
+								disabled={applyingVendor}
+								style={{ alignSelf: "flex-start" }}
+							>
+								Apply to become a vendor
+							</Button>
+						</Stack>
+					</Section>
+				)}
 
 				<Section>
 					<SectionHeader

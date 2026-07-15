@@ -1,15 +1,19 @@
 import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
 import {
 	type DailyOrderStatus,
+	DailyOrderStatus as DailyOrderStatusValue,
 	getCampusByIdDB,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
-	listActiveDailyOrdersByCampusDB,
+	type IDailyOrder,
+	type IVendorProfile,
 	listCampusesDB,
 	listDailyOrdersByVendorDB,
+	listMarketplaceVendorsDB,
 } from "../../models";
+import { assertMarketplaceEnabled } from "../siteConfigs";
 
 /**
  * Every campus in the same state as `campusId` (including it). Buyers browse
@@ -39,6 +43,7 @@ export async function getMarketplace({
 	/** The signed-in caller (if any); their own listings are excluded. */
 	viewerUserId?: string;
 }) {
+	await assertMarketplaceEnabled();
 	let excludeVendorId: string | undefined;
 	if (viewerUserId) {
 		const vendor = await getVendorProfileByUserIdDB({
@@ -47,12 +52,56 @@ export async function getMarketplace({
 		if (vendor) excludeVendorId = vendor._id.toString();
 	}
 	const campusIds = await campusIdsInSameState(campusId);
-	return listActiveDailyOrdersByCampusDB({
+	const vendors = await listMarketplaceVendorsDB({
 		campusIds,
 		limit,
 		offset,
 		excludeVendorId,
 	});
+	const rows = await Promise.all(
+		vendors.map(async (vendor) => ({
+			vendor: toPublicMarketplaceVendor(vendor),
+			listings: await activePublicListingsForVendor(vendor._id.toString()),
+		})),
+	);
+	return rows.sort((a, b) => {
+		const openDelta =
+			Number(b.vendor.isOpenForOrders) -
+			Number(a.vendor.isOpenForOrders);
+		if (openDelta !== 0) return openDelta;
+		return b.vendor.rating - a.vendor.rating;
+	});
+}
+
+function toPublicMarketplaceVendor(vendor: IVendorProfile) {
+	return {
+		id: vendor._id.toString(),
+		businessName: vendor.businessName ?? null,
+		description: vendor.description ?? null,
+		profileImageUrl: vendor.profileImageUrl ?? null,
+		campusId: vendor.campusId.toString(),
+		state: vendor.state ?? null,
+		areaOrAddress: vendor.areaOrAddress ?? null,
+		categories: vendor.categories ?? [],
+		rating: vendor.rating ?? 0,
+		totalReviews: vendor.totalReviews ?? 0,
+		totalOrders: vendor.totalOrders ?? 0,
+		isOpenForOrders: vendor.isOpenForOrders ?? false,
+	};
+}
+
+async function activePublicListingsForVendor(
+	vendorId: string,
+): Promise<IDailyOrder[]> {
+	const now = Date.now();
+	const listings = await listDailyOrdersByVendorDB({
+		vendorId,
+		status: DailyOrderStatusValue.ACTIVE,
+	});
+	return listings.filter(
+		(order) =>
+			order.isPublic && new Date(order.cutoffTime).getTime() > now,
+	);
 }
 
 export async function getPublicDailyOrder({
@@ -63,6 +112,7 @@ export async function getPublicDailyOrder({
 	/** The signed-in caller (if any); used to flag their own listing. */
 	viewerUserId?: string;
 }) {
+	await assertMarketplaceEnabled();
 	const order = await getDailyOrderByTokenDB({ shareableToken });
 	if (!order) throw ErrDailyOrderNotFound;
 	// Resolve the listing's vendor once, for two client flags:

@@ -215,6 +215,81 @@ export async function listReviewsByVendorDB({
 	}
 }
 
+export interface IReviewWithBuyer extends IReview {
+	buyerName?: string;
+}
+
+export async function listReviewsWithBuyerByVendorDB({
+	vendorId,
+	limit = MAX_LIMIT,
+	offset = 0,
+	session,
+}: {
+	vendorId: string;
+	limit?: number;
+	offset?: number;
+	session?: ClientSession;
+}): Promise<IReviewWithBuyer[]> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(vendorId)) return [];
+		return await Review.aggregate<IReviewWithBuyer>(
+			[
+				{ $match: { vendorId: new mongoose.Types.ObjectId(vendorId) } },
+				{ $sort: { createdAt: -1 } },
+				{ $skip: offset },
+				{ $limit: Math.min(limit, MAX_LIMIT) },
+				{
+					$lookup: {
+						from: "users",
+						localField: "buyerId",
+						foreignField: "_id",
+						as: "_buyer",
+					},
+				},
+				{
+					$addFields: {
+						buyerName: {
+							$trim: {
+								input: {
+									$concat: [
+										{
+											$ifNull: [
+												{
+													$arrayElemAt: [
+														"$_buyer.firstName",
+														0,
+													],
+												},
+												"",
+											],
+										},
+										" ",
+										{
+											$ifNull: [
+												{
+													$arrayElemAt: [
+														"$_buyer.lastName",
+														0,
+													],
+												},
+												"",
+											],
+										},
+									],
+								},
+							},
+						},
+					},
+				},
+				{ $unset: "_buyer" },
+			],
+			{ session },
+		);
+	} catch {
+		return [];
+	}
+}
+
 /** Reviews a user WROTE (as a buyer), newest first. */
 export async function listReviewsByBuyerDB({
 	buyerId,

@@ -60,6 +60,10 @@ export const imagePresignSchema = zod
 
 export const imageConfirmSchema = zod
 	.object({
-		imageUrl: zod.string().trim().url(),
+		imageUrl: zod.string().trim().url().optional(),
+		key: zod.string().trim().min(1).optional(),
+	})
+	.refine((v) => !!v.imageUrl || !!v.key, {
+		message: "imageUrl or key is required",
 	})
 	.strict();

@@ -4,6 +4,7 @@ import { FulfillmentType, OrderStatus } from "../../models/enums";
 export const placeOrderBodySchema = zod
 	.object({
 		dailyOrderId: zod.string().min(1),
+		paymentMode: zod.enum(["SELF", "PAY_FOR_ME"]).optional(),
 		fulfillmentType: zod.enum([
 			FulfillmentType.PICKUP,
 			FulfillmentType.DELIVERY,
@@ -38,6 +39,12 @@ export const updateOrderStatusBodySchema = zod
 
 export const cancelOrderBodySchema = zod
 	.object({ reason: zod.string().min(1).max(500) })
+	.strict();
+
+export const externalPaymentInitializeSchema = zod
+	.object({
+		contact: zod.string().trim().min(5).max(160),
+	})
 	.strict();
 
 export const ordersQuerySchema = zod

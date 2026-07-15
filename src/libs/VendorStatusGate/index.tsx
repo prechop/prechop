@@ -156,6 +156,6 @@ function resolveView(vendor: VendorMe | null): GateView {
 		title: "Finish your vendor submission",
 		description:
 			"Complete your store profile and submit it for review to start managing your menu, cooking, timetable and earnings.",
-		cta: { label: "Continue setup", href: "/dashboard" },
+		cta: { label: "Continue setup", href: "/vendor/settings" },
 	};
 }

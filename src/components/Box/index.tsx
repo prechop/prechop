@@ -6,9 +6,10 @@ export const Box = styled.div``;
 
 export const Container = styled.div`
 	width: 100%;
-	max-width: var(--pc-maxw);
+	max-width: min(var(--pc-maxw), 100%);
 	margin: 0 auto;
 	padding: 0 var(--pc-space-4);
+	box-sizing: border-box;
 `;
 
 export const Card = styled.div<{

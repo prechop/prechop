@@ -5,6 +5,7 @@ import {
 	ErrUserNotFound,
 	encrypt,
 	MAX_LIMIT,
+	normalizeNigerianMobilePhone,
 } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import type { IJwtPayload } from "../../types";
@@ -121,6 +122,8 @@ export async function createUserDB({
 }): Promise<IUser | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		const normalizedPhone =
+			normalizeNigerianMobilePhone(payload.phone) ?? payload.phone;
 		const doc = await new User({
 			campusId: payload.campusId,
 			groupIds: (payload.groupIds ?? []).map(
@@ -131,8 +134,8 @@ export async function createUserDB({
 			),
 			firstName: payload.firstName,
 			lastName: payload.lastName,
-			phone: encrypt(payload.phone),
-			phoneHash: computePhoneHash(payload.phone),
+			phone: encrypt(normalizedPhone),
+			phoneHash: computePhoneHash(normalizedPhone),
 			isPhoneVerified: payload.isPhoneVerified ?? false,
 			isActive: payload.isActive ?? true,
 		}).save({ session });
@@ -246,6 +249,34 @@ export async function updateUserProfileDB({
 
 // ── Reads ─────────────────────────────────────────────────────────────────
 
+export async function updateUserPhoneDB({
+	id,
+	phone,
+	session,
+}: {
+	id: string;
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	try {
+		const normalizedPhone = normalizeNigerianMobilePhone(phone) ?? phone;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					phone: encrypt(normalizedPhone),
+					phoneHash: computePhoneHash(normalizedPhone),
+					isPhoneVerified: true,
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IUser) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function getUserByIdDB({
 	id,
 	session,
@@ -328,8 +359,9 @@ export async function getUserByPhoneDB({
 }): Promise<IUser | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		const normalizedPhone = normalizeNigerianMobilePhone(phone) ?? phone;
 		const result = await User.findOne(
-			{ phoneHash: computePhoneHash(phone), deleted: false },
+			{ phoneHash: computePhoneHash(normalizedPhone), deleted: false },
 			null,
 			{ session },
 		)
@@ -666,9 +698,13 @@ export async function getUserByIdWithPhoneDB({
 }): Promise<IUser | null> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return null;
-		const res = await User.findOne({ _id: id, deleted: false }, null, {
-			session,
-		})
+		const res = await User.findOne(
+			{ _id: new mongoose.Types.ObjectId(id), deleted: false },
+			null,
+			{
+				session,
+			},
+		)
 			.select("+phone +phoneHash")
 			.lean<IUser>();
 		return res ? ({ ...res, id: res._id.toString() } as IUser) : null;

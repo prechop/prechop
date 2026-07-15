@@ -25,6 +25,10 @@ const schema = new mongoose.Schema<any>(
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.abandonedOrderMinutes,
 		},
+		externalPaymentLinkTtlMinutes: {
+			type: Number,
+			default: DEFAULT_SITE_CONFIGS.externalPaymentLinkTtlMinutes,
+		},
 		reviewWindowHours: {
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.reviewWindowHours,

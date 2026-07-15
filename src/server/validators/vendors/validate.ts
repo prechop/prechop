@@ -24,6 +24,7 @@ export const locationSchema = zod.discriminatedUnion("locationType", [
 			locationType: zod.literal(LocationType.OFF_CAMPUS),
 			state: zod.string().trim().min(1).max(120),
 			areaOrAddress: zod.string().trim().min(1).max(300),
+			campusIds: zod.array(zod.string().trim().min(1)).min(1).max(3),
 		})
 		.strict(),
 ]);
@@ -42,7 +43,11 @@ export const presignSchema = zod
 
 export const confirmImageSchema = zod
 	.object({
-		imageUrl: zod.string().trim().url(),
+		imageUrl: zod.string().trim().url().optional(),
+		key: zod.string().trim().min(1).optional(),
+	})
+	.refine((v) => !!v.imageUrl || !!v.key, {
+		message: "imageUrl or key is required",
 	})
 	.strict();
 
@@ -87,3 +92,13 @@ export const deliveryDefaultsSchema = zod
 		defaultDeliveryFeeKobo: zod.number().int().min(0).max(10_000_00),
 	})
 	.strict();
+
+export const becomeVendorSchema = zod
+	.object({
+		businessName: zod.string().trim().min(1).max(120),
+		vendorType: zod.enum(VendorType),
+		location: locationSchema,
+	})
+	.strict();
+
+export type BecomeVendorInput = zod.infer<typeof becomeVendorSchema>;

@@ -125,7 +125,8 @@ describe("getMarketplace — same-state scope", () => {
 		});
 
 		const seenFromA = await getMarketplace({ campusId: campusA });
-		const ids = seenFromA.map((o) => o._id.toString());
+		const listings = seenFromA.flatMap((row) => row.listings);
+		const ids = listings.map((o) => o._id.toString());
 		// Same state (Lagos) — both A and B surface.
 		expect(ids).toContain(lA._id.toString());
 		expect(ids).toContain(lB._id.toString());
@@ -133,11 +134,9 @@ describe("getMarketplace — same-state scope", () => {
 		expect(ids).not.toContain(lO._id.toString());
 		// Each card carries the shop name.
 		const cardB = seenFromA.find(
-			(o) => o._id.toString() === lB._id.toString(),
+			(row) => row.vendor.id === vB.vendorId,
 		);
-		expect((cardB as { vendorName?: string })?.vendorName).toBe(
-			"Bola Buka",
-		);
+		expect(cardB?.vendor.businessName).toBe("Bola Buka");
 	});
 });
 
@@ -231,8 +230,8 @@ describe("getVendorStorefront", () => {
 	});
 });
 
-describe("updateDailyOrder — close must not exceed menu date", () => {
-	it("rejects a cutoff on the day after the menu date, accepts a same-day one", async () => {
+describe("updateDailyOrder — close date can be today or future", () => {
+	it("accepts a cutoff after the menu date and still accepts a same-day one", async () => {
 		const campus = await makeCampus({ state: "Lagos" });
 		const campusId = campus!._id.toString();
 		const vendor = await activeVendorOnCampus(campusId, "Edit Kitchen");
@@ -266,18 +265,18 @@ describe("updateDailyOrder — close must not exceed menu date", () => {
 		});
 		const orderId = listing!._id.toString();
 
-		// A cutoff the day AFTER the menu date is rejected.
-		await expect(
-			updateDailyOrder({
-				userId: vendor.userId,
-				orderId,
-				input: {
-					cutoffTime: new Date(
-						menuDay.getTime() + 30 * 3_600_000,
-					).toISOString(),
-				},
-			}),
-		).rejects.toBeTruthy();
+		// A cutoff the day AFTER the menu date is accepted; the client only
+		// blocks close dates before the start, not future menu windows.
+		const futureClose = await updateDailyOrder({
+			userId: vendor.userId,
+			orderId,
+			input: {
+				cutoffTime: new Date(
+					menuDay.getTime() + 30 * 3_600_000,
+				).toISOString(),
+			},
+		});
+		expect(futureClose).toBeTruthy();
 
 		// A same-day cutoff is accepted.
 		const updated = await updateDailyOrder({

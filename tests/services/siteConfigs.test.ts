@@ -23,9 +23,8 @@ beforeEach(() => {
 describe("getSiteConfigs service", () => {
 	it("returns env-fallback defaults before any doc is seeded", async () => {
 		const cfg = await getSiteConfigs();
-		// env fallback uses PLATFORM_FEE_*_KOBO from tests/setup.ts (5000/10000)
-		expect(cfg.platformFeeBuyerKobo).toBe(5000);
-		expect(cfg.platformFeeVendorKobo).toBe(10000);
+		expect(cfg.platformFeeBuyerKobo).toBe(0);
+		expect(cfg.platformFeeVendorKobo).toBe(0);
 		expect(cfg.slotHoldTtlSeconds).toBe(
 			DEFAULT_SITE_CONFIGS.slotHoldTtlSeconds,
 		);

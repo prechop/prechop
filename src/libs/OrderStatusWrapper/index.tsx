@@ -36,7 +36,12 @@ const FLOW: OrderStatus[] = [
 	"READY",
 	"COMPLETED",
 ];
-const CANCELLABLE: OrderStatus[] = ["PENDING_PAYMENT", "PAID", "CONFIRMED"];
+const CANCELLABLE: OrderStatus[] = [
+	"PENDING_PAYMENT",
+	"AWAITING_EXTERNAL_PAYMENT",
+	"PAID",
+	"CONFIRMED",
+];
 
 const STEP_META: Record<string, { icon: string; hint: string }> = {
 	PAID: { icon: "💳", hint: "Payment received" },
@@ -51,6 +56,7 @@ const statusTone: Record<
 	"primary" | "success" | "warning" | "danger" | "muted"
 > = {
 	PENDING_PAYMENT: "warning",
+	AWAITING_EXTERNAL_PAYMENT: "warning",
 	PAID: "primary",
 	CONFIRMED: "primary",
 	PREPARING: "warning",
@@ -359,7 +365,12 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					)}
 					<Line>
 						<Text $muted>Service fee</Text>
-						<Text>{formatKobo(data.platformFeeKobo)}</Text>
+						<Text>
+							{formatKobo(
+								data.paymentProcessingFeeKobo ??
+									data.platformFeeKobo,
+							)}
+						</Text>
 					</Line>
 					<Divider />
 					<Line>

@@ -6,10 +6,19 @@ export interface IPaymentCreateInput {
 	vendorId: string;
 	paystackRef: string;
 	paystackAccessCode?: string;
+	paystackAuthorizationUrl?: string;
+	externalPaymentTokenHash?: string;
+	externalPaymentExpiresAt?: Date;
 	amountKobo: number;
 	platformFeeKobo: number;
+	foodSubtotalKobo?: number;
+	deliveryFeeKobo?: number;
+	paymentProcessingFeeKobo?: number;
+	prechopCommissionKobo?: number;
 	vendorAmountKobo: number;
+	vendorSettlementKobo?: number;
 	idempotencyKey: string;
+	status?: PaymentStatus;
 }
 
 export interface IPayment {
@@ -20,9 +29,17 @@ export interface IPayment {
 	vendorId: string;
 	paystackRef: string;
 	paystackAccessCode?: string;
+	paystackAuthorizationUrl?: string;
+	externalPaymentTokenHash?: string;
+	externalPaymentExpiresAt?: Date;
 	amountKobo: number;
 	platformFeeKobo: number;
+	foodSubtotalKobo?: number;
+	deliveryFeeKobo?: number;
+	paymentProcessingFeeKobo?: number;
+	prechopCommissionKobo?: number;
 	vendorAmountKobo: number;
+	vendorSettlementKobo?: number;
 	status: PaymentStatus;
 	channel?: string;
 	paidAt?: Date;

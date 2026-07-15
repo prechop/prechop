@@ -23,6 +23,11 @@ const schema = new mongoose.Schema<any>(
 			required: true,
 			index: true,
 		},
+		campusIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "campuses" }],
+			default: [],
+			index: true,
+		},
 		vendorType: { type: String, enum: Object.values(VendorType) },
 		businessName: { type: String, trim: true },
 		description: { type: String },
@@ -83,6 +88,7 @@ const schema = new mongoose.Schema<any>(
 
 // Marketplace listing hot path: campus + status + open + completeness.
 schema.index({ campusId: 1, status: 1, isOpenForOrders: 1 });
+schema.index({ campusIds: 1, status: 1, isOpenForOrders: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
@@ -142,10 +148,19 @@ export async function updateVendorProfileDB({
 		if (typeof update.accountNumber === "string" && update.accountNumber) {
 			update.accountNumber = encrypt(update.accountNumber);
 		}
+		if (Array.isArray(update.campusIds)) {
+			update.campusIds = update.campusIds
+				.filter((campusId) =>
+					mongoose.Types.ObjectId.isValid(String(campusId)),
+				)
+				.map(
+					(campusId) => new mongoose.Types.ObjectId(String(campusId)),
+				);
+		}
 		const res = await VendorProfile.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $set: update },
-			{ session, returnDocument: "after" },
+			{ session, returnDocument: "after", strict: false },
 		);
 		if (!res) throw ErrVendorNotFound;
 		timer({
@@ -475,6 +490,55 @@ export async function listVendorsDB({
 	}
 }
 
+export async function listMarketplaceVendorsDB({
+	campusIds,
+	excludeVendorId,
+	limit = MAX_LIMIT,
+	offset = 0,
+	session,
+}: {
+	campusIds: string[];
+	excludeVendorId?: string;
+	limit?: number;
+	offset?: number;
+	session?: ClientSession;
+}): Promise<IVendorProfile[]> {
+	try {
+		const ids = campusIds
+			.filter((c) => mongoose.Types.ObjectId.isValid(c))
+			.map((c) => new mongoose.Types.ObjectId(c));
+		if (ids.length === 0) return [];
+		const match: Record<string, unknown> = {
+			status: VendorStatus.ACTIVE,
+			deleted: false,
+			$or: [{ campusId: { $in: ids } }, { campusIds: { $in: ids } }],
+		};
+		if (
+			excludeVendorId &&
+			mongoose.Types.ObjectId.isValid(excludeVendorId)
+		) {
+			match._id = { $ne: new mongoose.Types.ObjectId(excludeVendorId) };
+		}
+		return await VendorProfile.aggregate<IVendorProfile>(
+			[
+				{ $match: match },
+				{
+					$sort: {
+						isOpenForOrders: -1,
+						rating: -1,
+						totalOrders: -1,
+					},
+				},
+				{ $skip: offset },
+				{ $limit: Math.min(limit, MAX_LIMIT) },
+			],
+			{ session },
+		);
+	} catch {
+		return [];
+	}
+}
+
 /**
  * Distinct ACTIVE vendorIds within `campusIds` whose business name matches `q`
  * (case-insensitive, literal). Powers the marketplace search's "by shop" dimension.
@@ -497,7 +561,10 @@ export async function findVendorIdsByNameDB({
 		}>([
 			{
 				$match: {
-					campusId: { $in: ids },
+					$or: [
+						{ campusId: { $in: ids } },
+						{ campusIds: { $in: ids } },
+					],
 					status: VendorStatus.ACTIVE,
 					businessName: {
 						$regex: term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import styled from "styled-components";
+import useSWR from "swr";
 import { Avatar, Container, ThemeToggle } from "@/components";
 import { PageLoader } from "@/components/Loader";
+import { fetcher } from "@/constants/fetcher";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
 const buyerNav = [
@@ -22,19 +24,33 @@ const vendorNav = [
 	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
 
+interface VendorMe {
+	profileImageUrl?: string;
+}
+
 const Bar = styled.header`
 	position: sticky;
 	top: 0;
 	z-index: 50;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
 	background: color-mix(in srgb, var(--pc-surface) 82%, transparent);
 	backdrop-filter: saturate(1.4) blur(12px);
 	border-bottom: 1px solid var(--pc-border);
+	overflow-x: clip;
 `;
 const BarInner = styled(Container)`
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	gap: 8px;
 	height: 62px;
+	min-width: 0;
+	max-width: min(var(--pc-maxw), 100%);
+	@media (max-width: 420px) {
+		gap: 6px;
+	}
 `;
 const Brand = styled(Link)`
 	display: inline-flex;
@@ -45,6 +61,12 @@ const Brand = styled(Link)`
 	font-size: 21px;
 	letter-spacing: -0.03em;
 	color: var(--pc-text);
+	min-width: max-content;
+	flex: 0 0 auto;
+	@media (max-width: 420px) {
+		gap: 7px;
+		font-size: 19px;
+	}
 `;
 const Logo = styled.span`
 	width: 30px;
@@ -55,15 +77,26 @@ const Logo = styled.span`
 	background: var(--pc-gradient-warm);
 	box-shadow: var(--pc-shadow-primary);
 	font-size: 16px;
+	flex-shrink: 0;
+	@media (max-width: 420px) {
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		font-size: 15px;
+	}
 `;
 const Right = styled.div`
 	display: flex;
 	align-items: center;
-	gap: 14px;
+	gap: 12px;
 	/* Keep the right cluster a constant width pinned to the edge so its
 	   contents (incl. the mode switcher) never shift when the middle nav
 	   changes width between Selling (6 items) and Buying (3 items) pages. */
-	flex-shrink: 0;
+	flex-shrink: 1;
+	min-width: 0;
+	@media (max-width: 759px) {
+		gap: 8px;
+	}
 `;
 const ModeSwitch = styled.div`
 	display: inline-flex;
@@ -73,7 +106,8 @@ const ModeSwitch = styled.div`
 	background: var(--pc-surface-2);
 	border: 1px solid var(--pc-border);
 	border-radius: var(--pc-radius-pill);
-	flex-shrink: 0;
+	flex-shrink: 1;
+	min-width: 0;
 `;
 const ModeBtn = styled.button<{ $active: boolean }>`
 	display: inline-flex;
@@ -92,6 +126,25 @@ const ModeBtn = styled.button<{ $active: boolean }>`
 	box-shadow: ${(p) => (p.$active ? "var(--pc-shadow-sm)" : "none")};
 	transition: background var(--pc-dur) var(--pc-ease), color var(--pc-dur) var(--pc-ease);
 	&:hover { color: var(--pc-text); }
+	@media (max-width: 420px) {
+		gap: 3px;
+		padding: 6px 7px;
+		font-size: 12px;
+	}
+	@media (max-width: 360px) {
+		padding: 6px 6px;
+		font-size: 11.5px;
+		.mode-icon {
+			display: none;
+		}
+	}
+`;
+const ProfileAvatar = styled.div`
+	display: inline-flex;
+	flex-shrink: 0;
+	@media (max-width: 759px) {
+		display: none;
+	}
 `;
 const NavRow = styled.nav`
 	display: none;
@@ -130,9 +183,33 @@ const LogoutBtn = styled.button`
 	   rest of the right cluster. */
 	white-space: nowrap;
 	&:hover { color: var(--pc-color-danger); }
+	@media (max-width: 759px) {
+		display: none;
+	}
+`;
+const GuestAction = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	white-space: nowrap;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-color-primary);
+	color: #fff;
+	font-size: 13px;
+	font-weight: 800;
+	padding: 8px 13px;
+	box-shadow: var(--pc-shadow-sm);
+	@media (max-width: 420px) {
+		padding: 7px 10px;
+		font-size: 12px;
+	}
 `;
 const Main = styled.main`
 	/* Fill the viewport minus the top bar and (mobile-only) bottom nav. */
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+	overflow-x: clip;
 	min-height: calc(100dvh - 62px - 70px);
 	padding: var(--pc-space-6) 0 var(--pc-space-10);
 	@media (min-width: 760px) {
@@ -141,15 +218,21 @@ const Main = styled.main`
 	}
 `;
 const BottomNav = styled.nav`
-	position: sticky;
+	position: fixed;
+	left: 0;
+	right: 0;
 	bottom: 0;
 	z-index: 50;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
 	background: color-mix(in srgb, var(--pc-surface) 88%, transparent);
 	backdrop-filter: saturate(1.4) blur(12px);
 	border-top: 1px solid var(--pc-border);
 	display: flex;
 	justify-content: space-around;
 	padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+	overflow-x: clip;
 	@media (min-width: 760px) {
 		display: none;
 	}
@@ -173,25 +256,32 @@ const NavLink = styled(Link)<{ $active: boolean }>`
 export default function AppShell({
 	children,
 	shellRole,
+	publicAccess = false,
 }: {
 	children: React.ReactNode;
 	shellRole?: "BUYER" | "VENDOR";
+	publicAccess?: boolean;
 }) {
 	const { user, isLoading, isAuthenticated, logout } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
-
-	useEffect(() => {
-		if (!isLoading && !isAuthenticated) {
-			router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-		}
-	}, [isLoading, isAuthenticated, router, pathname]);
-
-	if (isLoading || !isAuthenticated) return <PageLoader full />;
-
 	const isVendor =
 		shellRole === "VENDOR" ||
 		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
+	const { data: vendor } = useSWR<VendorMe>(
+		isAuthenticated && isVendor ? "/vendors/me" : null,
+		fetcher,
+	);
+
+	useEffect(() => {
+		if (!publicAccess && !isLoading && !isAuthenticated) {
+			router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+		}
+	}, [publicAccess, isLoading, isAuthenticated, router, pathname]);
+
+	if (isLoading) return <PageLoader full />;
+	if (!publicAccess && !isAuthenticated) return <PageLoader full />;
+
 	const nav = isVendor ? vendorNav : buyerNav;
 	// Vendors can also shop as buyers (from other kitchens). The mode switcher
 	// lets them cross between their selling area and the buyer marketplace; it is
@@ -213,7 +303,7 @@ export default function AppShell({
 						Prechop
 					</Brand>
 					<NavRow>
-						{nav.map((n) => (
+						{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
 							<TopLink
 								key={n.href}
 								href={n.href}
@@ -225,7 +315,7 @@ export default function AppShell({
 						))}
 					</NavRow>
 					<Right>
-						{canSell && (
+						{isAuthenticated && canSell && (
 							<ModeSwitch
 								role="tablist"
 								aria-label="Selling or buying mode"
@@ -251,8 +341,30 @@ export default function AppShell({
 							</ModeSwitch>
 						)}
 						<ThemeToggle />
-						<Avatar name={fullName} size={34} />
-						<LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+						{isAuthenticated ? (
+							<>
+								<ProfileAvatar>
+									<Avatar
+										name={fullName}
+										src={
+											isVendor
+												? vendor?.profileImageUrl
+												: undefined
+										}
+										size={34}
+									/>
+								</ProfileAvatar>
+								<LogoutBtn onClick={() => logout()}>
+									Log out
+								</LogoutBtn>
+							</>
+						) : (
+							<GuestAction
+								href={`/login?next=${encodeURIComponent(pathname)}`}
+							>
+								Log in
+							</GuestAction>
+						)}
 					</Right>
 				</BarInner>
 			</Bar>
@@ -260,7 +372,7 @@ export default function AppShell({
 				<Container>{children}</Container>
 			</Main>
 			<BottomNav>
-				{nav.map((n) => (
+				{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
 					<NavLink
 						key={n.href}
 						href={n.href}

@@ -25,36 +25,54 @@ import {
 import { locationSchema } from "@/server/validators/vendors/validate";
 
 describe("auth phone regex", () => {
-	const valid = ["08012345678", "07098765432", "2348012345678"];
+	const valid = [
+		["08012345678", "+2348012345678"],
+		["2348012345678", "+2348012345678"],
+		["+2348012345678", "+2348012345678"],
+		["07098765432", "+2347098765432"],
+	] as const;
 	const invalid = [
 		"0801234567", // 10 digits total (need 11)
 		"080123456789", // 12 digits
-		"234801234567", // 234 + only 9 digits
-		"+2348012345678",
+		"83356781234", // arbitrary 11-digit value, not a supported mobile prefix
+		"2348335678123",
+		"+2348335678123",
+		"080 1234 5678",
+		"080-1234-5678",
 		"8012345678",
 		"abcdefghijk",
 	];
 
-	it("accepts valid Nigerian numbers", () => {
-		for (const p of valid) {
-			expect(requestOtpBodySchema.safeParse({ phone: p }).success).toBe(
-				true,
-			);
+	it("accepts valid Nigerian mobile numbers and normalizes them", () => {
+		for (const [input, normalized] of valid) {
+			const parsed = requestOtpBodySchema.safeParse({ phone: input });
+			expect(parsed.success).toBe(true);
+			if (parsed.success) {
+				expect(parsed.data.phone).toBe(normalized);
+			}
 		}
 	});
 
 	it("rejects malformed numbers", () => {
 		for (const p of invalid) {
-			expect(requestOtpBodySchema.safeParse({ phone: p }).success).toBe(
-				false,
-			);
+			const parsed = requestOtpBodySchema.safeParse({ phone: p });
+			expect(parsed.success).toBe(false);
+			if (!parsed.success) {
+				expect(parsed.error.issues[0]?.message).toBe(
+					"Enter a valid Nigerian phone number.",
+				);
+			}
 		}
 	});
 
 	it("trims surrounding whitespace before validating", () => {
-		expect(
-			requestOtpBodySchema.safeParse({ phone: "  08012345678 " }).success,
-		).toBe(true);
+		const parsed = requestOtpBodySchema.safeParse({
+			phone: "  08012345678 ",
+		});
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			expect(parsed.data.phone).toBe("+2348012345678");
+		}
 	});
 });
 
@@ -251,6 +269,7 @@ describe("vendors locationSchema (discriminated union)", () => {
 				locationType: "OFF_CAMPUS",
 				state: "Lagos",
 				areaOrAddress: "12 Allen Ave",
+				campusIds: ["64b64c9f9f1b2c0012345678"],
 			}).success,
 		).toBe(true);
 	});
@@ -319,7 +338,7 @@ describe("dailyOrders createDailyOrderSchema", () => {
 		).toBe(false);
 	});
 
-	it("accepts a same-day close but rejects a close past the menu date", () => {
+	it("accepts same-day and future close dates", () => {
 		const menu = new Date("2026-07-11T00:00:00.000Z");
 		const sameDayClose = new Date("2026-07-11T18:00:00.000Z"); // same calendar day
 		const nextDayClose = new Date("2026-07-12T09:00:00.000Z"); // day after menu
@@ -339,7 +358,7 @@ describe("dailyOrders createDailyOrderSchema", () => {
 				...base,
 				cutoffTime: nextDayClose.toISOString(),
 			}).success,
-		).toBe(false);
+		).toBe(true);
 	});
 });
 

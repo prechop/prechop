@@ -86,9 +86,9 @@ export async function clearCollections(): Promise<void> {
 
 /** Random-ish Nigerian phone so parallel workers/tests never collide. */
 export function uniquePhone(): string {
-	// 0 + 10 digits. Use the pid + a random tail to stay unique per worker.
-	const tail = Math.floor(1_000_000_000 + Math.random() * 8_999_999_999);
-	return `0${tail.toString().slice(0, 10)}`;
+	// Valid Nigerian mobile number with a supported 0801 prefix.
+	const tail = Math.floor(1_000_000 + Math.random() * 8_999_999);
+	return `0801${tail.toString()}`;
 }
 
 /** Fresh ObjectId hex string. */

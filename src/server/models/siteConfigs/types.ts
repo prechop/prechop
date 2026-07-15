@@ -6,6 +6,7 @@ export interface ISiteConfigs {
 	// order policy
 	slotHoldTtlSeconds: number;
 	abandonedOrderMinutes: number;
+	externalPaymentLinkTtlMinutes: number;
 	reviewWindowHours: number;
 	cutoffWarningMinutes: number;
 	// feature flags
@@ -22,10 +23,11 @@ export interface ISiteConfigs {
 }
 
 export const DEFAULT_SITE_CONFIGS: ISiteConfigs = {
-	platformFeeBuyerKobo: 5000,
-	platformFeeVendorKobo: 10000,
+	platformFeeBuyerKobo: 0,
+	platformFeeVendorKobo: 0,
 	slotHoldTtlSeconds: 600,
 	abandonedOrderMinutes: 15,
+	externalPaymentLinkTtlMinutes: 60 * 24,
 	reviewWindowHours: 72,
 	cutoffWarningMinutes: 30,
 	whatsappTvEnabled: true,

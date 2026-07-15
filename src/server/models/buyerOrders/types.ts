@@ -25,6 +25,7 @@ export interface IBuyerOrderCreateInput {
 	vendorId: string;
 	buyerId: string;
 	campusId: string;
+	status?: OrderStatus;
 	fulfillmentType: FulfillmentType;
 	deliveryHostelName?: string;
 	deliveryRoomNumber?: string;
@@ -33,6 +34,11 @@ export interface IBuyerOrderCreateInput {
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
+	paymentProcessingFeeKobo?: number;
+	prechopCommissionKobo?: number;
+	vendorFoodAmountKobo?: number;
+	vendorDeliveryAmountKobo?: number;
+	vendorSettlementKobo?: number;
 	totalKobo: number;
 	items: IBuyerOrderItem[];
 }
@@ -54,6 +60,11 @@ export interface IBuyerOrder {
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
+	paymentProcessingFeeKobo?: number;
+	prechopCommissionKobo?: number;
+	vendorFoodAmountKobo?: number;
+	vendorDeliveryAmountKobo?: number;
+	vendorSettlementKobo?: number;
 	totalKobo: number;
 	cancellationReason?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";

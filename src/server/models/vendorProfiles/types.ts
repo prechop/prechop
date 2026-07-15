@@ -18,6 +18,7 @@ export interface IVendorProfile {
 	id?: string;
 	userId: string;
 	campusId: string;
+	campusIds?: string[];
 	vendorType?: VendorType;
 	businessName?: string;
 	description?: string;

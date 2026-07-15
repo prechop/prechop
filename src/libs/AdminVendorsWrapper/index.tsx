@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
@@ -170,6 +170,14 @@ export default function AdminVendorsWrapper() {
 	const { data: detail } = useSWR<AdminVendor>(
 		detailId ? `/admin/vendors/${detailId}` : null,
 	);
+
+	useEffect(() => {
+		const id =
+			typeof window !== "undefined"
+				? new URLSearchParams(window.location.search).get("detail")
+				: null;
+		if (id) setDetailId(id);
+	}, []);
 
 	async function reactivate(id: string) {
 		setBusy(true);

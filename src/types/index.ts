@@ -59,6 +59,7 @@ export interface VendorProfile {
 	id: string;
 	userId: string;
 	campusId: string;
+	campusIds?: string[];
 	vendorType?: string;
 	businessName?: string;
 	description?: string;
@@ -163,6 +164,11 @@ export interface VendorStorefront {
 	menu: MenuItem[];
 }
 
+export interface MarketplaceVendor {
+	vendor: PublicVendor;
+	listings: DailyOrder[];
+}
+
 export interface VendorSearchHit {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
@@ -260,6 +266,7 @@ export interface BuyerOrderItem {
 
 export type OrderStatus =
 	| "PENDING_PAYMENT"
+	| "AWAITING_EXTERNAL_PAYMENT"
 	| "PAID"
 	| "CONFIRMED"
 	| "PREPARING"
@@ -279,7 +286,14 @@ export interface BuyerOrder {
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
+	paymentProcessingFeeKobo?: number;
+	prechopCommissionKobo?: number;
+	vendorFoodAmountKobo?: number;
+	vendorDeliveryAmountKobo?: number;
+	vendorSettlementKobo?: number;
 	totalKobo: number;
+	externalPaymentUrl?: string;
+	externalPaymentExpiresAt?: string;
 	items: BuyerOrderItem[];
 	createdAt: string;
 }

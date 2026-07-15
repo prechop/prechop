@@ -1,7 +1,7 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { ErrMenuItemNotFound, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { MenuCategory } from "../enums";
+import { MenuCategory, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type { IMenuItem, IMenuItemCreateInput } from "./types";
 
@@ -230,12 +230,28 @@ export async function findVendorIdsByMenuSearchDB({
 			[
 				{
 					$match: {
-						campusId: { $in: ids },
 						isAvailable: true,
 						name: {
 							$regex: term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
 							$options: "i",
 						},
+					},
+				},
+				{
+					$lookup: {
+						from: "vendorprofiles",
+						localField: "vendorId",
+						foreignField: "_id",
+						as: "_vendor",
+					},
+				},
+				{
+					$match: {
+						"_vendor.status": VendorStatus.ACTIVE,
+						$or: [
+							{ campusId: { $in: ids } },
+							{ "_vendor.campusIds": { $in: ids } },
+						],
 					},
 				},
 				{ $group: { _id: "$vendorId" } },
@@ -273,9 +289,49 @@ export async function listAllMenuItemsDB({
 		MenuItem.aggregate<IMenuItem>(
 			[
 				{ $match: match },
+				{
+					$lookup: {
+						from: "vendorprofiles",
+						localField: "vendorId",
+						foreignField: "_id",
+						as: "_vendor",
+					},
+				},
+				{
+					$unwind: {
+						path: "$_vendor",
+						preserveNullAndEmptyArrays: true,
+					},
+				},
+				{
+					$lookup: {
+						from: "campuses",
+						localField: "campusId",
+						foreignField: "_id",
+						as: "_campus",
+					},
+				},
+				{
+					$unwind: {
+						path: "$_campus",
+						preserveNullAndEmptyArrays: true,
+					},
+				},
+				{
+					$addFields: {
+						vendorName: "$_vendor.businessName",
+						vendorStatus: "$_vendor.status",
+						vendorLocationType: "$_vendor.locationType",
+						vendorState: "$_vendor.state",
+						vendorAreaOrAddress: "$_vendor.areaOrAddress",
+						campusName: "$_campus.name",
+						campusState: "$_campus.state",
+					},
+				},
 				{ $sort: { createdAt: -1 } },
 				{ $skip: skip },
 				{ $limit: Math.min(limit, 100) },
+				{ $unset: ["_vendor", "_campus"] },
 			],
 			{ session },
 		),

@@ -37,6 +37,10 @@ interface IncomingOrder {
 	status: OrderStatus;
 	fulfillmentType: "PICKUP" | "DELIVERY";
 	totalKobo: number;
+	subtotalKobo?: number;
+	deliveryFeeKobo?: number;
+	prechopCommissionKobo?: number;
+	vendorSettlementKobo?: number;
 	createdAt?: string;
 	items: Array<{ snapshotName: string; quantity: number }>;
 }
@@ -288,7 +292,6 @@ export default function VendorDailyOrderDetailWrapper({
 		opensAt !== null &&
 		opensAt > Date.now();
 	const closed = timeUntil(order.cutoffTime) === "closed";
-
 	const windowLabel =
 		order.status !== "ACTIVE"
 			? statusLabel(order.status)
@@ -574,10 +577,38 @@ export default function VendorDailyOrderDetailWrapper({
 												)}{" "}
 												item(s)
 											</Text>
+											{o.subtotalKobo != null && (
+												<Text $muted $size={12}>
+													Food{" "}
+													{formatKobo(
+														o.subtotalKobo,
+													)}{" "}
+													· Commission{" "}
+													{formatKobo(
+														o.prechopCommissionKobo ??
+															0,
+													)}{" "}
+													· Delivery{" "}
+													{formatKobo(
+														o.deliveryFeeKobo ?? 0,
+													)}
+												</Text>
+											)}
 										</Stack>
-										<Text $weight={800} $size={14}>
-											{formatKobo(o.totalKobo)}
-										</Text>
+										<Stack
+											$gap={2}
+											style={{ alignItems: "flex-end" }}
+										>
+											<Text $weight={800} $size={14}>
+												{formatKobo(
+													o.vendorSettlementKobo ??
+														o.totalKobo,
+												)}
+											</Text>
+											<Text $muted $size={11}>
+												Vendor settlement
+											</Text>
+										</Stack>
 									</IncomingItem>
 								))}
 							</div>

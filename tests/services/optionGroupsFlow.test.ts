@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { calculateBuyerServiceFeeKobo } from "@/constants/fees";
 import { generateShareableToken } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
 import { getBuyerOrderByIdDB } from "@/server/models/buyerOrders";
@@ -260,8 +261,11 @@ describe("placeOrder option validation", () => {
 				],
 			},
 		});
-		// (150000 base + 50000 chicken) * 2 = 400000 subtotal; + 5000 platform.
-		expect(result.totalKobo).toBe(405000);
+		// (150000 base + 50000 chicken) * 2 = 400000 subtotal; buyer pays
+		// Paystack processing separately.
+		expect(result.totalKobo).toBe(
+			400000 + calculateBuyerServiceFeeKobo(400000),
+		);
 		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
 		expect(order!.subtotalKobo).toBe(400000);
 		expect(order!.items[0].selectedOptions[0].groupName).toBe("Protein");

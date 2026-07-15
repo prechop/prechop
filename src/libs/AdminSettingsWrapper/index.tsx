@@ -131,8 +131,6 @@ export default function AdminSettingsWrapper() {
 		setBusy(true);
 		try {
 			await api.patch("/admin/site-configs", {
-				platformFeeBuyerKobo: Math.round(form.platformFeeBuyerKobo),
-				platformFeeVendorKobo: Math.round(form.platformFeeVendorKobo),
 				slotHoldTtlSeconds: Math.round(form.slotHoldTtlSeconds),
 				abandonedOrderMinutes: Math.round(form.abandonedOrderMinutes),
 				reviewWindowHours: Math.round(form.reviewWindowHours),
@@ -180,10 +178,6 @@ export default function AdminSettingsWrapper() {
 			</Stack>
 		);
 
-	// Fees are kobo on the wire; display in naira, convert back on change.
-	const nairaInput = (kobo: number) => (kobo / 100).toString();
-	const toKobo = (naira: string) => Math.round((Number(naira) || 0) * 100);
-
 	return (
 		<Stack $gap={4}>
 			<PageHeader
@@ -201,32 +195,12 @@ export default function AdminSettingsWrapper() {
 				<Stack $gap={16}>
 					<Section>
 						<SectionHeader title="Platform fees" icon="💰" />
-						<Grid2>
-							<Input
-								label="Buyer fee (₦)"
-								type="number"
-								step="0.01"
-								value={nairaInput(form.platformFeeBuyerKobo)}
-								onChange={(e) =>
-									set(
-										"platformFeeBuyerKobo",
-										toKobo(e.target.value),
-									)
-								}
-							/>
-							<Input
-								label="Vendor fee (₦)"
-								type="number"
-								step="0.01"
-								value={nairaInput(form.platformFeeVendorKobo)}
-								onChange={(e) =>
-									set(
-										"platformFeeVendorKobo",
-										toKobo(e.target.value),
-									)
-								}
-							/>
-						</Grid2>
+						<Text $muted>
+							Prechop charges vendors 8% of the food subtotal on
+							successful paid orders. Buyers pay a 3% service fee
+							capped at ₦200. Paystack processing fees are absorbed
+							by Prechop.
+						</Text>
 					</Section>
 
 					<Section>

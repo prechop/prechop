@@ -15,11 +15,12 @@
 import {
 	ADMINISTRATORS_GROUP,
 	BUYERS_GROUP,
+	calculateBuyerServiceFeeKobo,
+	calculateVendorCommissionKobo,
 	generateOrderNumber,
 	generateShareableToken,
 	nairaToKobo,
 	PAYSTACK_SECRET_KEY,
-	PLATFORM_FEE_BUYER_KOBO,
 	SEED_ADMIN_PHONE,
 	VENDORS_GROUP,
 } from "../src/server/constants";
@@ -415,6 +416,9 @@ async function enrichDemoData({
 			input.fulfillment === FulfillmentType.DELIVERY
 				? (input.listing.deliveryFeeKobo ?? 0)
 				: 0;
+		const serviceFee = calculateBuyerServiceFeeKobo(subtotal);
+		const commission = calculateVendorCommissionKobo(subtotal);
+		const vendorSettlement = Math.max(0, subtotal - commission);
 		const created = await createBuyerOrderDB({
 			payload: {
 				orderNumber: generateOrderNumber(),
@@ -431,8 +435,13 @@ async function enrichDemoData({
 					: {}),
 				subtotalKobo: subtotal,
 				deliveryFeeKobo: deliveryFee,
-				platformFeeKobo: PLATFORM_FEE_BUYER_KOBO,
-				totalKobo: subtotal + deliveryFee + PLATFORM_FEE_BUYER_KOBO,
+				platformFeeKobo: serviceFee,
+				paymentProcessingFeeKobo: serviceFee,
+				prechopCommissionKobo: commission,
+				vendorFoodAmountKobo: vendorSettlement,
+				vendorDeliveryAmountKobo: 0,
+				vendorSettlementKobo: vendorSettlement,
+				totalKobo: subtotal + serviceFee,
 				items: [
 					{
 						dailyOrderItemId: itemId,

@@ -53,148 +53,149 @@ const EMPTY_SET: Set<string> = new Set();
 const EMPTY_EDITS: Record<string, EditableOption[]> = {};
 
 const ItemRow = styled(Card)<{ $on: boolean }>`
-	padding: var(--pc-space-3) var(--pc-space-4);
-	cursor: pointer;
-	border-color: ${(p) =>
+  padding: var(--pc-space-3) var(--pc-space-4);
+  cursor: pointer;
+  border-color: ${(p) =>
 		p.$on ? "var(--pc-color-primary)" : "var(--pc-border)"};
-	background: ${(p) =>
+  background: ${(p) =>
 		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
-	box-shadow: ${(p) => (p.$on ? "var(--pc-shadow-primary)" : "var(--pc-shadow-sm)")};
-	&:hover {
-		border-color: var(--pc-color-primary);
-	}
+  box-shadow: ${(p) =>
+		p.$on ? "var(--pc-shadow-primary)" : "var(--pc-shadow-sm)"};
+  &:hover {
+    border-color: var(--pc-color-primary);
+  }
 `;
 const Check = styled.span<{ $on: boolean }>`
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 26px;
-	height: 26px;
-	border-radius: 8px;
-	flex-shrink: 0;
-	font-size: 15px;
-	font-weight: 800;
-	color: var(--pc-text-inverse);
-	transition: all var(--pc-dur) var(--pc-ease);
-	background: ${(p) =>
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--pc-text-inverse);
+  transition: all var(--pc-dur) var(--pc-ease);
+  background: ${(p) =>
 		p.$on ? "var(--pc-color-primary)" : "var(--pc-surface-2)"};
-	border: 1.5px solid
-		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  border: 1.5px solid
+    ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
 `;
 const ToggleRow = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--pc-space-3);
-	padding: var(--pc-space-3) var(--pc-space-4);
-	background: var(--pc-surface-2);
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+  padding: var(--pc-space-3) var(--pc-space-4);
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
 `;
 const Switch = styled.button<{ $on: boolean }>`
-	position: relative;
-	width: 46px;
-	height: 27px;
-	border-radius: var(--pc-radius-pill);
-	border: none;
-	cursor: pointer;
-	flex-shrink: 0;
-	transition: background var(--pc-dur) var(--pc-ease);
-	background: ${(p) =>
+  position: relative;
+  width: 46px;
+  height: 27px;
+  border-radius: var(--pc-radius-pill);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--pc-dur) var(--pc-ease);
+  background: ${(p) =>
 		p.$on ? "var(--pc-color-accent)" : "var(--pc-surface-3)"};
-	&::after {
-		content: "";
-		position: absolute;
-		top: 3px;
-		left: ${(p) => (p.$on ? "22px" : "3px")};
-		width: 21px;
-		height: 21px;
-		border-radius: 999px;
-		background: var(--pc-text-inverse);
-		box-shadow: var(--pc-shadow);
-		transition: left var(--pc-dur) var(--pc-ease);
-	}
+  &::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: ${(p) => (p.$on ? "22px" : "3px")};
+    width: 21px;
+    height: 21px;
+    border-radius: 999px;
+    background: var(--pc-text-inverse);
+    box-shadow: var(--pc-shadow);
+    transition: left var(--pc-dur) var(--pc-ease);
+  }
 `;
 const QtyWrap = styled.div`
-	padding-left: 36px;
+  padding-left: 36px;
 `;
 const SubmitBar = styled.div`
-	position: sticky;
-	bottom: var(--pc-space-3);
-	z-index: 5;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--pc-space-4);
-	flex-wrap: wrap;
-	padding: var(--pc-space-3) var(--pc-space-4);
-	background: var(--pc-surface);
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius);
-	box-shadow: var(--pc-shadow-lg);
+  position: sticky;
+  bottom: var(--pc-space-3);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-4);
+  flex-wrap: wrap;
+  padding: var(--pc-space-3) var(--pc-space-4);
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  box-shadow: var(--pc-shadow-lg);
 `;
 const SubmitAction = styled.div`
-	flex: 1;
-	min-width: 200px;
+  flex: 1;
+  min-width: 200px;
 `;
 
 /* ── Post-publish share screen (#9) ─────────────────────────────────────── */
 const SuccessHero = styled(Card)`
-	text-align: center;
-	background: var(--pc-gradient-hero);
-	border: none;
-	color: #fff;
-	box-shadow: var(--pc-shadow-primary);
+  text-align: center;
+  background: var(--pc-gradient-hero);
+  border: none;
+  color: #fff;
+  box-shadow: var(--pc-shadow-primary);
 `;
 const Medallion = styled.div`
-	width: 74px;
-	height: 74px;
-	margin: 0 auto var(--pc-space-3);
-	display: grid;
-	place-items: center;
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.18);
-	font-size: 36px;
+  width: 74px;
+  height: 74px;
+  margin: 0 auto var(--pc-space-3);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 36px;
 `;
 const LinkBox = styled.div`
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 12px;
-	border: 1.5px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-surface-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface-2);
 `;
 const LinkText = styled.span`
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	font-size: 13.5px;
-	font-weight: 600;
-	color: var(--pc-text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pc-text-muted);
 `;
 const ShareGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 `;
 const ShareBtn = styled.a<{ $bg: string }>`
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	padding: 13px;
-	border-radius: var(--pc-radius-sm);
-	font-weight: 700;
-	font-size: 14.5px;
-	color: #fff;
-	background: ${(p) => p.$bg};
-	transition: filter var(--pc-dur) var(--pc-ease);
-	&:hover {
-		filter: brightness(1.06);
-	}
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px;
+  border-radius: var(--pc-radius-sm);
+  font-weight: 700;
+  font-size: 14.5px;
+  color: #fff;
+  background: ${(p) => p.$bg};
+  transition: filter var(--pc-dur) var(--pc-ease);
+  &:hover {
+    filter: brightness(1.06);
+  }
 `;
 
 function errMsg(e: unknown): string {
@@ -372,8 +373,8 @@ export default function DailyOrderComposerWrapper({
 			for (const id of ids) next[id] = "";
 			return next;
 		});
-		setTitle((t) => t || "Today's menu");
-	}, [template, isEdit]);
+		setTitle((t) => t || `${weekdayOf(scheduledDate)} specials`);
+	}, [template, isEdit, scheduledDate]);
 
 	if (isLoading || (isEdit && editingLoading)) return <PageLoader />;
 
@@ -504,11 +505,6 @@ export default function DailyOrderComposerWrapper({
 		}
 		if (new Date(availableFrom).getTime() >= new Date(cutoff).getTime()) {
 			toast("Orders must open before they close", "error");
-			return;
-		}
-		// Orders must close on or before the menu date (same-day close is fine).
-		if (cutoff.slice(0, 10) > scheduledDate) {
-			toast("Orders must close on or before the menu date", "error");
 			return;
 		}
 		// Build each item's option groups from the (possibly edited) attached
@@ -734,6 +730,11 @@ export default function DailyOrderComposerWrapper({
 	}
 
 	const selectedCount = Object.keys(selected).length;
+	const currentLocal = nowLocal();
+	const closeMin =
+		availableFrom && availableFrom > currentLocal
+			? availableFrom
+			: currentLocal;
 
 	return (
 		<FadeIn>
@@ -773,7 +774,7 @@ export default function DailyOrderComposerWrapper({
 								<Input
 									label="Orders open (start)"
 									type="datetime-local"
-									min={nowLocal()}
+									min={currentLocal}
 									value={availableFrom}
 									onChange={(e) =>
 										setAvailableFrom(e.target.value)
@@ -784,9 +785,7 @@ export default function DailyOrderComposerWrapper({
 								<Input
 									label="Orders close (end)"
 									type="datetime-local"
-									min={availableFrom || nowLocal()}
-									// Orders can't close past the menu date's day.
-									max={`${scheduledDate}T23:59`}
+									min={closeMin}
 									value={cutoff}
 									onChange={(e) => setCutoff(e.target.value)}
 								/>

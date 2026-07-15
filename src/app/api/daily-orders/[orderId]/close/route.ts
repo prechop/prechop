@@ -11,13 +11,22 @@ export const runtime = "nodejs";
 
 export const PATCH = withApiHandler(
 	{ route: "/api/daily-orders/[orderId]/close" },
-	withAuth(async ({ auth, context }) => {
+	withAuth(async ({ req, auth, context }) => {
 		try {
 			assertVendor(auth);
 			const { orderId } = await (
 				context as { params: Promise<{ orderId: string }> }
 			).params;
-			return ok(await closeDailyOrder({ userId: auth.userId, orderId }));
+			const body = (await req.json().catch(() => ({}))) as {
+				reason?: string;
+			};
+			return ok(
+				await closeDailyOrder({
+					userId: auth.userId,
+					orderId,
+					reason: body.reason,
+				}),
+			);
 		} catch (error) {
 			return handleError(error);
 		}

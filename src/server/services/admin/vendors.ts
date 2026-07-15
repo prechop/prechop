@@ -1,5 +1,6 @@
 import { ErrVendorNotFound } from "../../constants";
 import {
+	closeActiveDailyOrdersByVendorDB,
 	getVendorProfileByIdDB,
 	listVendorsDB,
 	setVendorStatusDB,
@@ -44,6 +45,9 @@ export async function suspendVendor({
 	if (!vendor) throw ErrVendorNotFound;
 
 	await setVendorStatusDB({ id, status: VendorStatus.SUSPENDED });
+	const closedListings = await closeActiveDailyOrdersByVendorDB({
+		vendorId: id,
+	});
 
 	recordAudit({
 		userId: actor.userId,
@@ -51,7 +55,7 @@ export async function suspendVendor({
 		action: "VENDOR_SUSPEND",
 		resourceType: "vendorProfiles",
 		resourceId: id,
-		newState: { reason },
+		newState: { reason, closedListings },
 		ipAddress: actor.ip,
 		userAgent: actor.userAgent,
 	});
@@ -62,7 +66,7 @@ export async function suspendVendor({
 		reason,
 	);
 
-	return { ...vendor, status: VendorStatus.SUSPENDED };
+	return { ...vendor, status: VendorStatus.SUSPENDED, closedListings };
 }
 
 export async function reactivateVendor({

@@ -1,11 +1,11 @@
 import {
 	getVendorRatingAggregateDB,
-	listReviewsByVendorDB,
+	listReviewsWithBuyerByVendorDB,
 } from "@/server/models";
 
 export async function getVendorReviews({ vendorId }: { vendorId: string }) {
 	const [reviews, aggregate] = await Promise.all([
-		listReviewsByVendorDB({ vendorId }),
+		listReviewsWithBuyerByVendorDB({ vendorId }),
 		getVendorRatingAggregateDB({ vendorId }),
 	]);
 	return { reviews, aggregate };

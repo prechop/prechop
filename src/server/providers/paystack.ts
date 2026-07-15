@@ -33,7 +33,7 @@ export function buildInitializePayload(
 		email: input.email,
 		amount: input.amountKobo,
 		reference: input.reference,
-		callback_url: `${APP_URL}/order/confirmation`,
+		callback_url: input.callbackUrl ?? `${APP_URL}/order/confirmation`,
 		metadata: input.metadata,
 	};
 	if (
@@ -45,9 +45,10 @@ export function buildInitializePayload(
 	return {
 		...base,
 		subaccount: input.subaccountCode,
-		// Platform keeps (total − vendorAmount); vendor gets vendorAmount.
+		// Platform keeps (total - vendorAmount): the buyer service fee plus
+		// the 8% vendor commission. Vendor gets vendorAmount.
 		transaction_charge: input.amountKobo - input.vendorAmountKobo,
-		// Platform absorbs the Paystack processing fee, not the vendor.
+		// Paystack deducts processing from the platform side.
 		bearer: "account",
 	};
 }
@@ -68,6 +69,7 @@ interface InitializeTransactionInput {
 	reference: string;
 	subaccountCode: string;
 	vendorAmountKobo: number;
+	callbackUrl?: string;
 	metadata: Record<string, unknown>;
 }
 interface InitializeTransactionResponse {

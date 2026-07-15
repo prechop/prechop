@@ -17,17 +17,27 @@ export async function presignProfileImage({
 export async function confirmProfileImage({
 	userId,
 	imageUrl,
+	key,
 }: {
 	userId: string;
-	imageUrl: string;
+	imageUrl?: string;
+	key?: string;
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
+	const nextImageUrl = key ? imageProxyUrl(key) : imageUrl;
 
 	const updated = await updateVendorProfileDB({
 		id: vendorId,
-		payload: { profileImageUrl: imageUrl },
+		payload: { profileImageUrl: nextImageUrl },
 	});
 	await recomputeVendorCompleteness({ vendorId, userId });
 	return updated;
+}
+
+function imageProxyUrl(key: string): string {
+	return `/api/images/${key
+		.split("/")
+		.map((part) => encodeURIComponent(part))
+		.join("/")}`;
 }

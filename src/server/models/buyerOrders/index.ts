@@ -87,6 +87,11 @@ const schema = new mongoose.Schema<any>(
 		subtotalKobo: { type: Number, required: true },
 		deliveryFeeKobo: { type: Number, default: 0 },
 		platformFeeKobo: { type: Number, required: true },
+		paymentProcessingFeeKobo: { type: Number, default: 0 },
+		prechopCommissionKobo: { type: Number, default: 0 },
+		vendorFoodAmountKobo: { type: Number, default: 0 },
+		vendorDeliveryAmountKobo: { type: Number, default: 0 },
+		vendorSettlementKobo: { type: Number, default: 0 },
 		totalKobo: { type: Number, required: true },
 		cancellationReason: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
@@ -100,6 +105,7 @@ const schema = new mongoose.Schema<any>(
 
 schema.index({ vendorId: 1, dailyOrderId: 1 });
 schema.index({ buyerId: 1, createdAt: -1 });
+schema.index({ receiptUrl: 1 }, { sparse: true });
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({
@@ -170,6 +176,7 @@ export async function createBuyerOrderDB({
 			vendorId: payload.vendorId,
 			buyerId: payload.buyerId,
 			campusId: payload.campusId,
+			status: payload.status,
 			fulfillmentType: payload.fulfillmentType,
 			deliveryHostelName: payload.deliveryHostelName,
 			deliveryRoomNumber: payload.deliveryRoomNumber,
@@ -178,6 +185,11 @@ export async function createBuyerOrderDB({
 			subtotalKobo: payload.subtotalKobo,
 			deliveryFeeKobo: payload.deliveryFeeKobo,
 			platformFeeKobo: payload.platformFeeKobo,
+			paymentProcessingFeeKobo: payload.paymentProcessingFeeKobo ?? 0,
+			prechopCommissionKobo: payload.prechopCommissionKobo ?? 0,
+			vendorFoodAmountKobo: payload.vendorFoodAmountKobo ?? 0,
+			vendorDeliveryAmountKobo: payload.vendorDeliveryAmountKobo ?? 0,
+			vendorSettlementKobo: payload.vendorSettlementKobo ?? 0,
 			totalKobo: payload.totalKobo,
 			items: mapItems(payload.items),
 		}).save({ session });
@@ -254,6 +266,27 @@ export async function getBuyerOrderByNumberDB({
 			(
 				await BuyerOrder.aggregate<IBuyerOrder>(
 					[{ $match: { orderNumber } }, { $limit: 1 }],
+					{ session },
+				)
+			).at(0) ?? null
+		);
+	} catch {
+		return null;
+	}
+}
+
+export async function getBuyerOrderByReceiptUrlDB({
+	receiptUrl,
+	session,
+}: {
+	receiptUrl: string;
+	session?: ClientSession;
+}): Promise<IBuyerOrder | null> {
+	try {
+		return (
+			(
+				await BuyerOrder.aggregate<IBuyerOrder>(
+					[{ $match: { receiptUrl } }, { $limit: 1 }],
 					{ session },
 				)
 			).at(0) ?? null
@@ -425,9 +458,36 @@ export async function markBuyerOrderPaidDB({
 		const res = await BuyerOrder.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
-				status: OrderStatus.PENDING_PAYMENT,
+				status: {
+					$in: [
+						OrderStatus.PENDING_PAYMENT,
+						OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+					],
+				},
 			},
 			{ $set: { status: OrderStatus.PAID, paidAt: new Date(), channel } },
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function markBuyerOrderPendingPaymentDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+			},
+			{ $set: { status: OrderStatus.PENDING_PAYMENT } },
 			{ session, returnDocument: "after" },
 		);
 		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
@@ -645,7 +705,7 @@ export async function aggregateVendorDailyStatsDB({
 										],
 									],
 								},
-								"$totalKobo",
+								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
 								0,
 							],
 						},
@@ -662,6 +722,219 @@ export async function aggregateVendorDailyStatsDB({
 		}));
 	} catch {
 		return [];
+	}
+}
+
+export async function findExpiredExternalPaymentOrderIdsDB({
+	olderThanMinutes,
+	limit = 200,
+}: {
+	olderThanMinutes: number;
+	limit?: number;
+}): Promise<string[]> {
+	try {
+		const threshold = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+		const rows = await BuyerOrder.find(
+			{
+				status: OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+				createdAt: { $lt: threshold },
+			},
+			{ _id: 1 },
+		)
+			.limit(limit)
+			.lean();
+		return rows.map((r) => r._id.toString());
+	} catch {
+		return [];
+	}
+}
+
+export interface IVendorEarningsDay {
+	date: Date;
+	totalOrders: number;
+	completedOrders: number;
+	cancelledOrders: number;
+	totalRevenueKobo: number;
+	totalFoodSubtotalKobo: number;
+	totalCommissionKobo: number;
+	totalDeliveryEarningsKobo: number;
+	totalVendorSettlementKobo: number;
+	avgOrderValueKobo: number;
+}
+
+export interface IVendorEarningsStats {
+	days: IVendorEarningsDay[];
+	totalOrders: number;
+	completedOrders: number;
+	cancelledOrders: number;
+	totalRevenueKobo: number;
+	totalFoodSubtotalKobo: number;
+	totalCommissionKobo: number;
+	totalDeliveryEarningsKobo: number;
+	totalVendorSettlementKobo: number;
+	avgOrderValueKobo: number;
+	completionRate: number;
+}
+
+export async function aggregateVendorEarningsStatsDB({
+	vendorId,
+}: {
+	vendorId: string;
+}): Promise<IVendorEarningsStats> {
+	const empty: IVendorEarningsStats = {
+		days: [],
+		totalOrders: 0,
+		completedOrders: 0,
+		cancelledOrders: 0,
+		totalRevenueKobo: 0,
+		totalFoodSubtotalKobo: 0,
+		totalCommissionKobo: 0,
+		totalDeliveryEarningsKobo: 0,
+		totalVendorSettlementKobo: 0,
+		avgOrderValueKobo: 0,
+		completionRate: 0,
+	};
+	try {
+		if (!mongoose.Types.ObjectId.isValid(vendorId)) return empty;
+		const completedExpr = {
+			$and: [
+				{ $eq: ["$status", OrderStatus.COMPLETED] },
+				{ $ne: ["$paidAt", null] },
+			],
+		};
+		const cancelledExpr = {
+			$in: ["$status", [OrderStatus.CANCELLED, OrderStatus.REFUNDED]],
+		};
+		const rows = await BuyerOrder.aggregate<{
+			_id: string;
+			totalOrders: number;
+			completedOrders: number;
+			cancelledOrders: number;
+			totalRevenueKobo: number;
+			totalFoodSubtotalKobo: number;
+			totalCommissionKobo: number;
+			totalDeliveryEarningsKobo: number;
+			totalVendorSettlementKobo: number;
+		}>([
+			{ $match: { vendorId: new mongoose.Types.ObjectId(vendorId) } },
+			{
+				$group: {
+					_id: {
+						$dateToString: {
+							format: "%Y-%m-%d",
+							date: "$createdAt",
+						},
+					},
+					totalOrders: {
+						$sum: {
+							$cond: [
+								{ $or: [completedExpr, cancelledExpr] },
+								1,
+								0,
+							],
+						},
+					},
+					completedOrders: {
+						$sum: { $cond: [completedExpr, 1, 0] },
+					},
+					cancelledOrders: {
+						$sum: { $cond: [cancelledExpr, 1, 0] },
+					},
+					totalRevenueKobo: {
+						$sum: {
+							$cond: [
+								completedExpr,
+								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
+								0,
+							],
+						},
+					},
+					totalFoodSubtotalKobo: {
+						$sum: {
+							$cond: [completedExpr, "$subtotalKobo", 0],
+						},
+					},
+					totalCommissionKobo: {
+						$sum: {
+							$cond: [
+								completedExpr,
+								{ $ifNull: ["$prechopCommissionKobo", 0] },
+								0,
+							],
+						},
+					},
+					totalDeliveryEarningsKobo: {
+						$sum: {
+							$cond: [completedExpr, "$deliveryFeeKobo", 0],
+						},
+					},
+					totalVendorSettlementKobo: {
+						$sum: {
+							$cond: [
+								completedExpr,
+								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
+								0,
+							],
+						},
+					},
+				},
+			},
+			{ $sort: { _id: 1 } },
+		]);
+
+		let totalOrders = 0;
+		let completedOrders = 0;
+		let cancelledOrders = 0;
+		let totalRevenueKobo = 0;
+		let totalFoodSubtotalKobo = 0;
+		let totalCommissionKobo = 0;
+		let totalDeliveryEarningsKobo = 0;
+		let totalVendorSettlementKobo = 0;
+		const days = rows.map((row) => {
+			totalOrders += row.totalOrders;
+			completedOrders += row.completedOrders;
+			cancelledOrders += row.cancelledOrders;
+			totalRevenueKobo += row.totalRevenueKobo;
+			totalFoodSubtotalKobo += row.totalFoodSubtotalKobo;
+			totalCommissionKobo += row.totalCommissionKobo;
+			totalDeliveryEarningsKobo += row.totalDeliveryEarningsKobo;
+			totalVendorSettlementKobo += row.totalVendorSettlementKobo;
+			return {
+				date: new Date(`${row._id}T00:00:00.000Z`),
+				totalOrders: row.totalOrders,
+				completedOrders: row.completedOrders,
+				cancelledOrders: row.cancelledOrders,
+				totalRevenueKobo: row.totalRevenueKobo,
+				totalFoodSubtotalKobo: row.totalFoodSubtotalKobo,
+				totalCommissionKobo: row.totalCommissionKobo,
+				totalDeliveryEarningsKobo: row.totalDeliveryEarningsKobo,
+				totalVendorSettlementKobo: row.totalVendorSettlementKobo,
+				avgOrderValueKobo:
+					row.completedOrders > 0
+						? Math.round(row.totalRevenueKobo / row.completedOrders)
+						: 0,
+			};
+		});
+		const resolvedOrders = completedOrders + cancelledOrders;
+		return {
+			days,
+			totalOrders,
+			completedOrders,
+			cancelledOrders,
+			totalRevenueKobo,
+			totalFoodSubtotalKobo,
+			totalCommissionKobo,
+			totalDeliveryEarningsKobo,
+			totalVendorSettlementKobo,
+			avgOrderValueKobo:
+				completedOrders > 0
+					? Math.round(totalRevenueKobo / completedOrders)
+					: 0,
+			completionRate:
+				resolvedOrders > 0 ? (completedOrders / resolvedOrders) * 100 : 0,
+		};
+	} catch {
+		return empty;
 	}
 }
 

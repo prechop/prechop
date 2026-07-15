@@ -17,7 +17,7 @@ import {
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { fetcher } from "@/constants/fetcher";
-import { formatDate, formatKobo } from "@/constants/formatters";
+import { formatDate, formatDateTime, formatKobo } from "@/constants/formatters";
 
 interface Snapshot {
 	id?: string;
@@ -27,6 +27,10 @@ interface Snapshot {
 	completedOrders: number;
 	cancelledOrders: number;
 	totalRevenueKobo: number;
+	totalFoodSubtotalKobo?: number;
+	totalCommissionKobo?: number;
+	totalDeliveryEarningsKobo?: number;
+	totalVendorSettlementKobo?: number;
 	avgOrderValueKobo: number;
 	avgRatingForDay?: number;
 }
@@ -34,10 +38,25 @@ interface Analytics {
 	snapshots: Snapshot[];
 	lifetime: {
 		totalOrders: number;
+		completedOrders: number;
+		cancelledOrders: number;
+		totalRevenueKobo: number;
+		totalFoodSubtotalKobo?: number;
+		totalCommissionKobo?: number;
+		totalDeliveryEarningsKobo?: number;
+		totalVendorSettlementKobo?: number;
+		avgOrderValueKobo: number;
 		rating: number;
 		totalReviews: number;
 		completionRate: number;
 	};
+	reviews: Array<{
+		id: string;
+		buyerName?: string;
+		rating: number;
+		comment?: string;
+		createdAt: string;
+	}>;
 }
 
 const DayCard = styled(Card)`
@@ -65,15 +84,31 @@ export default function EarningsWrapper() {
 	);
 
 	const totalRevenue = snapshots.reduce(
-		(s, x) => s + (x.totalRevenueKobo ?? 0),
+		(s, x) =>
+			s +
+			(x.totalVendorSettlementKobo ??
+				x.totalRevenueKobo ??
+				0),
 		0,
 	);
-	const totalOrders = snapshots.reduce((s, x) => s + (x.totalOrders ?? 0), 0);
-	const completed = snapshots.reduce(
-		(s, x) => s + (x.completedOrders ?? 0),
-		0,
-	);
-	const avgOrder = completed > 0 ? Math.round(totalRevenue / completed) : 0;
+	const totalFoodSubtotal =
+		data.lifetime.totalFoodSubtotalKobo ??
+		snapshots.reduce((s, x) => s + (x.totalFoodSubtotalKobo ?? 0), 0);
+	const totalCommission =
+		data.lifetime.totalCommissionKobo ??
+		snapshots.reduce((s, x) => s + (x.totalCommissionKobo ?? 0), 0);
+	const totalDelivery =
+		data.lifetime.totalDeliveryEarningsKobo ??
+		snapshots.reduce((s, x) => s + (x.totalDeliveryEarningsKobo ?? 0), 0);
+	const completedOrders =
+		data.lifetime.completedOrders ??
+		snapshots.reduce((s, x) => s + (x.completedOrders ?? 0), 0);
+	const avgOrder =
+		data.lifetime.avgOrderValueKobo ??
+		(completedOrders > 0 ? Math.round(totalRevenue / completedOrders) : 0);
+	const completionRate =
+		Math.round((data.lifetime.completionRate ?? 0) * 100) / 100;
+	const reviews = data.reviews ?? [];
 
 	return (
 		<FadeIn>
@@ -90,13 +125,14 @@ export default function EarningsWrapper() {
 						value={formatKobo(totalRevenue)}
 						icon="💰"
 						tone="var(--pc-color-accent)"
-						hint="Across all sales"
+						hint="Final vendor settlement"
 					/>
 					<StatCard
 						label="Orders"
-						value={totalOrders}
+						value={completedOrders}
 						icon="🧾"
 						tone="var(--pc-color-primary)"
+						hint="Completed paid orders"
 					/>
 					<StatCard
 						label="Avg order value"
@@ -119,22 +155,38 @@ export default function EarningsWrapper() {
 				<Row $gap={12} $wrap>
 					<div style={{ flex: 1, minWidth: 160 }}>
 						<StatCard
-							label="Lifetime orders"
-							value={data.lifetime.totalOrders}
-							icon="📦"
-							tone="var(--pc-color-primary)"
+							label="Completion rate"
+							value={`${completionRate}%`}
+							icon="✅"
+							tone="var(--pc-color-accent)"
+							hint="Completed / resolved orders"
 						/>
 					</div>
 					<div style={{ flex: 1, minWidth: 160 }}>
 						<StatCard
-							label="Completion rate"
-							value={`${
-								Math.round(
-									(data.lifetime.completionRate ?? 0) * 100,
-								) / 100
-							}%`}
-							icon="✅"
+							label="Food subtotal"
+							value={formatKobo(totalFoodSubtotal)}
+							icon="🍽"
+							tone="var(--pc-color-primary)"
+							hint="Before commission"
+						/>
+					</div>
+					<div style={{ flex: 1, minWidth: 160 }}>
+						<StatCard
+							label="Prechop commission"
+							value={formatKobo(totalCommission)}
+							icon="%"
+							tone="var(--pc-color-danger)"
+							hint="8% of food subtotal"
+						/>
+					</div>
+					<div style={{ flex: 1, minWidth: 160 }}>
+						<StatCard
+							label="Delivery earnings"
+							value={formatKobo(totalDelivery)}
+							icon="🛵"
 							tone="var(--pc-color-accent)"
+							hint="Passed to vendor"
 						/>
 					</div>
 				</Row>
@@ -184,13 +236,69 @@ export default function EarningsWrapper() {
 										style={{ textAlign: "right" }}
 									>
 										<Amount>
-											{formatKobo(s.totalRevenueKobo)}
+											{formatKobo(
+												s.totalVendorSettlementKobo ??
+													s.totalRevenueKobo,
+											)}
 										</Amount>
 										<Text $muted $size={12}>
 											{s.totalOrders} order
 											{s.totalOrders === 1 ? "" : "s"}
 										</Text>
+										<Text $muted $size={12}>
+											Food{" "}
+											{formatKobo(
+												s.totalFoodSubtotalKobo ?? 0,
+											)}{" "}
+											· Commission{" "}
+											{formatKobo(
+												s.totalCommissionKobo ?? 0,
+											)}{" "}
+											· Delivery{" "}
+											{formatKobo(
+												s.totalDeliveryEarningsKobo ??
+													0,
+											)}
+										</Text>
 									</Stack>
+								</Row>
+							</DayCard>
+						))}
+					</Stack>
+				)}
+
+				<SectionHeader title="Customer reviews" icon="★" />
+				{reviews.length === 0 ? (
+					<EmptyState
+						icon="★"
+						title="No customer reviews yet"
+						description="Reviews from completed customer orders will show here."
+					/>
+				) : (
+					<Stack $gap={10}>
+						{reviews.map((review) => (
+							<DayCard key={review.id}>
+								<Row
+									$justify="space-between"
+									$align="flex-start"
+									$gap={12}
+								>
+									<Stack $gap={6}>
+										<Row $gap={8} $align="center" $wrap>
+											<Text $weight={800}>
+												{review.buyerName || "Customer"}
+											</Text>
+											<Badge $tone="gold">
+												{"★".repeat(review.rating)}
+											</Badge>
+										</Row>
+										<Text $size={14}>
+											{review.comment || "No written comment."}
+										</Text>
+									</Stack>
+									<Text $muted $size={12}>
+										{formatDateTime(review.createdAt)}
+									</Text>
 								</Row>
 							</DayCard>
 						))}

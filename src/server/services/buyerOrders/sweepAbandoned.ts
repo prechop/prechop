@@ -1,8 +1,10 @@
 import {
 	findAbandonedBuyerOrderIdsDB,
+	findExpiredExternalPaymentOrderIdsDB,
 	getBuyerOrderByIdDB,
 	markBuyerOrderCancelledDB,
 	markPaymentAbandonedDB,
+	markPaymentExpiredDB,
 	OrderStatus,
 } from "../../models";
 import { getSiteConfigs } from "../siteConfigs";
@@ -18,18 +20,32 @@ export async function sweepAbandonedOrders(): Promise<number> {
 	const ids = await findAbandonedBuyerOrderIdsDB({
 		olderThanMinutes: config.abandonedOrderMinutes,
 	});
+	const externalIds = await findExpiredExternalPaymentOrderIdsDB({
+		olderThanMinutes: config.externalPaymentLinkTtlMinutes,
+	});
 	let cancelled = 0;
-	for (const id of ids) {
+	for (const id of [...ids, ...externalIds]) {
 		const order = await getBuyerOrderByIdDB({ id });
 		if (!order) continue;
+		const external =
+			order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT;
 		const done = await markBuyerOrderCancelledDB({
 			id,
-			reason: "Payment not completed in time.",
+			reason: external
+				? "External payment request expired."
+				: "Payment not completed in time.",
 			cancelledBy: "system",
-			fromStatuses: [OrderStatus.PENDING_PAYMENT],
+			fromStatuses: [
+				OrderStatus.PENDING_PAYMENT,
+				OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+			],
 		});
 		if (!done) continue;
-		await markPaymentAbandonedDB({ buyerOrderId: id });
+		if (external) {
+			await markPaymentExpiredDB({ buyerOrderId: id });
+		} else {
+			await markPaymentAbandonedDB({ buyerOrderId: id });
+		}
 		await releaseSlots(
 			order.items.map((i) => ({
 				dailyOrderItemId: i.dailyOrderItemId.toString(),

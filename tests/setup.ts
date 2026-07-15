@@ -43,5 +43,6 @@ process.env.AWS_S3_BUCKET_NAME = "vitest-fake-bucket";
 process.env.AWS_ACCESS_KEY_ID = "test-aws-access-key-id-not-real";
 process.env.AWS_SECRET_ACCESS_KEY = "vitest-fake-secret-key-not-real-000000000";
 
-process.env.PLATFORM_FEE_BUYER_KOBO = "5000";
-process.env.PLATFORM_FEE_VENDOR_KOBO = "10000";
+process.env.PLATFORM_FEE_VENDOR_PERCENT = "8";
+process.env.PLATFORM_FEE_BUYER_PERCENT = "3";
+process.env.PLATFORM_FEE_BUYER_MAX_KOBO = "20000";

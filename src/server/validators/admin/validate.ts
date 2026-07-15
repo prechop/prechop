@@ -88,6 +88,7 @@ export const updateSiteConfigsSchema = zod
 		platformFeeVendorKobo: zod.number().int().min(0).optional(),
 		slotHoldTtlSeconds: zod.number().int().min(0).optional(),
 		abandonedOrderMinutes: zod.number().int().min(0).optional(),
+		externalPaymentLinkTtlMinutes: zod.number().int().min(1).optional(),
 		reviewWindowHours: zod.number().int().min(0).optional(),
 		cutoffWarningMinutes: zod.number().int().min(0).optional(),
 		whatsappTvEnabled: zod.boolean().optional(),

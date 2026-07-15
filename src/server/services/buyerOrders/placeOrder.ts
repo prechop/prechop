@@ -1,5 +1,9 @@
+import crypto from "node:crypto";
 import mongoose from "mongoose";
 import {
+	APP_URL,
+	calculateBuyerServiceFeeKobo,
+	calculateVendorCommissionKobo,
 	conflict,
 	ErrCannotOrderOwnListing,
 	ErrCutoffPassed,
@@ -11,6 +15,7 @@ import {
 	hash,
 	koboToNaira,
 	notFound,
+	serviceUnavailable,
 	slotUnavailable,
 	sumKobo,
 	validationError,
@@ -23,14 +28,18 @@ import {
 	FulfillmentType,
 	getDailyOrderByIdDB,
 	getVendorProfileByIdDB,
+	OrderStatus,
+	PaymentStatus,
+	VendorStatus,
 } from "../../models";
 import type { IBuyerOrderItem } from "../../models/buyerOrders/types";
 import { paystackProvider } from "../../providers";
-import { getSiteConfigs } from "../siteConfigs";
+import { getSiteConfigs, MARKETPLACE_UNAVAILABLE_MESSAGE } from "../siteConfigs";
 import { releaseSlots, reserveSlots, type SlotRequest } from "./slots";
 
 export interface PlaceOrderInput {
 	dailyOrderId: string;
+	paymentMode?: "SELF" | "PAY_FOR_ME";
 	fulfillmentType: FulfillmentType;
 	deliveryHostelName?: string;
 	deliveryRoomNumber?: string;
@@ -40,6 +49,10 @@ export interface PlaceOrderInput {
 		quantity: number;
 		selectedOptionIds?: string[];
 	}>;
+}
+
+function generateExternalPaymentToken(): string {
+	return crypto.randomBytes(32).toString("base64url");
 }
 
 export async function placeOrder({
@@ -52,6 +65,12 @@ export async function placeOrder({
 	input: PlaceOrderInput;
 }) {
 	const config = await getSiteConfigs();
+	if (!config.marketplaceEnabled) {
+		throw serviceUnavailable(
+			MARKETPLACE_UNAVAILABLE_MESSAGE,
+			"MARKETPLACE_UNAVAILABLE",
+		);
+	}
 	if (config.ordersKillSwitch || config.paymentsKillSwitch) {
 		throw validationError(
 			"Ordering is temporarily unavailable. Please try again shortly.",
@@ -153,16 +172,21 @@ export async function placeOrder({
 
 	// ── 3. Totals (server-authoritative) ────────────────────────────────
 	const subtotalKobo = sumKobo(...resolvedItems.map((i) => i.subtotalKobo));
-	const deliveryFeeKobo =
-		input.fulfillmentType === FulfillmentType.DELIVERY
-			? dailyOrder.deliveryFeeKobo
-			: 0;
-	const platformFeeKobo = config.platformFeeBuyerKobo;
-	const totalKobo = sumKobo(subtotalKobo, deliveryFeeKobo, platformFeeKobo);
-	const vendorAmountKobo = Math.max(
+	const deliveryFeeKobo = 0;
+	const prechopCommissionKobo =
+		calculateVendorCommissionKobo(subtotalKobo);
+	const vendorFoodAmountKobo = Math.max(
 		0,
-		sumKobo(subtotalKobo, deliveryFeeKobo) - config.platformFeeVendorKobo,
+		subtotalKobo - prechopCommissionKobo,
 	);
+	const vendorDeliveryAmountKobo = 0;
+	const vendorSettlementKobo = sumKobo(
+		vendorFoodAmountKobo,
+		vendorDeliveryAmountKobo,
+	);
+	const paymentProcessingFeeKobo = calculateBuyerServiceFeeKobo(subtotalKobo);
+	const totalKobo = sumKobo(subtotalKobo, paymentProcessingFeeKobo);
+	const platformFeeKobo = paymentProcessingFeeKobo;
 
 	// ── 4. Vendor payout account ─────────────────────────────────────────
 	const vendor = await getVendorProfileByIdDB({ id: dailyOrder.vendorId });
@@ -173,6 +197,11 @@ export async function placeOrder({
 	// effect. `buyerId` refs `users`; the listing's `vendorId` refs
 	// `vendorProfiles`, so we compare against the profile's owning `userId`.
 	if (vendor.userId?.toString() === buyerId) throw ErrCannotOrderOwnListing;
+	if (vendor.status === VendorStatus.SUSPENDED) {
+		throw conflict(
+			"This kitchen isn't accepting orders right now. Please try again later.",
+		);
+	}
 	// The vendor's open/closed switch is authoritative: a closed kitchen accepts
 	// no new orders, whatever its listings' individual cutoffs say. Checked before
 	// any slot reservation or payment side effect.
@@ -212,6 +241,19 @@ export async function placeOrder({
 	const orderNumber = generateOrderNumber();
 	const paystackRef = generatePaystackRef();
 	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
+	const payForMe = input.paymentMode === "PAY_FOR_ME";
+	const externalPaymentToken = payForMe
+		? generateExternalPaymentToken()
+		: undefined;
+	const externalPaymentTokenHash = externalPaymentToken
+		? hash(externalPaymentToken)
+		: undefined;
+	const externalPaymentExpiresAt = payForMe
+		? new Date(
+				Date.now() +
+					config.externalPaymentLinkTtlMinutes * 60 * 1000,
+			)
+		: undefined;
 	const holds = resolvedItems.map((i) => ({
 		dailyOrderItemId: i.dailyOrderItemId,
 		quantity: i.quantity,
@@ -219,27 +261,36 @@ export async function placeOrder({
 
 	// ── 6. Initialise Paystack (before any DB write) ─────────────────────
 	const buyerEmail = `buyer-${buyerId}@prechop-orders.ng`;
-	let paystackTx: { authorization_url: string; access_code: string };
-	try {
-		paystackTx = await paystackProvider.initializeTransaction({
-			email: buyerEmail,
-			amountKobo: totalKobo,
-			reference: paystackRef,
-			subaccountCode: vendor.paystackSubaccountCode,
-			vendorAmountKobo,
-			metadata: {
-				buyerOrderId,
-				dailyOrderId: input.dailyOrderId,
-				vendorId: dailyOrder.vendorId,
-				orderNumber,
-			},
-		});
-	} catch (error) {
-		await releaseSlots(holds);
-		console.error("Paystack init failed:", error);
-		throw validationError(
-			"Payment initialisation failed. Please try again.",
-		);
+	let paystackTx:
+		| { authorization_url: string; access_code: string }
+		| undefined;
+	if (!payForMe) {
+		try {
+			paystackTx = await paystackProvider.initializeTransaction({
+				email: buyerEmail,
+				amountKobo: totalKobo,
+				reference: paystackRef,
+				subaccountCode: vendor.paystackSubaccountCode,
+				vendorAmountKobo: vendorSettlementKobo,
+				metadata: {
+					buyerOrderId,
+					dailyOrderId: input.dailyOrderId,
+					vendorId: dailyOrder.vendorId,
+					orderNumber,
+					foodSubtotalKobo: subtotalKobo,
+					deliveryFeeKobo,
+					paymentProcessingFeeKobo,
+					prechopCommissionKobo,
+					vendorSettlementKobo,
+				},
+			});
+		} catch (error) {
+			await releaseSlots(holds);
+			console.error("Paystack init failed:", error);
+			throw validationError(
+				"Payment initialisation failed. Please try again.",
+			);
+		}
 	}
 
 	// ── 7. Persist order + payment ───────────────────────────────────────
@@ -262,6 +313,9 @@ export async function placeOrder({
 			vendorId: dailyOrder.vendorId,
 			buyerId,
 			campusId,
+			status: payForMe
+				? OrderStatus.AWAITING_EXTERNAL_PAYMENT
+				: OrderStatus.PENDING_PAYMENT,
 			fulfillmentType: input.fulfillmentType,
 			deliveryHostelName: input.deliveryHostelName,
 			deliveryRoomNumber: input.deliveryRoomNumber,
@@ -270,6 +324,11 @@ export async function placeOrder({
 			subtotalKobo,
 			deliveryFeeKobo,
 			platformFeeKobo,
+			paymentProcessingFeeKobo,
+			prechopCommissionKobo,
+			vendorFoodAmountKobo,
+			vendorDeliveryAmountKobo,
+			vendorSettlementKobo,
 			totalKobo,
 			items: resolvedItems,
 		},
@@ -285,11 +344,22 @@ export async function placeOrder({
 			buyerId,
 			vendorId: dailyOrder.vendorId,
 			paystackRef,
-			paystackAccessCode: paystackTx.access_code,
+			paystackAccessCode: paystackTx?.access_code,
+			paystackAuthorizationUrl: paystackTx?.authorization_url,
+			externalPaymentTokenHash,
+			externalPaymentExpiresAt,
 			amountKobo: totalKobo,
-			platformFeeKobo,
-			vendorAmountKobo,
+			platformFeeKobo: prechopCommissionKobo,
+			foodSubtotalKobo: subtotalKobo,
+			deliveryFeeKobo,
+			paymentProcessingFeeKobo,
+			prechopCommissionKobo,
+			vendorAmountKobo: vendorSettlementKobo,
+			vendorSettlementKobo,
 			idempotencyKey,
+			status: payForMe
+				? PaymentStatus.AWAITING_EXTERNAL_PAYMENT
+				: PaymentStatus.INITIALIZED,
 		},
 	});
 	if (!payment) {
@@ -303,9 +373,13 @@ export async function placeOrder({
 	return {
 		orderNumber,
 		buyerOrderId,
-		paymentUrl: paystackTx.authorization_url,
-		accessCode: paystackTx.access_code,
+		paymentUrl: paystackTx?.authorization_url,
+		accessCode: paystackTx?.access_code,
 		paystackRef,
+		externalPaymentUrl: externalPaymentToken
+			? `${APP_URL}/pay/${externalPaymentToken}`
+			: undefined,
+		externalPaymentExpiresAt: externalPaymentExpiresAt?.toISOString(),
 		totalKobo,
 		totalNaira: koboToNaira(totalKobo),
 	};

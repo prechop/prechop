@@ -22,6 +22,20 @@ import { fetcher } from "@/constants/fetcher";
 import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import type { VendorStorefront } from "@/types";
 
+interface ReviewResponse {
+	reviews: Array<{
+		id: string;
+		buyerName?: string;
+		rating: number;
+		comment?: string;
+		createdAt: string;
+	}>;
+	aggregate: { avg: number; count: number };
+}
+interface MarketplaceAvailability {
+	marketplaceEnabled: boolean;
+}
+
 const Wrap = styled(Stack)`
 	max-width: 720px;
 	margin: 0 auto;
@@ -119,18 +133,57 @@ const MenuThumb = styled.div<{ $src?: string }>`
 	font-size: 22px;
 `;
 
+function isMarketplaceUnavailable(error: unknown): boolean {
+	const err = error as {
+		response?: { status?: number; data?: { appCode?: string } };
+	};
+	return (
+		err?.response?.status === 503 ||
+		err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
+	);
+}
+
 export default function VendorStorefrontWrapper({
 	vendorId,
 }: {
 	vendorId: string;
 }) {
 	const router = useRouter();
+	const { data: availability, isLoading: availabilityLoading } =
+		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
+			refreshInterval: 10_000,
+		});
+	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
 	const { data, isLoading, error } = useSWR<VendorStorefront>(
-		`/vendors/${vendorId}/storefront`,
+		marketplaceEnabled ? `/vendors/${vendorId}/storefront` : null,
+		fetcher,
+	);
+	const { data: reviewData } = useSWR<ReviewResponse>(
+		marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
 		fetcher,
 	);
 
-	if (isLoading) return <PageLoader />;
+	if (availabilityLoading || isLoading) return <PageLoader />;
+	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
+		return (
+			<Wrap>
+				<Card $accent>
+					<Stack $gap={10}>
+						<Title $size={20}>Marketplace unavailable</Title>
+						<Text $muted>
+							The marketplace is temporarily unavailable.
+							Existing paid orders are still being fulfilled.
+						</Text>
+						<Row>
+							<Button onClick={() => router.push("/my-orders")}>
+								View my orders
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
 	if (error || !data) {
 		return (
 			<Wrap>
@@ -346,6 +399,40 @@ export default function VendorStorefrontWrapper({
 							))}
 						</Stack>
 					</Card>
+				)}
+			</Stack>
+
+			<Stack $gap={12}>
+				<SectionHeader title="Reviews" icon="★" />
+				{(reviewData?.reviews ?? []).length === 0 ? (
+					<EmptyState
+						icon="★"
+						title="No reviews yet"
+						description="Buyer reviews will appear here after completed orders."
+					/>
+				) : (
+					<Stack $gap={10}>
+						{(reviewData?.reviews ?? []).map((r) => (
+							<Card key={r.id}>
+								<Stack $gap={6}>
+									<Row $justify="space-between" $gap={10}>
+										<Text $weight={700}>
+											{r.buyerName || "Buyer"}
+										</Text>
+										<Text $weight={800}>
+											{"★".repeat(r.rating)}
+										</Text>
+									</Row>
+									{r.comment && (
+										<Text $size={14}>{r.comment}</Text>
+									)}
+									<Text $muted $size={12}>
+										{formatDate(r.createdAt)}
+									</Text>
+								</Stack>
+							</Card>
+						))}
+					</Stack>
 				)}
 			</Stack>
 		</Wrap>

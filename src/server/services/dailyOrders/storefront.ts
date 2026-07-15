@@ -12,6 +12,7 @@ import {
 	listMenuItemsByVendorDB,
 	VendorStatus,
 } from "../../models";
+import { assertMarketplaceEnabled } from "../siteConfigs";
 import { campusIdsInSameState } from "./queries";
 
 /** Public-safe subset of a vendor profile — no email/bank/payout secrets. */
@@ -74,6 +75,7 @@ export async function getVendorStorefront({
 	listings: IDailyOrder[];
 	menu: IMenuItem[];
 }> {
+	await assertMarketplaceEnabled();
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor || vendor.status !== VendorStatus.ACTIVE)
 		throw ErrVendorNotFound;
@@ -107,6 +109,7 @@ export async function searchMarketplace({
 	q: string;
 	limit?: number;
 }): Promise<VendorSearchHit[]> {
+	await assertMarketplaceEnabled();
 	const term = q.trim();
 	if (!term) return [];
 	const campusIds = await campusIdsInSameState(campusId);
@@ -147,5 +150,11 @@ export async function searchMarketplace({
 	// Best-rated shops first.
 	return hits
 		.filter((h): h is VendorSearchHit => h !== null)
-		.sort((a, b) => b.vendor.rating - a.vendor.rating);
+		.sort((a, b) => {
+			const openDelta =
+				Number(b.vendor.isOpenForOrders) -
+				Number(a.vendor.isOpenForOrders);
+			if (openDelta !== 0) return openDelta;
+			return b.vendor.rating - a.vendor.rating;
+		});
 }

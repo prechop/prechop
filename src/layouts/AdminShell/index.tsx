@@ -52,6 +52,12 @@ const nav: NavItemDef[] = [
 		permission: "payment:read",
 	},
 	{
+		href: "/admin/revenue",
+		label: "Revenue",
+		icon: "💹",
+		permission: "payment:read",
+	},
+	{
 		href: "/admin/reviews",
 		label: "Reviews",
 		icon: "⭐",

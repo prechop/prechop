@@ -2,6 +2,8 @@ import {
 	ErrOtpRateLimited,
 	generateOtp,
 	hashOtp,
+	NIGERIAN_PHONE_ERROR_MESSAGE,
+	normalizeNigerianMobilePhone,
 	validationError,
 } from "../../constants";
 import { Redis } from "../../databases";
@@ -19,7 +21,10 @@ export function otpRateLimitKey(phone: string): string {
 }
 
 export async function requestOtp(phone: string): Promise<{ message: string }> {
-	const rlKey = otpRateLimitKey(phone);
+	const normalizedPhone = normalizeNigerianMobilePhone(phone);
+	if (!normalizedPhone) throw validationError(NIGERIAN_PHONE_ERROR_MESSAGE);
+
+	const rlKey = otpRateLimitKey(normalizedPhone);
 	const attempts = await Redis.incr(rlKey);
 	if (attempts === 1) {
 		await Redis.expire(rlKey, OTP_RATE_LIMIT_WINDOW_SECONDS);
@@ -28,10 +33,10 @@ export async function requestOtp(phone: string): Promise<{ message: string }> {
 
 	const otp = generateOtp();
 	const hashed = await hashOtp(otp);
-	await Redis.setex(otpKey(phone), OTP_TTL_SECONDS, hashed);
+	await Redis.setex(otpKey(normalizedPhone), OTP_TTL_SECONDS, hashed);
 
 	try {
-		await sendchampProvider.sendOtp(phone, otp);
+		await sendchampProvider.sendOtp(normalizedPhone, otp);
 	} catch (error) {
 		console.error("OTP SMS delivery failed:", error);
 		throw validationError(

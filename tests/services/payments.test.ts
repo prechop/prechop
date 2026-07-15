@@ -20,6 +20,10 @@ import { createPaymentDB, getPaymentByRefDB } from "@/server/models/payments";
 import { paystackProvider } from "@/server/providers/paystack";
 import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
+import {
+	ensureReceiptUrl,
+	getPublicReceipt,
+} from "@/server/services/payments/receipts";
 import { refundBuyerOrder } from "@/server/services/payments/refundBuyerOrder";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
@@ -143,6 +147,35 @@ describe("handlePaystackWebhook", () => {
 		});
 		expect(again.received).toBe(true);
 		expect(again.orderNumber).toBeUndefined();
+	});
+
+	it("creates a sanitized public receipt link for a paid order", async () => {
+		const { order, ref, amountKobo } = await seedPaidOrder();
+		const body = JSON.stringify({
+			event: "charge.success",
+			data: {
+				reference: ref,
+				amount: amountKobo,
+				channel: "card",
+				status: "success",
+			},
+		});
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		const paid = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		const receiptUrl = await ensureReceiptUrl(paid!);
+		const token = new URL(receiptUrl).pathname.split("/").pop();
+		const receipt = await getPublicReceipt(token!);
+
+		expect(receipt).toEqual({
+			vendorName: "Test Kitchen",
+			orderNumber: order.orderNumber,
+			amountPaidKobo: amountKobo,
+			paymentStatus: "PAID",
+			paymentDate: paid!.paidAt!.toISOString(),
+			receiptLink: receiptUrl,
+		});
+		expect(JSON.stringify(receipt)).not.toContain(ref);
+		expect(JSON.stringify(receipt)).not.toContain(order.buyerId.toString());
 	});
 
 	it("rejects an amount mismatch", async () => {

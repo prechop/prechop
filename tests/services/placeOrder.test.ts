@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+	calculateBuyerServiceFeeKobo,
+	calculateVendorCommissionKobo,
+} from "@/constants/fees";
 import { generateShareableToken } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
 import { getBuyerOrderByIdDB } from "@/server/models/buyerOrders";
@@ -6,7 +10,12 @@ import {
 	createDailyOrderDB,
 	setDailyOrderStatusDB,
 } from "@/server/models/dailyOrders";
-import { DailyOrderStatus, FulfillmentType } from "@/server/models/enums";
+import {
+	DailyOrderStatus,
+	FulfillmentType,
+	OrderStatus,
+	PaymentStatus,
+} from "@/server/models/enums";
 import { getPaymentByOrderIdDB } from "@/server/models/payments";
 import {
 	createVendorProfileDB,
@@ -14,6 +23,7 @@ import {
 } from "@/server/models/vendorProfiles";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
+import { initializeBuyerPayment } from "@/server/services/payments";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 
@@ -110,19 +120,115 @@ describe("placeOrder service", () => {
 
 		expect(result.orderNumber).toMatch(/^PCH-/);
 		expect(result.paymentUrl).toBe("https://paystack.test/pay/abc");
-		// 2 * 150000 + platformFeeBuyer(5000) = 305000
-		expect(result.totalKobo).toBe(305000);
+		const subtotalKobo = 300000;
+		const processingFee = calculateBuyerServiceFeeKobo(subtotalKobo);
+		const commission = calculateVendorCommissionKobo(subtotalKobo);
+		const vendorSettlement = subtotalKobo - commission;
+		expect(result.totalKobo).toBe(subtotalKobo + processingFee);
 
 		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
 		expect(order).not.toBeNull();
-		expect(order!.subtotalKobo).toBe(300000);
-		expect(order!.platformFeeKobo).toBe(5000);
+		expect(order!.subtotalKobo).toBe(subtotalKobo);
+		expect(order!.paymentProcessingFeeKobo).toBe(processingFee);
+		expect(order!.prechopCommissionKobo).toBe(commission);
+		expect(order!.vendorSettlementKobo).toBe(vendorSettlement);
 
 		const payment = await getPaymentByOrderIdDB({
 			buyerOrderId: result.buyerOrderId,
 		});
 		expect(payment).not.toBeNull();
-		expect(payment!.amountKobo).toBe(305000);
+		expect(payment!.amountKobo).toBe(subtotalKobo + processingFee);
+		expect(payment!.platformFeeKobo).toBe(commission);
+		expect(payment!.paymentProcessingFeeKobo).toBe(processingFee);
+		expect(payment!.vendorAmountKobo).toBe(vendorSettlement);
+	});
+
+	it("creates a pay-for-me order without initializing Paystack immediately", async () => {
+		vi.mocked(paystackProvider.initializeTransaction).mockClear();
+		const campusId = oid();
+		const buyerId = oid();
+		const { listing, itemId } = await activeListing({ campusId });
+
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				paymentMode: "PAY_FOR_ME",
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+			},
+		});
+
+		expect(paystackProvider.initializeTransaction).not.toHaveBeenCalled();
+		expect(result.paymentUrl).toBeUndefined();
+		expect(result.externalPaymentUrl).toMatch(/\/pay\//);
+		expect(result.externalPaymentExpiresAt).toBeTruthy();
+
+		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
+		expect(order!.status).toBe(OrderStatus.AWAITING_EXTERNAL_PAYMENT);
+
+		const payment = await getPaymentByOrderIdDB({
+			buyerOrderId: result.buyerOrderId,
+		});
+		expect(payment!.status).toBe(
+			PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+		);
+		expect(payment!.externalPaymentTokenHash).toBeTruthy();
+		expect(payment!.paystackAccessCode).toBeUndefined();
+	});
+
+	it("lets the buyer pay a pay-for-me order through the normal Paystack flow", async () => {
+		vi.mocked(paystackProvider.initializeTransaction).mockClear();
+		const campusId = oid();
+		const buyerId = oid();
+		const { listing, itemId } = await activeListing({ campusId });
+
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				paymentMode: "PAY_FOR_ME",
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+			},
+		});
+
+		const payment = await getPaymentByOrderIdDB({
+			buyerOrderId: result.buyerOrderId,
+		});
+		expect(payment!.externalPaymentTokenHash).toBeTruthy();
+
+		const pay = await initializeBuyerPayment({
+			buyerId,
+			orderId: result.buyerOrderId,
+		});
+
+		expect(pay.paymentUrl).toBe("https://paystack.test/pay/abc");
+		expect(pay.paystackRef).toBe(payment!.paystackRef);
+		expect(paystackProvider.initializeTransaction).toHaveBeenCalledOnce();
+
+		const updatedOrder = await getBuyerOrderByIdDB({
+			id: result.buyerOrderId,
+		});
+		expect(updatedOrder!.status).toBe(OrderStatus.PENDING_PAYMENT);
+
+		const updatedPayment = await getPaymentByOrderIdDB({
+			buyerOrderId: result.buyerOrderId,
+		});
+		expect(updatedPayment!.status).toBe(PaymentStatus.INITIALIZED);
+		expect(updatedPayment!.paystackAuthorizationUrl).toBe(
+			"https://paystack.test/pay/abc",
+		);
+		expect(updatedPayment!.externalPaymentTokenHash).toBeUndefined();
+
+		const repeat = await initializeBuyerPayment({
+			buyerId,
+			orderId: result.buyerOrderId,
+		});
+		expect(repeat.paymentUrl).toBe("https://paystack.test/pay/abc");
+		expect(paystackProvider.initializeTransaction).toHaveBeenCalledOnce();
 	});
 
 	it("rejects a non-active listing", async () => {

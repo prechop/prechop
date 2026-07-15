@@ -128,17 +128,27 @@ export const GlobalStyle = createGlobalStyle`
      not a page scrolls — otherwise sticky/right-pinned header content (e.g. the
      Selling/Buying switcher) jumps horizontally between scrolling and
      non-scrolling routes. */
-  html { height: 100%; scrollbar-gutter: stable; }
-  html, body { padding: 0; margin: 0; }
+  html {
+    height: 100%;
+    scrollbar-gutter: stable;
+    overflow-x: clip;
+    background: var(--pc-bg);
+  }
+  html, body {
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+  }
   body {
     min-height: 100dvh;
-    width: 100%;
     background: var(--pc-bg);
     color: var(--pc-text);
     font-family: var(--pc-font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     line-height: 1.5;
+    overflow-x: clip;
   }
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; }

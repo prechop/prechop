@@ -39,60 +39,28 @@ const dailyOrderItemInputSchema = z.object({
 	optionGroups: z.array(optionGroupInputSchema).optional(),
 });
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+export const createDailyOrderSchema = z.object({
+	title: z.string().min(1),
+	scheduledDate: z.string().datetime(),
+	availableFrom: z.string().datetime().optional(),
+	cutoffTime: z.string().datetime(),
+	pickupAvailable: z.boolean().optional(),
+	deliveryAvailable: z.boolean().optional(),
+	deliveryFeeKobo: z.number().int().nonnegative().optional(),
+	draft: z.boolean().optional(),
+	items: z.array(dailyOrderItemInputSchema).min(1),
+});
 
-/**
- * Orders may not close later than the menu date's day. `scheduledDate` arrives
- * as the start (midnight) of the picked day, so the last valid close instant is
- * one day later. The single-timezone (WAT) client and this check agree to within
- * the harmless sub-day tolerance the `+ ONE_DAY_MS` window allows.
- */
-export function isCutoffWithinMenuDay(
-	scheduledDate: Date,
-	cutoffTime: Date,
-): boolean {
-	return cutoffTime.getTime() <= scheduledDate.getTime() + ONE_DAY_MS;
-}
-
-function cutoffWithinMenuDay(
-	scheduledDate: string,
-	cutoffTime: string,
-): boolean {
-	return isCutoffWithinMenuDay(new Date(scheduledDate), new Date(cutoffTime));
-}
-
-export const createDailyOrderSchema = z
-	.object({
-		title: z.string().min(1),
-		scheduledDate: z.string().datetime(),
-		availableFrom: z.string().datetime().optional(),
-		cutoffTime: z.string().datetime(),
-		pickupAvailable: z.boolean().optional(),
-		deliveryAvailable: z.boolean().optional(),
-		deliveryFeeKobo: z.number().int().nonnegative().optional(),
-		draft: z.boolean().optional(),
-		items: z.array(dailyOrderItemInputSchema).min(1),
-	})
-	.refine((v) => cutoffWithinMenuDay(v.scheduledDate, v.cutoffTime), {
-		message: "Orders must close on or before the menu date.",
-		path: ["cutoffTime"],
-	});
-
-export const createFromTemplateSchema = z
-	.object({
-		title: z.string().min(1),
-		scheduledDate: z.string().datetime(),
-		availableFrom: z.string().datetime().optional(),
-		cutoffTime: z.string().datetime(),
-		pickupAvailable: z.boolean().optional(),
-		deliveryAvailable: z.boolean().optional(),
-		deliveryFeeKobo: z.number().int().nonnegative().optional(),
-		draft: z.boolean().optional(),
-	})
-	.refine((v) => cutoffWithinMenuDay(v.scheduledDate, v.cutoffTime), {
-		message: "Orders must close on or before the menu date.",
-		path: ["cutoffTime"],
-	});
+export const createFromTemplateSchema = z.object({
+	title: z.string().min(1),
+	scheduledDate: z.string().datetime(),
+	availableFrom: z.string().datetime().optional(),
+	cutoffTime: z.string().datetime(),
+	pickupAvailable: z.boolean().optional(),
+	deliveryAvailable: z.boolean().optional(),
+	deliveryFeeKobo: z.number().int().nonnegative().optional(),
+	draft: z.boolean().optional(),
+});
 
 export const updateDailyOrderDraftSchema = z.object({
 	title: z.string().min(1).optional(),

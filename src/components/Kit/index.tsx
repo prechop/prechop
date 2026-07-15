@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import styled, { keyframes } from "styled-components";
 
 /* ---------------------------------------------------------------- PageHeader */
@@ -244,7 +244,7 @@ export function EmptyState({
 
 /* ------------------------------------------------------------------- Avatar */
 
-const AvatarWrap = styled.div<{ $size?: number; $src?: string }>`
+const AvatarWrap = styled.div<{ $size?: number }>`
 	width: ${(p) => p.$size ?? 40}px;
 	height: ${(p) => p.$size ?? 40}px;
 	flex: 0 0 auto;
@@ -255,10 +255,16 @@ const AvatarWrap = styled.div<{ $size?: number; $src?: string }>`
 	font-weight: 700;
 	font-size: ${(p) => (p.$size ?? 40) * 0.4}px;
 	color: #fff;
-	background: ${(p) => (p.$src ? `url(${p.$src}) center/cover` : "var(--pc-gradient-warm)")};
+	background: var(--pc-gradient-warm);
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 	overflow: hidden;
 	user-select: none;
+`;
+const AvatarImg = styled.img`
+	width: 100%;
+	height: 100%;
+	display: block;
+	object-fit: cover;
 `;
 
 function initials(name?: string) {
@@ -276,9 +282,21 @@ export function Avatar({
 	src?: string;
 	size?: number;
 }) {
+	const cleanSrc = src?.trim();
+	const [failedSrc, setFailedSrc] = useState<string | null>(null);
+	const showImage = !!cleanSrc && cleanSrc !== failedSrc;
+
 	return (
-		<AvatarWrap $size={size} $src={src} aria-hidden>
-			{!src && initials(name).toUpperCase()}
+		<AvatarWrap $size={size} aria-hidden>
+			{showImage ? (
+				<AvatarImg
+					src={cleanSrc}
+					alt=""
+					onError={() => setFailedSrc(cleanSrc)}
+				/>
+			) : (
+				initials(name).toUpperCase()
+			)}
 		</AvatarWrap>
 	);
 }

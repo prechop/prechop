@@ -25,6 +25,7 @@ export const POST = withApiHandler(
 				userId: auth.userId,
 				itemId,
 				imageUrl: parsed.data.imageUrl,
+				key: parsed.data.key,
 			});
 			return ok(item);
 		} catch (e) {

@@ -1,8 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { upsertAnalyticsSnapshotDB } from "@/server/models/analyticsSnapshots";
+import {
+	createBuyerOrderDB,
+	markBuyerOrderPaidDB,
+	setBuyerOrderStatusDB,
+} from "@/server/models/buyerOrders";
 import {
 	DailyOrderStatus,
 	DayOfWeek,
+	FulfillmentType,
+	OrderStatus,
 	VendorStatus,
 } from "@/server/models/enums";
 import { upsertTimetableEntryDB } from "@/server/models/timetableEntries";
@@ -331,16 +337,66 @@ describe("createDailyOrderFromTemplate", () => {
 });
 
 describe("getVendorAnalytics", () => {
-	it("returns snapshots + lifetime totals", async () => {
-		const { userId, vendorId } = await makeVendor();
-		await upsertAnalyticsSnapshotDB({
-			vendorId,
-			date: new Date("2026-07-01"),
-			payload: { totalOrders: 3, totalRevenueKobo: 300000 },
+	it("returns live completed earnings, completion rate and reviews", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const makeOrder = async (orderNumber: string, totalKobo: number) => {
+			const order = await createBuyerOrderDB({
+				payload: {
+					orderNumber,
+					dailyOrderId: oid(),
+					vendorId,
+					buyerId: oid(),
+					campusId,
+					fulfillmentType: FulfillmentType.PICKUP,
+					subtotalKobo: totalKobo,
+					deliveryFeeKobo: 0,
+					platformFeeKobo: 0,
+					totalKobo,
+					items: [
+						{
+							dailyOrderItemId: oid(),
+							menuItemId: oid(),
+							snapshotName: "Rice",
+							snapshotPriceKobo: totalKobo,
+							quantity: 1,
+							subtotalKobo: totalKobo,
+							selectedOptions: [],
+						},
+					],
+				},
+			});
+			if (!order) throw new Error("Failed to create buyer order");
+			return order._id.toString();
+		};
+		for (const [number, total] of [
+			["AOV-1", 1000],
+			["AOV-2", 3000],
+		] as const) {
+			const id = await makeOrder(number, total);
+			await markBuyerOrderPaidDB({ id });
+			await setBuyerOrderStatusDB({
+				id,
+				status: OrderStatus.COMPLETED,
+			});
+		}
+		await setBuyerOrderStatusDB({
+			id: await makeOrder("AOV-CANCELLED", 9000),
+			status: OrderStatus.CANCELLED,
 		});
+		const refundedId = await makeOrder("AOV-REFUNDED", 7000);
+		await markBuyerOrderPaidDB({ id: refundedId });
+		await setBuyerOrderStatusDB({
+			id: refundedId,
+			status: OrderStatus.REFUNDED,
+		});
+
 		const analytics = await getVendorAnalytics({ userId });
 		expect(analytics.snapshots.length).toBe(1);
-		expect(analytics.lifetime).toHaveProperty("rating");
+		expect(analytics.lifetime.completedOrders).toBe(2);
+		expect(analytics.lifetime.totalRevenueKobo).toBe(4000);
+		expect(analytics.lifetime.avgOrderValueKobo).toBe(2000);
+		expect(analytics.lifetime.completionRate).toBe(50);
+		expect(analytics.reviews).toEqual([]);
 	});
 
 	it("throws for a non-vendor user", async () => {

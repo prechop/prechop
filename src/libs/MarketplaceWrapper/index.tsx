@@ -21,7 +21,16 @@ import {
 import { fetcher } from "@/constants/fetcher";
 import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
-import type { Campus, DailyOrder, VendorSearchHit } from "@/types";
+import type {
+	Campus,
+	DailyOrder,
+	MarketplaceVendor,
+	VendorSearchHit,
+} from "@/types";
+
+interface MarketplaceAvailability {
+	marketplaceEnabled: boolean;
+}
 
 const CampusTag = styled.span`
 	display: inline-flex;
@@ -36,7 +45,7 @@ const CampusTag = styled.span`
 	border-radius: var(--pc-radius-pill);
 	box-shadow: var(--pc-shadow-sm);
 `;
-const ListingCard = styled(Card)`
+const VendorCard = styled(Card)`
 	padding: 0;
 	overflow: hidden;
 	display: flex;
@@ -63,7 +72,7 @@ const Thumbs = styled.div`
 	height: 100%;
 	background: var(--pc-surface-2);
 `;
-const Thumb = styled.div<{ $src?: string }>`
+const Thumb = styled.div<{ $src?: string | null }>`
 	flex: 1;
 	background: ${(p) =>
 		p.$src
@@ -80,7 +89,7 @@ const MediaShade = styled.div`
 	pointer-events: none;
 	background: linear-gradient(to top, rgba(0, 0, 0, 0.28), transparent 55%);
 `;
-const CutoffFloat = styled.div`
+const BadgeFloat = styled.div`
 	position: absolute;
 	top: 10px;
 	right: 10px;
@@ -94,7 +103,7 @@ const Foot = styled(Row)`
 	padding-top: var(--pc-space-2);
 	border-top: 1px solid var(--pc-border);
 `;
-const OrderCta = styled.span`
+const Cta = styled.span`
 	font-weight: 700;
 	font-size: 14px;
 	color: var(--pc-color-primary);
@@ -102,7 +111,7 @@ const OrderCta = styled.span`
 const Chips = styled(Row)`
 	flex-wrap: wrap;
 `;
-const ShopName = styled.span`
+const Meta = styled.span`
 	font-size: 12.5px;
 	font-weight: 700;
 	color: var(--pc-text-muted);
@@ -112,16 +121,6 @@ const ShopName = styled.span`
 `;
 const SearchWrap = styled.div`
 	margin: var(--pc-space-2) 0 var(--pc-space-4);
-`;
-const HitCard = styled(Card)`
-	transition: box-shadow var(--pc-dur) var(--pc-ease);
-	&:hover {
-		box-shadow: var(--pc-shadow-lg);
-	}
-`;
-const HitLink = styled(Link)`
-	color: inherit;
-	display: block;
 `;
 const MatchTag = styled.span`
 	display: inline-flex;
@@ -134,29 +133,74 @@ const MatchTag = styled.span`
 	text-transform: capitalize;
 `;
 
-function priceRange(o: DailyOrder): string {
-	const prices = o.items.map((i) => i.snapshotPriceKobo);
-	if (prices.length === 0) return "—";
+function isMarketplaceUnavailable(error: unknown): boolean {
+	const err = error as {
+		response?: { status?: number; data?: { appCode?: string } };
+	};
+	return (
+		err?.response?.status === 503 ||
+		err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
+	);
+}
+
+function vendorPriceRange(listings: DailyOrder[]): string {
+	const prices = listings.flatMap((o) =>
+		o.items.map((i) => i.snapshotPriceKobo),
+	);
+	if (prices.length === 0) return "View menu";
 	const min = Math.min(...prices);
 	const max = Math.max(...prices);
 	return min === max
 		? formatKobo(min)
-		: `${formatKobo(min)} – ${formatKobo(max)}`;
+		: `${formatKobo(min)} - ${formatKobo(max)}`;
+}
+
+function nextOpeningLabel(listings: DailyOrder[]): string {
+	const futureStarts = listings
+		.map((o) => o.availableFrom && new Date(o.availableFrom))
+		.filter((d): d is Date => !!d && d.getTime() > Date.now())
+		.sort((a, b) => a.getTime() - b.getTime());
+	if (futureStarts[0]) return `Opens ${formatDate(futureStarts[0])}`;
+	return "Check back later";
+}
+
+function fulfillmentLabel(listing?: DailyOrder): string {
+	if (!listing) return "Menu, prices and ratings";
+	return [
+		listing.pickupAvailable ? "Pickup" : null,
+		listing.deliveryAvailable ? "Delivery" : null,
+	]
+		.filter(Boolean)
+		.join(" / ");
+}
+
+function statusLabel(row: MarketplaceVendor): string {
+	if (!row.vendor.isOpenForOrders) return "Closed for orders";
+	const primary = row.listings[0];
+	if (!primary) return "Open";
+	if (primary.availableFrom && new Date(primary.availableFrom).getTime() > Date.now()) {
+		return nextOpeningLabel(row.listings);
+	}
+	const cutoff = timeUntil(primary.cutoffTime);
+	return cutoff === "closed" ? "Closed for orders" : cutoff;
 }
 
 export default function MarketplaceWrapper() {
 	const { user } = useAuth();
-	const campusId = user?.campusId;
-
 	const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
-	const { data, isLoading } = useSWR<DailyOrder[]>(
-		campusId
-			? `/daily-orders/marketplace?campusId=${campusId}&limit=20`
+	const campusId = user?.campusId ?? campuses?.[0]?.id;
+	const { data: availability, isLoading: availabilityLoading } =
+		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
+			refreshInterval: 10_000,
+		});
+	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
+	const { data, isLoading, error } = useSWR<MarketplaceVendor[]>(
+		campusId && marketplaceEnabled
+			? `/daily-orders/marketplace?campusId=${campusId}&limit=50`
 			: null,
 		fetcher,
 	);
 
-	// Comprehensive vendor search (shop name / menu / listing), across the state.
 	const [search, setSearch] = useState("");
 	const [debounced, setDebounced] = useState("");
 	useEffect(() => {
@@ -165,7 +209,7 @@ export default function MarketplaceWrapper() {
 	}, [search]);
 	const searching = debounced.length > 0;
 	const { data: hits, isLoading: hitsLoading } = useSWR<VendorSearchHit[]>(
-		campusId && searching
+		campusId && marketplaceEnabled && searching
 			? `/daily-orders/marketplace/search?campusId=${campusId}&q=${encodeURIComponent(debounced)}`
 			: null,
 		fetcher,
@@ -173,13 +217,13 @@ export default function MarketplaceWrapper() {
 
 	const campusName = campuses?.find((c) => c.id === campusId)?.name;
 
-	if (isLoading || !campusId) {
+	if (availabilityLoading || isLoading || !campusId) {
 		return (
 			<Stack $gap={0}>
 				<PageHeader
 					eyebrow="Marketplace"
-					title="Today's kitchens"
-					subtitle="Fresh listings from campus vendors, updated daily."
+					title="Campus kitchens"
+					subtitle="Browse food, prices, ratings and order windows."
 				/>
 				<Grid $min={260} $gap={16}>
 					{[0, 1, 2, 3, 4, 5].map((n) => (
@@ -197,17 +241,32 @@ export default function MarketplaceWrapper() {
 		);
 	}
 
-	const listings = data ?? [];
+	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
+		return (
+			<Stack $gap={0}>
+				<PageHeader
+					eyebrow="Marketplace"
+					title="Marketplace unavailable"
+					subtitle="Ordering is temporarily paused. Existing paid orders are still being fulfilled."
+				/>
+				<EmptyState
+					icon="pause"
+					title="The marketplace is temporarily unavailable"
+					description="Please check back later."
+				/>
+			</Stack>
+		);
+	}
+
+	const vendors = data ?? [];
 
 	return (
 		<Stack $gap={0}>
 			<PageHeader
 				eyebrow="Marketplace"
-				title="Today's kitchens"
-				subtitle="Order before they cook — reserve your plate from campus vendors serving today."
-				actions={
-					<CampusTag>📍 {campusName ?? "Your campus"}</CampusTag>
-				}
+				title="Campus kitchens"
+				subtitle="Browse vendors near you. Open kitchens appear first; closed kitchens stay visible for menus, prices and ratings."
+				actions={<CampusTag>{campusName ?? "Your campus"}</CampusTag>}
 			/>
 
 			<SearchWrap>
@@ -215,123 +274,91 @@ export default function MarketplaceWrapper() {
 					type="search"
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
-					placeholder="🔍 Search shops, dishes or listings near you…"
+					placeholder="Search shops, dishes or listings near you..."
 					aria-label="Search vendors"
 				/>
 			</SearchWrap>
 
 			{searching ? (
-				<SearchResults
-					hits={hits}
-					loading={hitsLoading}
-					q={debounced}
-				/>
-			) : listings.length === 0 ? (
+				<SearchResults hits={hits} loading={hitsLoading} q={debounced} />
+			) : vendors.length === 0 ? (
 				<EmptyState
-					icon="🍲"
-					title="No kitchens open right now"
-					description="Check back soon — vendors post fresh listings every day."
+					icon="food"
+					title="No kitchens found here"
+					description="There are no eligible vendors in this location yet."
 				/>
 			) : (
-				<Grid $min={260} $gap={16}>
-					{listings.map((o, i) => {
-						const closed = timeUntil(o.cutoffTime) === "closed";
-						const comingSoon = o.availableFrom
-							? new Date(o.availableFrom).getTime() > Date.now()
-							: false;
-						return (
-							<FadeIn key={o.id} $delay={i * 45}>
-								<ListingCard>
-									<CardLink href={`/o/${o.shareableToken}`}>
-										<Media>
-											<CutoffFloat>
-												<Badge
-													$tone={
-														comingSoon
-															? "primary"
-															: closed
-																? "danger"
-																: "warning"
-													}
-												>
-													{comingSoon
-														? `🔜 Starts ${formatDate(o.availableFrom as string)}`
-														: closed
-															? "⛔ Closed"
-															: `⏱ ${timeUntil(o.cutoffTime)}`}
-												</Badge>
-											</CutoffFloat>
-											<Thumbs>
-												{o.items
-													.slice(0, 3)
-													.map((it) => (
-														<Thumb
-															key={it.id}
-															$src={
-																it.snapshotImageUrl
-															}
-														>
-															{it.snapshotImageUrl
-																? ""
-																: "🍲"}
-														</Thumb>
-													))}
-												{o.items.length === 0 && (
-													<Thumb>🍲</Thumb>
-												)}
-											</Thumbs>
-											<MediaShade />
-										</Media>
-										<Body $gap={10}>
-											<Title $size={17}>{o.title}</Title>
-											{o.vendorName && (
-												<ShopName>
-													🏪 {o.vendorName}
-												</ShopName>
-											)}
-											<Chips $gap={6}>
-												<Badge $tone="muted">
-													{o.items.length} item
-													{o.items.length === 1
-														? ""
-														: "s"}
-												</Badge>
-												<Badge $tone="gold">
-													{priceRange(o)}
-												</Badge>
-											</Chips>
-											<Foot
-												$justify="space-between"
-												$align="center"
-											>
-												<Text $size={13} $muted>
-													{o.pickupAvailable &&
-														"Pickup"}
-													{o.pickupAvailable &&
-														o.deliveryAvailable &&
-														" · "}
-													{o.deliveryAvailable &&
-														"Delivery"}
-												</Text>
-												<OrderCta>
-													{comingSoon
-														? "Coming soon"
-														: "Order →"}
-												</OrderCta>
-											</Foot>
-										</Body>
-									</CardLink>
-								</ListingCard>
-							</FadeIn>
-						);
-					})}
-				</Grid>
+				<VendorGrid vendors={vendors} />
 			)}
 		</Stack>
 	);
 }
 
-/** Vendor-grouped results for the comprehensive marketplace search. */
+function VendorGrid({ vendors }: { vendors: MarketplaceVendor[] }) {
+	return (
+		<Grid $min={260} $gap={16}>
+			{vendors.map((row, i) => {
+				const primary = row.listings[0];
+				const open = row.vendor.isOpenForOrders;
+				return (
+					<FadeIn key={row.vendor.id} $delay={i * 45}>
+						<VendorCard>
+							<CardLink href={`/v/${row.vendor.id}`}>
+								<Media>
+									<BadgeFloat>
+										<Badge $tone={open ? "success" : "danger"}>
+											{statusLabel(row)}
+										</Badge>
+									</BadgeFloat>
+									<Thumbs>
+										{primary?.items.slice(0, 3).map((it) => (
+											<Thumb key={it.id} $src={it.snapshotImageUrl}>
+												{it.snapshotImageUrl ? "" : "food"}
+											</Thumb>
+										))}
+										{!primary && (
+											<Thumb $src={row.vendor.profileImageUrl}>
+												{row.vendor.profileImageUrl ? "" : "shop"}
+											</Thumb>
+										)}
+									</Thumbs>
+									<MediaShade />
+								</Media>
+								<Body $gap={10}>
+									<Title $size={17}>
+										{row.vendor.businessName ?? "Campus kitchen"}
+									</Title>
+									<Meta>
+										Rating {row.vendor.rating.toFixed(1)} / 5 -
+										{row.vendor.totalReviews} review
+										{row.vendor.totalReviews === 1 ? "" : "s"}
+									</Meta>
+									<Chips $gap={6}>
+										<Badge $tone={open ? "success" : "muted"}>
+											{open ? "Accepting orders" : "Closed"}
+										</Badge>
+										<Badge $tone="gold">
+											{vendorPriceRange(row.listings)}
+										</Badge>
+									</Chips>
+									<Foot $justify="space-between" $align="center">
+										<Text $size={13} $muted>
+											{open
+												? fulfillmentLabel(primary)
+												: nextOpeningLabel(row.listings)}
+										</Text>
+										<Cta>View kitchen -&gt;</Cta>
+									</Foot>
+								</Body>
+							</CardLink>
+						</VendorCard>
+					</FadeIn>
+				);
+			})}
+		</Grid>
+	);
+}
+
 function SearchResults({
 	hits,
 	loading,
@@ -359,77 +386,25 @@ function SearchResults({
 	if (results.length === 0) {
 		return (
 			<EmptyState
-				icon="🔍"
-				title={`No matches for “${q}”`}
-				description="Try another shop name, dish or listing — we search kitchens across your state."
+				icon="search"
+				title={`No matches for "${q}"`}
+				description="Try another shop name, dish or listing."
 			/>
 		);
 	}
 	return (
 		<Stack $gap={12}>
 			<Text $muted $size={13}>
-				{results.length} shop{results.length === 1 ? "" : "s"} match “
-				{q}”
+				{results.length} shop{results.length === 1 ? "" : "s"} match "{q}"
 			</Text>
-			{results.map((hit, i) => (
-				<FadeIn key={hit.vendor.id} $delay={i * 40}>
-					<HitCard>
-						<HitLink href={`/v/${hit.vendor.id}`}>
-							<Row
-								$justify="space-between"
-								$align="center"
-								$gap={10}
-							>
-								<Stack $gap={4}>
-									<Row $gap={8} $align="center" $wrap>
-										<Text $weight={700} $size={16}>
-											🏪{" "}
-											{hit.vendor.businessName ??
-												"Campus kitchen"}
-										</Text>
-										{hit.matchedOn.map((m) => (
-											<MatchTag key={m}>{m}</MatchTag>
-										))}
-									</Row>
-									<Text $muted $size={12.5}>
-										⭐ {hit.vendor.rating.toFixed(1)} ·{" "}
-										{hit.listings.length} live listing
-										{hit.listings.length === 1 ? "" : "s"}
-										{hit.vendor.state
-											? ` · ${hit.vendor.state}`
-											: ""}
-									</Text>
-								</Stack>
-								<OrderCta>View shop →</OrderCta>
-							</Row>
-							{hit.listings.length > 0 && (
-								<Chips $gap={6} style={{ marginTop: 10 }}>
-									{hit.listings.slice(0, 3).map((o) => {
-										const closed =
-											timeUntil(o.cutoffTime) ===
-											"closed";
-										return (
-											<Badge
-												key={o.id}
-												$tone={
-													closed
-														? "danger"
-														: "warning"
-												}
-											>
-												{o.title} ·{" "}
-												{closed
-													? "closed"
-													: timeUntil(o.cutoffTime)}
-											</Badge>
-										);
-									})}
-								</Chips>
-							)}
-						</HitLink>
-					</HitCard>
-				</FadeIn>
-			))}
+			<Row $gap={6} $wrap>
+				{Array.from(new Set(results.flatMap((hit) => hit.matchedOn))).map(
+					(match) => (
+						<MatchTag key={match}>{match}</MatchTag>
+					),
+				)}
+			</Row>
+			<VendorGrid vendors={results} />
 		</Stack>
 	);
 }
