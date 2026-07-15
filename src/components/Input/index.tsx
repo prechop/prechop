@@ -26,10 +26,35 @@ const Label = styled.label`
 	letter-spacing: -0.01em;
 `;
 
+const Hint = styled.span`
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--pc-text-muted);
+	line-height: 1.45;
+`;
+
+/** Error text is never colour-only: it is prefixed with an icon and wired to the
+ *  field via `aria-describedby`, so it survives both a colour-blind reader and a
+ *  screen reader.
+ *
+ *  Colour is `--pc-color-danger-ink`, NOT the raw `--pc-color-danger` brand hue.
+ *  Measured on `--pc-surface`, raw danger (#E5484D) is 3.91:1 in light and
+ *  4.49:1 in dark — both under the 4.5:1 AA floor for normal text (12px bold is
+ *  not "large"). The ink token measures 6.62:1 / 7.02:1. Same rule the Badge
+ *  component follows; see --pc-color-*-ink in styles/global.ts. */
+const ErrorText = styled.span`
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--pc-color-danger-ink);
+	line-height: 1.45;
+`;
+
 const controlStyles = `
 	width: 100%;
 	padding: 12px 15px;
-	border: 1.5px solid var(--pc-border);
+	/* The border is the field's only boundary, so it must clear WCAG 1.4.11
+	   (3:1) against the surface — --pc-border (1.27:1) does not. */
+	border: 1.5px solid var(--pc-input-border);
 	border-radius: var(--pc-radius-sm);
 	background: var(--pc-surface);
 	color: var(--pc-text);
@@ -41,7 +66,7 @@ const controlStyles = `
 		border-color: var(--pc-color-primary);
 		box-shadow: 0 0 0 4px var(--pc-color-primary-50);
 	}
-	&::placeholder { color: var(--pc-text-faint); }
+	&::placeholder { color: var(--pc-placeholder); }
 	&:disabled { opacity: 0.6; cursor: not-allowed; }
 `;
 
@@ -58,8 +83,51 @@ const StyledTextarea = styled.textarea`
 
 export function Input({
 	label,
+	hint,
+	error,
 	...rest
-}: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
+}: InputHTMLAttributes<HTMLInputElement> & {
+	label?: string;
+	/** Static helper text — units, worked examples. Always announced. */
+	hint?: ReactNode;
+	/** Validation message. Its presence also sets `aria-invalid`. */
+	error?: ReactNode;
+}) {
+	// The label used to be a bare <label> sibling with no `htmlFor` and the input
+	// had no `id`, so the two were never associated: clicking the label did
+	// nothing and a screen reader announced the field unlabelled. Generate an id
+	// (respecting a caller-supplied one) and wire label/hint/error to it.
+	const generatedId = useId();
+	const inputId = rest.id ?? `${generatedId}-input`;
+	const hintId = `${generatedId}-hint`;
+	const errorId = `${generatedId}-error`;
+	const describedBy =
+		[hint ? hintId : null, error ? errorId : null]
+			.filter(Boolean)
+			.join(" ") || undefined;
+
+	const describe = {
+		id: inputId,
+		"aria-describedby": describedBy,
+		"aria-invalid": error ? (true as const) : undefined,
+	};
+
+	const surround = (control: ReactNode) => (
+		<Field>
+			{label && <Label htmlFor={inputId}>{label}</Label>}
+			{control}
+			{hint && <Hint id={hintId}>{hint}</Hint>}
+			{/* `role="alert"` so a message that appears after a failed save is
+			    announced without the user having to hunt for it. */}
+			{error && (
+				<ErrorText id={errorId} role="alert">
+					<span aria-hidden>⚠ </span>
+					{error}
+				</ErrorText>
+			)}
+		</Field>
+	);
+
 	// No field in this app accepts a negative number (prices, quantities,
 	// counts, fees, TTLs, percentages — all ≥ 0). For `type="number"` inputs we
 	// therefore floor the value at 0 by default and strip any negative sign the
@@ -68,37 +136,30 @@ export function Input({
 	// can still pass their own `min`; only the anti-negative sanitising is forced.
 	if (rest.type === "number") {
 		const { min, onChange, onKeyDown, ...numberRest } = rest;
-		return (
-			<Field>
-				{label && <Label>{label}</Label>}
-				<StyledInput
-					{...numberRest}
-					type="number"
-					min={min ?? 0}
-					onKeyDown={(e) => {
-						// Block the characters that introduce a negative value
-						// (or exponent) before they ever land in the field.
-						if (e.key === "-" || e.key === "e" || e.key === "E")
-							e.preventDefault();
-						onKeyDown?.(e);
-					}}
-					onChange={(e) => {
-						// Belt-and-suspenders for paste/spinner/programmatic input:
-						// drop any minus sign so the stored value stays ≥ 0.
-						if (e.target.value.includes("-"))
-							e.target.value = e.target.value.replace(/-/g, "");
-						onChange?.(e);
-					}}
-				/>
-			</Field>
+		return surround(
+			<StyledInput
+				{...numberRest}
+				{...describe}
+				type="number"
+				min={min ?? 0}
+				onKeyDown={(e) => {
+					// Block the characters that introduce a negative value
+					// (or exponent) before they ever land in the field.
+					if (e.key === "-" || e.key === "e" || e.key === "E")
+						e.preventDefault();
+					onKeyDown?.(e);
+				}}
+				onChange={(e) => {
+					// Belt-and-suspenders for paste/spinner/programmatic input:
+					// drop any minus sign so the stored value stays ≥ 0.
+					if (e.target.value.includes("-"))
+						e.target.value = e.target.value.replace(/-/g, "");
+					onChange?.(e);
+				}}
+			/>,
 		);
 	}
-	return (
-		<Field>
-			{label && <Label>{label}</Label>}
-			<StyledInput {...rest} />
-		</Field>
-	);
+	return surround(<StyledInput {...rest} {...describe} />);
 }
 
 /* -------------------------------------------------------------------- Select */
@@ -145,7 +206,7 @@ const selectStyles: StylesConfig<SelectOption, false> = {
 		borderStyle: "solid",
 		borderColor: state.isFocused
 			? "var(--pc-color-primary)"
-			: "var(--pc-border)",
+			: "var(--pc-input-border)",
 		borderRadius: "var(--pc-radius-sm)",
 		boxShadow: state.isFocused
 			? "0 0 0 4px var(--pc-color-primary-50)"
@@ -157,7 +218,7 @@ const selectStyles: StylesConfig<SelectOption, false> = {
 		"&:hover": {
 			borderColor: state.isFocused
 				? "var(--pc-color-primary)"
-				: "var(--pc-border)",
+				: "var(--pc-input-border)",
 		},
 	}),
 	valueContainer: (base) => ({ ...base, padding: "2px 15px" }),
@@ -165,7 +226,7 @@ const selectStyles: StylesConfig<SelectOption, false> = {
 	input: (base) => ({ ...base, color: "var(--pc-text)", fontSize: 15 }),
 	placeholder: (base) => ({
 		...base,
-		color: "var(--pc-text-faint)",
+		color: "var(--pc-placeholder)",
 		fontSize: 15,
 	}),
 	indicatorSeparator: () => ({ display: "none" }),
@@ -276,10 +337,15 @@ export function Textarea({
 	label,
 	...rest
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string }) {
+	// Same association wiring as <Input>: without a shared id/htmlFor the label
+	// was a bare sibling, so clicking it did nothing and a screen reader
+	// announced the textarea unlabelled. Respect a caller-supplied id.
+	const generatedId = useId();
+	const textareaId = rest.id ?? `${generatedId}-textarea`;
 	return (
 		<Field>
-			{label && <Label>{label}</Label>}
-			<StyledTextarea {...rest} />
+			{label && <Label htmlFor={textareaId}>{label}</Label>}
+			<StyledTextarea {...rest} id={textareaId} />
 		</Field>
 	);
 }

@@ -133,9 +133,7 @@ describe("getMarketplace — same-state scope", () => {
 		// Different state (Oyo) — hidden.
 		expect(ids).not.toContain(lO._id.toString());
 		// Each card carries the shop name.
-		const cardB = seenFromA.find(
-			(row) => row.vendor.id === vB.vendorId,
-		);
+		const cardB = seenFromA.find((row) => row.vendor.id === vB.vendorId);
 		expect(cardB?.vendor.businessName).toBe("Bola Buka");
 	});
 });

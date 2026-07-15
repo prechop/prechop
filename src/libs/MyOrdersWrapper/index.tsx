@@ -23,6 +23,7 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import { OrderAgainButton } from "@/libs/ReorderSheet";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
 const tone: Record<
@@ -48,13 +49,25 @@ const ACTIVE: OrderStatus[] = [
 	"READY",
 ];
 
-const CardLink = styled(Link)`
-	color: inherit;
-	display: block;
-`;
 const OrderCard = styled(Card)`
 	position: relative;
 	overflow: hidden;
+	color: inherit;
+`;
+/* Stretched-link overlay: the whole card is navigable, but the anchor is a
+   sibling of the reorder <button> (not an ancestor), so no interactive control
+   is ever nested inside an <a> (WCAG 4.1.2 / valid HTML). */
+const CardOverlayLink = styled(Link)`
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: inherit;
+`;
+/* Lifted above the overlay link so the reorder button stays independently
+   clickable and is not covered by the navigable overlay. */
+const ReorderRow = styled(Row)`
+	position: relative;
+	z-index: 2;
 `;
 const Thumb = styled.div`
 	width: 46px;
@@ -124,11 +137,15 @@ export default function MyOrdersWrapper() {
 				title="My orders"
 				subtitle="Every plate you've pre-ordered, from cutoff to pickup."
 				actions={
-					<Link href="/marketplace">
-						<Button $variant="secondary" $size="sm" $pill>
-							Browse kitchens
-						</Button>
-					</Link>
+					<Button
+						as={Link}
+						href="/marketplace"
+						$variant="secondary"
+						$size="sm"
+						$pill
+					>
+						Browse kitchens
+					</Button>
 				}
 			/>
 
@@ -139,9 +156,9 @@ export default function MyOrdersWrapper() {
 						title="No orders yet"
 						description="Browse today's kitchens and place your first order — freshly cooked, ready at cutoff."
 						action={
-							<Link href="/marketplace">
-								<Button $pill>Go to marketplace →</Button>
-							</Link>
+							<Button as={Link} href="/marketplace" $pill>
+								Go to marketplace →
+							</Button>
 						}
 					/>
 				</FadeIn>
@@ -177,64 +194,72 @@ export default function MyOrdersWrapper() {
 					<Stack $gap={12}>
 						{orders.map((o, i) => (
 							<FadeIn key={o.id} $delay={i * 45}>
-								<CardLink href={`/my-orders/${o.id}`}>
-									<OrderCard $hover>
-										<Stack $gap={12}>
-											<Row
-												$justify="space-between"
-												$align="flex-start"
-												$gap={12}
-											>
-												<Row $gap={12} $align="center">
-													<Thumb aria-hidden>
-														🍱
-													</Thumb>
-													<Stack $gap={2}>
-														<Text $weight={800}>
-															{o.orderNumber}
-														</Text>
-														<Text $muted $size={13}>
-															{formatDateTime(
-																o.createdAt,
-															)}
-														</Text>
-													</Stack>
-												</Row>
-												<Badge $tone={tone[o.status]}>
-													{statusLabel(o.status)}
-												</Badge>
-											</Row>
-											<Divider />
-											<Row
-												$justify="space-between"
-												$align="center"
-												$gap={10}
-											>
-												<Text $muted $size={13}>
-													{o.items.length} item
-													{o.items.length === 1
-														? ""
-														: "s"}{" "}
-													·{" "}
-													{o.fulfillmentType ===
-													"DELIVERY"
-														? "Delivery"
-														: "Pickup"}
-												</Text>
-												<Row $gap={8} $align="center">
+								<OrderCard $hover>
+									<CardOverlayLink
+										href={`/my-orders/${o.id}`}
+										aria-label={`Order ${o.orderNumber}`}
+									/>
+									<Stack $gap={12}>
+										<Row
+											$justify="space-between"
+											$align="flex-start"
+											$gap={12}
+										>
+											<Row $gap={12} $align="center">
+												<Thumb aria-hidden>🍱</Thumb>
+												<Stack $gap={2}>
 													<Text $weight={800}>
-														{formatKobo(
-															o.totalKobo,
+														{o.orderNumber}
+													</Text>
+													<Text $muted $size={13}>
+														{formatDateTime(
+															o.createdAt,
 														)}
 													</Text>
-													<Chevron aria-hidden>
-														›
-													</Chevron>
-												</Row>
+												</Stack>
 											</Row>
-										</Stack>
-									</OrderCard>
-								</CardLink>
+											<Badge $tone={tone[o.status]}>
+												{statusLabel(o.status)}
+											</Badge>
+										</Row>
+										<Divider />
+										<Row
+											$justify="space-between"
+											$align="center"
+											$gap={10}
+										>
+											<Text $muted $size={13}>
+												{o.items.length} item
+												{o.items.length === 1
+													? ""
+													: "s"}{" "}
+												·{" "}
+												{o.fulfillmentType ===
+												"DELIVERY"
+													? "Delivery"
+													: "Pickup"}
+											</Text>
+											<Row $gap={8} $align="center">
+												<Text $weight={800}>
+													{formatKobo(o.totalKobo)}
+												</Text>
+												<Chevron aria-hidden>›</Chevron>
+											</Row>
+										</Row>
+										{/* Reordering only makes sense once
+											    an order actually happened. */}
+										{o.status === "COMPLETED" && (
+											<ReorderRow $justify="flex-end">
+												<OrderAgainButton
+													orderId={o.id}
+													$variant="secondary"
+													$size="sm"
+													$pill
+												/>
+											</ReorderRow>
+										)}
+									</Stack>
+								</OrderCard>
 							</FadeIn>
 						))}
 					</Stack>

@@ -12,12 +12,28 @@ Fly/VPS) with a MongoDB replica set and a managed Redis.
 ## 2. Boot sequence
 
 `instrumentation.register()` → `bootstrap()`:
-1. `assertSecrets()` — refuses to start on missing/weak/duplicate JWT secrets or missing required env.
+1. `assertRuntimeConfig()` — validates config **before** marking the process bootstrapped, so a
+   process that fails config cannot skip the check on a retry and come up half-configured.
+   **In production it throws** (the container fails to start); everywhere else it warns.
 2. `connectMongoDB()` — singleton connection.
-3. `startCron()` — idempotent (`globalThis.__prechopCronInit`).
-4. register SIGINT/SIGTERM graceful shutdown (disconnect Mongo + Redis).
+3. `seedBuiltInIam()` — idempotent; creates the built-in policies/groups new registrations depend on.
+4. `cron()` — idempotent (`globalThis.__prechopCronInit`).
+5. register SIGINT/SIGTERM graceful shutdown (disconnect Mongo + Redis).
 
-If the app won't start, check the boot logs for the failed assertion first.
+If the app won't start, check the boot logs for `[bootstrap] Invalid runtime config: …` first — it
+lists **every** problem at once, not just the first.
+
+**`assertRuntimeConfig()` fails production boot on:** weak/missing/duplicate JWT secrets or
+`ENCRYPTION_KEY`; a malformed fee env var (checked in *every* environment — a set-but-empty
+`PLATFORM_FEE_*` parses to `0` and would silently zero real money, `"8%"` parses to `NaN`); and the
+**silent-failure** vars below, whose dev defaults are dangerous in prod:
+`OTP_PROVIDER` (unset/`console`), `SENDCHAMP_API_KEY` (when `OTP_PROVIDER=sendchamp`),
+`PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_APP_URL` (unset **or pointing at localhost**), `MONGODB_URI`,
+`REDIS_URI`. See `architecture/06-config-reference.md` §1.1.
+
+It also **warns** (non-fatal) in production when `METRICS_ENABLED=1` (ignored there) or
+`TRUSTED_PROXY` is unset (forwarded-IP headers are client-supplied, so rate limits and IP binding
+can be spoofed).
 
 ## 3. Health & monitoring
 

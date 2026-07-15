@@ -21,11 +21,7 @@ import { formatDateTime, formatKobo } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
 
 interface PaymentRequestSummary {
-	status:
-		| "AWAITING_EXTERNAL_PAYMENT"
-		| "PAID"
-		| "EXPIRED"
-		| "CANCELLED";
+	status: "AWAITING_EXTERNAL_PAYMENT" | "PAID" | "EXPIRED" | "CANCELLED";
 	businessName: string;
 	orderNumber: string;
 	items: Array<{
@@ -240,7 +236,12 @@ export default function ExternalPaymentWrapper({ token }: { token: string }) {
 							onChange={(e) => setContact(e.target.value)}
 							placeholder="you@example.com"
 						/>
-						<Button $full $size="lg" $loading={paying} onClick={pay}>
+						<Button
+							$full
+							$size="lg"
+							$loading={paying}
+							onClick={pay}
+						>
 							Pay {formatKobo(summary.totalKobo)}
 						</Button>
 					</Stack>
@@ -249,7 +250,7 @@ export default function ExternalPaymentWrapper({ token }: { token: string }) {
 				<Card $accent>
 					<Stack $gap={12}>
 						<Text $muted>
-						{summary.status === "PAID"
+							{summary.status === "PAID"
 								? "This order has already been paid for."
 								: "This payment request is no longer active."}
 						</Text>

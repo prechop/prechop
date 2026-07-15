@@ -75,3 +75,11 @@ MongoDB/Mongoose**.
 4. **`campusId` is on every tenant-scoped document** and every scoped query filters on it explicitly.
 5. **Cutoff is enforced synchronously at write time**; the cron sweep is only a reconciler.
 6. **The response envelope is `{ code, message, data }`.** Errors are thrown sentinels, mapped centrally.
+7. **Authorization is app-layer only.** There is no RLS and no ORM-level scoping middleware — Postgres
+   and Prisma are gone. Every ownership/`campusId` check is load-bearing with nothing behind it, and
+   **audit-log immutability is a convention, not a database guarantee**. See ADR-005.
+8. **A config problem must never charge 0.** Fee policy resolves `siteConfigs` ► env ► default, and a
+   present-but-invalid value falls back *loudly* rather than silently zeroing real money. The failure
+   mode on the money path is a silent wrong charge, not a crash. See ADR-004a.
+9. **Prechop never holds vendor money.** Paystack subaccount splits settle vendors directly — there is
+   no float, so no pending balance and no settlement date can be reported. Both would be fiction.

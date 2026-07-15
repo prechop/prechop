@@ -127,7 +127,9 @@ export function resolveListingStatus(
 
 	if (opts.vendorOpen === false) return closed("VENDOR_CLOSED");
 	if (listing.status && listing.status !== "ACTIVE")
-		return closed(listing.status === "CLOSED" ? "PAST_CUTOFF" : "NO_LISTINGS");
+		return closed(
+			listing.status === "CLOSED" ? "PAST_CUTOFF" : "NO_LISTINGS",
+		);
 
 	const cutoffAt = toDate(listing.cutoffTime);
 	if (!cutoffAt) return closed("NO_LISTINGS");
@@ -254,16 +256,29 @@ export function useListingStatus(
 
 /* ------------------------------------------------------------------ Badge */
 
+/** Text-only ink per tone. See --pc-color-*-ink in src/styles/global.ts: the
+ *  bright brand hues fail WCAG AA as 12px/700 badge text on their own tints. */
+const TONE_INK: Record<Tone, string> = {
+	success: "var(--pc-color-success-ink)",
+	warning: "var(--pc-color-warning-ink)",
+	primary: "var(--pc-color-primary-ink)",
+	muted: "var(--pc-color-muted-ink)",
+};
+
 const Pill = styled(Badge)<{ $kind: VendorStatusKind; $onHero?: boolean }>`
 	/* A second, non-colour channel: closed states read as outline-only, live
 	   states read as filled. Survives greyscale and colour-blind vision. */
 	border: 1px solid
 		${(p) => (p.$kind === "CLOSED_TODAY" ? "currentColor" : "transparent")};
+	color: ${(p) => TONE_INK[p.$tone as Tone] ?? "var(--pc-color-primary-ink)"};
 	${(p) =>
 		p.$onHero &&
-		`background: rgba(255, 255, 255, 0.18);
+		/* A white wash over --pc-gradient-hero is illegible at the gold stop
+		   (#fff on an 18% white scrim over #F4B400 measures 1.66:1). A dark
+		   scrim carries #fff at 7.39:1 against the worst stop. */
+		`background: var(--pc-scrim-on-hero);
 		 color: #fff;
-		 border-color: rgba(255, 255, 255, 0.5);`}
+		 border-color: var(--pc-scrim-on-hero-border);`}
 	white-space: nowrap;
 `;
 
@@ -279,6 +294,12 @@ export interface VendorStatusBadgeProps {
 	/** Render on the gradient hero, where tone colours have no contrast. */
 	onHero?: boolean;
 	className?: string;
+	/** Announce "Closing soon" changes via a polite live region. Opt-in, and
+	 *  only ONE badge per view should set it — a storefront / listing header.
+	 *  A feed or directory renders many of these badges at once; making each one
+	 *  live means every card re-announces its countdown on the 30s tick, which
+	 *  spams the screen-reader. List/card badges therefore stay static. */
+	live?: boolean;
 }
 
 export function VendorStatusBadge({
@@ -286,8 +307,9 @@ export function VendorStatusBadge({
 	compact,
 	onHero,
 	className,
+	live: liveProp = false,
 }: VendorStatusBadgeProps) {
-	const live = status.kind === "CLOSING_SOON";
+	const live = liveProp && status.kind === "CLOSING_SOON";
 	return (
 		<Pill
 			className={className}

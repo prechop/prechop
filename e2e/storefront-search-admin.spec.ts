@@ -2,6 +2,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { ORIGIN } from "./urls";
 
 // Browser-driven coverage for four newly-added surfaces, exercised against the
 // real server + seeded local Mongo/Redis (run `pnpm seed` first):
@@ -19,7 +21,6 @@ import mongoose from "mongoose";
 const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
-const ORIGIN = "http://localhost:3100";
 
 const VENDOR_PHONE = "08122222222"; // Ada — seeded ACTIVE vendor
 const BUYER_PHONE = "08111111111"; // seeded buyer
@@ -61,17 +62,13 @@ test.afterAll(async () => {
 
 async function loginInBrowser(page: Page, phone: string) {
 	const ctx = page.context();
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await ctx.request.post("/api/auth/otp/request", {
 		headers: { origin: ORIGIN },
 		data: { phone },
 	});
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await ctx.request.post("/api/auth/otp/verify", {
 		headers: { origin: ORIGIN },
 		data: { phone, otp: KNOWN_OTP },
@@ -134,9 +131,9 @@ test("marketplace search finds vendors by name/menu/listing", async ({
 		);
 	}
 
-	// The grid shows today's kitchens with their shop names.
+	// The grid shows the campus kitchens with their shop names.
 	await expect(
-		page.getByRole("heading", { name: /Today's kitchens/i }),
+		page.getByRole("heading", { name: /Campus kitchens/i }),
 	).toBeVisible();
 
 	// Search by a seeded dish name and confirm the results panel appears.

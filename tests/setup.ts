@@ -4,14 +4,23 @@
 // store. Each vitest worker gets its own scratch database name so files can
 // run in parallel without clobbering each other.
 
+import {
+	DEFAULT_MONGODB_URI,
+	makeRunId,
+	scratchDbName,
+} from "./helpers/scratchDb";
+
 (process.env as Record<string, string>).NODE_ENV = "test";
-process.env.MONGODB_URI =
-	process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
+process.env.MONGODB_URI = process.env.MONGODB_URI ?? DEFAULT_MONGODB_URI;
 process.env.REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
-// Include the pid: pool ids are only unique WITHIN one vitest process, so two
-// concurrent `vitest run` invocations would otherwise share scratch DBs and
-// race each other.
-process.env.DB_NAME = `prechop-vitest-${process.pid}-${process.env.VITEST_POOL_ID ?? "0"}`;
+// One id per `vitest run`, minted in `tests/globalSetup.ts` and inherited here
+// through the environment. It carries a timestamp and the main pid, so:
+//   - two concurrent `vitest run` invocations never share a scratch DB; and
+//   - the global teardown can drop every DB this run created by prefix, even
+//     the ones belonging to a worker that crashed before its `afterAll` ran.
+// The fallback keeps a worker usable if it is ever started without globalSetup.
+const runId = process.env.PRECHOP_TEST_RUN_ID ?? makeRunId();
+process.env.DB_NAME = scratchDbName(runId, process.env.VITEST_POOL_ID ?? "0");
 
 process.env.JWT_ACCESS_TOKEN_SECRET =
 	"vitest-access-secret-0123456789-0123456789-abcdef";

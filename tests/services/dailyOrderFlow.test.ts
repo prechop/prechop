@@ -1,5 +1,7 @@
+import mongooseLib from "mongoose";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+	BuyerOrder,
 	createBuyerOrderDB,
 	markBuyerOrderPaidDB,
 	setBuyerOrderStatusDB,
@@ -179,11 +181,16 @@ describe("dailyOrders queries", () => {
 				items: [{ menuItemId: item!._id.toString() }],
 			},
 		});
-		// The marketplace is state-scoped (every campus in the buyer's state), so
-		// assert the new listing surfaces rather than pinning an exact count.
+		// The marketplace is a vendor-grouped grid: one row per kitchen, carrying
+		// that kitchen's active public listings. It is state-scoped (every campus
+		// in the buyer's state), so find our row rather than pinning a count.
 		const market = await getMarketplace({ campusId });
+		const row = market.find((r) => r.vendor.id === vendorId);
+		expect(row).toBeDefined();
 		expect(
-			market.some((o) => o._id.toString() === listing._id.toString()),
+			row!.listings.some(
+				(o) => o._id.toString() === listing._id.toString(),
+			),
 		).toBe(true);
 
 		const publicView = await getPublicDailyOrder({
@@ -339,6 +346,15 @@ describe("createDailyOrderFromTemplate", () => {
 describe("getVendorAnalytics", () => {
 	it("returns live completed earnings, completion rate and reviews", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
+		// A vendor's "revenue" is their settlement — what they are actually paid
+		// after the platform commission — not the gross the buyer was charged.
+		// `placeOrder` always computes these, so the fixture must too; an order
+		// with settlement left at its 0 default is not a realistic order.
+		const commissionOf = (totalKobo: number) =>
+			Math.round(totalKobo * 0.08);
+		const settlementOf = (totalKobo: number) =>
+			totalKobo - commissionOf(totalKobo);
+
 		const makeOrder = async (orderNumber: string, totalKobo: number) => {
 			const order = await createBuyerOrderDB({
 				payload: {
@@ -352,6 +368,8 @@ describe("getVendorAnalytics", () => {
 					deliveryFeeKobo: 0,
 					platformFeeKobo: 0,
 					totalKobo,
+					prechopCommissionKobo: commissionOf(totalKobo),
+					vendorSettlementKobo: settlementOf(totalKobo),
 					items: [
 						{
 							dailyOrderItemId: oid(),
@@ -390,13 +408,77 @@ describe("getVendorAnalytics", () => {
 			status: OrderStatus.REFUNDED,
 		});
 
+		// Only the two COMPLETED+paid orders count: 920 + 2760.
+		const expectedRevenue = settlementOf(1000) + settlementOf(3000);
+		expect(expectedRevenue).toBe(3680);
+
 		const analytics = await getVendorAnalytics({ userId });
 		expect(analytics.snapshots.length).toBe(1);
 		expect(analytics.lifetime.completedOrders).toBe(2);
-		expect(analytics.lifetime.totalRevenueKobo).toBe(4000);
-		expect(analytics.lifetime.avgOrderValueKobo).toBe(2000);
+		// Settlement, not gross: the cancelled/refunded orders contribute nothing
+		// and the platform's cut is excluded.
+		expect(analytics.lifetime.totalRevenueKobo).toBe(expectedRevenue);
+		expect(analytics.lifetime.totalVendorSettlementKobo).toBe(
+			expectedRevenue,
+		);
+		expect(analytics.lifetime.totalCommissionKobo).toBe(
+			commissionOf(1000) + commissionOf(3000),
+		);
+		// Gross food subtotal is tracked separately and still counts the full
+		// buyer-facing price.
+		expect(analytics.lifetime.totalFoodSubtotalKobo).toBe(4000);
+		expect(analytics.lifetime.avgOrderValueKobo).toBe(
+			Math.round(expectedRevenue / 2),
+		);
+		// 2 completed of 4 resolved (2 completed + cancelled + refunded).
 		expect(analytics.lifetime.completionRate).toBe(50);
 		expect(analytics.reviews).toEqual([]);
+	});
+
+	it("falls back to gross total for legacy orders with no settlement field", async () => {
+		// Orders written before `vendorSettlementKobo` existed have no such field
+		// at all (distinct from the modern default of 0). The aggregation's
+		// $ifNull keeps those vendors' historical revenue visible rather than
+		// silently reporting zero.
+		const { userId, vendorId, campusId } = await makeVendor();
+		const order = await createBuyerOrderDB({
+			payload: {
+				orderNumber: `LEGACY-${Date.now()}`,
+				dailyOrderId: oid(),
+				vendorId,
+				buyerId: oid(),
+				campusId,
+				fulfillmentType: FulfillmentType.PICKUP,
+				subtotalKobo: 5000,
+				deliveryFeeKobo: 0,
+				platformFeeKobo: 0,
+				totalKobo: 5000,
+				items: [
+					{
+						dailyOrderItemId: oid(),
+						menuItemId: oid(),
+						snapshotName: "Rice",
+						snapshotPriceKobo: 5000,
+						quantity: 1,
+						subtotalKobo: 5000,
+						selectedOptions: [],
+					},
+				],
+			},
+		});
+		const id = order!._id.toString();
+		await markBuyerOrderPaidDB({ id });
+		await setBuyerOrderStatusDB({ id, status: OrderStatus.COMPLETED });
+		// Strip the field to reproduce a genuinely pre-migration document; the
+		// schema default would otherwise write 0 and mask the fallback.
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongooseLib.Types.ObjectId(id) },
+			{ $unset: { vendorSettlementKobo: "" } },
+		);
+
+		const analytics = await getVendorAnalytics({ userId });
+		expect(analytics.lifetime.completedOrders).toBe(1);
+		expect(analytics.lifetime.totalRevenueKobo).toBe(5000);
 	});
 
 	it("throws for a non-vendor user", async () => {

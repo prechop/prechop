@@ -19,7 +19,8 @@ interface Analytics {
 	topVendors: {
 		id: string;
 		businessName: string | null;
-		rating: number;
+		/** Null below the public-rating threshold — see @/components/VendorRating. */
+		rating: number | null;
 		totalOrders: number;
 		totalReviews: number;
 	}[];
@@ -79,7 +80,7 @@ export default function AdminAnalyticsWrapper() {
 											{i + 1}. {v.businessName ?? "—"}
 										</Text>
 										<Text $muted $size={13}>
-											⭐ {v.rating.toFixed(1)} ·{" "}
+											⭐ {v.rating?.toFixed(1) ?? "—"} ·{" "}
 											{v.totalOrders} orders ·{" "}
 											{v.totalReviews} reviews
 										</Text>

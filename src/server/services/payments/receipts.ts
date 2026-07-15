@@ -49,7 +49,9 @@ export async function ensureReceiptUrl(order: IBuyerOrder): Promise<string> {
 
 export async function getPublicReceipt(token: string): Promise<PublicReceipt> {
 	const receiptLink = receiptUrlFromToken(token);
-	const order = await getBuyerOrderByReceiptUrlDB({ receiptUrl: receiptLink });
+	const order = await getBuyerOrderByReceiptUrlDB({
+		receiptUrl: receiptLink,
+	});
 	if (!order || order.status !== OrderStatus.PAID || !order.paidAt) {
 		throw ErrPaymentVerification;
 	}

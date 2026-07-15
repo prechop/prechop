@@ -1,8 +1,7 @@
 import "server-only";
 import axios, { type AxiosInstance } from "axios";
 import {
-	NODE_ENV,
-	OTP_PROVIDER,
+	OTP_CONSOLE_MODE,
 	SENDCHAMP_API_KEY,
 	SENDCHAMP_SENDER_ID,
 } from "../constants";
@@ -30,9 +29,10 @@ class SendchampProvider {
 	}
 
 	private async send(to: string, message: string): Promise<void> {
-		// In dev / console mode the OTP is logged instead of sent — keeps local
-		// flows free and avoids burning SMS credits.
-		if (OTP_PROVIDER === "console" || NODE_ENV !== "production") {
+		// Dev-only console sink — keeps local flows free and avoids burning SMS
+		// credits. `OTP_CONSOLE_MODE` is false whenever IS_PROD, so this branch
+		// is unreachable in production for every possible env-var combination.
+		if (OTP_CONSOLE_MODE) {
 			console.log(`[DEV SMS] To: ${to} | ${message}`);
 			return;
 		}

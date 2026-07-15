@@ -17,9 +17,12 @@ import {
 	Stack,
 	Text,
 	Title,
+	useVendorStatus,
+	VendorRating,
+	VendorStatusBadge,
 } from "@/components";
 import { fetcher } from "@/constants/fetcher";
-import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
+import { formatKobo } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import type {
 	Campus,
@@ -111,14 +114,6 @@ const Cta = styled.span`
 const Chips = styled(Row)`
 	flex-wrap: wrap;
 `;
-const Meta = styled.span`
-	font-size: 12.5px;
-	font-weight: 700;
-	color: var(--pc-text-muted);
-	display: inline-flex;
-	align-items: center;
-	gap: 5px;
-`;
 const SearchWrap = styled.div`
 	margin: var(--pc-space-2) 0 var(--pc-space-4);
 `;
@@ -155,15 +150,6 @@ function vendorPriceRange(listings: DailyOrder[]): string {
 		: `${formatKobo(min)} - ${formatKobo(max)}`;
 }
 
-function nextOpeningLabel(listings: DailyOrder[]): string {
-	const futureStarts = listings
-		.map((o) => o.availableFrom && new Date(o.availableFrom))
-		.filter((d): d is Date => !!d && d.getTime() > Date.now())
-		.sort((a, b) => a.getTime() - b.getTime());
-	if (futureStarts[0]) return `Opens ${formatDate(futureStarts[0])}`;
-	return "Check back later";
-}
-
 function fulfillmentLabel(listing?: DailyOrder): string {
 	if (!listing) return "Menu, prices and ratings";
 	return [
@@ -172,17 +158,6 @@ function fulfillmentLabel(listing?: DailyOrder): string {
 	]
 		.filter(Boolean)
 		.join(" / ");
-}
-
-function statusLabel(row: MarketplaceVendor): string {
-	if (!row.vendor.isOpenForOrders) return "Closed for orders";
-	const primary = row.listings[0];
-	if (!primary) return "Open";
-	if (primary.availableFrom && new Date(primary.availableFrom).getTime() > Date.now()) {
-		return nextOpeningLabel(row.listings);
-	}
-	const cutoff = timeUntil(primary.cutoffTime);
-	return cutoff === "closed" ? "Closed for orders" : cutoff;
 }
 
 export default function MarketplaceWrapper() {
@@ -280,7 +255,11 @@ export default function MarketplaceWrapper() {
 			</SearchWrap>
 
 			{searching ? (
-				<SearchResults hits={hits} loading={hitsLoading} q={debounced} />
+				<SearchResults
+					hits={hits}
+					loading={hitsLoading}
+					q={debounced}
+				/>
 			) : vendors.length === 0 ? (
 				<EmptyState
 					icon="food"
@@ -294,67 +273,82 @@ export default function MarketplaceWrapper() {
 	);
 }
 
+/**
+ * One marketplace card. Split out of `VendorGrid` so each row can hold its own
+ * live `useVendorStatus` subscription — the badge re-derives on a 30s tick, so
+ * a card that says "Closing soon · 12m" decays to "Closed today" on its own
+ * rather than lying until the next refetch.
+ *
+ * Two badges, two orthogonal axes: availability lives in the media corner,
+ * trust ("New vendor", via VendorRating) sits beside the shop name in the body.
+ */
+function VendorGridCard({ row }: { row: MarketplaceVendor }) {
+	const primary = row.listings[0];
+	const status = useVendorStatus({
+		isOpenForOrders: row.vendor.isOpenForOrders,
+		listings: row.listings,
+	});
+
+	return (
+		<VendorCard>
+			<CardLink href={`/v/${row.vendor.id}`}>
+				<Media>
+					<BadgeFloat>
+						<VendorStatusBadge status={status} compact />
+					</BadgeFloat>
+					<Thumbs>
+						{primary?.items.slice(0, 3).map((it) => (
+							<Thumb key={it.id} $src={it.snapshotImageUrl}>
+								{it.snapshotImageUrl ? "" : "food"}
+							</Thumb>
+						))}
+						{!primary && (
+							<Thumb $src={row.vendor.profileImageUrl}>
+								{row.vendor.profileImageUrl ? "" : "shop"}
+							</Thumb>
+						)}
+					</Thumbs>
+					<MediaShade />
+				</Media>
+				<Body $gap={10}>
+					<Row $justify="space-between" $align="center" $gap={8}>
+						<Title $size={17}>
+							{row.vendor.businessName ?? "Campus kitchen"}
+						</Title>
+						{/* Renders the score, or "New vendor" below 5 reviews —
+						    never a number computed from one review. */}
+						<VendorRating
+							rating={row.vendor.rating}
+							totalReviews={row.vendor.totalReviews}
+						/>
+					</Row>
+					<Chips $gap={6}>
+						<Badge $tone="gold">
+							{vendorPriceRange(row.listings)}
+						</Badge>
+					</Chips>
+					<Foot $justify="space-between" $align="center">
+						<Text $size={13} $muted>
+							{status.orderable
+								? fulfillmentLabel(primary)
+								: status.description}
+						</Text>
+						<Cta>View kitchen -&gt;</Cta>
+					</Foot>
+				</Body>
+			</CardLink>
+		</VendorCard>
+	);
+}
+
 function VendorGrid({ vendors }: { vendors: MarketplaceVendor[] }) {
 	return (
 		<Grid $min={260} $gap={16}>
-			{vendors.map((row, i) => {
-				const primary = row.listings[0];
-				const open = row.vendor.isOpenForOrders;
-				return (
-					<FadeIn key={row.vendor.id} $delay={i * 45}>
-						<VendorCard>
-							<CardLink href={`/v/${row.vendor.id}`}>
-								<Media>
-									<BadgeFloat>
-										<Badge $tone={open ? "success" : "danger"}>
-											{statusLabel(row)}
-										</Badge>
-									</BadgeFloat>
-									<Thumbs>
-										{primary?.items.slice(0, 3).map((it) => (
-											<Thumb key={it.id} $src={it.snapshotImageUrl}>
-												{it.snapshotImageUrl ? "" : "food"}
-											</Thumb>
-										))}
-										{!primary && (
-											<Thumb $src={row.vendor.profileImageUrl}>
-												{row.vendor.profileImageUrl ? "" : "shop"}
-											</Thumb>
-										)}
-									</Thumbs>
-									<MediaShade />
-								</Media>
-								<Body $gap={10}>
-									<Title $size={17}>
-										{row.vendor.businessName ?? "Campus kitchen"}
-									</Title>
-									<Meta>
-										Rating {row.vendor.rating.toFixed(1)} / 5 -
-										{row.vendor.totalReviews} review
-										{row.vendor.totalReviews === 1 ? "" : "s"}
-									</Meta>
-									<Chips $gap={6}>
-										<Badge $tone={open ? "success" : "muted"}>
-											{open ? "Accepting orders" : "Closed"}
-										</Badge>
-										<Badge $tone="gold">
-											{vendorPriceRange(row.listings)}
-										</Badge>
-									</Chips>
-									<Foot $justify="space-between" $align="center">
-										<Text $size={13} $muted>
-											{open
-												? fulfillmentLabel(primary)
-												: nextOpeningLabel(row.listings)}
-										</Text>
-										<Cta>View kitchen -&gt;</Cta>
-									</Foot>
-								</Body>
-							</CardLink>
-						</VendorCard>
-					</FadeIn>
-				);
-			})}
+			{vendors.map((row, i) => (
+				<FadeIn key={row.vendor.id} $delay={i * 45}>
+					<VendorGridCard row={row} />
+				</FadeIn>
+			))}
 		</Grid>
 	);
 }
@@ -395,14 +389,15 @@ function SearchResults({
 	return (
 		<Stack $gap={12}>
 			<Text $muted $size={13}>
-				{results.length} shop{results.length === 1 ? "" : "s"} match "{q}"
+				{results.length} shop{results.length === 1 ? "" : "s"} match "
+				{q}"
 			</Text>
 			<Row $gap={6} $wrap>
-				{Array.from(new Set(results.flatMap((hit) => hit.matchedOn))).map(
-					(match) => (
-						<MatchTag key={match}>{match}</MatchTag>
-					),
-				)}
+				{Array.from(
+					new Set(results.flatMap((hit) => hit.matchedOn)),
+				).map((match) => (
+					<MatchTag key={match}>{match}</MatchTag>
+				))}
 			</Row>
 			<VendorGrid vendors={results} />
 		</Stack>

@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Docker build context exclusions.
+#
+# The Dockerfile does `COPY . .`. Without this file, every local secret and
+# build artifact on disk is copied into an image layer — where it survives
+# even if a later layer deletes it, and ships to anyone who pulls the image.
+# Order matters: the secret rules below are NOT negated anywhere.
+# ─────────────────────────────────────────────────────────────────────────
+
+# ── Secrets — the reason this file is non-negotiable ──────────────────────
+# `.env` and `.env.production` are gitignored and hold REAL credentials
+# (Paystack live keys, AWS keys, JWT secrets, ENCRYPTION_KEY). Runtime config
+# is injected as environment variables by the platform, never baked in.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+.npmrc.local
+secrets/
+**/*.secret
+
+# ── VCS & CI ──────────────────────────────────────────────────────────────
+# `.git` also leaks history (including any secret ever committed) and busts
+# the layer cache on every commit.
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Dependencies & build output ───────────────────────────────────────────
+# node_modules is reinstalled inside the image for the correct libc/arch —
+# copying host (Windows) modules in would ship broken native bindings
+# (bcrypt, sharp).
+node_modules
+**/node_modules
+.pnp
+.pnp.*
+.yarn
+.next
+out
+build
+dist
+*.tsbuildinfo
+
+# ── Test & tooling artifacts ──────────────────────────────────────────────
+coverage
+test-results
+playwright-report
+blob-report
+.playwright
+e2e/.artifacts
+tests
+e2e
+# `playwright.config.ts` is a root file (so `COPY . .` would otherwise pull it
+# into the build stage) but it imports `./e2e/*` — which is excluded above. It
+# is test-only and never shipped (the runner stage copies neither it nor e2e/),
+# and the production tsconfig excludes it so `next build` no longer type-checks
+# it. Dropping it from the context too is belt-and-braces: the build cannot even
+# see the file whose `./e2e/dbFixture` import previously broke `docker build`.
+playwright.config.ts
+
+# ── Editor / OS noise ─────────────────────────────────────────────────────
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ── Docs & local-only config (not needed to build or run) ─────────────────
+docs
+README.md
+*.md
+!package.json
+Dockerfile
+.dockerignore
+compose.yaml
+docker-compose.yml
+docker-compose.*.yml
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*

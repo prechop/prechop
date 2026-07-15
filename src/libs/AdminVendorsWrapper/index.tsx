@@ -32,7 +32,8 @@ interface AdminVendor {
 	businessName?: string;
 	email: string;
 	status: VendorStatus;
-	rating: number;
+	/** Null below the public-rating threshold — see @/components/VendorRating. */
+	rating: number | null;
 	totalOrders: number;
 	totalReviews: number;
 	vendorType?: string;
@@ -320,7 +321,8 @@ export default function AdminVendorsWrapper() {
 											</td>
 											<td>
 												<Rating>
-													{v.rating.toFixed(1)}
+													{v.rating?.toFixed(1) ??
+														"—"}
 													<span aria-hidden>★</span>
 												</Rating>
 											</td>
@@ -428,8 +430,9 @@ export default function AdminVendorsWrapper() {
 										<KV>
 											<Text $muted>Rating</Text>
 											<Text $weight={600}>
-												{detail.rating.toFixed(1)} ★ (
-												{detail.totalReviews})
+												{detail.rating?.toFixed(1) ??
+													"—"}{" "}
+												★ ({detail.totalReviews})
 											</Text>
 										</KV>
 										<KV>

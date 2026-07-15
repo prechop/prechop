@@ -19,6 +19,7 @@ import { listVendorWhatsappTvs } from "@/server/services/whatsappTvs/listVendorW
 import {
 	connectTestDB,
 	dropAndDisconnect,
+	e164,
 	oid,
 	uniquePhone,
 } from "../helpers/db";
@@ -33,7 +34,7 @@ afterAll(async () => {
 });
 
 describe("users services", () => {
-	it("getMe returns the decrypted profile", async () => {
+	it("getMe returns the decrypted profile with the phone in E.164", async () => {
 		const phone = uniquePhone();
 		const { createUserDB } = await import("@/server/models/users");
 		const user = await createUserDB({
@@ -45,7 +46,9 @@ describe("users services", () => {
 			},
 		});
 		const me = await getMe({ userId: user!._id.toString() });
-		expect(me.phone).toBe(phone);
+		// Stored normalized, so that's what the profile returns — the client
+		// renders it with a phone-number formatter, not the raw local form.
+		expect(me.phone).toBe(e164(phone));
 		expect(me.firstName).toBe("Ada");
 	});
 

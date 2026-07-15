@@ -23,8 +23,26 @@ beforeEach(() => {
 describe("getSiteConfigs service", () => {
 	it("returns env-fallback defaults before any doc is seeded", async () => {
 		const cfg = await getSiteConfigs();
-		expect(cfg.platformFeeBuyerKobo).toBe(0);
-		expect(cfg.platformFeeVendorKobo).toBe(0);
+		// Fees are PERCENTAGES sourced from env. This used to assert the retired
+		// flat-kobo fields (`platformFeeBuyerKobo`/`platformFeeVendorKobo`) were
+		// 0 — they no longer exist, so it was asserting `undefined === 0` and
+		// would have gone on "passing" only by accident. Asserting the live
+		// fields is the whole point of a test named "env-fallback defaults":
+		// tests/setup.ts sets 3% buyer / 8% vendor / ₦200 cap.
+		expect(cfg.platformFeeBuyerPercent).toBe(
+			DEFAULT_SITE_CONFIGS.platformFeeBuyerPercent,
+		);
+		expect(cfg.platformFeeVendorPercent).toBe(
+			DEFAULT_SITE_CONFIGS.platformFeeVendorPercent,
+		);
+		expect(cfg.platformFeeBuyerMaxKobo).toBe(
+			DEFAULT_SITE_CONFIGS.platformFeeBuyerMaxKobo,
+		);
+		// Pin the actual numbers too — a default that silently drifts to 0 is
+		// the money bug tests/constants/fees.test.ts exists to prevent.
+		expect(cfg.platformFeeBuyerPercent).toBe(3);
+		expect(cfg.platformFeeVendorPercent).toBe(8);
+		expect(cfg.platformFeeBuyerMaxKobo).toBe(20_000);
 		expect(cfg.slotHoldTtlSeconds).toBe(
 			DEFAULT_SITE_CONFIGS.slotHoldTtlSeconds,
 		);

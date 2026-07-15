@@ -13,6 +13,7 @@ import {
 } from "@/server/validators/buyerOrders/validate";
 import {
 	createDailyOrderSchema,
+	marketplaceQuerySchema,
 	marketplaceSearchSchema,
 	myDailyOrdersQuerySchema,
 } from "@/server/validators/dailyOrders/validate";
@@ -387,6 +388,39 @@ describe("dailyOrders marketplaceSearchSchema", () => {
 				q: "x",
 				extra: 1,
 			}).success,
+		).toBe(false);
+	});
+});
+
+describe("dailyOrders marketplaceQuerySchema — paging cap", () => {
+	// REGRESSION: the web client requests the marketplace with `limit=50`, but the
+	// schema was capped at 20, so the real client 400'd on every load. The cap was
+	// raised to 50. This pins that the client's real value is accepted, and that
+	// the cap is still enforced one past it.
+	it("accepts the client's real limit=50", () => {
+		const parsed = marketplaceQuerySchema.safeParse({
+			campusId: "c1",
+			limit: "50",
+		});
+		expect(parsed.success).toBe(true);
+		if (parsed.success) expect(parsed.data.limit).toBe(50); // coerced to number
+	});
+
+	it("still rejects a limit past the cap (51)", () => {
+		expect(
+			marketplaceQuerySchema.safeParse({ campusId: "c1", limit: "51" })
+				.success,
+		).toBe(false);
+	});
+
+	it("rejects a non-positive limit and unknown keys", () => {
+		expect(
+			marketplaceQuerySchema.safeParse({ campusId: "c1", limit: "0" })
+				.success,
+		).toBe(false);
+		expect(
+			marketplaceQuerySchema.safeParse({ campusId: "c1", nope: 1 })
+				.success,
 		).toBe(false);
 	});
 });

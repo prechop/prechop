@@ -4,6 +4,8 @@ import {
 	createVendorProfileDB,
 	FulfillmentType,
 	setVendorOpenForOrdersDB,
+	setVendorStatusDB,
+	VendorStatus,
 } from "@/server/models";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
@@ -70,8 +72,11 @@ async function vendorOnCampus(campusId: string) {
 		},
 	});
 	const vendorId = profile!._id.toString();
-	// Open for orders so its listings surface in the marketplace (closed vendors
-	// are now hidden) — see the open-status enforcement in openStatusFlow.test.
+	// A profile is born INCOMPLETE, and only ACTIVE kitchens are discoverable in
+	// the marketplace. Activate so this fixture represents a real operating
+	// vendor rather than a half-onboarded one.
+	await setVendorStatusDB({ id: vendorId, status: VendorStatus.ACTIVE });
+	// Open for orders: the schema default is closed.
 	await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
 	return { userId, vendorId };
 }
@@ -178,19 +183,24 @@ describe("own listings are hidden from the vendor's buyer view", () => {
 		trackSlots(mine);
 		trackSlots(theirs);
 
+		// The grid is grouped by vendor, so "my own listing is hidden" means my
+		// whole kitchen row is absent — a vendor cannot buy from themselves.
 		const asVendor = await getMarketplace({
 			campusId,
 			viewerUserId: me.userId,
 		});
-		const vendorIds = asVendor.map((o) => o._id.toString());
-		expect(vendorIds).toContain(theirs._id.toString());
-		expect(vendorIds).not.toContain(mine._id.toString());
+		const listingIds = (rows: typeof asVendor) =>
+			rows.flatMap((r) => r.listings.map((o) => o._id.toString()));
+
+		expect(asVendor.map((r) => r.vendor.id)).toContain(other.vendorId);
+		expect(asVendor.map((r) => r.vendor.id)).not.toContain(me.vendorId);
+		expect(listingIds(asVendor)).toContain(theirs._id.toString());
+		expect(listingIds(asVendor)).not.toContain(mine._id.toString());
 
 		// Anonymous callers still see every listing (public browse).
 		const anon = await getMarketplace({ campusId });
-		const anonIds = anon.map((o) => o._id.toString());
-		expect(anonIds).toContain(mine._id.toString());
-		expect(anonIds).toContain(theirs._id.toString());
+		expect(listingIds(anon)).toContain(mine._id.toString());
+		expect(listingIds(anon)).toContain(theirs._id.toString());
 	});
 
 	it("flags the caller's own listing on the public order page", async () => {

@@ -202,22 +202,26 @@ export default function OrderConfirmationWrapper() {
 										</Receipt>
 									)}
 									<Stack $gap={8}>
-										<Link
+										<Button
+											as={Link}
 											href={
 												order
 													? `/my-orders/${order.id}`
 													: "/my-orders"
 											}
+											$full
+											$size="lg"
 										>
-											<Button $full $size="lg">
-												Track your order →
-											</Button>
-										</Link>
-										<Link href="/marketplace">
-											<Button $full $variant="ghost">
-												Back to marketplace
-											</Button>
-										</Link>
+											Track your order →
+										</Button>
+										<Button
+											as={Link}
+											href="/marketplace"
+											$full
+											$variant="ghost"
+										>
+											Back to marketplace
+										</Button>
 									</Stack>
 								</Stack>
 							</Body>
@@ -235,11 +239,14 @@ export default function OrderConfirmationWrapper() {
 								</HeroSub>
 							</Hero>
 							<Body>
-								<Link href="/my-orders">
-									<Button $full $size="lg">
-										View my orders
-									</Button>
-								</Link>
+								<Button
+									as={Link}
+									href="/my-orders"
+									$full
+									$size="lg"
+								>
+									View my orders
+								</Button>
 							</Body>
 						</>
 					)}
@@ -255,11 +262,14 @@ export default function OrderConfirmationWrapper() {
 								</HeroSub>
 							</Hero>
 							<Body>
-								<Link href="/marketplace">
-									<Button $full $size="lg">
-										Back to marketplace
-									</Button>
-								</Link>
+								<Button
+									as={Link}
+									href="/marketplace"
+									$full
+									$size="lg"
+								>
+									Back to marketplace
+								</Button>
 							</Body>
 						</>
 					)}

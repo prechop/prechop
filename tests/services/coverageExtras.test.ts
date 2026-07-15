@@ -1,9 +1,12 @@
 import crypto from "node:crypto";
+import mongooseLib from "mongoose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PAYSTACK_SECRET_KEY } from "@/server/constants/environments";
 import { generateOrderNumber } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
+import { listSnapshotsByVendorDB } from "@/server/models/analyticsSnapshots";
 import {
+	BuyerOrder,
 	createBuyerOrderDB,
 	getBuyerOrderByIdDB,
 	setBuyerOrderStatusDB,
@@ -147,16 +150,125 @@ describe("cancelOrderAsVendor", () => {
 });
 
 describe("rebuildDailySnapshots (analytics job)", () => {
-	it("aggregates yesterday's orders into per-vendor snapshots", async () => {
+	// The snapshot day is an Africa/Lagos calendar day (UTC+1, no DST), NOT a UTC
+	// day. Those two disagree for the hour 23:00–00:00 UTC, so every assertion
+	// here sits on that seam: a UTC-based implementation puts these orders on the
+	// wrong day and fails.
+	//
+	//   2026-03-08T23:00:00Z  ==  2026-03-09 00:00 Lagos  (first instant of 09/03)
+	//   2026-03-09T22:59:59Z  ==  2026-03-09 23:59:59 Lagos (last instant)
+	//
+	// Reference sits on Lagos 10/03, so "yesterday" is the Lagos day 09/03 and
+	// the window is [2026-03-08T23:00:00Z, 2026-03-09T23:00:00Z).
+	const REFERENCE = new Date("2026-03-10T09:00:00.000Z");
+	const LAGOS_DAY_START = new Date("2026-03-08T23:00:00.000Z");
+
+	it("keys the day on Lagos midnight, not UTC midnight", async () => {
 		const { vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
-		// an order dated within yesterday's window
-		const now = new Date();
-		const to = new Date(
-			Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-		);
-		const yesterdayNoon = new Date(to.getTime() - 12 * 60 * 60 * 1000);
 
+		const orderAt = async (
+			createdAt: Date,
+			status: OrderStatus,
+			settlementKobo: number,
+		) => {
+			const order = await createBuyerOrderDB({
+				payload: {
+					orderNumber: generateOrderNumber(),
+					dailyOrderId: oid(),
+					vendorId,
+					buyerId: buyer!._id.toString(),
+					campusId,
+					fulfillmentType: FulfillmentType.PICKUP,
+					subtotalKobo: settlementKobo,
+					deliveryFeeKobo: 0,
+					platformFeeKobo: 0,
+					totalKobo: settlementKobo,
+					prechopCommissionKobo: 0,
+					vendorSettlementKobo: settlementKobo,
+					items: [
+						{
+							dailyOrderItemId: oid(),
+							menuItemId: oid(),
+							snapshotName: "Jollof",
+							snapshotPriceKobo: settlementKobo,
+							quantity: 1,
+							subtotalKobo: settlementKobo,
+							selectedOptions: [],
+						},
+					],
+				},
+			});
+			await setBuyerOrderStatusDB({ id: order!._id.toString(), status });
+			// createdAt is set by mongoose timestamps; only a raw write can place
+			// an order at an exact instant.
+			await BuyerOrder.collection.updateOne(
+				{ _id: new mongooseLib.Types.ObjectId(order!._id) },
+				{ $set: { createdAt } },
+			);
+			return order!._id.toString();
+		};
+
+		// Each order carries a distinct settlement so that revenue alone
+		// identifies which window was used — the two candidate windows would
+		// otherwise agree on the order COUNT purely by coincidence.
+		//
+		// Lagos 09/03 window is [08T23:00Z, 09T23:00Z); a UTC 09/03 window would
+		// be [09T00:00Z, 10T00:00Z). Only two of these four orders are in both.
+
+		// Lagos 08/03 23:59:59 — outside both windows.
+		await orderAt(
+			new Date("2026-03-08T22:59:59.999Z"),
+			OrderStatus.COMPLETED,
+			1000,
+		);
+		// Lagos 09/03 00:00:00 sharp — IN for Lagos, OUT for UTC.
+		await orderAt(
+			new Date("2026-03-08T23:00:00.000Z"),
+			OrderStatus.COMPLETED,
+			2000,
+		);
+		// Lagos 09/03 23:59:59 — in both.
+		await orderAt(
+			new Date("2026-03-09T22:59:59.999Z"),
+			OrderStatus.COMPLETED,
+			4000,
+		);
+		// Lagos 10/03 00:00:00 sharp — OUT for Lagos, IN for UTC.
+		await orderAt(
+			new Date("2026-03-09T23:00:00.000Z"),
+			OrderStatus.COMPLETED,
+			8000,
+		);
+		// A cancelled order mid-day, in both windows.
+		await orderAt(
+			new Date("2026-03-09T12:00:00.000Z"),
+			OrderStatus.CANCELLED,
+			5000,
+		);
+
+		const written = await rebuildDailySnapshots(REFERENCE);
+		expect(written).toBeGreaterThanOrEqual(1);
+
+		const snapshots = await listSnapshotsByVendorDB({ vendorId });
+		expect(snapshots.length).toBe(1);
+		const snapshot = snapshots[0];
+		// The day key is Lagos midnight expressed in UTC — 23:00 the day before.
+		// A UTC-day implementation would write 2026-03-09T00:00:00Z here.
+		expect(snapshot.date.toISOString()).toBe(LAGOS_DAY_START.toISOString());
+		expect(snapshot.totalOrders).toBe(3);
+		expect(snapshot.completedOrders).toBe(2);
+		expect(snapshot.cancelledOrders).toBe(1);
+		// 2000 + 4000. A UTC window would total 12000 (4000 + 8000) — this is the
+		// assertion that pins the boundary to Lagos rather than UTC.
+		expect(snapshot.totalRevenueKobo).toBe(6000);
+	});
+
+	it("is safe to re-run for the same day (upsert, not duplicate)", async () => {
+		// The cron can fire twice; a second pass must refresh the row in place
+		// rather than double-count the day.
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
 		const order = await createBuyerOrderDB({
 			payload: {
 				orderNumber: generateOrderNumber(),
@@ -169,6 +281,8 @@ describe("rebuildDailySnapshots (analytics job)", () => {
 				deliveryFeeKobo: 0,
 				platformFeeKobo: 5000,
 				totalKobo: 155000,
+				prechopCommissionKobo: 12000,
+				vendorSettlementKobo: 143000,
 				items: [
 					{
 						dailyOrderItemId: oid(),
@@ -186,15 +300,17 @@ describe("rebuildDailySnapshots (analytics job)", () => {
 			id: order!._id.toString(),
 			status: OrderStatus.COMPLETED,
 		});
-		const mongoose = (await import("mongoose")).default;
-		const { BuyerOrder } = await import("@/server/models/buyerOrders");
 		await BuyerOrder.collection.updateOne(
-			{ _id: new mongoose.Types.ObjectId(order!._id) },
-			{ $set: { createdAt: yesterdayNoon } },
+			{ _id: new mongooseLib.Types.ObjectId(order!._id) },
+			{ $set: { createdAt: new Date("2026-03-09T12:00:00.000Z") } },
 		);
 
-		const written = await rebuildDailySnapshots(now);
-		expect(written).toBeGreaterThanOrEqual(1);
+		await rebuildDailySnapshots(REFERENCE);
+		await rebuildDailySnapshots(REFERENCE);
+
+		const snapshots = await listSnapshotsByVendorDB({ vendorId });
+		expect(snapshots.length).toBe(1);
+		expect(snapshots[0].totalOrders).toBe(1);
 	});
 });
 

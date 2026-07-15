@@ -18,6 +18,9 @@ export default defineConfig({
 		globals: true,
 		include: ["tests/**/*.test.ts"],
 		setupFiles: ["tests/setup.ts"],
+		// Mints the per-run id and guarantees the scratch databases are dropped
+		// even when a worker crashes before its `afterAll` can run.
+		globalSetup: ["tests/globalSetup.ts"],
 		hookTimeout: 30000,
 		testTimeout: 30000,
 		coverage: {

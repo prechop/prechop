@@ -131,11 +131,14 @@ export default function AdminUserDetailWrapper({ userId }: { userId: string }) {
 				title={`${user.firstName} ${user.lastName}`}
 				subtitle="Full account profile and analytics."
 				actions={
-					<Link href="/admin/iam">
-						<Button $variant="secondary" $size="sm">
-							← Back to IAM
-						</Button>
-					</Link>
+					<Button
+						as={Link}
+						href="/admin/iam"
+						$variant="secondary"
+						$size="sm"
+					>
+						← Back to IAM
+					</Button>
 				}
 			/>
 
@@ -255,11 +258,14 @@ export default function AdminUserDetailWrapper({ userId }: { userId: string }) {
 								<Text $weight={800} $size={15}>
 									🏪 Vendor profile
 								</Text>
-								<Link href={`/v/${vendor.id}`}>
-									<Button $variant="secondary" $size="sm">
-										Storefront
-									</Button>
-								</Link>
+								<Button
+									as={Link}
+									href={`/v/${vendor.id}`}
+									$variant="secondary"
+									$size="sm"
+								>
+									Storefront
+								</Button>
 							</Row>
 							<Field
 								label="Business"

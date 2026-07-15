@@ -54,7 +54,9 @@ export async function rebuildDailySnapshots(reference?: Date): Promise<number> {
 			// Mean over every order created that day, including cancelled ones
 			// that contributed no revenue — the existing definition, kept.
 			avgOrderValueKobo:
-				totalOrders > 0 ? Math.round(totalRevenueKobo / totalOrders) : 0,
+				totalOrders > 0
+					? Math.round(totalRevenueKobo / totalOrders)
+					: 0,
 			topItemIds: s?.topItemIds ?? [],
 			newReviewCount: r?.newReviewCount ?? 0,
 		};

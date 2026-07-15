@@ -69,8 +69,14 @@ Keep `vendorId` + `campusId` indexes.
   `$inc` on `items.$[elem].orderedQuantity` using `arrayFilters`.
 
 ### BuyerOrder → `buyerOrders` (+ embedded items)
-- Scalars port directly. `orderNumber @unique` → unique index. `platformFeeKobo` default now
-  sourced from `siteConfigs` (5000) rather than a hard schema default — see ADR-004.
+- Scalars port directly. `orderNumber @unique` → unique index.
+- ⚠️ **CORRECTED (2026-07-15):** this previously said *"`platformFeeKobo` default now sourced from
+  `siteConfigs` (5000)"*. **There is no flat default to source.** Fees are **computed per order** as
+  percentages (3% buyer capped ₦200 / 8% vendor) by `resolveFeePolicy` in `src/constants/fees.ts`,
+  reading the admin-set rates from `siteConfigs` with env as fallback. The flat `platformFee*Kobo`
+  config fields are **retired**. See ADR-004a. Note also the field-name trap:
+  `BuyerOrder.platformFeeKobo` holds the **buyer's** service fee, while `Payment.platformFeeKobo`
+  holds the **vendor's** commission.
 - **`BuyerOrderItem` / `BuyerOrderItemAddon` embedded** on the order (same reasoning).
 - `payment` and `review` are **references** (`Payment.buyerOrderId`, `Review.buyerOrderId` unique),
   not embedded — different lifecycles.

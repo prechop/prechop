@@ -1,4 +1,10 @@
-import { handleError, ok, requirePermission, withApiHandler, withAuth } from "@/server/lib";
+import {
+	handleError,
+	ok,
+	requirePermission,
+	withApiHandler,
+	withAuth,
+} from "@/server/lib";
 import { getAdminRevenue } from "@/server/services/admin";
 
 export const runtime = "nodejs";

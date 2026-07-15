@@ -1,13 +1,14 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import {
-	FulfillmentType,
-	OrderStatus,
-	SETTLED_ORDER_STATUSES,
-} from "../enums";
+import { FulfillmentType, OrderStatus, SETTLED_ORDER_STATUSES } from "../enums";
 import { IOperationType, PLATFORM_TIMEZONE } from "../utils";
-import type { IBuyerOrder, IBuyerOrderCreateInput } from "./types";
+import type {
+	IBuyerOrder,
+	IBuyerOrderCreateInput,
+	ReceiptStatus,
+} from "./types";
+import { RECEIPT_STATUSES } from "./types";
 
 const collectionName = "buyerOrders";
 
@@ -102,6 +103,11 @@ const schema = new mongoose.Schema<any>(
 		paidAt: { type: Date },
 		channel: { type: String },
 		receiptUrl: { type: String },
+		// No `default` on purpose — see types.ts. Absent = pre-feature order, and
+		// the UI keys "render nothing" off exactly that absence. Defaulting to
+		// PENDING would make every historical order advertise a receipt that no
+		// job will ever produce.
+		receiptStatus: { type: String, enum: RECEIPT_STATUSES },
 		items: { type: [itemSchema], default: [] },
 	},
 	{ timestamps: true },
@@ -115,6 +121,19 @@ schema.index({ receiptUrl: 1 }, { sparse: true });
 // {status:1, dailyOrderId:1} was tried and measured: the planner rejects it
 // (the sweep must FETCH whole docs to act on them, so the extra key buys no
 // covering) and it only added write amplification. Do not re-add it.
+// Hourly review-prompt sweep (listBuyerOrdersDB with filter
+// {status: COMPLETED, updatedAt: range} — services/notifications/reviewPrompts.ts).
+// `status_1` alone gives status equality but must then FETCH every COMPLETED order
+// ever written to filter updatedAt in memory: measured at 400k it examined 335652
+// docs (~422ms). With updatedAt in the key the planner narrows straight to the
+// window (examined 213, ~6ms) and selects this index over status_1. COMPLETED grows
+// without bound, so the pre-index cost widens with order history.
+schema.index({ status: 1, updatedAt: 1 });
+// Nightly analytics driver (aggregateVendorDailyStatsDB $match {createdAt: dayRange}).
+// No unprefixed createdAt index existed — `buyerId_1_createdAt_-1` is buyerId-prefixed
+// so a bare createdAt range can't use it — and the $match COLLSCANned all 400k docs
+// (~243ms). This turns it into an IXSCAN (examined 1124, ~8ms).
+schema.index({ createdAt: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({
@@ -572,6 +591,36 @@ export async function setBuyerOrderReceiptUrlDB({
 		const res = await BuyerOrder.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $set: { receiptUrl } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Receipt-generation lifecycle write (PRD §8.13).
+ *
+ * Unconditional by id: eligibility is the service layer's call
+ * (`isReceiptEligible`), and this must stay writable for the FAILED transition
+ * of an order that stopped being eligible mid-render — otherwise a status-gated
+ * write here would strand that order on PENDING, which is exactly what the
+ * schema comment above warns against.
+ */
+export async function setBuyerOrderReceiptStatusDB({
+	id,
+	receiptStatus,
+	session,
+}: {
+	id: string;
+	receiptStatus: ReceiptStatus;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { receiptStatus } },
 			{ session, returnDocument: "after" },
 		);
 		return !!res;
@@ -1104,7 +1153,12 @@ export async function aggregateVendorEarningsStatsDB({
 						$sum: {
 							$cond: [
 								completedExpr,
-								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
+								{
+									$ifNull: [
+										"$vendorSettlementKobo",
+										"$totalKobo",
+									],
+								},
 								0,
 							],
 						},
@@ -1132,7 +1186,12 @@ export async function aggregateVendorEarningsStatsDB({
 						$sum: {
 							$cond: [
 								completedExpr,
-								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
+								{
+									$ifNull: [
+										"$vendorSettlementKobo",
+										"$totalKobo",
+									],
+								},
 								0,
 							],
 						},
@@ -1191,7 +1250,9 @@ export async function aggregateVendorEarningsStatsDB({
 					? Math.round(totalRevenueKobo / completedOrders)
 					: 0,
 			completionRate:
-				resolvedOrders > 0 ? (completedOrders / resolvedOrders) * 100 : 0,
+				resolvedOrders > 0
+					? (completedOrders / resolvedOrders) * 100
+					: 0,
 		};
 	} catch {
 		return empty;

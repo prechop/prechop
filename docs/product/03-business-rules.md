@@ -11,10 +11,21 @@ The canonical, testable rules. Each has an ID (`BR-n`) for cross-reference from 
 - **BR-3 — Snapshots freeze price.** A `DailyOrderItem` snapshots its menu item at publish; a
   `BuyerOrderItem`/addon snapshots at order time. Later menu edits never change a published listing
   or a placed order.
-- **BR-4 — Platform fee.** Prechop takes **₦50 from the buyer** (added as a visible line item at
-  checkout) **+ ₦100 from the vendor** (deducted from settlement) per order — `5000` / `10000`
-  kobo, sourced from `siteConfigs`. `vendorAmountKobo = subtotal + deliveryFee − vendorFee`
-  (floored at 0). (Resolves the source discrepancy — see ADR-004.)
+- **BR-4 — Platform fee (percentage).** Prechop takes **3% of the food subtotal from the buyer,
+  capped at ₦200** (added as a visible line item at checkout, `paymentProcessingFeeKobo`) **+ 8% of
+  the food subtotal from the vendor**, uncapped (deducted from settlement, `prechopCommissionKobo`).
+  Both derive from the **food subtotal** (items + selected options) — never from `totalKobo`, which
+  contains the buyer's own fee. `vendorSettlementKobo = foodSubtotal + deliveryFee − commission`
+  (floored at 0). Rates are **admin-governed** in `siteConfigs` (`platformFeeBuyerPercent`,
+  `platformFeeBuyerMaxKobo`, `platformFeeVendorPercent`) with **env `PLATFORM_FEE_*` as fallback** —
+  no redeploy needed. `placeOrder` resolves them via `resolveFeePolicy(config)`; the buyer's quote
+  uses `getEffectiveFeePolicy()` so the quote cannot drift from the charge. An invalid config falls
+  back **loudly** to the standing rate and **never charges 0**; an explicit `0` is honoured. See
+  ADR-004a.
+  > **⚠️ CORRECTED (2026-07-15).** This rule previously read *"₦50 from the buyer + ₦100 from the
+  > vendor — `5000` / `10000` kobo, sourced from `siteConfigs`"* per ADR-004. **That flat model was
+  > never implemented and is not the product**, and the flat `platformFee*Kobo` fields it named were
+  > dead config (default 0, read by nothing) — now **retired**. ADR-004 is superseded by ADR-004a.
 - **BR-5 — Delivery fee.** Set per daily order, uniform for all buyers on that listing; `0` shows a
   "Free Delivery" badge. Collected in the single Paystack payment and settled to the vendor. It is
   fully refundable if the order is cancelled before `PREPARING`; non-refundable once `PREPARING`.
@@ -48,11 +59,28 @@ The canonical, testable rules. Each has an ID (`BR-n`) for cross-reference from 
 
 ## Vendor lifecycle & visibility
 
-- **BR-15 — Completeness gate.** A vendor is invisible on the marketplace until
-  `profileCompleteness = 100`. Weights: phone verified 10, profile photo 15, ≥1 category 10, ≥3
-  menu items 25, timetable ≥1 day 15, bank details/subaccount 25.
-- **BR-16 — Auto-activation.** At 100% completeness the vendor auto-transitions `INCOMPLETE →
-  ACTIVE`. **No manual approval gate** (Final PRD supersedes v2's manual `verified` flag).
+- **BR-15 — Completeness is a display score, not a gate.** `profileCompleteness` (0–100) is
+  recomputed for display/audit and **gates nothing**. Weights: phone verified 10, profile photo 15,
+  ≥1 category 10, ≥3 menu items 25, timetable ≥1 day 15, bank details/subaccount 25.
+  `siteConfigs.profileCompletenessRequired` (default 100) is **informational only** — no code reads
+  it as a gate.
+  > **⚠️ CORRECTED (2026-07-15).** Previously: *"A vendor is invisible on the marketplace until
+  > `profileCompleteness = 100`."* Marketplace visibility is gated on **admin approval** (BR-16).
+- **BR-16 — Manual admin approval gate.** `INCOMPLETE` → *(vendor submits)* → `PENDING_REVIEW`
+  (profile read-only) → admin **approve** → `ACTIVE`, or admin **reject(reason)** →
+  `CHANGES_REQUESTED` → *(vendor resubmits)* → `PENDING_REVIEW`. Submission is allowed only from
+  `INCOMPLETE`/`CHANGES_REQUESTED` and gates on the **onboarding checklist** — phone verified,
+  `businessName`, ≥1 category, `locationType` (OFF_CAMPUS also needs state + area + ≥1 campus),
+  `paystackSubaccountCode`, `profileImageUrl` — **not** on `profileCompleteness ≥ 100`.
+  > **⚠️ CORRECTED (2026-07-15) — this rule was the exact reverse.** Previously: *"At 100%
+  > completeness the vendor auto-transitions INCOMPLETE → ACTIVE. **No manual approval gate.**"*
+  > **Completeness no longer auto-activates anyone.**
+  >
+  > **Why the checklist, and not the 100% score (do not "fix" this back):** the score awards 25% for
+  > menu items and 15% for a timetable entry, but both actions sit behind the **active-vendor** gate
+  > — an applicant cannot perform them until they are already approved. Gating submission on 100%
+  > therefore **deadlocked every applicant at ~60%**. The checklist covers only what an applicant can
+  > actually do before approval.
 - **BR-17 — Open toggle.** `isOpenForOrders` can only be turned on when status is `ACTIVE`.
 - **BR-18 — Active to publish.** Only `ACTIVE` vendors can create daily orders.
 - **BR-19 — Bank details from Paystack.** The account name is resolved via Paystack and stored
@@ -101,7 +129,15 @@ The canonical, testable rules. Each has an ID (`BR-n`) for cross-reference from 
 - **BR-34 — Review window.** 72 hours from the order's completion (`REVIEW_WINDOW_EXPIRED`).
 - **BR-35 — Immutable.** Reviews can't be edited after submission.
 - **BR-36 — Rating hidden until proven.** A vendor's numeric rating is hidden until ≥5 completed
-  reviews; a "New Vendor" badge shows instead.
+  **reviews** (`MIN_REVIEWS_FOR_PUBLIC_RATING`); a "New Vendor" badge shows instead. The rating is
+  nulled **server-side** below the threshold, so a sub-threshold score never crosses the wire — a
+  client-side gate would still ship the number in the response body. One mapper (`toPublicVendor`)
+  applies the gate for every public surface (marketplace, storefront, search), so it cannot be
+  applied on one and forgotten on another. Ungated vendors sort **below** every rated vendor.
+  > **Note (2026-07-15):** the PRD contradicted itself — §8.6 said "fewer than 5 completed
+  > **orders**", §8.12 said "5 completed **reviews**". **Ruled: reviews.** Gating on orders would let
+  > a vendor with 50 orders and one 5-star review publish an unqualified "5.0" — the exact
+  > manipulation the rule exists to stop. The PRD has been corrected to match.
 - **BR-37 — Report flags only.** A vendor "report" flags a review (rating unchanged — prevents
   gaming); admin removal recomputes the rating.
 

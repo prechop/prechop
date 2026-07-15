@@ -9,6 +9,10 @@ function baseUser(overrides: Partial<IUser> = {}): IUser {
 	return {
 		_id: "507f1f77bcf86cd799439011",
 		campusId: "507f1f77bcf86cd799439012",
+		// `IUser` declares `email: string` as required even though the users
+		// schema has no email path at all, so a real document never carries one.
+		// Supplied here only to satisfy the type — see HANDOFF.
+		email: "ada@prechop.test",
 		groupIds: [],
 		directPolicyIds: [],
 		firstName: "Ada",

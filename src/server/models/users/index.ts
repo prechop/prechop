@@ -11,7 +11,12 @@ import { databaseResponseTimeHistogram } from "../../metrics";
 import type { IJwtPayload } from "../../types";
 import { IOperationType } from "../utils";
 import type { IUser, IUserCreateInput } from "./types";
-import { generateAuthToken } from "./utils";
+import {
+	EMAIL_MAX_LENGTH,
+	generateAuthToken,
+	isStorableEmail,
+	normalizeEmail,
+} from "./utils";
 
 const collectionName = "users";
 
@@ -39,6 +44,32 @@ const schema = new mongoose.Schema<any>(
 		},
 		firstName: { type: String, required: true, trim: true },
 		lastName: { type: String, required: true, trim: true },
+		// Optional notification address, never a credential — login is phone +
+		// OTP. Most users have none; the field is then ABSENT, not "", so
+		// `buyer?.email ?? ""` stays falsy and "has an email" is a single
+		// `$exists` check.
+		//
+		// Deliberately NOT unique and NOT indexed:
+		//  - nothing queries users by email (the only by-email lookup in the
+		//    codebase is `getVendorProfileByEmailDB`, on a different collection),
+		//    so an index here would be pure write cost on every user write;
+		//  - email grants no account access, so a duplicate is not an auth risk,
+		//    and a unique constraint would turn a best-effort receipt address
+		//    into a hard write failure for two flatmates sharing an inbox.
+		// If a by-email lookup or a uniqueness rule ever lands, add
+		// `{ unique: true, sparse: true }` THEN — sparse so the ~100% of users
+		// without one don't collide on null.
+		email: {
+			type: String,
+			required: false,
+			trim: true,
+			lowercase: true,
+			maxlength: EMAIL_MAX_LENGTH,
+			validate: {
+				validator: isStorableEmail,
+				message: "Invalid email address.",
+			},
+		},
 		// Encrypted at rest. `phoneHash` carries the unique constraint since the
 		// ciphertext is non-deterministic.
 		phone: { type: String, required: true, select: false },
@@ -216,30 +247,64 @@ export async function setUserActiveDB({
 	}
 }
 
+/**
+ * Patch the mutable profile fields. Every parameter is independently optional:
+ * omitted means "leave untouched".
+ *
+ * `email` additionally accepts `""`/`null` to CLEAR the address, which `$unset`s
+ * the path rather than storing an empty string — "has no email" stays a single
+ * `$exists: false`, and never a `""` that would read as present.
+ *
+ * Returns `null` on failure, which — consistent with the rest of this file —
+ * includes a schema validation failure (e.g. a malformed email that bypassed the
+ * service-layer check). Callers wanting a 400 rather than a 404 must validate
+ * first; `services/users/updateProfile` does.
+ */
 export async function updateUserProfileDB({
 	id,
 	firstName,
 	lastName,
 	campusId,
+	email,
 	session,
 }: {
 	id: string;
 	firstName?: string;
 	lastName?: string;
 	campusId?: string;
+	/** `""`/`null` clears the address; `undefined` leaves it untouched. */
+	email?: string | null;
 	session?: ClientSession;
 }): Promise<IUser | null> {
 	try {
 		const set: Record<string, unknown> = {};
+		const unset: Record<string, unknown> = {};
 		if (firstName !== undefined) set.firstName = firstName;
 		if (lastName !== undefined) set.lastName = lastName;
 		if (campusId !== undefined) {
 			set.campusId = new mongoose.Types.ObjectId(campusId);
 		}
+		if (email !== undefined) {
+			// Normalize here too, not just in the service: this is the boundary
+			// the database is reached through, so the stored form must not
+			// depend on which caller got here.
+			const normalized = normalizeEmail(email ?? "");
+			if (normalized === null) unset.email = "";
+			// `undefined` (invalid) is passed through as-is so `runValidators`
+			// rejects the write rather than silently dropping the field.
+			else set.email = normalized ?? email;
+		}
+
+		// `$set` is always present (even empty) to preserve the pre-existing
+		// no-op-patch behaviour; `$unset` is only added when clearing, since an
+		// empty `$unset` is rejected by the server.
+		const update: Record<string, unknown> = { $set: set };
+		if (Object.keys(unset).length > 0) update.$unset = unset;
+
 		const res = await User.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
-			{ $set: set },
-			{ session, returnDocument: "after" },
+			update,
+			{ session, returnDocument: "after", runValidators: true },
 		);
 		return res ? (res.toObject() as unknown as IUser) : null;
 	} catch {
@@ -726,4 +791,5 @@ export async function countUsersDB({
 }
 
 export * from "./types";
+export { EMAIL_MAX_LENGTH, normalizeEmail } from "./utils";
 export { MAX_LIMIT };

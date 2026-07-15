@@ -177,11 +177,24 @@ class PaystackProvider {
 	 * Verify a webhook payload originated from Paystack via HMAC-SHA512 with the
 	 * secret key. The RAW request body must be passed exactly as received — do
 	 * not re-stringify a parsed object.
+	 *
+	 * Throws when the secret is unset rather than defaulting to "". An empty HMAC
+	 * key is a *publicly known* key: anyone could compute a valid signature and
+	 * forge a "payment succeeded" webhook that marks orders paid. `bootstrap.ts`
+	 * asserts the var at boot, but that guard is production-only and lives in
+	 * another file — so it fails open in dev/test and cannot be relied on here.
+	 * Refusing at the point of use means there is no environment in which this
+	 * function can verify against an empty key.
 	 */
 	verifyWebhookSignature(
 		rawBody: string,
 		signatureHeader: string | undefined,
 	): boolean {
+		if (!PAYSTACK_SECRET_KEY) {
+			throw new Error(
+				"PAYSTACK_SECRET_KEY unset — refusing to verify webhook",
+			);
+		}
 		if (!signatureHeader) return false;
 		const computedHash = crypto
 			.createHmac("sha512", PAYSTACK_SECRET_KEY)

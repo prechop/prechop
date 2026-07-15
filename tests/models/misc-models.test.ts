@@ -205,6 +205,7 @@ describe("refunds model", () => {
 			payload: { paymentId, amountKobo: 155000, reason: "cancelled" },
 		});
 		expect(refund!.amountKobo).toBe(155000);
+		expect(refund!.created).toBe(true);
 		const byPayment = await getRefundByPaymentIdDB({ paymentId });
 		expect(byPayment!._id.toString()).toBe(refund!._id.toString());
 		expect(
@@ -213,6 +214,46 @@ describe("refunds model", () => {
 				paystackRefundId: "rf_123",
 			}),
 		).toBe(true);
+	});
+
+	it("is idempotent per payment: a second create returns created=false", async () => {
+		// This flag is the double-payout guard. `createRefundDB` upserts on
+		// paymentId, and callers only hand money to Paystack when `created` is
+		// true — so a retried/duplicated cancellation must report false here, or
+		// the buyer gets refunded twice for one payment.
+		const paymentId = oid();
+		const first = await createRefundDB({
+			payload: { paymentId, amountKobo: 155000, reason: "cancelled" },
+		});
+		expect(first!.created).toBe(true);
+
+		const second = await createRefundDB({
+			payload: { paymentId, amountKobo: 155000, reason: "cancelled" },
+		});
+		expect(second).not.toBeNull();
+		expect(second!.created).toBe(false);
+		// Same row, not a second refund document.
+		expect(second!._id.toString()).toBe(first!._id.toString());
+	});
+
+	it("never lets a duplicate rewrite the original refund amount", async () => {
+		// The insert is $setOnInsert-only, so a second call with a DIFFERENT
+		// amount must not escalate the payout — it returns the original.
+		const paymentId = oid();
+		const first = await createRefundDB({
+			payload: { paymentId, amountKobo: 100000, reason: "cancelled" },
+		});
+		expect(first!.amountKobo).toBe(100000);
+
+		const escalated = await createRefundDB({
+			payload: { paymentId, amountKobo: 900000, reason: "cancelled" },
+		});
+		expect(escalated!.created).toBe(false);
+		expect(escalated!.amountKobo).toBe(100000);
+
+		// …and the stored document is untouched.
+		const stored = await getRefundByPaymentIdDB({ paymentId });
+		expect(stored!.amountKobo).toBe(100000);
 	});
 });
 

@@ -6,13 +6,14 @@ import {
 } from "@playwright/test";
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { BASE_URL, ORIGIN } from "./urls";
 
 // End-to-end coverage for reusable menu option groups, driven against the real
 // server + seeded local Mongo/Redis. Run `pnpm seed` first. Auth reuses the
 // planted-OTP-hash technique (the code is only stored hashed) — test-only.
 
 const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
-const ORIGIN = "http://localhost:3100";
 const VENDOR_PHONE = "08122222222";
 const KNOWN_OTP = "123456";
 
@@ -28,17 +29,13 @@ test.afterAll(async () => {
 
 async function login(phone: string): Promise<APIRequestContext> {
 	const anon = await request.newContext({
-		baseURL: "http://127.0.0.1:3100",
+		baseURL: BASE_URL,
 		extraHTTPHeaders: { origin: ORIGIN },
 	});
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await anon.post("/api/auth/otp/request", { data: { phone } });
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await anon.post("/api/auth/otp/verify", {
 		data: { phone, otp: KNOWN_OTP },
 	});
@@ -46,7 +43,7 @@ async function login(phone: string): Promise<APIRequestContext> {
 	const accessToken = (await verify.json()).data.accessToken as string;
 	await anon.dispose();
 	return request.newContext({
-		baseURL: "http://127.0.0.1:3100",
+		baseURL: BASE_URL,
 		extraHTTPHeaders: {
 			origin: ORIGIN,
 			authorization: `Bearer ${accessToken}`,

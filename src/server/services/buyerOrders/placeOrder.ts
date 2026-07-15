@@ -15,6 +15,7 @@ import {
 	hash,
 	koboToNaira,
 	notFound,
+	resolveFeePolicy,
 	serviceUnavailable,
 	slotUnavailable,
 	sumKobo,
@@ -34,7 +35,10 @@ import {
 } from "../../models";
 import type { IBuyerOrderItem } from "../../models/buyerOrders/types";
 import { paystackProvider } from "../../providers";
-import { getSiteConfigs, MARKETPLACE_UNAVAILABLE_MESSAGE } from "../siteConfigs";
+import {
+	getSiteConfigs,
+	MARKETPLACE_UNAVAILABLE_MESSAGE,
+} from "../siteConfigs";
 import { releaseSlots, reserveSlots, type SlotRequest } from "./slots";
 
 export interface PlaceOrderInput {
@@ -171,10 +175,18 @@ export async function placeOrder({
 	});
 
 	// ── 3. Totals (server-authoritative) ────────────────────────────────
+	// The fee policy is admin-configurable (Admin → Settings) and resolved from
+	// siteConfigs, NOT from the request: the client sends only ids and
+	// quantities. `resolveFeePolicy` falls back to the env default (3% capped at
+	// ₦200 buyer / 8% vendor) for any field the config leaves unset or invalid,
+	// so a missing or corrupt config charges the standing rate rather than 0.
+	const feePolicy = resolveFeePolicy(config);
 	const subtotalKobo = sumKobo(...resolvedItems.map((i) => i.subtotalKobo));
 	const deliveryFeeKobo = 0;
-	const prechopCommissionKobo =
-		calculateVendorCommissionKobo(subtotalKobo);
+	const prechopCommissionKobo = calculateVendorCommissionKobo(
+		subtotalKobo,
+		feePolicy,
+	);
 	const vendorFoodAmountKobo = Math.max(
 		0,
 		subtotalKobo - prechopCommissionKobo,
@@ -184,7 +196,10 @@ export async function placeOrder({
 		vendorFoodAmountKobo,
 		vendorDeliveryAmountKobo,
 	);
-	const paymentProcessingFeeKobo = calculateBuyerServiceFeeKobo(subtotalKobo);
+	const paymentProcessingFeeKobo = calculateBuyerServiceFeeKobo(
+		subtotalKobo,
+		feePolicy,
+	);
 	const totalKobo = sumKobo(subtotalKobo, paymentProcessingFeeKobo);
 	const platformFeeKobo = paymentProcessingFeeKobo;
 
@@ -250,8 +265,7 @@ export async function placeOrder({
 		: undefined;
 	const externalPaymentExpiresAt = payForMe
 		? new Date(
-				Date.now() +
-					config.externalPaymentLinkTtlMinutes * 60 * 1000,
+				Date.now() + config.externalPaymentLinkTtlMinutes * 60 * 1000,
 			)
 		: undefined;
 	const holds = resolvedItems.map((i) => ({

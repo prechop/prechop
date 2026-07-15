@@ -54,8 +54,11 @@ in ADR-002 as the fallback but is **not** the chosen path.
 | `test` | ephemeral per-worker DB | local Redis | mocked | mocked | vitest/e2e |
 | `production` | Mongo replica set | managed Redis (TLS) | `sk_live_` | Sendchamp live | live |
 
-`NODE_ENV` and all secrets are validated at boot (`assertSecrets()` in `bootstrap.ts`): the app
-refuses to start on a missing/weak/duplicate secret in production. See `06-config-reference.md`.
+`NODE_ENV` and all runtime config are validated at boot (`assertRuntimeConfig()` in `bootstrap.ts`):
+the app **refuses to start in production** on a missing/weak/duplicate secret, a malformed fee env
+var, or any of the "silent failure" vars whose dev defaults are dangerous in production —
+`OTP_PROVIDER`, `PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_APP_URL`, `MONGODB_URI`, `REDIS_URI`. Outside
+production it warns instead of throwing. See `06-config-reference.md`.
 
 Region: **`af-south-1` (Cape Town)** for lowest latency to Nigeria (S3 bucket + compute).
 

@@ -21,11 +21,59 @@ export const GlobalStyle = createGlobalStyle`
     --pc-color-danger-50: #FDECEC;
     --pc-color-warning: #F08C00;
 
+    /* Solid-fill BUTTON tokens — white-label-on-fill. The bright brand hues
+       (primary #FF5A1F, accent #1F9D57/#2FBE6C, danger #E5484D) are tuned for
+       badges/borders/icons; as a fill under 15px/700 WHITE button text they all
+       fail WCAG AA (primary gradient 2.59–3.12, accent 3.49, danger 3.92 — AA
+       needs 4.5, and a bold ≤16px label is NOT "large text"). These are the same
+       hues darkened until white clears 4.5:1 with headroom for the hover states,
+       measured in Chromium. Theme-independent: a dark saturated fill carries
+       white identically on the cream and charcoal surfaces, so no per-theme
+       override is needed. Measured (white on fill): primary light-stop #C83F0A
+       5.03 (hover ×1.04 → 4.71), primary dark-stop #A62F07 6.93; accent #0E7A3E
+       5.42 (hover ×1.06 → ~4.9); danger #B82A2F 6.16 (hover ×0.94 → 6.75).
+       The gold variant already passes (dark #3A2C00 text, 7.39) and is left. */
+    --pc-btn-primary-bg: linear-gradient(135deg, #C83F0A 0%, #A62F07 100%);
+    --pc-btn-accent-bg: #0E7A3E;
+    --pc-btn-danger-bg: #B82A2F;
+
+    /* Badge/label INK tokens — text-only. The bright brand hues above are tuned
+       for fills, borders and icons; as 12px/700 text on their own -50 tints they
+       all fail WCAG AA (primary 2.80, success 3.13, warning 2.32, danger 3.43,
+       gold 4.03, muted 4.38 — AA needs 4.5, and 12px bold is NOT "large text").
+       These inks are the same hues darkened until they pass, and are overridden
+       per-theme below. Only ever use them for text on the matching -50 surface. */
+    --pc-color-primary-ink: #C43C0B;  /* on --pc-color-primary-50  4.72 */
+    --pc-color-success-ink: #146B3A;  /* on --pc-color-accent-50   5.89 */
+    --pc-color-warning-ink: #7A4A00;  /* on --pc-color-gold-50     6.99 */
+    --pc-color-danger-ink:  #B0272C;  /* on --pc-color-danger-50   5.80 */
+    --pc-color-gold-ink:    #6B5200;  /* on --pc-color-gold-50     6.93 */
+    --pc-color-muted-ink:   #5C5248;  /* on --pc-surface-2         6.73 */
+
+    /* Scrim for badges/labels sitting on --pc-gradient-hero. The gradient runs
+       #FF5A1F -> #F4B400 and a badge can land anywhere along it, so the bright
+       gold stop is what has to pass. A white wash fails there (#fff on an 18%
+       white scrim over #F4B400 is 1.66); a 55% black scrim carries #fff at
+       7.39 against the worst stop. Theme-independent — the hero is never dark. */
+    --pc-scrim-on-hero: rgba(0, 0, 0, 0.55);
+    --pc-scrim-on-hero-border: rgba(255, 255, 255, 0.6);
+
     --pc-bg: #FFF6EC;
     --pc-surface: #FFFFFF;
     --pc-surface-2: #FBEFE2;
     --pc-surface-3: #F6E7D6;
     --pc-border: #F0E2D2;
+    /* Decorative hairline (--pc-border, 1.27:1) is below the 3:1 WCAG 1.4.11
+       floor for a control boundary. Inputs get their own darker boundary token
+       that clears 3:1 against the field surface in both themes — measured
+       #94856F 3.59:1 on #FFFFFF (3.36 on the cream bg), dark #7A6D5C 3.49:1 on
+       #1E1813. Used only where the border IS the control's only boundary. */
+    --pc-input-border: #94856F;
+    /* Placeholder text — --pc-text-faint (2.69:1) reads as decorative. A real
+       label is always present (so this is belt-and-braces), but darken it to
+       clear AA against the field surface anyway: #807463 4.57:1 on #FFFFFF (4.27
+       on cream), dark #9C8E7C 5.50:1 on #1E1813. */
+    --pc-placeholder: #807463;
     --pc-text: #1A1410;
     --pc-text-muted: #7A6E62;
     --pc-text-faint: #A89C8D;
@@ -73,11 +121,24 @@ export const GlobalStyle = createGlobalStyle`
       --pc-color-gold-50: #2C2410;
       --pc-color-danger-50: #2C1614;
 
+      /* On the dark -50 tints the bright hues are the legible choice, so the
+         inks mostly resolve back to them. Two do NOT: danger #E5484D on
+         #2C1614 is 4.36 and gold #9A7400 on #2C2410 is 3.56 — both fail AA, so
+         dark gets its own lifted values (6.81 / 8.32). */
+      --pc-color-primary-ink: #FF5A1F;  /* on #2A1810  5.45 */
+      --pc-color-success-ink: #2FBE6C;  /* on #16281D  6.42 */
+      --pc-color-warning-ink: #F08C00;  /* on #2C2410  6.19 */
+      --pc-color-danger-ink:  #FF7B7F;  /* on #2C1614  6.81 */
+      --pc-color-gold-ink:    #F4B400;  /* on #2C2410  8.32 */
+      --pc-color-muted-ink:   #B6A491;  /* on #2A2119  6.55 */
+
       --pc-bg: #14100C;
       --pc-surface: #1E1813;
       --pc-surface-2: #2A2119;
       --pc-surface-3: #342A20;
       --pc-border: #382D22;
+      --pc-input-border: #7A6D5C;
+      --pc-placeholder: #9C8E7C;
       --pc-text: #FBF3E9;
       --pc-text-muted: #B6A491;
       --pc-text-faint: #857766;
@@ -94,11 +155,19 @@ export const GlobalStyle = createGlobalStyle`
     --pc-color-accent-50: #16281D;
     --pc-color-gold-50: #2C2410;
     --pc-color-danger-50: #2C1614;
+    --pc-color-primary-ink: #FF5A1F;
+    --pc-color-success-ink: #2FBE6C;
+    --pc-color-warning-ink: #F08C00;
+    --pc-color-danger-ink:  #FF7B7F;
+    --pc-color-gold-ink:    #F4B400;
+    --pc-color-muted-ink:   #B6A491;
     --pc-bg: #14100C;
     --pc-surface: #1E1813;
     --pc-surface-2: #2A2119;
     --pc-surface-3: #342A20;
     --pc-border: #382D22;
+    --pc-input-border: #7A6D5C;
+    --pc-placeholder: #9C8E7C;
     --pc-text: #FBF3E9;
     --pc-text-muted: #B6A491;
     --pc-text-faint: #857766;
@@ -113,11 +182,21 @@ export const GlobalStyle = createGlobalStyle`
     --pc-color-accent-50: #E7F6EE;
     --pc-color-gold-50: #FFF7E0;
     --pc-color-danger-50: #FDECEC;
+    /* Restore the light inks: an explicit light choice on a dark-preferring OS
+       still passes through the prefers-color-scheme block above. */
+    --pc-color-primary-ink: #C43C0B;
+    --pc-color-success-ink: #146B3A;
+    --pc-color-warning-ink: #7A4A00;
+    --pc-color-danger-ink:  #B0272C;
+    --pc-color-gold-ink:    #6B5200;
+    --pc-color-muted-ink:   #5C5248;
     --pc-bg: #FFF6EC;
     --pc-surface: #FFFFFF;
     --pc-surface-2: #FBEFE2;
     --pc-surface-3: #F6E7D6;
     --pc-border: #F0E2D2;
+    --pc-input-border: #94856F;
+    --pc-placeholder: #807463;
     --pc-text: #1A1410;
     --pc-text-muted: #7A6E62;
     --pc-text-faint: #A89C8D;

@@ -7,6 +7,8 @@ import {
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { BASE_URL, ORIGIN } from "./urls";
 
 // End-to-end coverage for the IAM permission system and the vendor onboarding
 // approval gate, driven against the real server + seeded local Mongo/Redis.
@@ -18,7 +20,6 @@ import mongoose from "mongoose";
 const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
-const ORIGIN = "http://localhost:3100";
 
 const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08130135756";
 const BUYER_PHONE = "08111111111";
@@ -60,19 +61,16 @@ test.afterAll(async () => {
  */
 async function login(phone: string): Promise<APIRequestContext> {
 	const anon = await request.newContext({
-		baseURL: "http://127.0.0.1:3100",
+		baseURL: BASE_URL,
 		extraHTTPHeaders: { origin: ORIGIN },
 	});
-	// Clear any prior OTP rate-limit so the suite is re-runnable.
-	await redis.del(`otp:ratelimit:${phone}`);
+	// Clear any prior OTP gates so the suite is re-runnable. Keyed off the
+	// NORMALISED phone, exactly as the server keys them — see e2e/otpKeys.ts.
+	await clearOtpGates(redis, phone);
 	const req = await anon.post("/api/auth/otp/request", { data: { phone } });
 	expect(req.ok(), "otp request").toBeTruthy();
 	// Overwrite the server-generated hash with a known one.
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await anon.post("/api/auth/otp/verify", {
 		data: { phone, otp: KNOWN_OTP },
 	});
@@ -82,7 +80,7 @@ async function login(phone: string): Promise<APIRequestContext> {
 	await anon.dispose();
 
 	return request.newContext({
-		baseURL: "http://127.0.0.1:3100",
+		baseURL: BASE_URL,
 		extraHTTPHeaders: {
 			origin: ORIGIN,
 			authorization: `Bearer ${accessToken}`,

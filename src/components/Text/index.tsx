@@ -43,20 +43,23 @@ export const Badge = styled.span<{
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	line-height: 1.4;
+	/* Text colour always comes from an *-ink token, never the raw brand hue: at
+	   12px/700 on the matching -50 tint the brand hues fail WCAG AA (2.32–4.03).
+	   The inks are theme-aware — see --pc-color-*-ink in styles/global.ts. */
 	${(p) => {
 		switch (p.$tone) {
 			case "success":
-				return css`background: var(--pc-color-accent-50); color: var(--pc-color-accent);`;
+				return css`background: var(--pc-color-accent-50); color: var(--pc-color-success-ink);`;
 			case "warning":
-				return css`background: var(--pc-color-gold-50); color: var(--pc-color-warning);`;
+				return css`background: var(--pc-color-gold-50); color: var(--pc-color-warning-ink);`;
 			case "gold":
-				return css`background: var(--pc-color-gold-50); color: #9a7400;`;
+				return css`background: var(--pc-color-gold-50); color: var(--pc-color-gold-ink);`;
 			case "danger":
-				return css`background: var(--pc-color-danger-50); color: var(--pc-color-danger);`;
+				return css`background: var(--pc-color-danger-50); color: var(--pc-color-danger-ink);`;
 			case "muted":
-				return css`background: var(--pc-surface-2); color: var(--pc-text-muted);`;
+				return css`background: var(--pc-surface-2); color: var(--pc-color-muted-ink);`;
 			default:
-				return css`background: var(--pc-color-primary-50); color: var(--pc-color-primary);`;
+				return css`background: var(--pc-color-primary-50); color: var(--pc-color-primary-ink);`;
 		}
 	}}
 `;

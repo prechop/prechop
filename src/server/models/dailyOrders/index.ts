@@ -95,6 +95,15 @@ const schema = new mongoose.Schema<any>(
 
 schema.index({ campusId: 1, status: 1 });
 schema.index({ campusId: 1, scheduledDate: 1 });
+// The per-minute operational sweeps (closeExpiredDailyOrdersDB and
+// findDailyOrdersNearCutoffDB) match on status + cutoffTime and nothing
+// campus-scoped, so the campusId-prefixed indexes above cannot serve them. Both
+// previously COLLSCANned all 80k docs (~41-45ms) on every 60s tick inside the
+// request process. Verified at 80k on 27019: the planner switches to this IXSCAN
+// (close: docsExamined 4901, ~9ms; near-cutoff: docsExamined 509, ~0ms with the
+// cutoffTime sort served by the index, no blocking SORT). Also index-supports the
+// batch marketplace query (listActivePublicListingsForVendorIdsDB).
+schema.index({ status: 1, cutoffTime: 1 });
 
 const withEmbeddedIds = {
 	id: { $toString: "$_id" },
@@ -328,6 +337,55 @@ export async function listDailyOrdersByVendorDB({
 			],
 			{ session },
 		);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Batch variant of the marketplace's per-vendor "active public listings" query.
+ *
+ * `getMarketplace` previously called `listDailyOrdersByVendorDB` once per vendor
+ * and filtered `isPublic` + `cutoffTime` in memory (61 queries for a 60-vendor
+ * feed, on a path polled every 10s). This fetches the same active, public,
+ * still-open listings for many vendors in a SINGLE query by pushing those
+ * predicates into the DB. It mirrors `activePublicListingsForVendor`'s effective
+ * semantics exactly — status ACTIVE, isPublic true, cutoffTime > now — just with
+ * `vendorId: { $in: vendorIds }` instead of a single vendor, and preserves the
+ * `scheduledDate: -1` ordering of `listDailyOrdersByVendorDB` so the caller's
+ * per-vendor grouping is unchanged.
+ *
+ * Index-supported by `status_1_cutoffTime_1` (IXSCAN on status + cutoffTime; the
+ * vendorId `$in` and isPublic are applied on FETCH). Verified at 80k on 27019.
+ */
+export async function listActivePublicListingsForVendorIdsDB({
+	vendorIds,
+	now,
+	campusId,
+}: {
+	vendorIds: string[];
+	now: Date;
+	/** Optional campus scope; when set, only listings on this campus. */
+	campusId?: string;
+}): Promise<IDailyOrder[]> {
+	try {
+		const ids = vendorIds
+			.filter((v) => mongoose.Types.ObjectId.isValid(v))
+			.map((v) => new mongoose.Types.ObjectId(v));
+		if (ids.length === 0) return [];
+		const match: Record<string, unknown> = {
+			vendorId: { $in: ids },
+			status: DailyOrderStatus.ACTIVE,
+			isPublic: true,
+			cutoffTime: { $gt: now },
+		};
+		if (campusId && mongoose.Types.ObjectId.isValid(campusId)) {
+			match.campusId = new mongoose.Types.ObjectId(campusId);
+		}
+		return await DailyOrder.aggregate<IDailyOrder>([
+			{ $match: match },
+			{ $sort: { scheduledDate: -1 } },
+		]);
 	} catch {
 		return [];
 	}
@@ -670,6 +728,77 @@ export async function incrementDailyOrderTotalCountDB({
 		return res.modifiedCount > 0;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Cron sweep: ACTIVE listings whose cutoff falls in `(now, now+withinMinutes]`.
+ *
+ * Deliberately keyed on `status` + `cutoffTime` and NOTHING else. This is an
+ * *operational* query, not a marketplace-visibility one, and the distinction is
+ * the whole point of the function existing.
+ *
+ * The cutoff-warning job was originally built on
+ * `listActiveDailyOrdersByCampusDB`, which is a storefront query: it also
+ * requires `isPublic: true`, joins vendorprofiles to require
+ * `isOpenForOrders: true`, and caps at MAX_LIMIT. Every one of those is correct
+ * for deciding what to *show a browsing buyer* and wrong for deciding who to
+ * *warn*:
+ *
+ *   isPublic:false      link-only listings take real, paid orders. Their buyers
+ *                       were silently never warned.
+ *   isOpenForOrders:false  a vendor who flips the kitchen switch off still has
+ *                       live orders with a live cutoff. Warning stopped dead.
+ *   MAX_LIMIT           a silent cap on a sweep: past N listings, the tail is
+ *                       just dropped with no error.
+ *
+ * Bounded by `limit` for safety, but the caller must pass one high enough that
+ * truncation is not routine — the sweep should see every due listing.
+ *
+ * Exclusive lower bound (`$gt: now`): a listing already past its cutoff is the
+ * enforce sweep's problem, not a warning.
+ */
+export async function findDailyOrdersNearCutoffDB({
+	withinMinutes,
+	now = new Date(),
+	limit = 500,
+	session,
+}: {
+	withinMinutes: number;
+	now?: Date;
+	limit?: number;
+	session?: ClientSession;
+}): Promise<IDailyOrder[]> {
+	try {
+		// A non-positive window means "warnings are off"; return nothing rather
+		// than inverting the range into a query that matches the whole past.
+		if (!Number.isFinite(withinMinutes) || withinMinutes <= 0) return [];
+		const windowEnd = new Date(now.getTime() + withinMinutes * 60 * 1000);
+		return await DailyOrder.find(
+			{
+				status: DailyOrderStatus.ACTIVE,
+				cutoffTime: { $gt: now, $lte: windowEnd },
+				// `deleted: false` must be explicit here. The soft-delete filter
+				// lives in the `pre("aggregate")` hook, which does NOT run for
+				// `find()` — so omitting this silently warns buyers about a
+				// listing the vendor deleted. Unlike the status/cutoff-only rule
+				// above, this is not a visibility predicate: a deleted listing
+				// isn't hidden, it's gone.
+				deleted: false,
+			},
+			null,
+			{ session },
+		)
+			.sort({ cutoffTime: 1 })
+			.limit(limit)
+			.lean<IDailyOrder[]>()
+			.exec();
+	} catch (error) {
+		console.error(
+			"[dailyOrders] findDailyOrdersNearCutoffDB failed:",
+			error,
+		);
+		return [];
 	}
 }
 

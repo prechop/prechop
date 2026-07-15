@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { Grid, PageHeader, Skeleton, Stack, StatCard } from "@/components";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
+import { describeVendorCommission, useFeePolicy } from "@/hooks/useFeePolicy";
 
 interface RevenueResult {
 	grossRevenueKobo: number;
@@ -16,14 +17,23 @@ interface RevenueResult {
 }
 
 export default function AdminRevenueWrapper() {
-	const { data, isLoading } = useSWR<RevenueResult>("/admin/revenue", fetcher);
+	const { data, isLoading } = useSWR<RevenueResult>(
+		"/admin/revenue",
+		fetcher,
+	);
+	const { policy: feePolicy } = useFeePolicy();
 
 	return (
 		<Stack $gap={20}>
 			<PageHeader
 				eyebrow="Finance"
 				title="Revenue"
-				subtitle="Track successful payment volume, 8% commission, service fees, vendor settlements and refunds."
+				// The commission rate is admin-editable in Settings, so naming a
+				// hardcoded "8%" here would misdescribe the very figures on this
+				// page the moment it is changed.
+				subtitle={`Track successful payment volume, commission (${describeVendorCommission(
+					feePolicy,
+				)}), service fees, vendor settlements and refunds.`}
 			/>
 			{isLoading || !data ? (
 				<Skeleton style={{ height: 120 }} />

@@ -8,8 +8,9 @@
 
 import mongoose from "mongoose";
 import { connectMongoDB, disconnectMongoDB } from "@/server/databases/mongoDB";
+import { dropScratchDatabases, SCRATCH_DB_PREFIX } from "./scratchDb";
 
-export const SCRATCH_DB_PREFIX = "prechop-vitest-";
+export { SCRATCH_DB_PREFIX };
 
 export async function connectTestDB(): Promise<typeof mongoose> {
 	const conn = await connectMongoDB();
@@ -45,35 +46,23 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function dropAndDisconnect(): Promise<void> {
 	if (mongoose.connection.readyState === 0) return;
 	const dbName = assertScratchDb();
-	const db = mongoose.connection.db!;
-	for (let attempt = 0; attempt < 10; attempt++) {
-		await mongoose.connection.dropDatabase();
-		await sleep(120);
-		const remaining = await db.listCollections().toArray();
-		if (remaining.length === 0) break;
-	}
-	await disconnectMongoDB();
-	// Final out-of-band drop via a raw driver client (no mongoose model
-	// registration → no autoIndex), so a straggler that recreated empty
-	// collections after our mongoose drop can't leave the scratch DB behind.
-	await rawDropDatabase(dbName);
-}
-
-/** Drop a scratch DB with a throwaway raw driver connection. Scratch-name guarded. */
-async function rawDropDatabase(dbName: string): Promise<void> {
-	if (!dbName.startsWith(SCRATCH_DB_PREFIX)) return;
-	const uri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
-	// Use the mongodb driver mongoose re-exports (not a direct dep in pnpm).
-	const client = new mongoose.mongo.MongoClient(uri, {
-		serverSelectionTimeoutMS: 5000,
-	});
 	try {
-		await client.connect();
-		await client.db(dbName).dropDatabase();
-	} catch {
-		// best effort
+		const db = mongoose.connection.db!;
+		for (let attempt = 0; attempt < 10; attempt++) {
+			await mongoose.connection.dropDatabase();
+			await sleep(120);
+			const remaining = await db.listCollections().toArray();
+			if (remaining.length === 0) break;
+		}
 	} finally {
-		await client.close();
+		// Disconnect and the out-of-band drop must happen even if the loop above
+		// throws (a dropped connection mid-teardown used to leak the whole DB).
+		await disconnectMongoDB().catch(() => {});
+		// Final drop via a raw driver client (no mongoose model registration → no
+		// autoIndex), so a straggler that recreated empty collections after the
+		// mongoose drop can't leave the scratch DB behind. Scratch-name guarded
+		// inside `dropScratchDatabases`.
+		await dropScratchDatabases((name) => name === dbName);
 	}
 }
 
@@ -84,11 +73,25 @@ export async function clearCollections(): Promise<void> {
 	await Promise.all(collections.map((c) => c.deleteMany({})));
 }
 
-/** Random-ish Nigerian phone so parallel workers/tests never collide. */
+/**
+ * Random-ish Nigerian phone in the LOCAL `0…` form — the shape a buyer actually
+ * types. The app normalizes it to E.164 on the way in; see `e164()`.
+ */
 export function uniquePhone(): string {
 	// Valid Nigerian mobile number with a supported 0801 prefix.
 	const tail = Math.floor(1_000_000 + Math.random() * 8_999_999);
 	return `0801${tail.toString()}`;
+}
+
+/**
+ * The E.164 form the app is expected to store for a local `0…` number.
+ *
+ * Computed here independently rather than by calling the app's
+ * `normalizeNigerianMobilePhone` — a test that derives its expectation from the
+ * code under test passes no matter what that code does.
+ */
+export function e164(localPhone: string): string {
+	return `+234${localPhone.replace(/^0/, "")}`;
 }
 
 /** Fresh ObjectId hex string. */

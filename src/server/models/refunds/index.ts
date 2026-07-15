@@ -134,9 +134,9 @@ export async function createRefundDB({
 			method: "createRefundDB",
 			success: "true",
 		});
-		const refund = (
-			typeof doc.toObject === "function" ? doc.toObject() : doc
-		) as unknown as IRefund;
+		const refund = (typeof doc.toObject === "function"
+			? doc.toObject()
+			: doc) as unknown as IRefund;
 		return {
 			...refund,
 			id: refund._id.toString(),

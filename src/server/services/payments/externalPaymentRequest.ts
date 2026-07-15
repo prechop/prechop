@@ -22,11 +22,7 @@ import { releaseSlots } from "../buyerOrders/slots";
 import { ensureReceiptUrl } from "./receipts";
 
 export interface ExternalPaymentSummary {
-	status:
-		| "AWAITING_EXTERNAL_PAYMENT"
-		| "PAID"
-		| "EXPIRED"
-		| "CANCELLED";
+	status: "AWAITING_EXTERNAL_PAYMENT" | "PAID" | "EXPIRED" | "CANCELLED";
 	businessName: string;
 	orderNumber: string;
 	items: Array<{
@@ -77,7 +73,9 @@ async function resolveRequest(token: string) {
 	return { payment, order, vendor };
 }
 
-async function expireIfNeeded(input: Awaited<ReturnType<typeof resolveRequest>>) {
+async function expireIfNeeded(
+	input: Awaited<ReturnType<typeof resolveRequest>>,
+) {
 	const { payment, order } = input;
 	if (
 		payment.webhookVerified ||
@@ -122,13 +120,17 @@ async function expireIfNeeded(input: Awaited<ReturnType<typeof resolveRequest>>)
 }
 
 function statusFor(input: Awaited<ReturnType<typeof resolveRequest>>) {
-	if (input.order.status === OrderStatus.PAID || input.payment.webhookVerified)
+	if (
+		input.order.status === OrderStatus.PAID ||
+		input.payment.webhookVerified
+	)
 		return "PAID" as const;
 	if (input.order.status === OrderStatus.CANCELLED)
 		return input.payment.status === PaymentStatus.EXPIRED
 			? ("EXPIRED" as const)
 			: ("CANCELLED" as const);
-	if (input.payment.status === PaymentStatus.EXPIRED) return "EXPIRED" as const;
+	if (input.payment.status === PaymentStatus.EXPIRED)
+		return "EXPIRED" as const;
 	return "AWAITING_EXTERNAL_PAYMENT" as const;
 }
 
@@ -176,7 +178,9 @@ export async function initializeExternalPayment({
 		throw validationError("This payment link is no longer active.");
 	}
 	if (input.payment.amountKobo !== input.order.totalKobo) {
-		await markPaymentExpiredDB({ buyerOrderId: input.order._id.toString() });
+		await markPaymentExpiredDB({
+			buyerOrderId: input.order._id.toString(),
+		});
 		throw validationError("This payment link is no longer valid.");
 	}
 	if (input.payment.paystackAuthorizationUrl) {
@@ -194,7 +198,8 @@ export async function initializeExternalPayment({
 		reference: input.payment.paystackRef,
 		subaccountCode: input.vendor.paystackSubaccountCode,
 		vendorAmountKobo:
-			input.payment.vendorSettlementKobo ?? input.payment.vendorAmountKobo,
+			input.payment.vendorSettlementKobo ??
+			input.payment.vendorAmountKobo,
 		callbackUrl: `${APP_URL}/pay/${token}?reference=${input.payment.paystackRef}`,
 		metadata: {
 			buyerOrderId: input.order._id.toString(),
@@ -234,7 +239,9 @@ export async function cancelExternalPaymentRequest({
 		fromStatuses: [OrderStatus.AWAITING_EXTERNAL_PAYMENT],
 	});
 	if (!cancelled) {
-		throw validationError("This payment request can no longer be cancelled.");
+		throw validationError(
+			"This payment request can no longer be cancelled.",
+		);
 	}
 	await markPaymentCancelledDB({ buyerOrderId: orderId });
 	await releaseSlots(

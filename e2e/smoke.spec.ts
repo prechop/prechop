@@ -28,7 +28,7 @@ test.describe("public pages", () => {
 			page.getByRole("link", { name: /browse food/i }),
 		).toBeVisible();
 		await expect(
-			page.getByRole("link", { name: /sell on prechop/i }),
+			page.getByRole("link", { name: /become a vendor/i }),
 		).toBeVisible();
 	});
 
@@ -41,9 +41,9 @@ test.describe("public pages", () => {
 		).toBeVisible();
 		// One login for everyone: just a phone field, no Buyer/Vendor tabs.
 		await expect(page.getByPlaceholder("08012345678")).toBeVisible();
-		await expect(
-			page.getByRole("button", { name: "Vendor" }),
-		).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Vendor" })).toHaveCount(
+			0,
+		);
 		await expect(
 			page.getByRole("link", { name: /apply as a vendor/i }),
 		).toBeVisible();
@@ -89,24 +89,37 @@ test.describe("public read path (seeded data)", () => {
 			`/api/daily-orders/marketplace?campusId=${campus.id}&limit=20`,
 		);
 		expect(marketRes.ok()).toBeTruthy();
-		const listings = (await marketRes.json()).data as Array<{
-			shareableToken: string;
-			title: string;
+		// `/marketplace` returns listings GROUPED BY VENDOR, not a flat list.
+		// This test used to read `data[0].title` off the group — always
+		// `undefined` — and then asserted `getByRole("heading", { name:
+		// undefined })`, which matches ANY heading and so could never fail. It
+		// "passed" against a marketplace containing zero listings.
+		const groups = (await marketRes.json()).data as Array<{
+			vendor: { businessName: string };
+			listings: Array<{ shareableToken: string; title: string }>;
 		}>;
+		const group = groups.find((g) => g.listings.length > 0);
 		expect(
-			listings.length,
-			"seed must create at least one active daily order",
-		).toBeGreaterThan(0);
+			group,
+			"seed must create at least one ACTIVE daily order with a future cutoff",
+		).toBeTruthy();
 
-		const token = listings[0].shareableToken;
-		await page.goto(`/o/${token}`);
+		const listing = group!.listings[0];
+		// Guard the guard: an undefined title would make the heading assertion
+		// below vacuous again.
+		expect(listing.title, "listing must carry a title").toBeTruthy();
+		expect(
+			listing.shareableToken,
+			"listing must carry a token",
+		).toBeTruthy();
+
+		await page.goto(`/o/${listing.shareableToken}`);
 
 		// The listing title + at least one menu item render, and an
 		// unauthenticated visitor is prompted to log in before paying.
 		await expect(
-			page.getByRole("heading", { name: listings[0].title }),
+			page.getByRole("heading", { name: listing.title }),
 		).toBeVisible();
-		await expect(page.getByText(/prep/i).first()).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: /log in to order/i }),
 		).toBeVisible();

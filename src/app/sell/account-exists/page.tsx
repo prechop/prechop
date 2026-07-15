@@ -43,36 +43,40 @@ const Title = styled.h1`
 `;
 
 export default function BuyerAccountExistsPage() {
-  return (
-    <Screen>
-      <Wrap>
-        <FadeIn>
-          <Panel>
-            <Stack $gap={16}>
-              <Mark aria-hidden>!</Mark>
-              <Stack $gap={8}>
-                <Title>You already have a PreChop account</Title>
-                <Text $muted>
-                  A buyer account is already registered with this phone number.
-                  You cannot create a separate vendor account. To become a
-                  vendor, log into your existing account and apply from your
-                  profile settings.
-                </Text>
-              </Stack>
-              <Link href="/login">
-                <Button $size="lg" $full>
-                  Log in to upgrade
-                </Button>
-              </Link>
-              <Link href="/sell">
-                <Button $variant="ghost" $full>
-                  Try a different number
-                </Button>
-              </Link>
-            </Stack>
-          </Panel>
-        </FadeIn>
-      </Wrap>
-    </Screen>
-  );
+	return (
+		<Screen>
+			<Wrap>
+				<FadeIn>
+					<Panel>
+						<Stack $gap={16}>
+							<Mark aria-hidden>!</Mark>
+							<Stack $gap={8}>
+								<Title>
+									You already have a PreChop account
+								</Title>
+								<Text $muted>
+									A buyer account is already registered with
+									this phone number. You cannot create a
+									separate vendor account. To become a vendor,
+									log into your existing account and apply
+									from your profile settings.
+								</Text>
+							</Stack>
+							<Button as={Link} href="/login" $size="lg" $full>
+								Log in to upgrade
+							</Button>
+							<Button
+								as={Link}
+								href="/sell"
+								$variant="ghost"
+								$full
+							>
+								Try a different number
+							</Button>
+						</Stack>
+					</Panel>
+				</FadeIn>
+			</Wrap>
+		</Screen>
+	);
 }

@@ -134,11 +134,14 @@ export default function UsersTab() {
 									</Text>
 								</div>
 								<Row $gap={8} $align="center">
-									<Link href={`/admin/iam/users/${u.id}`}>
-										<Button $variant="secondary" $size="sm">
-											View
-										</Button>
-									</Link>
+									<Button
+										as={Link}
+										href={`/admin/iam/users/${u.id}`}
+										$variant="secondary"
+										$size="sm"
+									>
+										View
+									</Button>
 									<Button
 										$variant="ghost"
 										$size="sm"

@@ -1,0 +1,197 @@
+# ─────────────────────────────────────────────────────────────────────────
+# LOCAL DEV ONLY — runs the production image against the SHARED datastores.
+#
+# The `app` service deliberately does NOT define its own mongo/redis. This
+# machine already runs shared containers that other projects use:
+#
+#     mongodb   mongo:7    0.0.0.0:27018->27018/tcp   (--replSet rs0)
+#     redis     redis:8.2  0.0.0.0:6379->6379/tcp
+#
+# Starting a second Mongo/Redis for the APP would duplicate state, fight for
+# ports, and give this project a datastore that behaves differently from every
+# other one on the box.
+#
+# `test-mongo` (below) is the one deliberate exception, and it is not a
+# duplicate of the app's datastore — it is the throwaway target for the test
+# suite, which must never touch a real/dev/shared DB. See its own header.
+#
+#   docker compose up --build              # app only, against shared stores
+#   docker compose up -d test-mongo        # ephemeral Mongo for `pnpm test`
+#   docker compose --profile test down     # tear the test Mongo down
+#
+# ⚠ TEARDOWN GOTCHA (verified, not theoretical): a bare `docker compose down`
+# does NOT stop `test-mongo` — Compose skips profiled services unless their
+# profile is active, so it keeps running, holding port 27019 and its tmpfs RAM
+# while looking like it was cleaned up. Use `--profile test down`.
+#
+# ⚠ `directConnection=true` is REQUIRED, not decorative. The shared Mongo is a
+# replica set whose member advertises itself as `localhost:27018`
+# (`rs.conf().members[0].host`). Without directConnection the driver connects
+# to the seed, discovers that advertised host, then re-dials `localhost:27018`
+# — which INSIDE this container is the container itself → ECONNREFUSED.
+# Verified: without it the app logs "MongoDB connect failed
+# ... ECONNREFUSED 127.0.0.1:27018"; with it, boot is clean.
+# ─────────────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # BUILD-TIME: `next build` inlines this into the client bundle, so it has
+        # to be right at build time and cannot be fixed by the runtime env below.
+        # A public origin, never a secret. Must not be localhost/127.0.0.1 or the
+        # production boot guard refuses to start.
+        NEXT_PUBLIC_APP_URL: "https://prechop.ng"
+    image: prechop:local
+    ports:
+      - "3000:3000"
+    environment:
+      # ── Shared datastores on the host ────────────────────────────────────
+      MONGODB_URI: "mongodb://host.docker.internal:27018/?directConnection=true"
+      REDIS_URI: "redis://host.docker.internal:6379"
+      # Own database namespace so this project never collides with the other
+      # projects sharing this Mongo.
+      DB_NAME: "prechop"
+
+      # ── Throwaway local values — NEVER real credentials, never production.
+      # Real secrets belong in `.env` (gitignored) or the platform's secret
+      # store, never in this file.
+      #
+      # ⚠ DO NOT reach for `--env-file .env` or `env_file: .env` to inject them
+      # without reading this first. Compose INTERPOLATES `$` inside the values
+      # it reads from an env file, so any secret containing a literal `$` is
+      # SILENTLY TRUNCATED at the `$` — no error, just a shorter key. Measured:
+      #   .env:      SENDCHAMP_API_KEY=sk_live_AAAA$SOMETHING_TAIL
+      #   container: SENDCHAMP_API_KEY=[sk_live_AAAA]
+      # `node --env-file` (which `pnpm seed` uses) does NOT interpolate and
+      # passes the same line through intact — so the two disagree about what
+      # one file means. A truncated-but-non-empty key also sails straight past
+      # bootstrap's `!process.env.SENDCHAMP_API_KEY` check, so the app boots
+      # "valid" and every OTP send fails at the provider.
+      # If a secret contains `$`, escape it as `$$` in the env file.
+      JWT_ACCESS_TOKEN_SECRET: "local-throwaway-access-secret-not-a-real-secret"
+      JWT_REFRESH_TOKEN_SECRET: "local-throwaway-refresh-secret-not-a-real-secret"
+      ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
+      # The image runs NODE_ENV=production, so `assertRuntimeConfig` THROWS on
+      # anything below. These values satisfy it without reaching any real
+      # third party:
+      #   * OTP_PROVIDER=console is rejected outright in production, so we use
+      #     `sendchamp` with a fake key — no OTP will actually send. For a
+      #     local flow that needs a readable OTP, run `pnpm dev` (development
+      #     mode downgrades these to warnings) rather than this image.
+      #   * APP_URL (runtime server origin) must not be localhost/127.0.0.1 or
+      #     boot fails. It is read at RUN time — unlike NEXT_PUBLIC_APP_URL, which
+      #     is inlined at build (passed as a build arg above).
+      OTP_PROVIDER: "sendchamp"
+      SENDCHAMP_API_KEY: "local-throwaway-not-real"
+      PAYSTACK_SECRET_KEY: "sk_test_local_throwaway_not_real"
+      # RUNTIME server origin for Paystack callback_url, receipt links and
+      # external payment links. src/server/constants/environments.ts resolves
+      # `APP_URL` first, then the build-inlined NEXT_PUBLIC_APP_URL. Set at run
+      # time so a deploy can change its origin without a rebuild.
+      APP_URL: "https://prechop.ng"
+      TRUSTED_PROXY: "1"
+
+    # Lets the container reach the host's published 27018/6379. Explicit so this
+    # also works on Linux, where `host.docker.internal` is not automatic.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    restart: unless-stopped
+
+  # ───────────────────────────────────────────────────────────────────────
+  # test-mongo — the throwaway Mongo the vitest suite points at.
+  #
+  #   docker compose up -d test-mongo
+  #   MONGODB_URI=mongodb://localhost:27019 pnpm test
+  #
+  # WHY THIS EXISTS RATHER THAN REUSING SOMETHING (all three alternatives are
+  # wrong, for different reasons):
+  #
+  #   * :27017 is a NATIVELY-INSTALLED Windows mongod (verified: the listener
+  #     is `mongod` pid 6132 itself, not Docker's `wslrelay` port proxy). The
+  #     standing rule is that no project may depend on a host-installed
+  #     service — it is invisible to compose, unversioned, and absent on any
+  #     other machine and in CI.
+  #   * :27018 is the SHARED app/dev Mongo. Tests must never run against a
+  #     real or dev database. It is also a replica set (rs0), which made one
+  #     measured spec go 2.5s → 21.9s (~10x) because every write waits on
+  #     oplog/majority machinery the tests do not need.
+  #   * An in-memory mongodb-memory-server downloads an unpinned binary at
+  #     test time and drifts from the mongo:7 we actually run.
+  #
+  # DELIBERATELY EPHEMERAL — do not "fix" any of this:
+  #   * NO named volume, and no anonymous one either. Data is disposable, so
+  #     `--profile test down` must leave nothing behind (verified: `docker
+  #     inspect` reports 0 mounts). /data/db is a tmpfs, so the dataset lives
+  #     in RAM and dies with the container — which also removes the disk fsync
+  #     that made the shared instance slow.
+  #   * STANDALONE, not a replica set. Safe TODAY: `grep -rE
+  #     "startSession|withTransaction|\.watch\("  src/` returns ZERO call
+  #     sites — nothing in the app ever opens a session.
+  #
+  #     ⚠ BUT THIS IS NOT A REMOTE HYPOTHETICAL. 19 files under
+  #     src/server/models/ already plumb an optional `session?: ClientSession`
+  #     parameter end-to-end; the wiring for transactions is fully in place and
+  #     merely unused. The day someone writes the one `startSession()` call
+  #     that feeds it, every test touching that path fails here with
+  #     "Transaction numbers are only allowed on a replica set member or
+  #     mongos" — and it will look like a broken test, not a compose file.
+  #
+  #     THE FIX WHEN THAT DAY COMES (do this, don't debug the test):
+  #       1. command: add `--replSet rs0`
+  #       2. healthcheck: `rs.status().ok || rs.initiate()` so the set is
+  #          initiated before the suite connects
+  #       3. test URI: append `?directConnection=true` — REQUIRED, for exactly
+  #          the reason documented on the app service above (the member
+  #          advertises a host the client re-dials).
+  # ───────────────────────────────────────────────────────────────────────
+  test-mongo:
+    # A profile keeps `docker compose up` meaning exactly what it meant before
+    # this service existed: start the app against the SHARED datastores, and
+    # nothing else. A profiled service starts only when a profile is activated
+    # or when it is named explicitly on the command line — so `up -d
+    # test-mongo` works while a bare `up` never silently launches a Mongo the
+    # app does not use. (Verified: `config --services` lists only `app`.)
+    profiles: ["test"]
+    # Pinned to the same tag as the shared Mongo and the CI service container,
+    # so a test that passes here passes in CI and on the app's real datastore.
+    image: mongo:7
+    container_name: prechop-test-mongo
+    command:
+      - --bind_ip_all
+      # Bound cache: this is a tmpfs (RAM) dataset, so an unbounded WiredTiger
+      # cache would compete with the very RAM holding the data.
+      - --wiredTigerCacheSizeGB
+      - "0.5"
+    ports:
+      # Host 27019 → container's default 27017. 27019 is chosen to sit clear of
+      # BOTH the native mongod (27017) and the shared container (27018);
+      # verified free before allocation.
+      - "27019:27017"
+    tmpfs:
+      # mongo:7 declares TWO volumes — /data/db AND /data/configdb. Overriding
+      # only the first still leaves a stray anonymous volume for the second
+      # (verified: an unnamed `/data/configdb` volume appeared until this line
+      # was added). Both are tmpfs so the container truly leaves nothing on
+      # disk. /data/configdb is only meaningful to a config server; here it is
+      # empty. Sized to bound the blast radius if a test ever leaks data.
+      - /data/db:size=1g
+      - /data/configdb:size=16m
+    # No auth: this holds nothing but throwaway per-worker test DBs
+    # (`prechop-vitest-<pid>-<pool>`), and it is only reachable from this host.
+    healthcheck:
+      # `pnpm test` should wait for this to report healthy rather than racing
+      # mongod's startup and failing the first spec on ECONNREFUSED.
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # NOT `unless-stopped`: a throwaway test DB must not silently come back on
+    # every boot and quietly accumulate state.
+    restart: "no"

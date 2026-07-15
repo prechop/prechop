@@ -183,7 +183,9 @@ export default function AdminCatalogWrapper() {
 											<td>
 												<TextButton
 													type="button"
-													onClick={() => setDetail(it)}
+													onClick={() =>
+														setDetail(it)
+													}
 												>
 													{it.name}
 												</TextButton>

@@ -2,6 +2,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { ORIGIN } from "./urls";
 
 // Browser-driven coverage for the vendor daily-order filter + detail + edit-lock
 // feature. It drives the real UI end to end:
@@ -24,7 +26,6 @@ const DB_NAME = process.env.DB_NAME ?? "prechop";
 // Seeded ACTIVE vendor (Ada's Kitchen) — owns the seeded "Today's Hot Lunch".
 const VENDOR_PHONE = "08122222222";
 const KNOWN_OTP = "123456";
-const ORIGIN = "http://localhost:3100";
 
 test.use({ baseURL: ORIGIN });
 
@@ -57,17 +58,13 @@ test.afterAll(async () => {
 /** Log in through the browser context so the auth cookie lands in the page. */
 async function loginInBrowser(page: Page, phone: string) {
 	const ctx = page.context();
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await ctx.request.post("/api/auth/otp/request", {
 		headers: { origin: ORIGIN },
 		data: { phone },
 	});
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await ctx.request.post("/api/auth/otp/verify", {
 		headers: { origin: ORIGIN },
 		data: { phone, otp: KNOWN_OTP },

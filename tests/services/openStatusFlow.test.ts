@@ -16,9 +16,13 @@ import {
 } from "../helpers/factories";
 
 // The vendor open/closed switch (isOpenForOrders) must actually gate the buyer
-// flow: a closed kitchen accepts no new orders (placeOrder rejects), its
-// listings are hidden from the marketplace grid, and its public listing page
-// reports vendorOpen=false so the client can show a closed state.
+// flow: a closed kitchen accepts no new orders (placeOrder rejects) and its
+// public listing page reports vendorOpen=false so the client can show a closed
+// state.
+//
+// A closed kitchen is NOT removed from the marketplace grid: it stays browsable
+// for its menu, prices and ratings, and is sorted below the open ones. The
+// enforcement is at order time, not at discovery time.
 
 const slotKeys = new Set<string>();
 
@@ -107,27 +111,70 @@ describe("placeOrder respects the vendor open/closed switch", () => {
 	});
 });
 
-describe("closed vendors disappear from the buyer surface", () => {
-	it("excludes a closed vendor's listing from the marketplace grid", async () => {
+describe("closed vendors stay browsable but are demoted", () => {
+	it("keeps a closed vendor's listing in the grid, flagged closed", async () => {
 		const { vendorId, campusId } = await makeVendor();
 		const listing = await makeActiveDailyOrder({ vendorId, campusId });
 		trackSlots(listing);
 
-		// Open → present.
-		const open = await getMarketplace({ campusId });
-		expect(open.map((o) => o._id.toString())).toContain(
+		const rowFor = async (id: string) => {
+			const grid = await getMarketplace({ campusId });
+			return grid.find((r) => r.vendor.id === id);
+		};
+
+		// Open → present and flagged open.
+		const open = await rowFor(vendorId);
+		expect(open).toBeDefined();
+		expect(open!.vendor.isOpenForOrders).toBe(true);
+		expect(open!.listings.map((o) => o._id.toString())).toContain(
 			listing._id.toString(),
 		);
 
-		// Closed → gone.
 		await setVendorOpenForOrdersDB({
 			id: vendorId,
 			isOpenForOrders: false,
 		});
-		const closed = await getMarketplace({ campusId });
-		expect(closed.map((o) => o._id.toString())).not.toContain(
+
+		// Closed → still present (menu/prices/ratings stay browsable), but the
+		// flag flips so the client can render the closed state. Ordering is
+		// enforced by placeOrder, not by hiding the kitchen.
+		const closed = await rowFor(vendorId);
+		expect(closed).toBeDefined();
+		expect(closed!.vendor.isOpenForOrders).toBe(false);
+		expect(closed!.listings.map((o) => o._id.toString())).toContain(
 			listing._id.toString(),
 		);
+	});
+
+	it("sorts open kitchens above closed ones", async () => {
+		const openVendor = await makeVendor();
+		const closedVendor = await makeVendor();
+		trackSlots(
+			await makeActiveDailyOrder({
+				vendorId: openVendor.vendorId,
+				campusId: openVendor.campusId,
+			}),
+		);
+		trackSlots(
+			await makeActiveDailyOrder({
+				vendorId: closedVendor.vendorId,
+				campusId: closedVendor.campusId,
+			}),
+		);
+		await setVendorOpenForOrdersDB({
+			id: closedVendor.vendorId,
+			isOpenForOrders: false,
+		});
+
+		// Same state (both fixtures are Lagos), so one grid contains both.
+		const grid = await getMarketplace({ campusId: openVendor.campusId });
+		const ids = grid.map((r) => r.vendor.id);
+		const openIdx = ids.indexOf(openVendor.vendorId);
+		const closedIdx = ids.indexOf(closedVendor.vendorId);
+		expect(openIdx).toBeGreaterThanOrEqual(0);
+		expect(closedIdx).toBeGreaterThanOrEqual(0);
+		// Relative, not absolute: other fixtures share the state.
+		expect(openIdx).toBeLessThan(closedIdx);
 	});
 
 	it("reports vendorOpen on the public listing response", async () => {

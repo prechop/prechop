@@ -1,0 +1,373 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Prechop CI — the gate.
+#
+# Every step here is blocking. Nothing is `continue-on-error`, nothing is
+# `|| true`. If lint, types, tests or the build fail, the job fails and the
+# PR is not mergeable. That is the entire point: a pipeline that can go green
+# while the suite is red is decoration.
+#
+# This runs on ubuntu-latest, which checks out LF line endings; `.gitattributes`
+# pins the same behaviour for Windows contributors, so Biome returns one verdict
+# everywhere instead of one per operating system.
+#
+# ⚠ THIS WORKFLOW HAS NEVER EXECUTED ON GITHUB ACTIONS. It is verified only by
+# local reasoning + `actionlint`. Its first real run is its first real test;
+# treat the first red as information, not necessarily as a bug in your PR.
+#
+# EXPECT `verify` TO BE RED ON ITS FIRST RUN, for real reasons, not flakes:
+#   * `pnpm lint` — pre-existing Biome errors on an LF checkout. Measured by
+#     linting the git index content directly, so line endings are NOT the
+#     cause: `format` diagnostics plus a stale suppression in scripts/seed.ts.
+#     A repo-wide `pnpm format` sweep is scheduled once the builders stop
+#     editing; until it lands this step fails honestly.
+# That is the gate doing its job. Do not add `continue-on-error` to make the
+# badge green; fix the code or the tests.
+# ─────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the older run — except on main,
+# where every commit keeps its own verdict for traceability.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Least privilege: CI only needs to read the repo.
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Corepack must never block on an interactive "download pnpm?" prompt.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  verify:
+    name: lint · types · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Ephemeral service containers. Image tags are pinned to match the local
+    # services so a test that passes here passes on a laptop.
+    #
+    # PORT CONVENTION — 27019 means one thing everywhere in this project:
+    # "throwaway test Mongo, data disposable".
+    #   27017 = a NATIVELY-installed mongod on some contributors' machines.
+    #           Never used by anything here; a runner has no such thing.
+    #   27018 = the SHARED app/dev Mongo (a replica set). Real data. Tests
+    #           must never touch it.
+    #   27019 = ephemeral test Mongo — `compose.yaml`'s `test-mongo` locally,
+    #           this service container in CI.
+    # Publishing on 27019 means MONGODB_URI is the SAME STRING on a laptop and
+    # here, so tests/helpers/scratchDb.ts's DEFAULT_MONGODB_URI would resolve
+    # correctly in CI even if the explicit env below were ever dropped.
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27019:27017
+        # The suite uses no transactions (verified: zero `startSession` /
+        # `withTransaction` call sites in src/), so a standalone mongod is
+        # sufficient — no replica set needed.
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
+      redis:
+        image: redis:8.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # ── Throwaway CI values. NOT secrets, and deliberately self-describing
+      # so nobody mistakes one for a real credential or copies it to prod.
+      # Real secrets belong in the GitHub secret store; nothing here is one, so
+      # nothing here needs masking.
+      # `bootstrap.ts:assertRuntimeConfig` requires: the two JWT secrets to be
+      # >=32 chars AND to differ; ENCRYPTION_KEY to be >=64 chars (32-byte hex).
+      JWT_ACCESS_TOKEN_SECRET: "ci-throwaway-access-secret-not-a-real-secret-000000"
+      JWT_REFRESH_TOKEN_SECRET: "ci-throwaway-refresh-secret-not-a-real-secret-111111"
+      ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
+      # 27019 = "ephemeral test Mongo" — identical to the URI a developer uses
+      # against compose.yaml's `test-mongo`. tests/setup.ts honours this env var
+      # over its built-in default (`process.env.MONGODB_URI ?? DEFAULT_...`),
+      # so this stays authoritative no matter what that default is set to.
+      MONGODB_URI: "mongodb://127.0.0.1:27019"
+      REDIS_URI: "redis://127.0.0.1:6379"
+      DB_NAME: "prechop-ci"
+
+      # `console` logs the OTP instead of calling Sendchamp — CI must never make
+      # a real network call to an SMS provider. sysops's hardening (now landed)
+      # REJECTS OTP_PROVIDER=console when NODE_ENV=production; that is fine here
+      # precisely because CI never sets NODE_ENV=production (see below), so
+      # assertRuntimeConfig stays in warn mode. If a future step ever runs the
+      # app in production mode, this value will refuse to boot — by design.
+      OTP_PROVIDER: "console"
+      SENDCHAMP_API_KEY: "ci-throwaway-sendchamp-key-not-real"
+      SENDCHAMP_SENDER_ID: "PreChop"
+
+      # Localhost is rejected in production for the same reason; harmless in CI,
+      # where the built artifact is discarded rather than served to buyers.
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3000"
+
+      # NODE_ENV is deliberately NOT set here. `vitest` forces it to `test`
+      # (tests/setup.ts) and `next build` forces it to `production`; pinning it
+      # job-wide would hand `next build` a non-standard NODE_ENV and change what
+      # gets compiled. Note this also keeps `assertRuntimeConfig` in warn mode,
+      # which is correct: CI is not production and must not need prod secrets.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history is unnecessary and slow; CI only verifies this commit.
+          fetch-depth: 1
+
+      # Must run BEFORE setup-node: setup-node's `cache: pnpm` needs a `pnpm`
+      # binary on PATH to locate the store.
+      - name: Enable Corepack (pins pnpm from package.json packageManager)
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Pinned to the engines floor (>=20.11.0) so CI verifies the OLDEST
+          # Node we claim to support, not merely the newest that happens to work.
+          node-version: "20.11.0"
+          cache: pnpm
+
+      # Re-bind the shims to the Node that setup-node just installed, and prove
+      # the toolchain is the pinned one rather than whatever the runner shipped.
+      - name: Pin & report toolchain
+        run: |
+          corepack enable
+          echo "node: $(node --version)"
+          echo "pnpm: $(pnpm --version)   (expected 9.15.0 from packageManager)"
+
+      - name: Install dependencies
+        # --frozen-lockfile makes the lockfile authoritative: if package.json
+        # and pnpm-lock.yaml disagree, this FAILS rather than silently
+        # resolving new versions. Never add a `|| pnpm install` fallback here.
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify lockfile is in sync
+        # Belt and braces: a dirty tree after install means the lockfile was
+        # not authoritative.
+        run: git diff --exit-code pnpm-lock.yaml
+
+      - name: Typecheck (app)
+        run: pnpm ts.check
+
+      - name: Typecheck (tests)
+        run: pnpm ts.check.test
+
+      - name: Lint & format check (Biome)
+        run: pnpm lint
+
+      - name: Unit & integration tests
+        # Vitest points at the ephemeral Mongo above and creates a throwaway
+        # per-worker DB (`prechop-vitest-<pid>-<pool>`), so runs never collide.
+        run: pnpm test
+
+      - name: Production build
+        run: pnpm build
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Dependency audit — the security gate.
+  #
+  # WHY NOT `pnpm audit`: on pnpm 9.15.x `pnpm audit` calls the RETIRED npm
+  # advisory endpoint and dies with
+  #   ERR_PNPM_AUDIT_BAD_RESPONSE … 410: This endpoint is being retired
+  # Wired naively that turns the gate into a silent no-op: it can only ever fail
+  # on that transport error, never on a real advisory — it reports nothing and
+  # blocks nothing. So we scan the COMMITTED lockfile with OSV-Scanner (osv.dev)
+  # instead, which parses pnpm-lock.yaml directly and needs no live npm
+  # registry, so the retirement cannot break it.
+  #
+  # BLOCKING, fail-closed: OSV-Scanner exits non-zero when it finds ANY advisory
+  # in the resolved graph, and this step carries no `|| true` and no
+  # `continue-on-error`, so a finding fails the job. OSV-Scanner has no stable
+  # CLI flag to gate on HIGH/CRITICAL only, so this gate is deliberately
+  # STRICTER than "high+ only": it blocks on any severity. That is the safe
+  # direction for a security gate — a moderate that slips through unnoticed is a
+  # worse outcome than a moderate that forces a human to look.
+  #
+  # If a future advisory is a genuine dev-only / non-exploitable false positive,
+  # triage it with a dated `[[IgnoredVulns]]` entry in an `osv-scanner.toml`
+  # (with an `ignoreUntil` expiry so the suppression is temporary) — NEVER by
+  # adding `continue-on-error` here, which would silently reopen this hole.
+  #
+  # Clean today: the only known advisory is postcss GHSA-qx2v-qp2m-jg93
+  # (moderate, affects <8.4.31). package.json pins `resolutions: postcss ^8.5.10`
+  # and the lockfile resolves postcss 8.5.16, so OSV reports nothing and the
+  # gate PASSES — it is real, not merely green.
+  #
+  # Scans the lockfile — the EXACT resolved versions that ship — not a
+  # re-resolved range, so what CI audits is what builds.
+  #
+  # Independent verdict, deliberately NOT `needs: verify` — same rationale as
+  # e2e below: a red lint must not hide a red audit, nor vice versa.
+  # ───────────────────────────────────────────────────────────────────────
+  audit:
+    name: dependency audit (osv-scanner · lockfile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Only the lockfile is scanned; no history needed.
+          fetch-depth: 1
+
+      - name: OSV-Scanner (pnpm-lock.yaml)
+        # Pinned to an exact release, not a floating major, so the scanner
+        # version is reproducible run-to-run. The action's exit code propagates:
+        # any advisory fails this step and therefore the job. No masking.
+        uses: google/osv-scanner-action@v1.9.1
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Playwright e2e — previously omitted because production-mode boot made it
+  # impossible to pass honestly. That blocker is now GONE, via sysops's
+  # explicit opt-in hatch (`PRECHOP_UNSAFE_E2E_OTP_CONSOLE_SINK`), NOT by
+  # weakening the guard: with the token absent, OTP_PROVIDER=console is still
+  # fatal in production. playwright.config.ts sets the token in `webServer.env`
+  # itself, so this job never names it — the hatch stays owned by one file.
+  #
+  # Deliberately NOT `needs: verify`. e2e is an independent verdict: a red lint
+  # must not hide an e2e regression (or vice versa). It costs a second
+  # install+build; that is the price of two honest signals instead of one.
+  # ───────────────────────────────────────────────────────────────────────
+  e2e:
+    name: e2e (playwright · chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Same 27019 convention as `verify` — this Mongo is a disposable test
+    # database, not a stand-in for the shared 27018 one that e2e uses locally.
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27019:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
+      redis:
+        image: redis:8.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Authoritative for BOTH `pnpm seed` and playwright's webServer:
+      # playwright.config.ts reads `process.env.MONGODB_URI/DB_NAME/REDIS_URI`
+      # (falling back to the laptop defaults), and Node's `--env-file` does NOT
+      # override vars already in the environment — verified:
+      #   MONGODB_URI=from-shell node --env-file=.env  →  "from-shell"
+      # So seed and the server provably agree on one database.
+      MONGODB_URI: "mongodb://127.0.0.1:27019"
+      REDIS_URI: "redis://127.0.0.1:6379"
+      DB_NAME: "prechop-e2e"
+
+      # ⚠ MUST byte-match the ENCRYPTION_KEY that playwright.config.ts hardcodes
+      # in `webServer.env`. `pnpm seed` encrypts PII (phone numbers) with THIS
+      # key; the server decrypts with THAT one. If they drift, seeding "succeeds"
+      # and then every login fails to find its user — a decryption mismatch that
+      # reads like a broken test, not a config bug. See HANDOFF: the config
+      # parameterises MONGODB_URI but hardcodes this, which is the trap.
+      ENCRYPTION_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
+      # ⚠ BUILD-TIME, not runtime. `NEXT_PUBLIC_*` is textually inlined by Next
+      # during `next build`, and instrumentation.ts → bootstrap.ts reads
+      # `process.env.NEXT_PUBLIC_APP_URL` from inside the bundle. The production
+      # boot guard REJECTS localhost/127.0.0.1 (dead payment callbacks), so
+      # building with the verify job's `http://127.0.0.1:3000` would bake in a
+      # value that makes `next start` throw — and playwright's `webServer.env`
+      # could not undo it, because the string is already compiled in.
+      NEXT_PUBLIC_APP_URL: "https://prechop.ng"
+
+      NEXT_TELEMETRY_DISABLED: "1"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Enable Corepack (pins pnpm from package.json packageManager)
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.11.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        # Only chromium: playwright.config.ts declares exactly one project.
+        # The version comes from the lockfile (@playwright/test 1.61.1), so the
+        # browser build matches the runner rather than floating.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Materialise a throwaway .env for `pnpm seed`
+        # `pnpm seed` runs `node --env-file=.env`, which EXITS NON-ZERO when the
+        # file is missing (verified: exit code 9, "not found", script never
+        # runs) — and `.env` is gitignored, so it is never present on a fresh
+        # checkout. This stub exists ONLY to satisfy that flag. It deliberately
+        # carries no values: the job `env:` block above already wins over
+        # --env-file, so putting values here too would just let the two drift.
+        run: printf '# CI stub — real values come from the job env block.\n' > .env
+
+      - name: Production build
+        run: pnpm build
+
+      - name: Seed the e2e database
+        run: pnpm seed
+
+      - name: Run e2e specs
+        # playwright.config.ts boots its own webServer (`next start`) and pins
+        # the OTP sink hatch there. workers:1 / fullyParallel:false — the specs
+        # mutate and restore shared seed state, so they must stay serial.
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        # `always()` so a FAILING run — the one you actually need to debug —
+        # still publishes its trace/report.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

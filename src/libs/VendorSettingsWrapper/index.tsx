@@ -22,6 +22,7 @@ import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { useAuth } from "@/hooks/Auth/useAuth";
+import { describeFeePolicy, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import BankDetailsForm from "@/libs/BankDetailsForm";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
@@ -160,6 +161,7 @@ export default function VendorSettingsWrapper() {
 	} = useSWR<VendorMe>("/vendors/me", fetcher);
 	const { data: schools } = useSWR<School[]>("/vendors/schools", fetcher);
 	const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
+	const { policy: feePolicy } = useFeePolicy();
 
 	// Business identity
 	const [firstName, setFirstName] = useState("");
@@ -694,11 +696,12 @@ export default function VendorSettingsWrapper() {
 				<Card>
 					<Stack $gap={10}>
 						<SectionHeader title="Fees and payments" icon="%" />
+						{/* Derived from the server's effective policy, never
+						    hardcoded: an admin can change these rates, and a
+						    vendor reading a stale "8%" here would be told their
+						    payout is bigger than it is. */}
 						<Text $muted $size={13}>
-							Prechop charges an 8% commission on the food
-							subtotal of every successful order. Buyers pay a 3%
-							service fee capped at ₦200. Paystack processing fees
-							are absorbed by Prechop.
+							{describeFeePolicy(feePolicy)}
 						</Text>
 					</Stack>
 				</Card>

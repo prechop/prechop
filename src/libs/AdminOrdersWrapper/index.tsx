@@ -401,9 +401,7 @@ export default function AdminOrdersWrapper() {
 											</Text>
 										</KV>
 										<KV>
-											<Text $muted>
-												Service fee
-											</Text>
+											<Text $muted>Service fee</Text>
 											<Text $weight={600}>
 												{formatKobo(
 													detail.paymentProcessingFeeKobo ??

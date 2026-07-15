@@ -1,7 +1,6 @@
 import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
 import {
 	type DailyOrderStatus,
-	DailyOrderStatus as DailyOrderStatusValue,
 	getCampusByIdDB,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
@@ -9,11 +8,17 @@ import {
 	getVendorProfileByUserIdDB,
 	type IDailyOrder,
 	type IVendorProfile,
+	listActivePublicListingsForVendorIdsDB,
 	listCampusesDB,
 	listDailyOrdersByVendorDB,
 	listMarketplaceVendorsDB,
 } from "../../models";
 import { assertMarketplaceEnabled } from "../siteConfigs";
+import {
+	comparePublicVendors,
+	publicRating,
+	toPublicVendor,
+} from "../vendors/publicVendor";
 
 /**
  * Every campus in the same state as `campusId` (including it). Buyers browse
@@ -58,50 +63,48 @@ export async function getMarketplace({
 		offset,
 		excludeVendorId,
 	});
-	const rows = await Promise.all(
-		vendors.map(async (vendor) => ({
-			vendor: toPublicMarketplaceVendor(vendor),
-			listings: await activePublicListingsForVendor(vendor._id.toString()),
-		})),
-	);
-	return rows.sort((a, b) => {
-		const openDelta =
-			Number(b.vendor.isOpenForOrders) -
-			Number(a.vendor.isOpenForOrders);
-		if (openDelta !== 0) return openDelta;
-		return b.vendor.rating - a.vendor.rating;
+	// One batched query for every vendor's active/public/still-open listings
+	// instead of one round-trip per vendor (was 61 queries for a 60-vendor feed
+	// on a path polled every 10s). The DB applies the same effective predicates
+	// `activePublicListingsForVendor` did in memory — status ACTIVE, isPublic,
+	// cutoffTime > now — and returns them in the same `scheduledDate: -1` order,
+	// so grouping the flat result by vendor reproduces the previous per-vendor
+	// shape and ordering exactly.
+	const now = new Date();
+	const listings = await listActivePublicListingsForVendorIdsDB({
+		vendorIds: vendors.map((vendor) => vendor._id.toString()),
+		now,
 	});
-}
-
-function toPublicMarketplaceVendor(vendor: IVendorProfile) {
-	return {
-		id: vendor._id.toString(),
-		businessName: vendor.businessName ?? null,
-		description: vendor.description ?? null,
-		profileImageUrl: vendor.profileImageUrl ?? null,
-		campusId: vendor.campusId.toString(),
-		state: vendor.state ?? null,
-		areaOrAddress: vendor.areaOrAddress ?? null,
-		categories: vendor.categories ?? [],
-		rating: vendor.rating ?? 0,
-		totalReviews: vendor.totalReviews ?? 0,
-		totalOrders: vendor.totalOrders ?? 0,
-		isOpenForOrders: vendor.isOpenForOrders ?? false,
-	};
-}
-
-async function activePublicListingsForVendor(
-	vendorId: string,
-): Promise<IDailyOrder[]> {
-	const now = Date.now();
-	const listings = await listDailyOrdersByVendorDB({
-		vendorId,
-		status: DailyOrderStatusValue.ACTIVE,
+	const listingsByVendor = new Map<string, IDailyOrder[]>();
+	for (const listing of listings) {
+		const key = listing.vendorId.toString();
+		const bucket = listingsByVendor.get(key);
+		if (bucket) bucket.push(listing);
+		else listingsByVendor.set(key, [listing]);
+	}
+	const rows = vendors.map((vendor) => {
+		const publicVendor = toPublicVendor(vendor);
+		const vendorListings =
+			listingsByVendor.get(vendor._id.toString()) ?? [];
+		return {
+			vendor: publicVendor,
+			// Stamp the vendor's trust/availability signals onto each
+			// listing. The feed is grouped by vendor, but cards are rendered
+			// (and can be re-sorted, filtered or flattened) per listing —
+			// without these a card has no way to show "Closed" or a rating
+			// except by walking back up to its parent, which the flattened
+			// views don't do. Rating is the *gated* value, so a
+			// sub-threshold score never crosses the wire here either.
+			listings: vendorListings.map((listing) => ({
+				...listing,
+				vendorOpen: publicVendor.isOpenForOrders,
+				vendorName: publicVendor.businessName,
+				vendorRating: publicVendor.rating,
+				vendorTotalReviews: publicVendor.totalReviews,
+			})),
+		};
 	});
-	return listings.filter(
-		(order) =>
-			order.isPublic && new Date(order.cutoffTime).getTime() > now,
-	);
+	return rows.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
 }
 
 export async function getPublicDailyOrder({
@@ -128,7 +131,18 @@ export async function getPublicDailyOrder({
 	// Shop identity for the storefront link on the public order page.
 	const vendorId = order.vendorId.toString();
 	const vendorName = vendor?.businessName ?? null;
-	return { ...order, isOwnListing, vendorOpen, vendorId, vendorName };
+	// Same trust gate as the feed — the listing page shows the shop's rating.
+	const vendorTotalReviews = vendor?.totalReviews ?? 0;
+	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
+	return {
+		...order,
+		isOwnListing,
+		vendorOpen,
+		vendorId,
+		vendorName,
+		vendorRating,
+		vendorTotalReviews,
+	};
 }
 
 export async function getMyDailyOrders({

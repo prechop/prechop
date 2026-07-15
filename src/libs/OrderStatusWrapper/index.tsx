@@ -26,6 +26,8 @@ import {
 	statusLabel,
 } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
+import { ReceiptCard, RefundNote } from "@/libs/ReceiptCard";
+import { OrderAgainButton } from "@/libs/ReorderSheet";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
 // Happy-path progression shown as a timeline (terminal states handled apart).
@@ -329,7 +331,10 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 
 			<Card>
 				<Stack $gap={10}>
-					<Text $weight={800}>Receipt</Text>
+					{/* Not a receipt — it's the live price breakdown, and it
+					    renders long before any money is settled. The actual
+					    downloadable receipt is <ReceiptCard> below. */}
+					<Text $weight={800}>Order summary</Text>
 					{data.items.map((it) => (
 						<Stack key={it.dailyOrderItemId} $gap={2}>
 							<Line>
@@ -383,6 +388,18 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Line>
 				</Stack>
 			</Card>
+
+			{/* COMPLETED only — a receipt for an unfulfilled order documents
+			    something that didn't happen. Cancelled/refunded get a note. */}
+			{data.status === "COMPLETED" && (
+				<ReceiptCard
+					orderId={orderId}
+					receiptStatus={data.receiptStatus}
+				/>
+			)}
+			{isTerminalBad && (
+				<RefundNote refunded={data.status === "REFUNDED"} />
+			)}
 
 			{data.status === "COMPLETED" && (
 				<Card $accent>
@@ -465,11 +482,20 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Button>
 				))}
 
-			<Link href="/my-orders">
-				<Button $full $variant="secondary">
-					← Back to orders
-				</Button>
-			</Link>
+			{/* Primary, so it doesn't read as a twin of the secondary
+			    "Back to orders" directly beneath it. */}
+			{data.status === "COMPLETED" && (
+				<OrderAgainButton
+					orderId={orderId}
+					$variant="primary"
+					$full
+					$size="lg"
+				/>
+			)}
+
+			<Button as={Link} href="/my-orders" $full $variant="secondary">
+				← Back to orders
+			</Button>
 		</Wrap>
 	);
 }

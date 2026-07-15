@@ -60,8 +60,18 @@ Phone is identity; **no email/password**.
 `email` (unique), `status` (default `INCOMPLETE`, indexed), `locationType?`, `schoolId?`,
 `schoolNameOther?`, `hostelOrStallName?`, `state?`, `areaOrAddress?`, `profileImageUrl?`,
 `categories: MenuCategory[]`, `paystackSubaccountCode?`, `bankCode?`, `bankName?`,
-`accountNumber?` (encrypted), `accountName?`, `rating` (0), `totalReviews`, `totalOrders`,
-`completionRate`, `profileCompleteness` (default 10), `isOpenForOrders` (default false).
+`accountNumber?` (encrypted, `select:false`), `accountName?`, `rating` (0), `totalReviews`,
+`totalOrders`, `completionRate`, `profileCompleteness` (default 10 — **display only, gates
+nothing**), `isOpenForOrders` (default false), `notifyNewOrders`/`notifyPayouts`/`notifyReviews`
+(default true), `defaultPickupAvailable` (true) / `defaultDeliveryAvailable` (false) /
+`defaultDeliveryFeeKobo` (0), `deleted` (`select:false`).
+
+**Onboarding review trail** (admin approval gate — see BR-16): `submittedAt?`, `reviewedAt?`,
+`reviewedBy?` (ref `users`), `rejectionReason?`, `reviewNotes?`.
+
+`status` (default `INCOMPLETE`, indexed) spans `INCOMPLETE · PENDING_REVIEW · CHANGES_REQUESTED ·
+ACTIVE · SUSPENDED`. `rating` is stored raw; the **public** rating is nulled below 5 reviews by
+`toPublicVendor` (BR-36) — never expose `rating` directly.
 
 ### `menuItems`
 `vendorId` (ref, indexed), `campusId` (indexed), `category`, `name`, `description?`,

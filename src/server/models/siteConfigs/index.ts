@@ -9,13 +9,24 @@ export type SiteConfigsModel = Model<any>;
 
 const schema = new mongoose.Schema<any>(
 	{
-		platformFeeBuyerKobo: {
+		// Fee policy. `min`/`max` are defence in depth behind the zod validator at
+		// the trust boundary; `runValidators` on the upsert below enforces them.
+		platformFeeBuyerPercent: {
 			type: Number,
-			default: DEFAULT_SITE_CONFIGS.platformFeeBuyerKobo,
+			default: DEFAULT_SITE_CONFIGS.platformFeeBuyerPercent,
+			min: 0,
+			max: 100,
 		},
-		platformFeeVendorKobo: {
+		platformFeeBuyerMaxKobo: {
 			type: Number,
-			default: DEFAULT_SITE_CONFIGS.platformFeeVendorKobo,
+			default: DEFAULT_SITE_CONFIGS.platformFeeBuyerMaxKobo,
+			min: 0,
+		},
+		platformFeeVendorPercent: {
+			type: Number,
+			default: DEFAULT_SITE_CONFIGS.platformFeeVendorPercent,
+			min: 0,
+			max: 100,
 		},
 		slotHoldTtlSeconds: {
 			type: Number,
@@ -110,12 +121,20 @@ export async function upsertSiteConfigsDB({
 				upsert: true,
 				returnDocument: "after",
 				setDefaultsOnInsert: true,
+				// Schema-level bounds (fee percents 0–100) are enforced on the
+				// write, not just on read. Without this, `findOneAndUpdate`
+				// skips validators entirely.
+				runValidators: true,
 			},
 		)
 			.lean<ISiteConfigs>()
 			.exec();
 		return res ?? null;
-	} catch {
+	} catch (error) {
+		// A rejected policy write must not look like a no-op to the caller —
+		// `updateSiteConfigs` surfaces the null, and this is the only record of
+		// why it was rejected.
+		console.error("upsertSiteConfigsDB failed:", error);
 		return null;
 	}
 }

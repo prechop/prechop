@@ -113,7 +113,13 @@ export async function createVendorProfileDB({
 }): Promise<IVendorProfile | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
-		const doc = await new VendorProfile(payload).save({ session });
+		// Encrypt account number at rest, mirroring updateVendorProfileDB so the
+		// two writers agree and a create-with-bank-details never stores plaintext.
+		const toSave: Record<string, unknown> = { ...payload };
+		if (typeof toSave.accountNumber === "string" && toSave.accountNumber) {
+			toSave.accountNumber = encrypt(toSave.accountNumber);
+		}
+		const doc = await new VendorProfile(toSave).save({ session });
 		timer({
 			operation: IOperationType.Create,
 			collection: collectionName,
@@ -411,6 +417,32 @@ export async function getVendorProfileByIdDB({
 		);
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * Batch variant of `getVendorProfileByIdDB`: fetch many vendor profiles in one
+ * `$in` query instead of N round trips. Ordering is not guaranteed — callers
+ * that need a specific order should index the result by id. Goes through
+ * `aggregate` so the shared `pre("aggregate")` projection hygiene applies
+ * (drops `accountNumber`, `deleted`, `__v`; stamps `id`). Invalid ids are
+ * dropped rather than throwing.
+ */
+export async function listVendorsByIdsDB(
+	ids: string[],
+	session?: ClientSession,
+): Promise<IVendorProfile[]> {
+	try {
+		const objectIds = ids
+			.filter((id) => mongoose.Types.ObjectId.isValid(id))
+			.map((id) => new mongoose.Types.ObjectId(id));
+		if (objectIds.length === 0) return [];
+		return await VendorProfile.aggregate<IVendorProfile>(
+			[{ $match: { _id: { $in: objectIds } } }],
+			{ session },
+		);
+	} catch {
+		return [];
 	}
 }
 

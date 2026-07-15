@@ -1,6 +1,11 @@
 "use client";
 
-import type { ButtonHTMLAttributes } from "react";
+import {
+	type ButtonHTMLAttributes,
+	type ElementType,
+	forwardRef,
+	type Ref,
+} from "react";
 import styled, { css } from "styled-components";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "gold" | "accent";
@@ -12,19 +17,30 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 	$full?: boolean;
 	$pill?: boolean;
 	$loading?: boolean;
+	/** Render as another element (e.g. `as={Link}` for a styled anchor) so a CTA
+	 *  is ONE interactive element, never a <button> nested inside an <a>. */
+	as?: ElementType;
+	/** Anchor attributes, present only when rendered `as={Link}` / an anchor. */
+	href?: string;
+	target?: string;
+	rel?: string;
 }
 
+// White-on-fill labels: the solid variants use the darkened `--pc-btn-*` fill
+// tokens (see styles/global.ts) so 15px/700 white text clears WCAG AA 4.5:1.
+// The primary/accent hovers stay within the passing range (measured), and the
+// danger hover only darkens.
 const variants = {
 	primary: css`
-		background: var(--pc-gradient-warm);
+		background: var(--pc-btn-primary-bg);
 		color: var(--pc-text-inverse);
 		box-shadow: var(--pc-shadow-primary);
 		&:hover:not(:disabled) { filter: brightness(1.04); box-shadow: 0 12px 30px rgba(255, 90, 31, 0.38); }
 	`,
 	accent: css`
-		background: var(--pc-color-accent);
+		background: var(--pc-btn-accent-bg);
 		color: #fff;
-		&:hover:not(:disabled) { background: var(--pc-color-accent-600); }
+		&:hover:not(:disabled) { filter: brightness(1.06); }
 	`,
 	gold: css`
 		background: var(--pc-color-gold);
@@ -43,7 +59,7 @@ const variants = {
 		&:hover:not(:disabled) { background: var(--pc-surface-2); }
 	`,
 	danger: css`
-		background: var(--pc-color-danger);
+		background: var(--pc-btn-danger-bg);
 		color: #fff;
 		&:hover:not(:disabled) { filter: brightness(0.94); }
 	`,
@@ -85,12 +101,26 @@ const StyledButton = styled.button<Props>`
 	&:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 `;
 
-export function Button({ children, $loading, disabled, ...rest }: Props) {
+export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
+	{ children, $loading, disabled, as, ...rest },
+	ref,
+) {
+	// When rendered as a link (`as={Link}`) the element is an <a>, which has no
+	// `disabled` attribute — express the unavailable state with `aria-disabled`
+	// instead. As a real <button>, keep the native `disabled`.
+	const isLink = as !== undefined;
+	const isDisabled = disabled || $loading;
 	return (
-		<StyledButton disabled={disabled || $loading} {...rest}>
+		<StyledButton
+			ref={ref as Ref<HTMLButtonElement>}
+			as={as}
+			disabled={isLink ? undefined : isDisabled}
+			aria-disabled={isLink && isDisabled ? true : undefined}
+			{...rest}
+		>
 			{$loading ? "Please wait…" : children}
 		</StyledButton>
 	);
-}
+});
 
 export default Button;

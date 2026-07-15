@@ -171,9 +171,7 @@ describe("placeOrder service", () => {
 		const payment = await getPaymentByOrderIdDB({
 			buyerOrderId: result.buyerOrderId,
 		});
-		expect(payment!.status).toBe(
-			PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
-		);
+		expect(payment!.status).toBe(PaymentStatus.AWAITING_EXTERNAL_PAYMENT);
 		expect(payment!.externalPaymentTokenHash).toBeTruthy();
 		expect(payment!.paystackAccessCode).toBeUndefined();
 	});

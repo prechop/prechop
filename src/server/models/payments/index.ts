@@ -255,7 +255,10 @@ export async function getPaymentByExternalTokenHashDB({
 		return (
 			(
 				await Payment.aggregate<IPayment>(
-					[{ $match: { externalPaymentTokenHash: tokenHash } }, { $limit: 1 }],
+					[
+						{ $match: { externalPaymentTokenHash: tokenHash } },
+						{ $limit: 1 },
+					],
 					{ session },
 				)
 			).at(0) ?? null

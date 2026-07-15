@@ -20,7 +20,8 @@ leaves the tree in a working state.
 2. Copy and adapt cross-cutting `src/server/lib`: `handler` (`withApiHandler`), `auth`
    (`withAuth`), `cookies`, `csrf`, `rateLimit`, `response`, `clientIp`.
 3. Stand up singletons: `databases/mongoDB.ts`, `databases/redis.ts`; `metrics/`; `constants/env`
-   + `assertSecrets`; `runtime/bootstrap.ts` wired from `instrumentation.ts`.
+   + `assertRuntimeConfig` (shipped as `assertRuntimeConfig()`, not `assertSecrets()` — it validates
+   more than secrets); `runtime/bootstrap.ts` wired from `instrumentation.ts`.
 4. Port the error model: sentinel `Error` singletons + `handleError` mapping (from
    `domain.errors.ts`).
 5. Establish `constants/cron.ts` (empty, idempotent-guarded) and the `siteConfigs` model + resolver.

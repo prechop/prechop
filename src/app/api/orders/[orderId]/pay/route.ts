@@ -17,7 +17,9 @@ export const POST = withApiHandler(
 			const { orderId } = await (
 				context as { params: Promise<{ orderId: string }> }
 			).params;
-			return ok(await initializeBuyerPayment({ buyerId: auth.userId, orderId }));
+			return ok(
+				await initializeBuyerPayment({ buyerId: auth.userId, orderId }),
+			);
 		} catch (error) {
 			return handleError(error);
 		}

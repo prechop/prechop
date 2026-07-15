@@ -6,6 +6,7 @@ export * from "./notifications";
 export * from "./onboarding";
 export * from "./orders";
 export * from "./payments";
+export * from "./refunds";
 export * from "./revenue";
 export * from "./reviews";
 export * from "./schools";

@@ -1,5 +1,10 @@
-import { decodeJwtToken, ErrUnauthorized } from "@/server/constants";
 import {
+	decodeJwtToken,
+	ErrTokenCompromised,
+	ErrUnauthorized,
+} from "@/server/constants";
+import {
+	clearAuthCookies,
 	getClientIp,
 	getCookieValue,
 	handleError,
@@ -31,6 +36,10 @@ export const POST = withApiHandler(
 			await setAuthCookies(token);
 			return ok({ accessToken: token.accessToken });
 		} catch (error) {
+			// A detected replay burns the family — drop the client's cookies so
+			// it stops re-presenting a token that can never be redeemed again
+			// and falls back to a clean sign-in.
+			if (error === ErrTokenCompromised) await clearAuthCookies();
 			return handleError(error);
 		}
 	},

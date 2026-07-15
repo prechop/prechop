@@ -682,14 +682,15 @@ export default function DailyOrderComposerWrapper({
 
 					<Row $gap={12} $wrap>
 						<div style={{ flex: 1, minWidth: 160 }}>
-							<Link
+							<Button
+								as={Link}
 								href={`/o/${published.token}`}
 								target="_blank"
+								$variant="secondary"
+								$full
 							>
-								<Button $variant="secondary" $full>
-									View listing
-								</Button>
-							</Link>
+								View listing
+							</Button>
 						</div>
 						<div style={{ flex: 1, minWidth: 160 }}>
 							<Button

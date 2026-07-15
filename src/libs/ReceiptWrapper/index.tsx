@@ -74,7 +74,9 @@ export default function ReceiptWrapper({ token }: { token: string }) {
 					<Text $weight={800}>Receipt</Text>
 					<Line>
 						<Text $muted>Amount paid</Text>
-						<Text $weight={800}>{formatKobo(data.amountPaidKobo)}</Text>
+						<Text $weight={800}>
+							{formatKobo(data.amountPaidKobo)}
+						</Text>
 					</Line>
 					<Line>
 						<Text $muted>Status</Text>

@@ -102,3 +102,15 @@ export const becomeVendorSchema = zod
 	.strict();
 
 export type BecomeVendorInput = zod.infer<typeof becomeVendorSchema>;
+
+export const earningsQuerySchema = zod
+	.object({
+		// Defaulted rather than required so `?` with no query string is a valid
+		// request for today, and an unknown range is rejected outright instead
+		// of silently falling back to "all" (which would leak a wider window
+		// than the caller asked for).
+		range: zod.enum(["today", "week", "month", "all"]).default("today"),
+	})
+	.strict();
+
+export type EarningsQueryInput = zod.infer<typeof earningsQuerySchema>;

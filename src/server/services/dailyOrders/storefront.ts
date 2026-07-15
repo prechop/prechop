@@ -7,46 +7,24 @@ import {
 	getVendorProfileByIdDB,
 	type IDailyOrder,
 	type IMenuItem,
-	type IVendorProfile,
+	listActivePublicListingsForVendorIdsDB,
 	listDailyOrdersByVendorDB,
 	listMenuItemsByVendorDB,
+	listVendorsByIdsDB,
 	VendorStatus,
 } from "../../models";
 import { assertMarketplaceEnabled } from "../siteConfigs";
+import {
+	comparePublicVendors,
+	type PublicVendor,
+	toPublicVendor,
+} from "../vendors/publicVendor";
 import { campusIdsInSameState } from "./queries";
 
-/** Public-safe subset of a vendor profile — no email/bank/payout secrets. */
-export interface PublicVendor {
-	id: string;
-	businessName: string | null;
-	description: string | null;
-	profileImageUrl: string | null;
-	campusId: string;
-	state: string | null;
-	areaOrAddress: string | null;
-	categories: string[];
-	rating: number;
-	totalReviews: number;
-	totalOrders: number;
-	isOpenForOrders: boolean;
-}
-
-function toPublicVendor(v: IVendorProfile): PublicVendor {
-	return {
-		id: v._id.toString(),
-		businessName: v.businessName ?? null,
-		description: v.description ?? null,
-		profileImageUrl: v.profileImageUrl ?? null,
-		campusId: v.campusId.toString(),
-		state: v.state ?? null,
-		areaOrAddress: v.areaOrAddress ?? null,
-		categories: v.categories ?? [],
-		rating: v.rating ?? 0,
-		totalReviews: v.totalReviews ?? 0,
-		totalOrders: v.totalOrders ?? 0,
-		isOpenForOrders: v.isOpenForOrders ?? false,
-	};
-}
+// `PublicVendor` / `toPublicVendor` now live in services/vendors/publicVendor so
+// the storefront, marketplace and search payloads share one mapper — and one
+// rating trust gate. Re-exported to keep existing importers working.
+export type { PublicVendor };
 
 /** A vendor's active, public, still-open listings (its "cooking today"). */
 async function activeListingsForVendor(
@@ -134,27 +112,40 @@ export async function searchMarketplace({
 	add(byListing, "listing");
 
 	const vendorIds = [...matched.keys()].slice(0, limit);
-	const hits = await Promise.all(
-		vendorIds.map(async (id) => {
-			const vendor = await getVendorProfileByIdDB({ id });
+
+	// Two batched reads instead of ~2 queries per matched vendor: one `$in` fetch
+	// of every matched profile, and one batched fetch of all their active/public/
+	// still-open listings (the same predicates `activeListingsForVendor` applied
+	// per vendor — status ACTIVE, isPublic, cutoffTime > now — in the same
+	// `scheduledDate: -1` order). Grouping the flat listing result by vendor
+	// reproduces the previous per-vendor shape and ordering exactly. Mirrors
+	// `getMarketplace` in ./queries.
+	const now = new Date();
+	const [vendors, listings] = await Promise.all([
+		listVendorsByIdsDB(vendorIds),
+		listActivePublicListingsForVendorIdsDB({ vendorIds, now }),
+	]);
+	const vendorById = new Map(vendors.map((v) => [v._id.toString(), v]));
+	const listingsByVendor = new Map<string, IDailyOrder[]>();
+	for (const listing of listings) {
+		const key = listing.vendorId.toString();
+		const bucket = listingsByVendor.get(key);
+		if (bucket) bucket.push(listing);
+		else listingsByVendor.set(key, [listing]);
+	}
+
+	const hits = vendorIds
+		.map((id) => {
+			const vendor = vendorById.get(id);
 			if (!vendor || vendor.status !== VendorStatus.ACTIVE) return null;
-			const listings = await activeListingsForVendor(id);
 			return {
 				vendor: toPublicVendor(vendor),
-				listings,
+				listings: listingsByVendor.get(id) ?? [],
 				matchedOn: [...(matched.get(id) ?? [])],
 			} satisfies VendorSearchHit;
-		}),
-	);
+		})
+		.filter((h): h is VendorSearchHit => h !== null);
 
-	// Best-rated shops first.
-	return hits
-		.filter((h): h is VendorSearchHit => h !== null)
-		.sort((a, b) => {
-			const openDelta =
-				Number(b.vendor.isOpenForOrders) -
-				Number(a.vendor.isOpenForOrders);
-			if (openDelta !== 0) return openDelta;
-			return b.vendor.rating - a.vendor.rating;
-		});
+	// Open kitchens first, then best-rated. Unrated shops sort last.
+	return hits.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
 }

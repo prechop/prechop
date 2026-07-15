@@ -16,6 +16,25 @@ Mirrors managerenta: **vitest** for unit/integration on `src/server`, **Playwrig
         └───────────────────────────┘
 ```
 
+## CI — `.github/workflows/ci.yml`
+
+**New (2026-07-15): CI now exists.** Previously the gates below were run by hand; there was no
+pipeline. Triggers: push to `main`, PRs to `main`, `workflow_dispatch`. A newer push to the same
+branch cancels the older run — except on `main`, where every commit keeps its own verdict.
+
+**Every step is blocking.** Nothing is `continue-on-error`, nothing is `|| true`. A pipeline that can
+go green while the suite is red is decoration. **Do not add `continue-on-error` to make the badge
+green — fix the code or the tests.**
+
+> **⚠️ Expect the first run to be RED, for real reasons, not flakes.** The workflow has never
+> executed on GitHub Actions; it is verified only by local reasoning + `actionlint`. Known: `pnpm
+> lint` reports pre-existing Biome `format` diagnostics on an LF checkout plus a stale suppression in
+> `scripts/seed.ts`. A repo-wide `pnpm format` sweep is scheduled once builders stop editing; until
+> then this step fails honestly. Treat the first red as information.
+
+Line endings: CI checks out LF on `ubuntu-latest`, and `.gitattributes` pins the same for Windows
+contributors — Biome returns one verdict everywhere, not one per OS.
+
 ## Static gates (CI, run first)
 
 - `biome check` — lint + format.
@@ -25,10 +44,14 @@ Mirrors managerenta: **vitest** for unit/integration on `src/server`, **Playwrig
 
 Fast, no I/O. Target the pure core:
 - `helpers/kobo` — naira↔kobo, sumKobo integer-safety.
-- `helpers/completeness` — weight table, `isProfileComplete` boundary at 100.
+- `helpers/completeness` — weight table; **and `onboardingChecklist`** (the actual submit gate):
+  each missing step, `missing[]` contents, OFF_CAMPUS location requiring state + area + campus.
 - `helpers/orderNumber` — format `PCH-YYYY-xxxxxx`, non-sequential.
-- **Price computation** — subtotal + delivery + platform fee (BR-2, BR-4); addon pricing;
-  `vendorAmountKobo` floor at 0.
+- **Price computation** — subtotal + delivery + **percentage** fees (BR-2, BR-4): 3% buyer **capped
+  at ₦200** (assert the cap binds above ~₦6,667 of food), 8% vendor uncapped, both derived from the
+  **food subtotal** and not `totalKobo`; option pricing; `vendorSettlementKobo` floor at 0.
+- **`publicRating`** — null below 5 reviews, real average at ≥5; ungated vendors sort below rated
+  ones (BR-36).
 - **Order FSM guards** — every legal/illegal transition (BR-31, state-machines doc); `INVALID_ORDER_STATE`.
 - **Cutoff/abandoned selection predicates** — the queries the cron sweeps use (pure filter functions).
 
@@ -38,7 +61,10 @@ Each vitest worker gets its **own scratch DB** (`prechop-vitest-{pid}-{poolId}`)
 dev data. `setup.ts` forces `NODE_ENV=test`, injects fake JWT/S3/Paystack secrets, and provides
 `tests/helpers/db.ts` (connect/seed/reset) and a `server-only` stub. Cover:
 - **Auth** — OTP request/verify, refresh rotation, **reuse detection revokes all tokens**, cookie flags.
-- **Vendor onboarding** — each step recomputes completeness; auto-activation at 100.
+- **Vendor onboarding** — each step recomputes completeness (display only); **submit-for-review gates
+  on the checklist, not on completeness ≥100**; `NOT_SUBMITTABLE` / `ALREADY_SUBMITTED`; admin
+  approve → ACTIVE, reject(reason) → CHANGES_REQUESTED → resubmit. **Regression-guard: completeness
+  reaching 100 must NOT activate a vendor** (BR-15/BR-16).
 - **Menu/timetable** — ownership guards, bulk validate-all-before-write, soft delete.
 - **Daily orders** — snapshotting, MEALS-only addons, ACTIVE-vendor gate, window checks.
 - **placeOrder** — slot lock acquire/release, server-side pricing, transactional create, cutoff reject.

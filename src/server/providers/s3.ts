@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import {
 	DeleteObjectCommand,
 	GetObjectCommand,
+	HeadObjectCommand,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -77,15 +78,43 @@ class S3Provider {
 		return fullKey;
 	}
 
-	/** Temporary signed URL to read a private object (receipts). */
-	async getPresignedReadUrl(key: string): Promise<string> {
+	/**
+	 * Temporary signed URL to read a private object (receipts).
+	 *
+	 * `expiresIn` is overridable because a signed URL is a bearer credential:
+	 * anything redirected to a browser (a receipt) should be minutes-lived, not
+	 * the 7 days that suits a cached image.
+	 */
+	async getPresignedReadUrl(
+		key: string,
+		expiresIn?: number,
+	): Promise<string> {
 		const command = new GetObjectCommand({
 			Bucket: AWS_S3_BUCKET_NAME,
 			Key: key,
 		});
 		return getSignedUrl(s3Client, command, {
-			expiresIn: PRESIGNED_READ_EXPIRY_SECONDS,
+			expiresIn: expiresIn ?? PRESIGNED_READ_EXPIRY_SECONDS,
 		});
+	}
+
+	/** True when the object is present. Any other error propagates. */
+	async objectExists(key: string): Promise<boolean> {
+		try {
+			await s3Client.send(
+				new HeadObjectCommand({
+					Bucket: AWS_S3_BUCKET_NAME,
+					Key: key,
+				}),
+			);
+			return true;
+		} catch (error) {
+			const status = (
+				error as { $metadata?: { httpStatusCode?: number } }
+			)?.$metadata?.httpStatusCode;
+			if (status === 404 || status === 403) return false;
+			throw error;
+		}
 	}
 
 	async deleteObject(key: string): Promise<void> {

@@ -16,11 +16,22 @@ import {
 	Text,
 } from "@/components";
 import { api } from "@/constants/api";
+import { MAX_FEE_CAP_KOBO, MAX_FEE_PERCENT } from "@/constants/fees";
+import { formatKobo } from "@/constants/formatters";
+import { describeFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 
 interface SiteConfigs {
-	platformFeeBuyerKobo: number;
-	platformFeeVendorKobo: number;
+	// The retired `platformFeeBuyerKobo`/`platformFeeVendorKobo` flat fields are
+	// deliberately gone: they defaulted to 0 and nothing in the pricing path read
+	// them.
+	//
+	// These three ARE the live pricing policy — the same values `placeOrder`
+	// charges with and the buyer's checkout quote reads over
+	// `GET /api/site-configs/marketplace`. Editing them here moves real money.
+	platformFeeBuyerPercent: number;
+	platformFeeBuyerMaxKobo: number;
+	platformFeeVendorPercent: number;
 	slotHoldTtlSeconds: number;
 	abandonedOrderMinutes: number;
 	reviewWindowHours: number;
@@ -109,6 +120,72 @@ const Grid2 = styled.div`
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 	gap: var(--pc-space-4);
 `;
+/** Full-strength `--pc-text`, not `$muted`: on the tinted `--pc-surface-2` the
+ *  muted token measures 4.38:1 in light theme — under the 4.5:1 AA floor. The
+ *  muted token only clears AA against the plain `--pc-surface`. */
+const PolicySummary = styled(Text)`
+	padding: 12px 14px;
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	border-left: 3px solid var(--pc-color-primary);
+	color: var(--pc-text);
+`;
+
+/* ------------------------------------------------------------------ fee form */
+
+type FeeField =
+	| "platformFeeBuyerPercent"
+	| "platformFeeBuyerMaxKobo"
+	| "platformFeeVendorPercent";
+type FeeDraft = Record<FeeField, string>;
+
+const FEE_FIELDS: FeeField[] = [
+	"platformFeeBuyerPercent",
+	"platformFeeBuyerMaxKobo",
+	"platformFeeVendorPercent",
+];
+
+/**
+ * Fee inputs are held as raw STRINGS and validated before save — unlike the
+ * order-policy fields below, which use `Number(e.target.value) || 0`.
+ *
+ * That shortcut is safe for a TTL and catastrophic for a fee. `Number("")` is
+ * `0`, so an admin who clears the field to retype it would, on save, silently
+ * ship a 0% fee — every subsequent order free. The server rejects `"5"` (a
+ * string) for the same reason: coercion cannot distinguish "cleared" from
+ * "zero". So the parse happens exactly once, here, after validation, and an
+ * unparseable field blocks the save instead of defaulting.
+ *
+ * An explicit, intentional `0` IS honoured — that is a real zero-fee promo, and
+ * the whole point of the distinction above.
+ */
+function validateFee(field: FeeField, raw: string): string | null {
+	const trimmed = raw.trim();
+	// Checked BEFORE Number(), which would turn "" into a plausible 0.
+	if (trimmed === "") return "Required. Enter 0 for no fee.";
+	const value = Number(trimmed);
+	if (!Number.isFinite(value)) return "Must be a number.";
+	if (value < 0) return "Cannot be negative.";
+	if (field === "platformFeeBuyerMaxKobo") {
+		if (!Number.isInteger(value))
+			return "Must be a whole number of kobo — there is no sub-kobo coin.";
+		if (value > MAX_FEE_CAP_KOBO)
+			return `Cannot exceed ${formatKobo(MAX_FEE_CAP_KOBO)}.`;
+		return null;
+	}
+	if (value > MAX_FEE_PERCENT) return `Cannot exceed ${MAX_FEE_PERCENT}%.`;
+	return null;
+}
+
+/** Echo a kobo amount back in naira. Kobo-vs-naira is precisely where a fee
+ *  edit goes wrong — a stray zero is a 10× cap — so the admin sees the real
+ *  money value of what they typed, live, next to the field. */
+function koboPreview(raw: string): string {
+	const trimmed = raw.trim();
+	const value = Number(trimmed);
+	if (trimmed === "" || !Number.isInteger(value) || value < 0) return "";
+	return ` That is ${formatKobo(value)} per order.`;
+}
 
 export default function AdminSettingsWrapper() {
 	const { toast } = useToast();
@@ -116,21 +193,73 @@ export default function AdminSettingsWrapper() {
 		"/admin/site-configs",
 	);
 	const [form, setForm] = useState<SiteConfigs | null>(null);
+	const [feeDraft, setFeeDraft] = useState<FeeDraft | null>(null);
 	const [busy, setBusy] = useState(false);
 
 	useEffect(() => {
-		if (data) setForm(data);
+		if (!data) return;
+		setForm(data);
+		setFeeDraft({
+			platformFeeBuyerPercent: String(data.platformFeeBuyerPercent),
+			platformFeeBuyerMaxKobo: String(data.platformFeeBuyerMaxKobo),
+			platformFeeVendorPercent: String(data.platformFeeVendorPercent),
+		});
 	}, [data]);
 
 	function set<K extends keyof SiteConfigs>(key: K, value: SiteConfigs[K]) {
 		setForm((f) => (f ? { ...f, [key]: value } : f));
 	}
 
+	function setFee(field: FeeField, value: string) {
+		setFeeDraft((d) => (d ? { ...d, [field]: value } : d));
+	}
+
+	const feeErrors: Record<FeeField, string | null> = {
+		platformFeeBuyerPercent: feeDraft
+			? validateFee(
+					"platformFeeBuyerPercent",
+					feeDraft.platformFeeBuyerPercent,
+				)
+			: null,
+		platformFeeBuyerMaxKobo: feeDraft
+			? validateFee(
+					"platformFeeBuyerMaxKobo",
+					feeDraft.platformFeeBuyerMaxKobo,
+				)
+			: null,
+		platformFeeVendorPercent: feeDraft
+			? validateFee(
+					"platformFeeVendorPercent",
+					feeDraft.platformFeeVendorPercent,
+				)
+			: null,
+	};
+	const hasFeeErrors = FEE_FIELDS.some((f) => feeErrors[f] !== null);
+
 	async function save() {
-		if (!form) return;
+		if (!form || !feeDraft) return;
+		// Never PATCH a partially-valid fee policy: the server takes each field
+		// independently, so sending the two that parsed would half-apply an edit
+		// the admin never confirmed.
+		if (hasFeeErrors) {
+			toast("Fix the highlighted fee fields before saving.", "error");
+			return;
+		}
 		setBusy(true);
 		try {
 			await api.patch("/admin/site-configs", {
+				// JSON numbers, not strings — the server rejects `"5"` outright
+				// rather than coerce it. Safe to `Number()` here: every field has
+				// just passed `validateFee`, so none is empty or unparseable.
+				platformFeeBuyerPercent: Number(
+					feeDraft.platformFeeBuyerPercent,
+				),
+				platformFeeBuyerMaxKobo: Number(
+					feeDraft.platformFeeBuyerMaxKobo,
+				),
+				platformFeeVendorPercent: Number(
+					feeDraft.platformFeeVendorPercent,
+				),
 				slotHoldTtlSeconds: Math.round(form.slotHoldTtlSeconds),
 				abandonedOrderMinutes: Math.round(form.abandonedOrderMinutes),
 				reviewWindowHours: Math.round(form.reviewWindowHours),
@@ -156,7 +285,7 @@ export default function AdminSettingsWrapper() {
 		}
 	}
 
-	if (isLoading || !form)
+	if (isLoading || !form || !feeDraft)
 		return (
 			<Stack $gap={4}>
 				<PageHeader
@@ -185,7 +314,12 @@ export default function AdminSettingsWrapper() {
 				title="Settings"
 				subtitle="Platform-wide policy, fees and kill switches."
 				actions={
-					<Button $pill $loading={busy} onClick={save}>
+					<Button
+						$pill
+						$loading={busy}
+						disabled={busy || hasFeeErrors}
+						onClick={save}
+					>
 						Save changes
 					</Button>
 				}
@@ -195,11 +329,74 @@ export default function AdminSettingsWrapper() {
 				<Stack $gap={16}>
 					<Section>
 						<SectionHeader title="Platform fees" icon="💰" />
-						<Text $muted>
-							Prechop charges vendors 8% of the food subtotal on
-							successful paid orders. Buyers pay a 3% service fee
-							capped at ₦200. Paystack processing fees are absorbed
-							by Prechop.
+						{/* Derived from the SAVED config, never hardcoded: this is
+						    the same policy the buyer's checkout quote and the
+						    vendor's commission notice read, so all three move
+						    together the moment this form is saved. */}
+						<PolicySummary $size={13}>
+							<strong>In effect now:</strong>{" "}
+							{describeFeePolicy({
+								buyerPercent:
+									data?.platformFeeBuyerPercent ?? 0,
+								buyerMaxKobo:
+									data?.platformFeeBuyerMaxKobo ?? 0,
+								vendorPercent:
+									data?.platformFeeVendorPercent ?? 0,
+							})}
+						</PolicySummary>
+						<Grid2>
+							<Input
+								label="Buyer service fee (percent)"
+								type="number"
+								step="0.01"
+								inputMode="decimal"
+								value={feeDraft.platformFeeBuyerPercent}
+								error={feeErrors.platformFeeBuyerPercent}
+								hint="Percent of the food subtotal, added at checkout and paid by the buyer. Fractions allowed (e.g. 2.5). Enter 0 for no buyer fee."
+								onChange={(e) =>
+									setFee(
+										"platformFeeBuyerPercent",
+										e.target.value,
+									)
+								}
+							/>
+							<Input
+								label="Buyer service fee cap (kobo)"
+								type="number"
+								step="1"
+								inputMode="numeric"
+								value={feeDraft.platformFeeBuyerMaxKobo}
+								error={feeErrors.platformFeeBuyerMaxKobo}
+								hint={`Whole kobo, not naira — 100 kobo = ₦1.${koboPreview(
+									feeDraft.platformFeeBuyerMaxKobo,
+								)} The buyer's fee never exceeds this, however large the order.`}
+								onChange={(e) =>
+									setFee(
+										"platformFeeBuyerMaxKobo",
+										e.target.value,
+									)
+								}
+							/>
+							<Input
+								label="Vendor commission (percent)"
+								type="number"
+								step="0.01"
+								inputMode="decimal"
+								value={feeDraft.platformFeeVendorPercent}
+								error={feeErrors.platformFeeVendorPercent}
+								hint="Percent of the food subtotal, deducted from the vendor's payout. Uncapped. Enter 0 for no commission."
+								onChange={(e) =>
+									setFee(
+										"platformFeeVendorPercent",
+										e.target.value,
+									)
+								}
+							/>
+						</Grid2>
+						<Text $muted $size={12.5}>
+							These rates apply to orders placed after you save.
+							Orders already paid keep the fee they were charged.
+							Paystack processing fees are absorbed by Prechop.
 						</Text>
 					</Section>
 

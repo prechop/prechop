@@ -1,4 +1,5 @@
 import {
+	AppError,
 	verifyOtp as compareOtp,
 	ErrOtpInvalid,
 	ErrUnauthorized,
@@ -18,7 +19,21 @@ import type { IJwtPayload } from "../../types";
 import { resolvePermissions } from "../iam";
 import { toPublicUser } from "../users/toPublicUser";
 import { autoProvisionBuyer } from "./register";
-import { otpKey, otpRateLimitKey } from "./requestOtp";
+import { otpKey, otpRateLimitKey, otpVerifyRateLimitKey } from "./requestOtp";
+
+// A 6-digit code has 1e6 possibilities but only a 10-minute life. Without a
+// per-phone attempt cap the generic per-IP route limit is no defence: an
+// attacker rotates IPs and walks the keyspace against one victim's number.
+// PRD §8.1: 5 verification attempts per phone per 10 minutes.
+const OTP_VERIFY_WINDOW_SECONDS = 60 * 10; // 10 min
+const OTP_VERIFY_MAX_ATTEMPTS = 5;
+
+const ErrOtpVerifyRateLimited = (): AppError =>
+	new AppError(
+		"Too many verification attempts. Request a new code in 10 minutes.",
+		429,
+		"OTP_VERIFY_RATE_LIMITED",
+	);
 
 export interface VerifyOtpResult {
 	token: IJwtPayload;
@@ -37,6 +52,23 @@ export async function verifyOtpService({
 	const normalizedPhone = normalizeNigerianMobilePhone(phone);
 	if (!normalizedPhone) throw validationError(NIGERIAN_PHONE_ERROR_MESSAGE);
 
+	// Count the attempt *before* the code is compared, so a guess that lands
+	// after the budget is spent still loses. The window is fixed from the first
+	// attempt and is NOT extended by later ones — an attacker cannot keep the
+	// key alive to starve the victim beyond 10 minutes.
+	const verifyKey = otpVerifyRateLimitKey(normalizedPhone);
+	const verifyAttempts = await Redis.incr(verifyKey);
+	if (verifyAttempts === 1) {
+		await Redis.expire(verifyKey, OTP_VERIFY_WINDOW_SECONDS);
+	} else if ((await Redis.ttl(verifyKey)) < 0) {
+		// INCR created/kept the key but the EXPIRE never landed (crash or a
+		// failed round-trip). Without this the counter is immortal and the
+		// number is locked out for good — a self-inflicted DoS.
+		await Redis.expire(verifyKey, OTP_VERIFY_WINDOW_SECONDS);
+	}
+	if (verifyAttempts > OTP_VERIFY_MAX_ATTEMPTS)
+		throw ErrOtpVerifyRateLimited();
+
 	const storedHash = await Redis.get(otpKey(normalizedPhone));
 	if (!storedHash) throw ErrOtpInvalid;
 
@@ -46,6 +78,9 @@ export async function verifyOtpService({
 	// Single-use — delete immediately on success.
 	await Redis.del(otpKey(normalizedPhone));
 	await Redis.del(otpRateLimitKey(normalizedPhone));
+	// Clear the verify budget so a legitimate user who fat-fingered a few codes
+	// isn't still throttled on their next sign-in.
+	await Redis.del(verifyKey);
 
 	// A verified phone with no account is a first-time sign-in: provision a
 	// lightweight buyer so there is a single login for everyone (unified login).

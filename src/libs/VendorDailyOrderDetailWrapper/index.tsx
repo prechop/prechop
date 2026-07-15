@@ -271,9 +271,9 @@ export default function VendorDailyOrderDetailWrapper({
 						title="Not available"
 						description={errMsg(error)}
 						action={
-							<Link href="/dashboard">
-								<Button>Back to dashboard</Button>
-							</Link>
+							<Button as={Link} href="/dashboard">
+								Back to dashboard
+							</Button>
 						}
 					/>
 				</Stack>
@@ -366,11 +366,13 @@ export default function VendorDailyOrderDetailWrapper({
 				</Row>
 
 				{editable ? (
-					<Link href={`/dashboard/${order.id}/edit`}>
-						<Button $full>
-							<span aria-hidden>✏️</span> Edit daily order
-						</Button>
-					</Link>
+					<Button
+						as={Link}
+						href={`/dashboard/${order.id}/edit`}
+						$full
+					>
+						<span aria-hidden>✏️</span> Edit daily order
+					</Button>
 				) : (
 					<LockNote>
 						<span aria-hidden>🔒</span>
@@ -580,9 +582,7 @@ export default function VendorDailyOrderDetailWrapper({
 											{o.subtotalKobo != null && (
 												<Text $muted $size={12}>
 													Food{" "}
-													{formatKobo(
-														o.subtotalKobo,
-													)}{" "}
+													{formatKobo(o.subtotalKobo)}{" "}
 													· Commission{" "}
 													{formatKobo(
 														o.prechopCommissionKobo ??
@@ -658,14 +658,15 @@ export default function VendorDailyOrderDetailWrapper({
 								</Text>
 							</QrWrap>
 						)}
-						<Link
+						<Button
+							as={Link}
 							href={`/o/${order.shareableToken}`}
 							target="_blank"
+							$variant="secondary"
+							$full
 						>
-							<Button $variant="secondary" $full>
-								View public listing
-							</Button>
-						</Link>
+							View public listing
+						</Button>
 					</Stack>
 				</Card>
 			</Stack>

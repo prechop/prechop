@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { CronJob } from "cron";
 import { acquireLock, releaseLock } from "../databases";
+import { PLATFORM_TIMEZONE } from "../models/utils";
 import { DB_NAME } from "./environments";
 
 declare global {
@@ -39,14 +40,25 @@ export default async function cron(): Promise<void> {
 	global.__prechopCronInit = true;
 
 	// Lazy imports so cron scheduling never pulls service graphs at module load.
-	const { closeExpiredDailyOrdersDB } = await import("../models");
+	const { closeExpiredDailyOrdersDB, resetSoldOutMenuItemsDB } = await import(
+		"../models"
+	);
 	const { sweepAbandonedOrders } = await import(
 		"../services/buyerOrders/sweepAbandoned"
+	);
+	const { sweepStalePaidOrders } = await import(
+		"../services/buyerOrders/sweepStalePaidOrders"
+	);
+	const { sendCutoffWarnings } = await import(
+		"../services/buyerOrders/cutoffWarning"
 	);
 	const { removeExpiredUsersTokens } = await import(
 		"../services/auth/removeExpiredUsersTokens"
 	);
 	const { rebuildDailySnapshots } = await import("../services/analyticsJobs");
+	const { sendDueReviewPrompts } = await import(
+		"../services/notifications/reviewPrompts"
+	);
 
 	try {
 		// Cutoff sweep — close ACTIVE listings past their cutoff. Every minute.
@@ -91,7 +103,86 @@ export default async function cron(): Promise<void> {
 			true,
 		);
 
-		// Daily analytics snapshot at 00:01.
+		// cutoff.enforce — cancel + refund orders the vendor took money for and
+		// never confirmed before cutoff. Every 5 min.
+		//
+		// The listing-closing sweep above only touches the *listing*; without
+		// this, a PAID-but-unconfirmed buyer order sits forever — no food, no
+		// refund. TTL is 280s so a slow batch (each order is a Paystack round
+		// trip) holds the lock for its whole run rather than letting the next
+		// tick start a second, overlapping sweep.
+		new CronJob(
+			"*/5 * * * *",
+			() => {
+				void runSingleInstance("cutoff-enforce", 280, () =>
+					sweepStalePaidOrders(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		// cutoff.warning (BR-8) — pre-cutoff notice to buyers + vendor. Every min.
+		// Per-listing Redis dedupe inside the service stops the 30 ticks inside
+		// the window from sending 30 notifications.
+		new CronJob(
+			"*/1 * * * *",
+			() => {
+				void runSingleInstance("cutoff-warning", 50, () =>
+					sendCutoffWarnings(),
+				);
+			},
+			null,
+			true,
+		);
+
+		// review.prompt — nudge buyers 24h after collection. Hourly.
+		//
+		// Hourly, not per-minute: the trigger is "24h after the order completed",
+		// a deadline nobody perceives to the minute, and each tick is a scan.
+		// The service is idempotent via a Redis SET NX per order and no-ops
+		// entirely when `reviewsEnabled` is false, so a missed or repeated tick
+		// costs nothing. TTL 3000s < the 3600s gap between ticks: a crashed
+		// instance's lock always expires before the next tick, so a dead holder
+		// can never silently skip an hour.
+		//
+		// Timezone is load-bearing for the same reason as the jobs below: the
+		// sweep's lookback window is reasoned about in Lagos time.
+		new CronJob(
+			"0 * * * *",
+			() => {
+				void runSingleInstance("review-prompts", 3000, () =>
+					sendDueReviewPrompts(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		// Nightly sold-out reset — every item goes back on sale at Lagos midnight.
+		//
+		// The timezone argument is load-bearing, not decoration: `cron` schedules
+		// in the SERVER's local time by default, so on a UTC host this fires at
+		// 01:00 Lagos and every sold-out item stays dark through the first hour
+		// of trading. No args = all campuses in one write.
+		new CronJob(
+			"0 0 * * *",
+			() => {
+				void runSingleInstance("soldout-reset", 300, () =>
+					resetSoldOutMenuItemsDB(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		// Daily analytics snapshot at 00:01 Lagos. Same timezone reasoning as
+		// above — "00:01" is meant to be the start of the Nigerian day, and the
+		// snapshot it rebuilds is bucketed in Lagos time, so running it at 00:01
+		// UTC would close the previous day an hour early.
 		new CronJob(
 			"1 0 * * *",
 			() => {
@@ -101,6 +192,7 @@ export default async function cron(): Promise<void> {
 			},
 			null,
 			true,
+			PLATFORM_TIMEZONE,
 		);
 	} catch (error) {
 		console.error("[cron] failed to schedule jobs:", error);

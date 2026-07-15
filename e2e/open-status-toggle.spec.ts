@@ -2,6 +2,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { ORIGIN } from "./urls";
 
 // Verifies the vendor dashboard "Open for orders" toggle: clicking it flips the
 // kitchen's open state, persists to the backend, and survives a reload. Restores
@@ -10,7 +12,6 @@ import mongoose from "mongoose";
 const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
-const ORIGIN = "http://localhost:3100";
 
 const VENDOR_PHONE = "08144444444"; // Bola's Buka — seeded ACTIVE vendor
 const KNOWN_OTP = "123456";
@@ -32,17 +33,13 @@ test.afterAll(async () => {
 
 async function loginInBrowser(page: Page, phone: string) {
 	const ctx = page.context();
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await ctx.request.post("/api/auth/otp/request", {
 		headers: { origin: ORIGIN },
 		data: { phone },
 	});
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await ctx.request.post("/api/auth/otp/verify", {
 		headers: { origin: ORIGIN },
 		data: { phone, otp: KNOWN_OTP },

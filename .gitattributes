@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Deterministic line endings across Windows / Linux / macOS checkouts.
+#
+# Why this file exists: Git for Windows ships `core.autocrlf=true` in its
+# SYSTEM gitconfig, so a Windows checkout writes CRLF into the working tree
+# while Biome's formatter expects LF. Result: `pnpm lint` reports formatter
+# errors on Windows and passes on Linux CI — the same commit, two verdicts.
+#
+# `eol=lf` takes precedence over `core.autocrlf`, so this pins LF in every
+# working tree on every OS without anyone editing their git config. The
+# repository index is already 100% LF (verified: `git ls-files --eol` →
+# 562/562 `i/lf`), so this changes no committed content — it only stops
+# future checkouts and future writes from drifting.
+#
+# NOTE: adding this file does NOT rewrite files already sitting on disk as
+# CRLF. To normalize an existing working tree (produces no git diff):
+#     git add --renormalize .
+#     git checkout-index --force --all
+# ─────────────────────────────────────────────────────────────────────────
+
+# Default: detect text, and always check it out with LF.
+* text=auto eol=lf
+
+# Explicit for the toolchain-sensitive types Biome formats.
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.jsonc text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.html  text eol=lf
+*.svg   text eol=lf
+
+# Shell scripts MUST be LF or they will not execute in Linux containers/CI.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.dockerfile text eol=lf
+
+# Generated: LF, and keep it out of language stats / review noise.
+pnpm-lock.yaml text eol=lf linguist-generated=true
+
+# Binaries — never transform the bytes.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.avif binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.otf  binary
+*.mp4  binary
+*.webm binary
+*.zip  binary
+*.gz   binary

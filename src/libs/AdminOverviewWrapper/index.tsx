@@ -22,7 +22,8 @@ import { formatDateTime, statusLabel } from "@/constants/formatters";
 interface TopVendor {
 	id: string;
 	businessName: string | null;
-	rating: number;
+	/** Null below the public-rating threshold — see @/components/VendorRating. */
+	rating: number | null;
 	totalOrders: number;
 	totalReviews: number;
 }
@@ -237,7 +238,8 @@ export default function AdminOverviewWrapper() {
 												</td>
 												<td>
 													<Rating>
-														{v.rating.toFixed(1)}
+														{v.rating?.toFixed(1) ??
+															"—"}
 														<span aria-hidden>
 															★
 														</span>

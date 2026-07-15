@@ -3,6 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey } from "./otpKeys";
+import { ORIGIN } from "./urls";
 
 // Browser-driven proof that a vendor who switches into buying mode CAN order
 // from ANOTHER vendor's listing (the positive counterpart to vendor-as-buyer's
@@ -29,7 +31,6 @@ const DB_NAME = process.env.DB_NAME ?? "prechop";
 // cloned "other" vendor's listing.
 const VENDOR_PHONE = "08122222222";
 const KNOWN_OTP = "123456";
-const ORIGIN = "http://localhost:3100";
 
 test.use({ baseURL: ORIGIN });
 
@@ -120,17 +121,13 @@ test.afterAll(async () => {
 /** Log in through the browser context so the auth cookie lands in the page. */
 async function loginInBrowser(page: Page, phone: string) {
 	const ctx = page.context();
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await ctx.request.post("/api/auth/otp/request", {
 		headers: { origin: ORIGIN },
 		data: { phone },
 	});
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await ctx.request.post("/api/auth/otp/verify", {
 		headers: { origin: ORIGIN },
 		data: { phone, otp: KNOWN_OTP },
@@ -178,7 +175,14 @@ test("a vendor switches to buying and can order another vendor's listing", async
 	).toHaveCount(0);
 
 	// Add an item → checkout becomes an enabled "Pay ₦… →" (order is placeable).
-	await page.getByRole("button", { name: "＋" }).first().click();
+	// The control renders a "＋" glyph but carries aria-label="Add one {item}",
+	// and an aria-label WINS over text content when computing the accessible
+	// name — so matching on the glyph never finds it. Matching the label is also
+	// the more honest assertion: it is what a screen-reader user hears.
+	await page
+		.getByRole("button", { name: /^Add one / })
+		.first()
+		.click();
 	const payButton = page.getByRole("button", { name: /^Pay ₦/ });
 	await expect(payButton).toBeVisible();
 	await expect(payButton).toBeEnabled();

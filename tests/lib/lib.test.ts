@@ -31,23 +31,48 @@ function req(headers: Record<string, string> = {}, method = "GET"): Request {
 }
 
 describe("clientIp", () => {
-	it("prefers cf-connecting-ip, then x-real-ip", () => {
+	// tests/setup.ts pins TRUSTED_PROXY="0": no trusted edge. In that mode every
+	// forwarded-IP header is client-supplied and therefore ignored (see the
+	// spoofing regression block below). Updated from the pre-fix expectation that
+	// these headers were echoed back — that was the vulnerability.
+	it("ignores forwarded headers when there is no trusted proxy", () => {
 		expect(getClientIp(req({ "cf-connecting-ip": "1.1.1.1" }))).toBe(
-			"1.1.1.1",
+			"unknown",
 		);
-		expect(getClientIp(req({ "x-real-ip": "2.2.2.2" }))).toBe("2.2.2.2");
-	});
-
-	it("falls back to the first XFF hop (untrusted proxy)", () => {
+		expect(getClientIp(req({ "x-real-ip": "2.2.2.2" }))).toBe("unknown");
 		expect(
 			getClientIp(req({ "x-forwarded-for": "3.3.3.3, 4.4.4.4" })),
-		).toBe("3.3.3.3");
+		).toBe("unknown");
 	});
 
 	it("returns 'unknown' with no headers", () => {
 		expect(getClientIp(req())).toBe("unknown");
 		expect(getUserAgent(req())).toBe("unknown");
 		expect(getUserAgent(req({ "user-agent": "curl" }))).toBe("curl");
+	});
+});
+
+describe("clientIp — IP rate-limit spoofing (TRUSTED_PROXY unset)", () => {
+	// REGRESSION: with no trusted proxy, client-supplied forwarded-IP headers must
+	// NOT be honored — otherwise an attacker rotates `cf-connecting-ip` /
+	// `x-real-ip` to mint a fresh rate-limit bucket per request and the limiter is
+	// defeated (SMS-cost amplification on the OTP path). tests/setup.ts pins
+	// TRUSTED_PROXY="0", so this exercises the untrusted-proxy path. The fix has
+	// landed in src/server/lib/clientIp.ts; these pin it so it cannot regress.
+	it("does not grant a fresh bucket per rotated cf-connecting-ip", () => {
+		const a = getClientIp(req({ "cf-connecting-ip": "1.1.1.1" }));
+		const b = getClientIp(req({ "cf-connecting-ip": "9.9.9.9" }));
+		// Rotating the header must collapse to the SAME bucket, and must not echo
+		// the attacker-chosen value.
+		expect(a).toBe(b);
+		expect(a).not.toBe("1.1.1.1");
+	});
+
+	it("does not grant a fresh bucket per rotated x-real-ip", () => {
+		const a = getClientIp(req({ "x-real-ip": "2.2.2.2" }));
+		const b = getClientIp(req({ "x-real-ip": "8.8.8.8" }));
+		expect(a).toBe(b);
+		expect(a).not.toBe("2.2.2.2");
 	});
 });
 

@@ -27,8 +27,7 @@ export async function sweepAbandonedOrders(): Promise<number> {
 	for (const id of [...ids, ...externalIds]) {
 		const order = await getBuyerOrderByIdDB({ id });
 		if (!order) continue;
-		const external =
-			order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT;
+		const external = order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT;
 		const done = await markBuyerOrderCancelledDB({
 			id,
 			reason: external

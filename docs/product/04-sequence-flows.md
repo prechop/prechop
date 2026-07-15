@@ -84,25 +84,47 @@ sequenceDiagram
     end
 ```
 
-## 4. Vendor onboarding → auto-activation
+## 4. Vendor onboarding → submit → admin approval
+
+> **⚠️ CORRECTED (2026-07-15).** This flow previously ended `completeness = 100 → INCOMPLETE→ACTIVE`
+> — **there is no auto-activation**; go-live requires **admin approval** (BR-15/BR-16). The old
+> diagram also placed "menu items (≥3) + timetable" *before* activation, which is impossible: both
+> are behind the active-vendor gate. That impossibility is exactly why gating submission on
+> completeness deadlocked every applicant at ~60%, and why the gate is the **onboarding checklist**.
 
 ```mermaid
 sequenceDiagram
     participant V as Vendor
     participant App
     participant PS as Paystack
+    participant A as Admin
 
     V->>App: register/vendor (campusId) → OTP → verify
-    V->>App: POST business-identity  (→ recompute completeness)
+    Note over V,App: status INCOMPLETE
+    V->>App: POST business-identity
     V->>App: POST location (ON/OFF campus)
     V->>App: POST categories
     V->>App: POST profile-image/presign → upload to S3 → confirm
-    V->>App: POST menu items (≥3)  + timetable (≥1 day)
     V->>App: POST bank-details
     App->>PS: resolveAccountNumber + createSubaccount
     PS-->>App: subaccount code + verified accountName
-    App->>App: completeness = 100 → status INCOMPLETE→ACTIVE (BR-16)
-    V->>App: PATCH open-status (now allowed) → visible on marketplace
+    Note over App: onboarding checklist now complete<br/>(completeness is recomputed for DISPLAY only)
+    V->>App: POST /api/vendors/me/submit
+    App->>App: checklist complete? else 409 NOT_SUBMITTABLE
+    App->>App: status → PENDING_REVIEW (profile read-only)
+    App->>V: submission-received email · audit VENDOR_SUBMIT_FOR_REVIEW
+
+    alt Admin approves
+        A->>App: POST /api/admin/onboarding/{id}/approve
+        App->>App: status → ACTIVE (BR-16)
+        V->>App: POST menu items (≥3) + timetable (≥1 day)
+        Note over V,App: only possible NOW — both are behind the active-vendor gate
+        V->>App: PATCH open-status (now allowed) → visible on marketplace
+    else Admin rejects
+        A->>App: POST /api/admin/onboarding/{id}/reject { reason }
+        App->>App: status → CHANGES_REQUESTED
+        App->>V: reason surfaced; vendor edits and submits again
+    end
 ```
 
 ## 5. Buyer/vendor cancellation with refund

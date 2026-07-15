@@ -32,39 +32,52 @@ import { Badge, Text } from "../Text";
 export const MIN_PUBLIC_RATING_REVIEWS = 5;
 
 /** True when the numeric score may be shown publicly. */
-export function shouldShowPublicRating(totalReviews: number | null | undefined) {
+export function shouldShowPublicRating(
+	totalReviews: number | null | undefined,
+) {
 	return (totalReviews ?? 0) >= MIN_PUBLIC_RATING_REVIEWS;
 }
 
 const NEW_VENDOR_LABEL = "New vendor";
 const NEW_VENDOR_HINT = "Rating shows after 5 reviews";
 
+/* On --pc-gradient-hero, plain white-ish text is not legible: the gradient runs
+   to #F4B400 and #fff over it measures ~1.7:1. On the hero the rating becomes a
+   scrim-backed chip instead, matching the status badge treatment. */
 const Wrap = styled.span<{ $onHero?: boolean }>`
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	font-size: 13px;
 	font-weight: 700;
-	color: ${(p) => (p.$onHero ? "rgba(255,255,255,0.92)" : "var(--pc-text)")};
+	color: ${(p) => (p.$onHero ? "#fff" : "var(--pc-text)")};
 	white-space: nowrap;
+	${(p) =>
+		p.$onHero &&
+		`background: var(--pc-scrim-on-hero);
+		 border: 1px solid var(--pc-scrim-on-hero-border);
+		 border-radius: var(--pc-radius-pill);
+		 padding: 4px 11px;`}
 `;
 
-const Star = styled.span`
-	color: var(--pc-color-gold);
+const Star = styled.span<{ $onHero?: boolean }>`
+	color: ${(p) => (p.$onHero ? "var(--pc-color-gold)" : "var(--pc-color-gold-ink)")};
 	font-size: 13px;
 	line-height: 1;
 `;
 
 const Count = styled.span<{ $onHero?: boolean }>`
 	font-weight: 600;
-	color: ${(p) => (p.$onHero ? "rgba(255,255,255,0.8)" : "var(--pc-text-muted)")};
+	color: ${(p) =>
+		p.$onHero ? "rgba(255,255,255,0.88)" : "var(--pc-color-muted-ink)"};
 `;
 
 const NewPill = styled(Badge)<{ $onHero?: boolean }>`
 	border: 1px dashed currentColor;
+	color: var(--pc-color-muted-ink);
 	${(p) =>
 		p.$onHero &&
-		`background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.55);`}
+		`background: var(--pc-scrim-on-hero); color: #fff; border-color: var(--pc-scrim-on-hero-border);`}
 `;
 
 export interface VendorRatingProps {
@@ -112,7 +125,9 @@ export function VendorRating({
 			$onHero={onHero}
 			aria-label={`Rated ${score} out of 5 from ${count} reviews`}
 		>
-			<Star aria-hidden>★</Star>
+			<Star $onHero={onHero} aria-hidden>
+				★
+			</Star>
 			{score}
 			{!hideCount && (
 				<Count $onHero={onHero} aria-hidden>

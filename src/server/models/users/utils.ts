@@ -7,6 +7,34 @@ import {
 } from "../../constants";
 import type { IJwtPayload } from "../../types";
 
+/**
+ * Conservative address check. Deliberately not an RFC 5322 parser: this guards a
+ * best-effort notification field, so it rejects the obviously-wrong (no `@`, no
+ * dot in the domain, whitespace, over-length) and lets the mail provider be the
+ * final judge of deliverability. 254 is the RFC 5321 maximum path length.
+ */
+export const EMAIL_MAX_LENGTH = 254;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * Fold an address to its stored form: trimmed and lowercased. Returns `null`
+ * when the input is empty (meaning "clear it") and `undefined` when the input is
+ * present but not a valid address (meaning "reject it") — callers must
+ * distinguish the two.
+ */
+export function normalizeEmail(value: string): string | null | undefined {
+	const trimmed = value.trim().toLowerCase();
+	if (trimmed === "") return null;
+	if (trimmed.length > EMAIL_MAX_LENGTH) return undefined;
+	return EMAIL_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
+/** Schema-level predicate: a stored address must be normalized and valid. */
+export function isStorableEmail(value: unknown): boolean {
+	if (typeof value !== "string") return false;
+	return normalizeEmail(value) === value;
+}
+
 export async function generateAuthToken({
 	userId,
 	ip,

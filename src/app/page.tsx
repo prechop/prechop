@@ -11,6 +11,28 @@ const Page = styled.div`
   flex-direction: column;
   background: var(--pc-gradient-mesh), var(--pc-bg);
 `;
+/* Keyboard/SR users land here first and can jump straight past the header into
+   the hero. Off-screen until focused, then it pins to the top-left. */
+const SkipLink = styled.a`
+  position: absolute;
+  left: 12px;
+  top: -80px;
+  z-index: 200;
+  padding: 10px 16px;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  border: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow);
+  font-weight: 700;
+  font-size: 14px;
+  transition: top var(--pc-dur) var(--pc-ease);
+  &:focus-visible {
+    top: 12px;
+    outline: 2px solid var(--pc-color-primary);
+    outline-offset: 2px;
+  }
+`;
 const Nav = styled(Container)`
   display: flex;
   align-items: center;
@@ -71,7 +93,7 @@ const Kicker = styled.span`
   padding: 7px 14px;
   border-radius: var(--pc-radius-pill);
   b {
-    color: var(--pc-color-primary);
+    color: var(--pc-color-primary-ink);
   }
 `;
 const H1 = styled.h1`
@@ -190,7 +212,7 @@ const FloatCard = styled.div<{ $pos: string; $delay: number }>`
 `;
 const Footer = styled(Container)`
   padding: var(--pc-space-5) var(--pc-space-4);
-  color: var(--pc-text-faint);
+  color: var(--pc-text-muted);
   font-size: 13px;
   font-weight: 600;
   border-top: 1px solid var(--pc-border);
@@ -206,124 +228,137 @@ const AuthCluster = styled.div`
 
 /** Auth-aware nav control: reflects whether the visitor is signed in. */
 function HeaderAuth() {
-  const { user, isLoading, isAuthenticated } = useAuth();
+	const { user, isLoading, isAuthenticated } = useAuth();
 
-  // Don't flash "Log in" before we know — just hold the space.
-  if (isLoading) return <AuthCluster aria-hidden />;
+	// Don't flash "Log in" before we know — just hold the space.
+	if (isLoading) return <AuthCluster aria-hidden />;
 
-  if (!isAuthenticated) {
-    return (
-      <AuthCluster>
-        <Link href="/login">
-          <Button $variant="ghost" $size="sm" $pill>
-            Log in
-          </Button>
-        </Link>
-      </AuthCluster>
-    );
-  }
+	if (!isAuthenticated) {
+		return (
+			<AuthCluster as="nav" aria-label="Account">
+				<Button
+					as={Link}
+					href="/login"
+					$variant="ghost"
+					$size="sm"
+					$pill
+				>
+					Log in
+				</Button>
+			</AuthCluster>
+		);
+	}
 
-  const isVendor = !!user?.groups?.includes("Vendors");
-  const primaryHref = isVendor ? "/dashboard" : "/my-orders";
-  const primaryLabel = isVendor ? "Dashboard" : "My orders";
-  const fullName = user
-    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
-    : undefined;
+	const isVendor = !!user?.groups?.includes("Vendors");
+	const primaryHref = isVendor ? "/dashboard" : "/my-orders";
+	const primaryLabel = isVendor ? "Dashboard" : "My orders";
+	const fullName = user
+		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+		: undefined;
 
-  return (
-    <AuthCluster>
-      <Link href={primaryHref}>
-        <Button $variant="ghost" $size="sm" $pill>
-          {primaryLabel}
-        </Button>
-      </Link>
-      <Link href="/account" aria-label="Your account">
-        <Avatar name={fullName} size={38} />
-      </Link>
-    </AuthCluster>
-  );
+	return (
+		<AuthCluster as="nav" aria-label="Account">
+			<Button
+				as={Link}
+				href={primaryHref}
+				$variant="ghost"
+				$size="sm"
+				$pill
+			>
+				{primaryLabel}
+			</Button>
+			<Link href="/account" aria-label="Your account">
+				<Avatar name={fullName} size={38} />
+			</Link>
+		</AuthCluster>
+	);
 }
 
 export default function LandingPage() {
-  return (
-    <Page>
-      <Nav>
-        <Brand>
-          <Logo aria-hidden>🍲</Logo>
-          Prechop
-        </Brand>
-        <HeaderAuth />
-      </Nav>
-      <Hero>
-        <Copy>
-          <Kicker>
-            <span aria-hidden>⏱️</span> Order <b>before</b> they cook
-          </Kicker>
-          <H1>
-            Skip the queue.
-            <br />
-            <em>Reserve your meal.</em>
-          </H1>
-          <Lead>
-            Browse today&apos;s campus kitchens,reserve your meal,and pay
-            upfront. Pick up hot &mdash; or choose hostel delivery—without
-            worrying about sold-out food.
-          </Lead>
-          <CTAs>
-            <Link href="/marketplace">
-              <Button $size="lg" $pill>
-                Browse food 🍛
-              </Button>
-            </Link>
-            <Link href="/sell">
-              <Button $size="lg" $variant="secondary" $pill>
-                Become a vendor
-              </Button>
-            </Link>
-          </CTAs>
-          <Points>
-            <li>
-              <span>✓</span> Secure Paystack checkout
-            </li>
-            <li>
-              <span>✓</span> Live cutoff timers
-            </li>
-            <li>
-              <span>✓</span> Pickup or hostel delivery
-            </li>
-          </Points>
-        </Copy>
-        <Visual aria-hidden>
-          <Plate>🍲</Plate>
-          <FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
-            <span
-              className="emoji"
-              style={{ background: "var(--pc-color-accent-50)" }}>
-              ✅
-            </span>
-            <div>
-              <strong>Order confirmed</strong>
-              <br />
-              <small>Ready by 1:30 PM</small>
-            </div>
-          </FloatCard>
-          <FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
-            <span
-              className="emoji"
-              style={{ background: "var(--pc-color-gold-50)" }}>
-              🔥
-            </span>
-            <div>
-              <strong>Now cooking</strong>
-              <br />
-              <small>Jollof &amp; grilled chicken</small>
-            </div>
-          </FloatCard>
-        </Visual>
-      </Hero>
-      <Footer>
-        © {new Date().getFullYear()} Prechop · Campus food, pre-ordered.
-      </Footer>
-    </Page>
-  );
+	return (
+		<Page>
+			<SkipLink href="#main-content">Skip to content</SkipLink>
+			<Nav as="header">
+				<Brand>
+					<Logo aria-hidden>🍲</Logo>
+					Prechop
+				</Brand>
+				<HeaderAuth />
+			</Nav>
+			<Hero as="main" id="main-content">
+				<Copy>
+					<Kicker>
+						<span aria-hidden>⏱️</span> Order <b>before</b> they cook
+					</Kicker>
+					<H1>
+						Skip the queue.
+						<br />
+						<em>Reserve your meal.</em>
+					</H1>
+					<Lead>
+						Browse today&apos;s campus kitchens, reserve your meal,
+						and pay upfront. Pick up hot &mdash; or choose hostel
+						delivery&mdash;without worrying about sold-out food.
+					</Lead>
+					<CTAs>
+						<Button as={Link} href="/marketplace" $size="lg" $pill>
+							Browse food 🍛
+						</Button>
+						<Button
+							as={Link}
+							href="/sell"
+							$size="lg"
+							$variant="secondary"
+							$pill
+						>
+							Become a vendor
+						</Button>
+					</CTAs>
+					<Points>
+						<li>
+							<span>✓</span> Secure Paystack checkout
+						</li>
+						<li>
+							<span>✓</span> Live cutoff timers
+						</li>
+						<li>
+							<span>✓</span> Pickup or hostel delivery
+						</li>
+					</Points>
+				</Copy>
+				<Visual aria-hidden>
+					<Plate>🍲</Plate>
+					<FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
+						<span
+							className="emoji"
+							style={{ background: "var(--pc-color-accent-50)" }}
+						>
+							✅
+						</span>
+						<div>
+							<strong>Order confirmed</strong>
+							<br />
+							<small>Ready by 1:30 PM</small>
+						</div>
+					</FloatCard>
+					<FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
+						<span
+							className="emoji"
+							style={{ background: "var(--pc-color-gold-50)" }}
+						>
+							🔥
+						</span>
+						<div>
+							<strong>Now cooking</strong>
+							<br />
+							<small>Jollof &amp; grilled chicken</small>
+						</div>
+					</FloatCard>
+				</Visual>
+			</Hero>
+			<Footer as="footer">
+				© {new Date().getFullYear()} Prechop · Campus food, pre-ordered.
+			</Footer>
+		</Page>
+	);
 }

@@ -1,12 +1,7 @@
-import {
-	ErrPaymentVerification,
-	tryDecrypt,
-	validationError,
-} from "../../constants";
+import { ErrPaymentVerification, validationError } from "../../constants";
 import {
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
-	getUserByIdWithPhoneDB,
 	getVendorProfileByIdDB,
 	markBuyerOrderPendingPaymentDB,
 	markPaymentBuyerInitializedDB,
@@ -15,10 +10,16 @@ import {
 } from "../../models";
 import { paystackProvider } from "../../providers";
 
-function buyerEmailFromPhone(userId: string, encryptedPhone?: string): string {
-	const phone = tryDecrypt(encryptedPhone);
-	const digits = phone.replace(/\D/g, "");
-	return `buyer-${digits || userId}@prechop-orders.ng`;
+/**
+ * Paystack requires an email per transaction, but Prechop buyers authenticate by
+ * phone and have none. We send an opaque, non-identifying synthetic address keyed
+ * ONLY on the internal userId — never the buyer's phone number. Shipping the
+ * decrypted E.164 phone here would cross a real identifier to Paystack in clear,
+ * defeating encrypt-at-rest and NDPA data-minimisation. Mirrors the address used
+ * by the payment-request path in `buyerOrders/placeOrder`.
+ */
+function buyerPaystackEmail(userId: string): string {
+	return `buyer-${userId}@prechop-orders.ng`;
 }
 
 export async function initializeBuyerPayment({
@@ -63,29 +64,33 @@ export async function initializeBuyerPayment({
 		};
 	}
 	if (payment.status !== PaymentStatus.AWAITING_EXTERNAL_PAYMENT) {
-		throw validationError("A payment is already in progress for this order.");
+		throw validationError(
+			"A payment is already in progress for this order.",
+		);
 	}
 	if (payment.amountKobo !== order.totalKobo) {
 		throw validationError("This order payment amount is no longer valid.");
 	}
 	if (payment.paystackAuthorizationUrl) {
-		throw validationError("A payment is already in progress for this order.");
+		throw validationError(
+			"A payment is already in progress for this order.",
+		);
 	}
 
-	const [vendor, buyer] = await Promise.all([
-		getVendorProfileByIdDB({ id: order.vendorId.toString() }),
-		getUserByIdWithPhoneDB({ id: buyerId }),
-	]);
+	const vendor = await getVendorProfileByIdDB({
+		id: order.vendorId.toString(),
+	});
 	if (!vendor?.paystackSubaccountCode) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 
 	const tx = await paystackProvider.initializeTransaction({
-		email: buyerEmailFromPhone(buyerId, buyer?.phone),
+		email: buyerPaystackEmail(buyerId),
 		amountKobo: payment.amountKobo,
 		reference: payment.paystackRef,
 		subaccountCode: vendor.paystackSubaccountCode,
-		vendorAmountKobo: payment.vendorSettlementKobo ?? payment.vendorAmountKobo,
+		vendorAmountKobo:
+			payment.vendorSettlementKobo ?? payment.vendorAmountKobo,
 		metadata: {
 			buyerOrderId: orderId,
 			dailyOrderId: order.dailyOrderId.toString(),
@@ -94,7 +99,8 @@ export async function initializeBuyerPayment({
 			foodSubtotalKobo: payment.foodSubtotalKobo ?? order.subtotalKobo,
 			deliveryFeeKobo: payment.deliveryFeeKobo ?? order.deliveryFeeKobo,
 			paymentProcessingFeeKobo:
-				payment.paymentProcessingFeeKobo ?? order.paymentProcessingFeeKobo,
+				payment.paymentProcessingFeeKobo ??
+				order.paymentProcessingFeeKobo,
 			prechopCommissionKobo:
 				payment.prechopCommissionKobo ?? order.prechopCommissionKobo,
 			vendorSettlementKobo:
@@ -108,7 +114,9 @@ export async function initializeBuyerPayment({
 		paystackAuthorizationUrl: tx.authorization_url,
 	});
 	if (!updated) {
-		throw validationError("A payment is already in progress for this order.");
+		throw validationError(
+			"A payment is already in progress for this order.",
+		);
 	}
 	await markBuyerOrderPendingPaymentDB({ id: orderId });
 

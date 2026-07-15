@@ -1,7 +1,51 @@
 # 02 — State Machines
 
-Two independent lifecycles: the **DailyOrder** (a vendor's listing) and the **BuyerOrder** (a
-buyer's order against it), plus the **Payment** sub-lifecycle.
+Three independent lifecycles: the **VendorProfile** (onboarding → go-live), the **DailyOrder** (a
+vendor's listing) and the **BuyerOrder** (a buyer's order against it), plus the **Payment**
+sub-lifecycle.
+
+## Vendor profile lifecycle
+
+```
+                    ┌──────────────────┐
+                    │    INCOMPLETE    │◄──── registration
+                    └────────┬─────────┘
+                             │  vendor: POST /api/vendors/me/submit
+                             │  (gated on the ONBOARDING CHECKLIST — not on
+                             │   profileCompleteness; see below)
+                             ▼
+   ┌────────────────►┌──────────────────┐
+   │                 │  PENDING_REVIEW  │  profile is read-only
+   │                 └────┬────────┬────┘
+   │  vendor resubmits    │        │
+   │                      │        │  admin: /onboarding/{id}/reject { reason }
+   │                      │        ▼
+   │              ┌───────┘   ┌──────────────────────┐
+   │              │           │  CHANGES_REQUESTED   │
+   │              │           └──────────┬───────────┘
+   │              │                      │
+   └──────────────┼──────────────────────┘
+                  │  admin: /onboarding/{id}/approve
+                  ▼
+           ┌──────────────┐   admin suspend    ┌─────────────┐
+           │    ACTIVE    │───────────────────►│  SUSPENDED  │
+           │ marketplace- │◄───────────────────│ (login also │
+           │   visible    │   admin reactivate │  blocked)   │
+           └──────────────┘                    └─────────────┘
+```
+
+- **`ACTIVE` is reached only by admin approval.** There is no auto-activation.
+  *(Corrected 2026-07-15 — the PRD's "auto-ACTIVE at `profileCompleteness = 100`" was never how the
+  code behaves and has been reversed. See BR-15/BR-16.)*
+- **Submission gates on the onboarding checklist**, not the completeness score: phone verified,
+  `businessName`, ≥1 category, `locationType`, `paystackSubaccountCode`, `profileImageUrl`.
+  **Why:** the score awards 25% for menu items and 15% for a timetable entry, both of which sit
+  behind the active-vendor gate — an applicant cannot add them before approval, so gating on 100%
+  **deadlocked every applicant at ~60%**. Do not change this back.
+- Submit is allowed **only** from `INCOMPLETE` / `CHANGES_REQUESTED` (else `ALREADY_SUBMITTED`).
+- `isOpenForOrders` can only be switched on while `ACTIVE` (BR-17); only `ACTIVE` vendors can publish
+  daily orders (BR-18).
+- `profileCompleteness` is recomputed on submit for **display/audit only** — it gates nothing.
 
 ## Daily Order lifecycle
 

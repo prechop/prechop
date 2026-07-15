@@ -83,9 +83,10 @@ and the Final PRD disagree, the Final PRD wins (the resolution table is in
 | **Snapshot** | A frozen copy of a menu item's name/price/image at publish or order time. |
 | **Slot** | A remaining unit of a quantity-capped item (`maxQuantity − orderedQuantity`). |
 | **Slot lock** | A Redis `SET NX` hold (10-min TTL) reserving a slot during pending payment. |
-| **Profile completeness** | A 0–100 score gating a vendor's marketplace visibility. |
-| **Subaccount** | A vendor's Paystack account that receives its split of each payment. |
-| **Platform fee** | Prechop's cut: ₦50 from the buyer + ₦100 from the vendor per order. |
+| **Profile completeness** | A 0–100 **display score**. It gates nothing — marketplace visibility requires **admin approval** (BR-15/BR-16). |
+| **Onboarding checklist** | The steps an applicant can complete pre-approval (phone, business name, category, location, bank/subaccount, image). Completing it unlocks **Submit for review**, not go-live. |
+| **Subaccount** | A vendor's Paystack account that receives its split of each payment — settled **directly** by Paystack. Prechop never holds vendor money. |
+| **Platform fee** | Prechop's cut: **3% of the food subtotal from the buyer (capped ₦200) + 8% from the vendor**, per order. *(Corrected 2026-07-15 — the old "₦50 + ₦100 flat" was never implemented. See BR-4 / ADR-004a.)* |
 | **Cooking mode** | The vendor screen listing paid orders to prepare, with per-item/addon totals. |
 | **Marketplace** | The campus feed of active daily orders, sorted cutoff-soonest-first. |
 | **WhatsApp TV** | A campus broadcast channel; vendors pay (off-platform in Phase 1) to promote listings. |

@@ -7,6 +7,8 @@ import {
 import { hash as bcryptHash } from "bcrypt";
 import IoRedis from "ioredis";
 import mongoose from "mongoose";
+import { clearOtpGates, otpCodeKey, otpRateLimitKey } from "./otpKeys";
+import { BASE_URL, ORIGIN } from "./urls";
 
 // End-to-end coverage for the vendor onboarding → submit-for-review → admin
 // approval flow, driven against the real server + seeded local Mongo/Redis
@@ -27,8 +29,6 @@ import mongoose from "mongoose";
 const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
-const BASE_URL = "http://127.0.0.1:3100";
-const ORIGIN = "http://localhost:3100";
 
 const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08130135756";
 // A throwaway applicant created/torn down by this spec — never a seeded user.
@@ -70,7 +70,7 @@ test.beforeAll(async () => {
 	// Create the applicant through the real vendor-application path (encrypts
 	// the phone, joins the Vendors group, opens an INCOMPLETE profile). We omit
 	// businessName so the identity step is genuinely still outstanding.
-	await redis.del(`otp:ratelimit:${APPLICANT_PHONE}`);
+	await clearOtpGates(redis, APPLICANT_PHONE);
 	const reg = await anon.post("/api/auth/register/vendor", {
 		data: {
 			firstName: "Applicant",
@@ -94,8 +94,8 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
 	if (mongo) await purgeApplicant();
-	await redis?.del(`otp:code:${APPLICANT_PHONE}`);
-	await redis?.del(`otp:ratelimit:${APPLICANT_PHONE}`);
+	await redis?.del(otpCodeKey(APPLICANT_PHONE));
+	await redis?.del(otpRateLimitKey(APPLICANT_PHONE));
 	await redis?.quit();
 	await mongo?.close();
 });
@@ -105,14 +105,10 @@ async function login(phone: string): Promise<APIRequestContext> {
 		baseURL: BASE_URL,
 		extraHTTPHeaders: { origin: ORIGIN },
 	});
-	await redis.del(`otp:ratelimit:${phone}`);
+	await clearOtpGates(redis, phone);
 	const req = await anon.post("/api/auth/otp/request", { data: { phone } });
 	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(
-		`otp:code:${phone}`,
-		600,
-		await bcryptHash(KNOWN_OTP, 10),
-	);
+	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
 	const verify = await anon.post("/api/auth/otp/verify", {
 		data: { phone, otp: KNOWN_OTP },
 	});

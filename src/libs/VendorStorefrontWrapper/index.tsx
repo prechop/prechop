@@ -11,16 +11,21 @@ import {
 	EmptyState,
 	FadeIn,
 	Grid,
+	RatingThresholdNote,
 	Row,
 	SectionHeader,
 	Stack,
 	Text,
 	Title,
+	useListingStatus,
+	useVendorStatus,
+	VendorRating,
+	VendorStatusBadge,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { fetcher } from "@/constants/fetcher";
-import { formatDate, formatKobo, timeUntil } from "@/constants/formatters";
-import type { VendorStorefront } from "@/types";
+import { formatDate, formatKobo } from "@/constants/formatters";
+import type { DailyOrder, VendorStorefront } from "@/types";
 
 interface ReviewResponse {
 	reviews: Array<{
@@ -143,6 +148,51 @@ function isMarketplaceUnavailable(error: unknown): boolean {
 	);
 }
 
+/**
+ * A single "cooking today" listing tile.
+ *
+ * Its own component so it can hold a live `useListingStatus` subscription. This
+ * replaces an inline `closed`/`comingSoon` pair that never consulted the
+ * vendor's `isOpenForOrders` kill switch and never re-derived — a kitchen that
+ * had switched itself off still rendered "⏱ 2h left" here.
+ */
+function StorefrontListingCard({
+	listing,
+	vendorOpen,
+}: {
+	listing: DailyOrder;
+	vendorOpen: boolean;
+}) {
+	const status = useListingStatus(listing, { vendorOpen });
+
+	return (
+		<ListingCard>
+			<CardLink href={`/o/${listing.shareableToken}`}>
+				<Thumbs>
+					{listing.items.slice(0, 3).map((it) => (
+						<Thumb key={it.id} $src={it.snapshotImageUrl}>
+							{it.snapshotImageUrl ? "" : "🍲"}
+						</Thumb>
+					))}
+					{listing.items.length === 0 && <Thumb>🍲</Thumb>}
+				</Thumbs>
+				<Body $gap={10}>
+					<Title $size={16}>{listing.title}</Title>
+					<Row $justify="space-between" $align="center">
+						{status && (
+							<VendorStatusBadge status={status} compact />
+						)}
+						<Badge $tone="muted">
+							{listing.items.length} item
+							{listing.items.length === 1 ? "" : "s"}
+						</Badge>
+					</Row>
+				</Body>
+			</CardLink>
+		</ListingCard>
+	);
+}
+
 export default function VendorStorefrontWrapper({
 	vendorId,
 }: {
@@ -162,6 +212,12 @@ export default function VendorStorefrontWrapper({
 		marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
 		fetcher,
 	);
+	// Declared before the early returns — hooks can't live behind a branch. Ticks
+	// every 30s, so the hero badge decays on its own instead of going stale.
+	const vendorStatus = useVendorStatus({
+		isOpenForOrders: data?.vendor.isOpenForOrders,
+		listings: data?.listings,
+	});
 
 	if (availabilityLoading || isLoading) return <PageLoader />;
 	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
@@ -171,8 +227,8 @@ export default function VendorStorefrontWrapper({
 					<Stack $gap={10}>
 						<Title $size={20}>Marketplace unavailable</Title>
 						<Text $muted>
-							The marketplace is temporarily unavailable.
-							Existing paid orders are still being fulfilled.
+							The marketplace is temporarily unavailable. Existing
+							paid orders are still being fulfilled.
 						</Text>
 						<Row>
 							<Button onClick={() => router.push("/my-orders")}>
@@ -223,30 +279,27 @@ export default function VendorStorefrontWrapper({
 							>
 								{vendor.businessName ?? "Campus kitchen"}
 							</Text>
+							{/* Availability first, then trust — two orthogonal
+							    axes, never more than two badges. `onHero` swaps
+							    the tone tokens for a scrim that survives the
+							    gradient. */}
 							<Row $gap={10} $align="center" $wrap>
-								<Text
-									$size={13}
-									style={{ color: "rgba(255,255,255,0.92)" }}
-								>
-									⭐ {vendor.rating.toFixed(1)} ·{" "}
-									{vendor.totalReviews} review
-									{vendor.totalReviews === 1 ? "" : "s"}
-								</Text>
+								<VendorStatusBadge
+									status={vendorStatus}
+									onHero
+									live
+								/>
+								<VendorRating
+									rating={vendor.rating}
+									totalReviews={vendor.totalReviews}
+									onHero
+								/>
 								<Text
 									$size={13}
 									style={{ color: "rgba(255,255,255,0.92)" }}
 								>
 									🍽️ {vendor.totalOrders} orders
 								</Text>
-								<Badge
-									$tone={
-										vendor.isOpenForOrders
-											? "success"
-											: "danger"
-									}
-								>
-									{vendor.isOpenForOrders ? "Open" : "Closed"}
-								</Badge>
 							</Row>
 							{(vendor.areaOrAddress || vendor.state) && (
 								<Text
@@ -292,73 +345,14 @@ export default function VendorStorefrontWrapper({
 					/>
 				) : (
 					<Grid $min={240} $gap={16}>
-						{listings.map((o, i) => {
-							const closed = timeUntil(o.cutoffTime) === "closed";
-							const comingSoon = o.availableFrom
-								? new Date(o.availableFrom).getTime() >
-									Date.now()
-								: false;
-							return (
-								<FadeIn key={o.id} $delay={i * 45}>
-									<ListingCard>
-										<CardLink
-											href={`/o/${o.shareableToken}`}
-										>
-											<Thumbs>
-												{o.items
-													.slice(0, 3)
-													.map((it) => (
-														<Thumb
-															key={it.id}
-															$src={
-																it.snapshotImageUrl
-															}
-														>
-															{it.snapshotImageUrl
-																? ""
-																: "🍲"}
-														</Thumb>
-													))}
-												{o.items.length === 0 && (
-													<Thumb>🍲</Thumb>
-												)}
-											</Thumbs>
-											<Body $gap={10}>
-												<Title $size={16}>
-													{o.title}
-												</Title>
-												<Row
-													$justify="space-between"
-													$align="center"
-												>
-													<Badge
-														$tone={
-															comingSoon
-																? "primary"
-																: closed
-																	? "danger"
-																	: "warning"
-														}
-													>
-														{comingSoon
-															? `🔜 ${formatDate(o.availableFrom as string)}`
-															: closed
-																? "⛔ Closed"
-																: `⏱ ${timeUntil(o.cutoffTime)}`}
-													</Badge>
-													<Badge $tone="muted">
-														{o.items.length} item
-														{o.items.length === 1
-															? ""
-															: "s"}
-													</Badge>
-												</Row>
-											</Body>
-										</CardLink>
-									</ListingCard>
-								</FadeIn>
-							);
-						})}
+						{listings.map((o, i) => (
+							<FadeIn key={o.id} $delay={i * 45}>
+								<StorefrontListingCard
+									listing={o}
+									vendorOpen={vendor.isOpenForOrders}
+								/>
+							</FadeIn>
+						))}
 					</Grid>
 				)}
 			</Stack>
@@ -412,6 +406,11 @@ export default function VendorStorefrontWrapper({
 					/>
 				) : (
 					<Stack $gap={10}>
+						{/* Says out loud why no public score is shown yet, so a
+						    below-threshold vendor doesn't read as un-rated. */}
+						<RatingThresholdNote
+							totalReviews={vendor.totalReviews}
+						/>
 						{(reviewData?.reviews ?? []).map((r) => (
 							<Card key={r.id}>
 								<Stack $gap={6}>
