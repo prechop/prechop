@@ -350,6 +350,43 @@ export async function updateVendorRatingDB({
 	}
 }
 
+/**
+ * Persist recomputed lifetime completion rates from the nightly analytics job.
+ * `completionRate` is a **percentage, 0–100** (both dashboards render it with a
+ * literal `%` suffix and no conversion), rounded to 2dp by the caller.
+ *
+ * Bulk-writes in one round trip: the job recomputes every vendor each night, so
+ * one findByIdAndUpdate per vendor would be N round trips for no reason.
+ * Returns the number of profiles actually modified — vendors whose rate did not
+ * change are not counted, and unknown/stale vendorIds are simply no-ops.
+ */
+export async function bulkUpdateVendorCompletionRatesDB({
+	rates,
+	session,
+}: {
+	rates: { vendorId: string; completionRate: number }[];
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ops = rates
+			.filter((r) => mongoose.Types.ObjectId.isValid(r.vendorId))
+			.map((r) => ({
+				updateOne: {
+					filter: { _id: new mongoose.Types.ObjectId(r.vendorId) },
+					update: { $set: { completionRate: r.completionRate } },
+				},
+			}));
+		if (ops.length === 0) return 0;
+		const res = await VendorProfile.bulkWrite(ops, {
+			session,
+			ordered: false,
+		});
+		return res.modifiedCount ?? 0;
+	} catch {
+		return 0;
+	}
+}
+
 // ── Reads ─────────────────────────────────────────────────────────────────
 
 export async function getVendorProfileByIdDB({

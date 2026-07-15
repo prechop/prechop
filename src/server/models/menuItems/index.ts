@@ -46,6 +46,16 @@ const schema = new mongoose.Schema<any>(
 	{ timestamps: true },
 );
 
+// Nightly sold-out reset (resetSoldOutMenuItemsDB). Partial, so the index only
+// ever holds the handful of currently-sold-out items instead of the whole
+// catalog: measured at 6k items it turns a 6000-doc COLLSCAN into a 30-key
+// IXSCAN. Write cost is negligible — entries appear/disappear only when a
+// vendor actually flips isSoldOut, not on every menu edit.
+schema.index(
+	{ isSoldOut: 1 },
+	{ partialFilterExpression: { isSoldOut: true } },
+);
+
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
 	this.pipeline().push({
@@ -360,6 +370,65 @@ export async function adminSetMenuAvailabilityDB({
 		return !!res;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Nightly reset: clear `isSoldOut` so every menu item is orderable again on the
+ * new business day. Without this a vendor who sells out once stays sold out
+ * forever — nothing else in the system ever clears the flag.
+ *
+ * Call this at **00:00 Africa/Lagos** (`PLATFORM_TIMEZONE`), not at server
+ * midnight: on a UTC host, server midnight is 01:00 Lagos and items would stay
+ * dark for the first hour of every day. The cron must pin the timezone
+ * explicitly — see HANDOFF.
+ *
+ * The filter is the guard: `isSoldOut: true` means this is a conditional write
+ * that only touches rows that actually need it, so a re-run (or two instances
+ * racing) is idempotent and writes nothing the second time. Returns the number
+ * of items actually reset, which is 0 on a no-op run.
+ *
+ * `campusId` is optional and exists for the day Prechop spans more than one
+ * timezone; today every campus is Nigerian, so the cron calls this with no
+ * argument to reset all campuses in one write.
+ */
+export async function resetSoldOutMenuItemsDB({
+	campusId,
+	session,
+}: {
+	campusId?: string;
+	session?: ClientSession;
+} = {}): Promise<number> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		const filter: Record<string, unknown> = {
+			isSoldOut: true,
+			deleted: false,
+		};
+		if (campusId) {
+			if (!mongoose.Types.ObjectId.isValid(campusId)) return 0;
+			filter.campusId = new mongoose.Types.ObjectId(campusId);
+		}
+		const res = await MenuItem.updateMany(
+			filter,
+			{ $set: { isSoldOut: false } },
+			{ session },
+		);
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "resetSoldOutMenuItemsDB",
+			success: "true",
+		});
+		return res.modifiedCount ?? 0;
+	} catch {
+		timer({
+			operation: IOperationType.Update,
+			collection: collectionName,
+			method: "resetSoldOutMenuItemsDB",
+			success: "false",
+		});
+		return 0;
 	}
 }
 

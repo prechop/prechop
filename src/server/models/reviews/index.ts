@@ -367,6 +367,74 @@ export async function getVendorRatingAggregateDB({
 	}
 }
 
+export interface IVendorDailyReviewStat {
+	vendorId: string;
+	newReviewCount: number;
+	/** Mean rating of reviews left that day, 0–5, 2dp. */
+	avgRatingForDay: number;
+}
+
+/**
+ * Reviews written in a date window, grouped by vendor, for the daily analytics
+ * snapshot. Half-open `[from, to)`; pass a Lagos calendar day (see
+ * `previousDayWindowInTimezone`).
+ *
+ * Counts flagged reviews too: `isFlagged` is a moderation queue marker, not a
+ * retraction, so excluding them here would let the snapshot disagree with the
+ * vendor's visible rating. Vendors with no reviews that day are simply absent
+ * from the result — the caller must default them to `newReviewCount: 0` and
+ * leave `avgRatingForDay` unset rather than writing a misleading 0-star day.
+ */
+export async function aggregateVendorDailyReviewStatsDB({
+	from,
+	to,
+	session,
+}: {
+	from: Date;
+	to: Date;
+	session?: ClientSession;
+}): Promise<IVendorDailyReviewStat[]> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		const rows = await Review.aggregate<{
+			_id: mongoose.Types.ObjectId;
+			newReviewCount: number;
+			avgRating: number;
+		}>(
+			[
+				{ $match: { createdAt: { $gte: from, $lt: to } } },
+				{
+					$group: {
+						_id: "$vendorId",
+						newReviewCount: { $sum: 1 },
+						avgRating: { $avg: "$rating" },
+					},
+				},
+			],
+			{ session },
+		);
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "aggregateVendorDailyReviewStatsDB",
+			success: "true",
+		});
+		return rows.map((r) => ({
+			vendorId: r._id.toString(),
+			newReviewCount: r.newReviewCount,
+			avgRatingForDay: Math.round((r.avgRating ?? 0) * 100) / 100,
+		}));
+	} catch {
+		timer({
+			operation: IOperationType.Read,
+			collection: collectionName,
+			method: "aggregateVendorDailyReviewStatsDB",
+			success: "false",
+		});
+		return [];
+	}
+}
+
 export async function listFlaggedReviewsDB({
 	limit = MAX_LIMIT,
 	offset = 0,

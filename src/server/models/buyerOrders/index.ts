@@ -1,8 +1,12 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { FulfillmentType, OrderStatus } from "../enums";
-import { IOperationType } from "../utils";
+import {
+	FulfillmentType,
+	OrderStatus,
+	SETTLED_ORDER_STATUSES,
+} from "../enums";
+import { IOperationType, PLATFORM_TIMEZONE } from "../utils";
 import type { IBuyerOrder, IBuyerOrderCreateInput } from "./types";
 
 const collectionName = "buyerOrders";
@@ -106,6 +110,11 @@ const schema = new mongoose.Schema<any>(
 schema.index({ vendorId: 1, dailyOrderId: 1 });
 schema.index({ buyerId: 1, createdAt: -1 });
 schema.index({ receiptUrl: 1 }, { sparse: true });
+// NOTE: the stale-PAID-past-cutoff sweep (findStalePaidOrdersPastCutoffDB) is
+// served by the existing `status_1` index above. A compound
+// {status:1, dailyOrderId:1} was tried and measured: the planner rejects it
+// (the sweep must FETCH whole docs to act on them, so the extra key buys no
+// covering) and it only added write amplification. Do not re-add it.
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({
@@ -641,29 +650,239 @@ export interface IVendorDailyStat {
 	completedOrders: number;
 	cancelledOrders: number;
 	totalRevenueKobo: number;
+	/** Up to 5 menuItemIds, most-ordered first, by units sold that day. */
+	topItemIds: string[];
+	/** Hour 0–23 in PLATFORM_TIMEZONE with the most orders; undefined if none. */
+	peakHour?: number;
 }
 
-/** Group orders in a date window by vendor for the daily analytics snapshot. */
+/**
+ * Group orders in a date window by vendor for the daily analytics snapshot.
+ *
+ * `from`/`to` is half-open `[from, to)` and is expected to be a *Lagos*
+ * calendar day (see `previousDayWindowInTimezone`). Revenue, top items and
+ * peak hour all count only `SETTLED_ORDER_STATUSES`; `totalOrders` counts
+ * every order created in the window regardless of status.
+ */
 export async function aggregateVendorDailyStatsDB({
 	from,
 	to,
+	timeZone = PLATFORM_TIMEZONE,
 }: {
 	from: Date;
 	to: Date;
+	timeZone?: string;
 }): Promise<IVendorDailyStat[]> {
 	try {
-		const rows = await BuyerOrder.aggregate<{
-			_id: mongoose.Types.ObjectId;
-			totalOrders: number;
-			completedOrders: number;
-			cancelledOrders: number;
-			totalRevenueKobo: number;
+		const [facets] = await BuyerOrder.aggregate<{
+			totals: {
+				_id: mongoose.Types.ObjectId;
+				totalOrders: number;
+				completedOrders: number;
+				cancelledOrders: number;
+				totalRevenueKobo: number;
+			}[];
+			topItems: { _id: mongoose.Types.ObjectId; topItemIds: string[] }[];
+			peak: { _id: mongoose.Types.ObjectId; peakHour: number }[];
 		}>([
 			{ $match: { createdAt: { $gte: from, $lt: to } } },
 			{
+				$facet: {
+					totals: [
+						{
+							$group: {
+								_id: "$vendorId",
+								totalOrders: { $sum: 1 },
+								completedOrders: {
+									$sum: {
+										$cond: [
+											{
+												$eq: [
+													"$status",
+													OrderStatus.COMPLETED,
+												],
+											},
+											1,
+											0,
+										],
+									},
+								},
+								cancelledOrders: {
+									$sum: {
+										$cond: [
+											{
+												$in: [
+													"$status",
+													[
+														OrderStatus.CANCELLED,
+														OrderStatus.REFUNDED,
+													],
+												],
+											},
+											1,
+											0,
+										],
+									},
+								},
+								// Vendor-facing revenue is the vendor's settlement,
+								// NOT what the buyer paid: totalKobo bakes in the
+								// buyer platform fee and delivery. Older rows
+								// predate vendorSettlementKobo, hence the fallback.
+								totalRevenueKobo: {
+									$sum: {
+										$cond: [
+											{
+												$in: [
+													"$status",
+													SETTLED_ORDER_STATUSES,
+												],
+											},
+											{
+												$ifNull: [
+													"$vendorSettlementKobo",
+													"$totalKobo",
+												],
+											},
+											0,
+										],
+									},
+								},
+							},
+						},
+					],
+					// Top 5 items by units sold. menuItemId is optional on the
+					// embedded line, so null-keyed lines are dropped rather
+					// than collapsing into a bogus "null" top item.
+					topItems: [
+						{ $match: { status: { $in: SETTLED_ORDER_STATUSES } } },
+						{ $unwind: "$items" },
+						{ $match: { "items.menuItemId": { $ne: null } } },
+						{
+							$group: {
+								_id: {
+									vendorId: "$vendorId",
+									menuItemId: "$items.menuItemId",
+								},
+								quantity: { $sum: "$items.quantity" },
+							},
+						},
+						// menuItemId in the sort key makes ties deterministic.
+						{
+							$sort: {
+								"_id.vendorId": 1,
+								quantity: -1,
+								"_id.menuItemId": 1,
+							},
+						},
+						{
+							$group: {
+								_id: "$_id.vendorId",
+								ranked: { $push: "$_id.menuItemId" },
+							},
+						},
+						{
+							$project: {
+								topItemIds: {
+									$map: {
+										input: { $slice: ["$ranked", 5] },
+										as: "m",
+										in: { $toString: "$$m" },
+									},
+								},
+							},
+						},
+					],
+					// Busiest ordering hour, bucketed in Lagos wall-clock time.
+					// Ties resolve to the earlier hour.
+					peak: [
+						{ $match: { status: { $in: SETTLED_ORDER_STATUSES } } },
+						{
+							$group: {
+								_id: {
+									vendorId: "$vendorId",
+									hour: {
+										$hour: {
+											date: "$createdAt",
+											timezone: timeZone,
+										},
+									},
+								},
+								orders: { $sum: 1 },
+							},
+						},
+						{
+							$sort: {
+								"_id.vendorId": 1,
+								orders: -1,
+								"_id.hour": 1,
+							},
+						},
+						{
+							$group: {
+								_id: "$_id.vendorId",
+								peakHour: { $first: "$_id.hour" },
+							},
+						},
+					],
+				},
+			},
+		]);
+		if (!facets) return [];
+		const topByVendor = new Map(
+			facets.topItems.map((t) => [t._id.toString(), t.topItemIds]),
+		);
+		const peakByVendor = new Map(
+			facets.peak.map((p) => [p._id.toString(), p.peakHour]),
+		);
+		return facets.totals.map((r) => {
+			const vendorId = r._id.toString();
+			return {
+				vendorId,
+				totalOrders: r.totalOrders,
+				completedOrders: r.completedOrders,
+				cancelledOrders: r.cancelledOrders,
+				totalRevenueKobo: r.totalRevenueKobo,
+				topItemIds: topByVendor.get(vendorId) ?? [],
+				peakHour: peakByVendor.get(vendorId),
+			};
+		});
+	} catch {
+		return [];
+	}
+}
+
+export interface IVendorLifetimeStat {
+	vendorId: string;
+	/** Orders that reached at least PAID and were not cancelled/refunded. */
+	settledOrders: number;
+	completedOrders: number;
+	/** completedOrders / settledOrders as a percentage, 0–100, 2dp. */
+	completionRate: number;
+}
+
+/**
+ * Lifetime completion stats for every vendor, in a single pass over the
+ * collection. Recomputed nightly rather than incremented per order because an
+ * order created days ago can still transition to COMPLETED today — a
+ * window-scoped recompute would silently freeze those vendors' rates.
+ *
+ * completionRate = COMPLETED / SETTLED_ORDER_STATUSES * 100. A vendor with no
+ * settled orders yet is reported as 0 (not NaN), matching the field default.
+ */
+export async function aggregateVendorLifetimeStatsDB(): Promise<
+	IVendorLifetimeStat[]
+> {
+	try {
+		const rows = await BuyerOrder.aggregate<{
+			_id: mongoose.Types.ObjectId;
+			settledOrders: number;
+			completedOrders: number;
+		}>([
+			{ $match: { status: { $in: SETTLED_ORDER_STATUSES } } },
+			{
 				$group: {
 					_id: "$vendorId",
-					totalOrders: { $sum: 1 },
+					settledOrders: { $sum: 1 },
 					completedOrders: {
 						$sum: {
 							$cond: [
@@ -673,52 +892,93 @@ export async function aggregateVendorDailyStatsDB({
 							],
 						},
 					},
-					cancelledOrders: {
-						$sum: {
-							$cond: [
-								{
-									$in: [
-										"$status",
-										[
-											OrderStatus.CANCELLED,
-											OrderStatus.REFUNDED,
-										],
-									],
-								},
-								1,
-								0,
-							],
-						},
-					},
-					totalRevenueKobo: {
-						$sum: {
-							$cond: [
-								{
-									$in: [
-										"$status",
-										[
-											OrderStatus.PAID,
-											OrderStatus.CONFIRMED,
-											OrderStatus.PREPARING,
-											OrderStatus.READY,
-											OrderStatus.COMPLETED,
-										],
-									],
-								},
-								{ $ifNull: ["$vendorSettlementKobo", "$totalKobo"] },
-								0,
-							],
-						},
-					},
 				},
 			},
 		]);
 		return rows.map((r) => ({
 			vendorId: r._id.toString(),
-			totalOrders: r.totalOrders,
+			settledOrders: r.settledOrders,
 			completedOrders: r.completedOrders,
-			cancelledOrders: r.cancelledOrders,
-			totalRevenueKobo: r.totalRevenueKobo,
+			completionRate:
+				r.settledOrders > 0
+					? Math.round(
+							(r.completedOrders / r.settledOrders) * 100 * 100,
+						) / 100
+					: 0,
+		}));
+	} catch {
+		return [];
+	}
+}
+
+export interface IStalePaidOrder {
+	id: string;
+	vendorId: string;
+	buyerId: string;
+	dailyOrderId: string;
+	totalKobo: number;
+	cutoffTime: Date;
+}
+
+/**
+ * Cron sweep: orders still sitting in PAID after their listing's `cutoffTime`
+ * has passed — the vendor took the money but never confirmed. These are the
+ * refund candidates.
+ *
+ * Driven from the buyerOrders side on purpose: PAID is a small transient
+ * working set, whereas "listings past cutoff" grows without bound as history
+ * accumulates, so starting from dailyOrders would build an ever-growing `$in`.
+ * Supported by the `status_1_dailyOrderId_1` index.
+ */
+export async function findStalePaidOrdersPastCutoffDB({
+	now = new Date(),
+	limit = 200,
+}: {
+	now?: Date;
+	limit?: number;
+} = {}): Promise<IStalePaidOrder[]> {
+	try {
+		const rows = await BuyerOrder.aggregate<{
+			_id: mongoose.Types.ObjectId;
+			vendorId: mongoose.Types.ObjectId;
+			buyerId: mongoose.Types.ObjectId;
+			dailyOrderId: mongoose.Types.ObjectId;
+			totalKobo: number;
+			cutoffTime: Date;
+		}>([
+			{ $match: { status: OrderStatus.PAID } },
+			{
+				$lookup: {
+					from: "dailyorders",
+					localField: "dailyOrderId",
+					foreignField: "_id",
+					as: "listing",
+					pipeline: [
+						{ $match: { cutoffTime: { $lte: now } } },
+						{ $project: { cutoffTime: 1 } },
+					],
+				},
+			},
+			{ $unwind: "$listing" },
+			{ $sort: { "listing.cutoffTime": 1 } },
+			{ $limit: limit },
+			{
+				$project: {
+					vendorId: 1,
+					buyerId: 1,
+					dailyOrderId: 1,
+					totalKobo: 1,
+					cutoffTime: "$listing.cutoffTime",
+				},
+			},
+		]);
+		return rows.map((r) => ({
+			id: r._id.toString(),
+			vendorId: r.vendorId.toString(),
+			buyerId: r.buyerId.toString(),
+			dailyOrderId: r.dailyOrderId.toString(),
+			totalKobo: r.totalKobo,
+			cutoffTime: r.cutoffTime,
 		}));
 	} catch {
 		return [];

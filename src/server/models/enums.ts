@@ -85,3 +85,20 @@ export enum DayOfWeek {
 
 export const ALL_MENU_CATEGORIES = Object.values(MenuCategory);
 export const ALL_DAYS_OF_WEEK = Object.values(DayOfWeek);
+
+/**
+ * Statuses that mean "money changed hands and this is a real order": the buyer
+ * paid and the order was not cancelled or refunded. This is the single
+ * definition of a countable order — `totalRevenueKobo`, `topItemIds`,
+ * `peakHour` and the completion-rate denominator all use exactly this set, so
+ * a vendor's revenue and their completion rate can never disagree about which
+ * orders exist. Deliberately excludes PENDING_PAYMENT (an unpaid cart is not
+ * an order and must not count against a vendor) and CANCELLED/REFUNDED.
+ */
+export const SETTLED_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.PAID,
+	OrderStatus.CONFIRMED,
+	OrderStatus.PREPARING,
+	OrderStatus.READY,
+	OrderStatus.COMPLETED,
+];
