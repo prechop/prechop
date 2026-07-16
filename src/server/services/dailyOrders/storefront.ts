@@ -19,7 +19,7 @@ import {
 	type PublicVendor,
 	toPublicVendor,
 } from "../vendors/publicVendor";
-import { campusIdsInSameState } from "./queries";
+import { marketplaceCampusIds } from "./queries";
 
 // `PublicVendor` / `toPublicVendor` now live in services/vendors/publicVendor so
 // the storefront, marketplace and search payloads share one mapper — and one
@@ -83,14 +83,14 @@ export async function searchMarketplace({
 	q,
 	limit = 20,
 }: {
-	campusId: string;
+	campusId?: string;
 	q: string;
 	limit?: number;
 }): Promise<VendorSearchHit[]> {
 	await assertMarketplaceEnabled();
 	const term = q.trim();
 	if (!term) return [];
-	const campusIds = await campusIdsInSameState(campusId);
+	const campusIds = await marketplaceCampusIds(campusId);
 
 	const [byName, byMenu, byListing] = await Promise.all([
 		findVendorIdsByNameDB({ campusIds, q: term }),

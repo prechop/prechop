@@ -168,6 +168,24 @@ describe("placeOrderBodySchema", () => {
 		if (parsed.success) expect(parsed.data.items[0].quantity).toBe(2);
 	});
 
+	it("accepts selected add-on quantities", () => {
+		const parsed = placeOrderBodySchema.safeParse({
+			dailyOrderId: "d1",
+			fulfillmentType: FulfillmentType.PICKUP,
+			items: [
+				{
+					dailyOrderItemId: "i1",
+					quantity: 1,
+					selectedOptions: [{ optionId: "o1", quantity: "3" }],
+				},
+			],
+		});
+
+		expect(parsed.success).toBe(true);
+		if (parsed.success)
+			expect(parsed.data.items[0].selectedOptions?.[0].quantity).toBe(3);
+	});
+
 	it("rejects empty item list", () => {
 		expect(
 			placeOrderBodySchema.safeParse({
@@ -364,7 +382,7 @@ describe("dailyOrders createDailyOrderSchema", () => {
 });
 
 describe("dailyOrders marketplaceSearchSchema", () => {
-	it("requires campusId and a non-empty query, coercing limit", () => {
+	it("accepts optional campusId and a non-empty query, coercing limit", () => {
 		const ok = marketplaceSearchSchema.safeParse({
 			campusId: "c1",
 			q: "  jollof ",
@@ -380,7 +398,7 @@ describe("dailyOrders marketplaceSearchSchema", () => {
 				.success,
 		).toBe(false);
 		expect(marketplaceSearchSchema.safeParse({ q: "x" }).success).toBe(
-			false,
+			true,
 		);
 		expect(
 			marketplaceSearchSchema.safeParse({
@@ -404,6 +422,12 @@ describe("dailyOrders marketplaceQuerySchema — paging cap", () => {
 		});
 		expect(parsed.success).toBe(true);
 		if (parsed.success) expect(parsed.data.limit).toBe(50); // coerced to number
+	});
+
+	it("accepts no campusId for the all-campus guest feed", () => {
+		const parsed = marketplaceQuerySchema.safeParse({ limit: "50" });
+		expect(parsed.success).toBe(true);
+		if (parsed.success) expect(parsed.data.campusId).toBeUndefined();
 	});
 
 	it("still rejects a limit past the cap (51)", () => {

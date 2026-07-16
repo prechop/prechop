@@ -272,4 +272,34 @@ describe("placeOrder option validation", () => {
 		expect(order!.items[0].selectedOptions[0].snapshotName).toBe("Chicken");
 		expect(order!.items[0].selectedOptions[0].subtotalKobo).toBe(100000);
 	});
+
+	it("charges buyer-selected add-on quantities independently of item quantity", async () => {
+		const campusId = oid();
+		const { listing, item } = await listingWithProtein(campusId);
+		const chicken = item.optionGroups[0].options[0].id!;
+		const result = await placeOrder({
+			buyerId: oid(),
+			campusId,
+			input: {
+				dailyOrderId: listing.id!,
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [
+					{
+						dailyOrderItemId: item.id!,
+						quantity: 1,
+						selectedOptions: [{ optionId: chicken, quantity: 3 }],
+					},
+				],
+			},
+		});
+
+		// 150000 base + (50000 chicken * 3) = 300000 subtotal.
+		expect(result.totalKobo).toBe(
+			300000 + calculateBuyerServiceFeeKobo(300000),
+		);
+		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
+		expect(order!.subtotalKobo).toBe(300000);
+		expect(order!.items[0].selectedOptions[0].quantity).toBe(3);
+		expect(order!.items[0].selectedOptions[0].subtotalKobo).toBe(150000);
+	});
 });

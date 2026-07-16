@@ -1,3 +1,4 @@
+import AppShell from "@/layouts/AppShell";
 import OrderDetailWrapper from "@/libs/OrderDetailWrapper";
 
 export default async function PublicOrderPage({
@@ -7,8 +8,8 @@ export default async function PublicOrderPage({
 }) {
 	const { shareableToken } = await params;
 	return (
-		<main style={{ padding: "24px 16px 0" }}>
+		<AppShell shellRole="BUYER" publicAccess>
 			<OrderDetailWrapper token={shareableToken} />
-		</main>
+		</AppShell>
 	);
 }

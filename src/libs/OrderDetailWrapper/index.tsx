@@ -36,8 +36,12 @@ import type {
 
 type Fulfillment = "PICKUP" | "DELIVERY";
 type PaymentMode = "SELF" | "PAY_FOR_ME";
-type Line = { quantity: number; optionIds: Set<string> };
-type SavedLine = { quantity: number; optionIds: string[] };
+type Line = { quantity: number; optionQuantities: Record<string, number> };
+type SavedLine = {
+	quantity: number;
+	optionQuantities?: Record<string, number>;
+	optionIds?: string[];
+};
 interface ExternalPaymentResult {
 	buyerOrderId: string;
 	orderNumber: string;
@@ -169,14 +173,42 @@ const Thumb = styled.div<{ $src?: string }>`
   place-items: center;
   font-size: 24px;
 `;
-const AddonRow = styled.label`
+const AddonRow = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
   color: var(--pc-text-muted);
+  padding: 6px 0;
+  min-width: 0;
+`;
+const AddonQty = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-pill);
+  padding: 2px;
+  background: var(--pc-surface-2);
+`;
+const AddonQtyBtn = styled.button`
+  border: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  font-size: 16px;
+  font-weight: 800;
   cursor: pointer;
-  padding: 4px 0;
+`;
+const AddonQtyValue = styled.span`
+  min-width: 18px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--pc-text);
 `;
 const AddonBox = styled.div`
   border-top: 1px dashed var(--pc-border);
@@ -264,10 +296,11 @@ function allOptions(item: DailyOrderItem) {
 }
 
 function lineSubtotal(item: DailyOrderItem, line: Line): number {
-	const optionSum = allOptions(item)
-		.filter((o) => line.optionIds.has(o.id))
-		.reduce((s, o) => s + o.priceKobo, 0);
-	return (item.snapshotPriceKobo + optionSum) * line.quantity;
+	const optionSum = allOptions(item).reduce(
+		(s, o) => s + o.priceKobo * (line.optionQuantities[o.id] ?? 0),
+		0,
+	);
+	return item.snapshotPriceKobo * line.quantity + optionSum;
 }
 
 /** Effective minimum selections for a group (required ⇒ at least 1). */
@@ -278,7 +311,8 @@ function groupMin(group: DailyOrderOptionGroup): number {
 }
 
 function groupSelectedCount(group: DailyOrderOptionGroup, line: Line): number {
-	return group.options.filter((o) => line.optionIds.has(o.id)).length;
+	return group.options.filter((o) => (line.optionQuantities[o.id] ?? 0) > 0)
+		.length;
 }
 
 /** A group is satisfied when its selection count is within [min, max]. */
@@ -380,7 +414,14 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							id,
 							{
 								quantity: line.quantity,
-								optionIds: new Set(line.optionIds ?? []),
+								optionQuantities:
+									line.optionQuantities ??
+									Object.fromEntries(
+										(line.optionIds ?? []).map((id) => [
+											id,
+											line.quantity,
+										]),
+									),
 							},
 						]),
 					),
@@ -437,10 +478,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				const live = new Set(allOptions(item).map((o) => o.id));
 				next[item.id] = {
 					quantity,
-					optionIds: new Set(
-						(row.selectedOptionIds ?? []).filter((id) =>
-							live.has(id),
-						),
+					optionQuantities: Object.fromEntries(
+						(row.selectedOptionIds ?? [])
+							.filter((id) => live.has(id))
+							.map((id) => [id, quantity]),
 					),
 				};
 			}
@@ -562,7 +603,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 						id,
 						{
 							quantity: line.quantity,
-							optionIds: Array.from(line.optionIds),
+							optionQuantities: line.optionQuantities,
 						},
 					]),
 				),
@@ -577,7 +618,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 
 	function setQty(item: DailyOrderItem, delta: number) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 0, optionIds: new Set() };
+			const cur = prev[item.id] ?? {
+				quantity: 0,
+				optionQuantities: {},
+			};
 			// Cap at what's actually still available (maxQuantity − already
 			// ordered), and never above the server's per-order limit of 50, so
 			// the buyer can't select more than checkout would accept.
@@ -601,27 +645,46 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		optionId: string,
 	) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 1, optionIds: new Set() };
-			const ids = new Set(cur.optionIds);
+			const cur = prev[item.id] ?? { quantity: 1, optionQuantities: {} };
+			const optionQuantities = { ...cur.optionQuantities };
 			const groupIds = group.options.map((o) => o.id);
 			const single = group.maxSelect === 1;
 
-			if (ids.has(optionId)) {
+			if ((optionQuantities[optionId] ?? 0) > 0) {
 				if (single && group.required) {
 					// keep it selected (radio can't be emptied when required)
 				} else {
-					ids.delete(optionId);
+					delete optionQuantities[optionId];
 				}
 			} else if (single) {
-				for (const gid of groupIds) ids.delete(gid);
-				ids.add(optionId);
+				for (const gid of groupIds) delete optionQuantities[gid];
+				optionQuantities[optionId] = 1;
 			} else {
-				const count = groupIds.filter((gid) => ids.has(gid)).length;
+				const count = groupIds.filter(
+					(gid) => (optionQuantities[gid] ?? 0) > 0,
+				).length;
 				if (group.maxSelect == null || count < group.maxSelect)
-					ids.add(optionId);
+					optionQuantities[optionId] = 1;
 			}
 			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return { ...prev, [item.id]: { quantity, optionIds: ids } };
+			return { ...prev, [item.id]: { quantity, optionQuantities } };
+		});
+	}
+
+	function setOptionQty(
+		item: DailyOrderItem,
+		optionId: string,
+		delta: number,
+	) {
+		setLines((prev) => {
+			const cur = prev[item.id] ?? { quantity: 1, optionQuantities: {} };
+			const current = cur.optionQuantities[optionId] ?? 0;
+			const next = Math.max(0, Math.min(MAX_PER_ORDER, current + delta));
+			const optionQuantities = { ...cur.optionQuantities };
+			if (next === 0) delete optionQuantities[optionId];
+			else optionQuantities[optionId] = next;
+			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
+			return { ...prev, [item.id]: { quantity, optionQuantities } };
 		});
 	}
 
@@ -649,7 +712,12 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			.map(([dailyOrderItemId, l]) => ({
 				dailyOrderItemId,
 				quantity: l.quantity,
-				selectedOptionIds: Array.from(l.optionIds),
+				selectedOptions: Object.entries(l.optionQuantities)
+					.filter(([, quantity]) => quantity > 0)
+					.map(([optionId, quantity]) => ({
+						optionId,
+						quantity,
+					})),
 			}));
 
 		setPlacing(true);
@@ -932,11 +1000,16 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 																</GroupHead>
 																{group.options.map(
 																	(o) => {
+																		const optionQty =
+																			line
+																				?.optionQuantities[
+																				o
+																					.id
+																			] ??
+																			0;
 																		const checked =
-																			line?.optionIds.has(
-																				o.id,
-																			) ??
-																			false;
+																			optionQty >
+																			0;
 																		const count =
 																			line
 																				? groupSelectedCount(
@@ -985,6 +1058,45 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 																				0
 																					? ` · ${formatKobo(o.priceKobo)}`
 																					: ""}
+																				{checked && (
+																					<AddonQty>
+																						<AddonQtyBtn
+																							type="button"
+																							aria-label={`Remove one ${o.name}`}
+																							onClick={() =>
+																								setOptionQty(
+																									item,
+																									o.id,
+																									-1,
+																								)
+																							}
+																						>
+																							-
+																						</AddonQtyBtn>
+																						<AddonQtyValue>
+																							{
+																								optionQty
+																							}
+																						</AddonQtyValue>
+																						<AddonQtyBtn
+																							type="button"
+																							aria-label={`Add one ${o.name}`}
+																							onClick={() =>
+																								setOptionQty(
+																									item,
+																									o.id,
+																									1,
+																								)
+																							}
+																							disabled={
+																								optionQty >=
+																								MAX_PER_ORDER
+																							}
+																						>
+																							+
+																						</AddonQtyBtn>
+																					</AddonQty>
+																				)}
 																			</AddonRow>
 																		);
 																	},

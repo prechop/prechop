@@ -1,3 +1,4 @@
+import AppShell from "@/layouts/AppShell";
 import VendorStorefrontWrapper from "@/libs/VendorStorefrontWrapper";
 
 export default async function VendorStorefrontPage({
@@ -7,8 +8,8 @@ export default async function VendorStorefrontPage({
 }) {
 	const { vendorId } = await params;
 	return (
-		<main style={{ padding: "24px 16px 0" }}>
+		<AppShell shellRole="BUYER" publicAccess>
 			<VendorStorefrontWrapper vendorId={vendorId} />
-		</main>
+		</AppShell>
 	);
 }

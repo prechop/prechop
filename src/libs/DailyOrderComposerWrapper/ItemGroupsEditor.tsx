@@ -1,7 +1,7 @@
 "use client";
 
 import styled from "styled-components";
-import { Badge, Input, Row, Stack, Text } from "@/components";
+import { Badge, Input, Stack, Text } from "@/components";
 import type { MenuOptionGroup } from "@/types";
 
 export interface EditableOption {
@@ -14,6 +14,10 @@ const Wrap = styled.div`
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+	min-width: 0;
+	@media (max-width: 640px) {
+		padding-left: 0;
+	}
 `;
 const GroupCard = styled.div<{ $on: boolean }>`
 	border: 1px solid var(--pc-border);
@@ -24,11 +28,33 @@ const GroupCard = styled.div<{ $on: boolean }>`
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
+	min-width: 0;
+	overflow: hidden;
+	@media (max-width: 640px) {
+		padding: 12px;
+	}
 `;
-const Head = styled(Row)`
-	justify-content: space-between;
+const Head = styled.div`
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 8px;
+	min-width: 0;
+	@media (max-width: 520px) {
+		grid-template-columns: 1fr;
+		align-items: stretch;
+	}
+`;
+const HeadMain = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	flex-wrap: wrap;
+`;
+const GroupName = styled(Text)`
+	min-width: 0;
+	overflow-wrap: anywhere;
 `;
 const IncludeToggle = styled.button<{ $on: boolean }>`
 	all: unset;
@@ -45,10 +71,28 @@ const IncludeToggle = styled.button<{ $on: boolean }>`
 	color: ${(p) =>
 		p.$on ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
 	flex-shrink: 0;
+	text-align: center;
+	white-space: nowrap;
+	@media (max-width: 520px) {
+		justify-self: stretch;
+	}
 `;
-const OptRow = styled(Row)`
+const OptRow = styled.div`
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(96px, 120px) 28px;
 	gap: 8px;
 	align-items: flex-end;
+	min-width: 0;
+	@media (max-width: 520px) {
+		grid-template-columns: minmax(0, 1fr) 86px 28px;
+		gap: 8px 6px;
+	}
+`;
+const OptionField = styled.div`
+	min-width: 0;
+`;
+const PriceField = styled.div`
+	min-width: 0;
 `;
 const AddBtn = styled.button`
 	all: unset;
@@ -58,6 +102,9 @@ const AddBtn = styled.button`
 	color: var(--pc-color-primary);
 	padding: 4px 2px;
 	align-self: flex-start;
+	@media (max-width: 520px) {
+		padding: 8px 2px 2px;
+	}
 `;
 const RemoveBtn = styled.button`
 	all: unset;
@@ -67,6 +114,7 @@ const RemoveBtn = styled.button`
 	line-height: 1;
 	padding: 8px 6px;
 	flex-shrink: 0;
+	text-align: center;
 `;
 
 /** Read-only description of a group's selection rule (edited only in the menu). */
@@ -120,12 +168,12 @@ export default function ItemGroupsEditor({
 				return (
 					<GroupCard key={g.id} $on={on}>
 						<Head>
-							<Row $gap={8} $align="center">
-								<Text $weight={700} $size={13.5}>
+							<HeadMain>
+								<GroupName $weight={700} $size={13.5}>
 									{g.name}
-								</Text>
+								</GroupName>
 								<Badge $tone="muted">{ruleLabel(g)}</Badge>
-							</Row>
+							</HeadMain>
 							<IncludeToggle
 								type="button"
 								$on={on}
@@ -138,7 +186,7 @@ export default function ItemGroupsEditor({
 							<Stack $gap={8}>
 								{options.map((o, i) => (
 									<OptRow key={`${g.id}-${i}`}>
-										<div style={{ flex: 2 }}>
+										<OptionField>
 											<Input
 												label={i === 0 ? "Option" : ""}
 												value={o.name}
@@ -158,8 +206,8 @@ export default function ItemGroupsEditor({
 												}
 												placeholder="Chicken"
 											/>
-										</div>
-										<div style={{ flex: 1 }}>
+										</OptionField>
+										<PriceField>
 											<Input
 												label={i === 0 ? "Extra ₦" : ""}
 												type="number"
@@ -182,7 +230,7 @@ export default function ItemGroupsEditor({
 												}
 												placeholder="0"
 											/>
-										</div>
+										</PriceField>
 										<RemoveBtn
 											type="button"
 											aria-label="Remove option"

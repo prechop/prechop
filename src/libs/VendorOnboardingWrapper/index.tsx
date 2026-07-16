@@ -25,7 +25,7 @@ import {
 } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import BankDetailsForm from "@/libs/BankDetailsForm";
-import type { VendorProfile } from "@/types";
+import type { Campus, VendorProfile } from "@/types";
 
 // The /vendors/me payload carries more fields than the shared VendorProfile
 // view-model; the extra optional fields drive the onboarding checklist.
@@ -267,9 +267,16 @@ export default function VendorOnboardingWrapper({
 	const [areaOrAddress, setAreaOrAddress] = useState(
 		vendor.areaOrAddress ?? "",
 	);
+	const [campusIds, setCampusIds] = useState<string[]>(
+		vendor.campusIds ?? [],
+	);
 	const [acceptedFeePolicy, setAcceptedFeePolicy] = useState(false);
 	const { data: schools } = useSWR<School[]>(
 		open === "location" ? "/vendors/schools" : null,
+		fetcher,
+	);
+	const { data: campuses } = useSWR<Campus[]>(
+		open === "location" ? "/campuses" : null,
 		fetcher,
 	);
 	// The rate the vendor is about to consent to must be the rate they will
@@ -287,7 +294,9 @@ export default function VendorOnboardingWrapper({
 		categories: (vendor.categories?.length ?? 0) > 0,
 		location:
 			vendor.locationType === "OFF_CAMPUS"
-				? !!vendor.state && !!vendor.areaOrAddress && !!vendor.campusId
+				? !!vendor.state &&
+					!!vendor.areaOrAddress &&
+					(vendor.campusIds?.length ?? 0) > 0
 				: !!vendor.locationType,
 		bank: !!vendor.bankCode || !!vendor.paystackSubaccountCode,
 		image: !!vendor.profileImageUrl,
@@ -360,7 +369,7 @@ export default function VendorOnboardingWrapper({
 							locationType,
 							state: state.trim(),
 							areaOrAddress: areaOrAddress.trim(),
-							campusIds: [vendor.campusId],
+							campusIds,
 						};
 			await api.post("/vendors/me/location", body);
 			toast("Location saved", "success");
@@ -403,6 +412,23 @@ export default function VendorOnboardingWrapper({
 	function toggleCat(v: string) {
 		setCats((c) => (c.includes(v) ? c.filter((x) => x !== v) : [...c, v]));
 	}
+
+	function toggleCampus(id: string) {
+		setCampusIds((current) => {
+			if (current.includes(id)) return current.filter((x) => x !== id);
+			if (current.length >= 3) {
+				toast("Select up to 3 campuses", "error");
+				return current;
+			}
+			return [...current, id];
+		});
+	}
+
+	const stateCampuses = (campuses ?? []).filter(
+		(c) =>
+			state.trim() &&
+			c.state.trim().toLowerCase() === state.trim().toLowerCase(),
+	);
 
 	const rows: { key: string; label: string; hint: string }[] = [
 		{
@@ -666,11 +692,12 @@ export default function VendorOnboardingWrapper({
 													<Input
 														label="State"
 														value={state}
-														onChange={(e) =>
+														onChange={(e) => {
 															setState(
 																e.target.value,
-															)
-														}
+															);
+															setCampusIds([]);
+														}}
 														placeholder="Lagos"
 													/>
 													<Input
@@ -683,6 +710,63 @@ export default function VendorOnboardingWrapper({
 														}
 														placeholder="12 Allen Avenue, Ikeja"
 													/>
+													{state.trim() && (
+														<Stack $gap={8}>
+															<Text
+																$weight={700}
+																$size={13}
+															>
+																Campuses to show
+																your menu on
+															</Text>
+															{stateCampuses.length >
+															0 ? (
+																<CatGrid>
+																	{stateCampuses.map(
+																		(c) => (
+																			<CatChip
+																				key={
+																					c.id
+																				}
+																				type="button"
+																				$on={campusIds.includes(
+																					c.id,
+																				)}
+																				onClick={() =>
+																					toggleCampus(
+																						c.id,
+																					)
+																				}
+																			>
+																				{
+																					c.name
+																				}
+																			</CatChip>
+																		),
+																	)}
+																</CatGrid>
+															) : (
+																<Text
+																	$muted
+																	$size={13}
+																>
+																	No active
+																	campuses
+																	found for
+																	this state.
+																</Text>
+															)}
+															<Text
+																$muted
+																$size={12}
+															>
+																{
+																	campusIds.length
+																}
+																/3 selected
+															</Text>
+														</Stack>
+													)}
 												</>
 											)}
 											<Button
@@ -693,7 +777,9 @@ export default function VendorOnboardingWrapper({
 													locationType === "ON_CAMPUS"
 														? !hostelOrStallName.trim()
 														: !state.trim() ||
-															!areaOrAddress.trim()
+															!areaOrAddress.trim() ||
+															campusIds.length ===
+																0
 												}
 											>
 												Save & continue

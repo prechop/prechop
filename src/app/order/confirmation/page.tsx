@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import { PageLoader } from "@/components/Loader";
+import AppShell from "@/layouts/AppShell";
 import OrderConfirmationWrapper from "@/libs/OrderConfirmationWrapper";
 
 export default function OrderConfirmationPage() {
 	return (
-		<main style={{ padding: "24px 16px" }}>
+		<AppShell shellRole="BUYER" publicAccess>
 			<Suspense fallback={<PageLoader />}>
 				<OrderConfirmationWrapper />
 			</Suspense>
-		</main>
+		</AppShell>
 	);
 }

@@ -7,7 +7,6 @@ import {
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	type IDailyOrder,
-	type IVendorProfile,
 	listActivePublicListingsForVendorIdsDB,
 	listCampusesDB,
 	listDailyOrdersByVendorDB,
@@ -36,13 +35,21 @@ export async function campusIdsInSameState(
 	return ids;
 }
 
+export async function marketplaceCampusIds(
+	campusId?: string,
+): Promise<string[]> {
+	if (campusId) return campusIdsInSameState(campusId);
+	const campuses = await listCampusesDB({ activeOnly: true });
+	return campuses.map((campus) => campus._id.toString());
+}
+
 export async function getMarketplace({
 	campusId,
 	limit,
 	offset,
 	viewerUserId,
 }: {
-	campusId: string;
+	campusId?: string;
 	limit?: number;
 	offset?: number;
 	/** The signed-in caller (if any); their own listings are excluded. */
@@ -56,7 +63,7 @@ export async function getMarketplace({
 		});
 		if (vendor) excludeVendorId = vendor._id.toString();
 	}
-	const campusIds = await campusIdsInSameState(campusId);
+	const campusIds = await marketplaceCampusIds(campusId);
 	const vendors = await listMarketplaceVendorsDB({
 		campusIds,
 		limit,

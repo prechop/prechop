@@ -75,7 +75,7 @@ export const updateDailyOrderDraftSchema = z.object({
 
 export const marketplaceQuerySchema = z
 	.object({
-		campusId: z.string().min(1),
+		campusId: z.string().min(1).optional(),
 		limit: z.coerce.number().int().positive().max(50).optional(),
 		offset: z.coerce.number().int().min(0).optional(),
 	})
@@ -83,7 +83,7 @@ export const marketplaceQuerySchema = z
 
 export const marketplaceSearchSchema = z
 	.object({
-		campusId: z.string().min(1),
+		campusId: z.string().min(1).optional(),
 		q: z.string().trim().min(1).max(80),
 		limit: z.coerce.number().int().positive().max(50).optional(),
 	})

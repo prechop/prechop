@@ -32,10 +32,10 @@ import { formatKobo } from "@/constants/formatters";
 
 /** Wire shape of `GET /api/site-configs/marketplace`. */
 interface MarketplacePolicyResponse {
-	marketplaceEnabled: boolean;
-	platformFeeBuyerPercent: number;
-	platformFeeBuyerMaxKobo: number;
-	platformFeeVendorPercent: number;
+  marketplaceEnabled: boolean;
+  platformFeeBuyerPercent: number;
+  platformFeeBuyerMaxKobo: number;
+  platformFeeVendorPercent: number;
 }
 
 const POLICY_KEY = "/site-configs/marketplace";
@@ -51,7 +51,7 @@ const POLICY_KEY = "/site-configs/marketplace";
  * know", never to a plausible-looking guess.
  */
 function finite(raw: unknown): number | null {
-	return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
 /**
@@ -63,25 +63,21 @@ function finite(raw: unknown): number | null {
  * authoritative — this only guards the shape.
  */
 function toPolicy(data?: MarketplacePolicyResponse): FeePolicy | undefined {
-	if (!data) return undefined;
-	const buyerPercent = finite(data.platformFeeBuyerPercent);
-	const buyerMaxKobo = finite(data.platformFeeBuyerMaxKobo);
-	const vendorPercent = finite(data.platformFeeVendorPercent);
-	if (
-		buyerPercent === null ||
-		buyerMaxKobo === null ||
-		vendorPercent === null
-	)
-		return undefined;
-	return { buyerPercent, buyerMaxKobo, vendorPercent };
+  if (!data) return undefined;
+  const buyerPercent = finite(data.platformFeeBuyerPercent);
+  const buyerMaxKobo = finite(data.platformFeeBuyerMaxKobo);
+  const vendorPercent = finite(data.platformFeeVendorPercent);
+  if (buyerPercent === null || buyerMaxKobo === null || vendorPercent === null)
+    return undefined;
+  return { buyerPercent, buyerMaxKobo, vendorPercent };
 }
 
 export interface UseFeePolicyResult {
-	/** The effective policy, or `undefined` while loading / on failure. */
-	policy: FeePolicy | undefined;
-	isLoading: boolean;
-	/** True when the policy could not be read. Callers must not quote a number. */
-	isUnavailable: boolean;
+  /** The effective policy, or `undefined` while loading / on failure. */
+  policy: FeePolicy | undefined;
+  isLoading: boolean;
+  /** True when the policy could not be read. Callers must not quote a number. */
+  isUnavailable: boolean;
 }
 
 /**
@@ -92,16 +88,16 @@ export interface UseFeePolicyResult {
  * `describe*` helpers below rather than writing a number into a string.
  */
 export function useFeePolicy(): UseFeePolicyResult {
-	const { data, error, isLoading } = useSWR<MarketplacePolicyResponse>(
-		POLICY_KEY,
-		{ revalidateOnFocus: false },
-	);
-	const policy = toPolicy(data);
-	return {
-		policy,
-		isLoading,
-		isUnavailable: !isLoading && (!!error || !policy),
-	};
+  const { data, error, isLoading } = useSWR<MarketplacePolicyResponse>(
+    POLICY_KEY,
+    { revalidateOnFocus: false },
+  );
+  const policy = toPolicy(data);
+  return {
+    policy,
+    isLoading,
+    isUnavailable: !isLoading && (!!error || !policy),
+  };
 }
 
 /* ------------------------------------------------------- prose derivations */
@@ -114,16 +110,16 @@ export function useFeePolicy(): UseFeePolicyResult {
 
 /** e.g. "3% of the food subtotal, capped at ₦200". */
 export function describeBuyerFee(policy?: FeePolicy): string {
-	if (!policy) return "a service fee on the food subtotal";
-	return `${policy.buyerPercent}% of the food subtotal, capped at ${formatKobo(
-		policy.buyerMaxKobo,
-	)}`;
+  if (!policy) return "a service fee on the food subtotal";
+  return `${policy.buyerPercent}% of the food subtotal, capped at ${formatKobo(
+    policy.buyerMaxKobo,
+  )}`;
 }
 
 /** e.g. "8% of the food subtotal". */
 export function describeVendorCommission(policy?: FeePolicy): string {
-	if (!policy) return "a commission on the food subtotal";
-	return `${policy.vendorPercent}% of the food subtotal`;
+  if (!policy) return "a commission on the food subtotal";
+  return `${policy.vendorPercent}% of the food subtotal`;
 }
 
 /**
@@ -131,23 +127,32 @@ export function describeVendorCommission(policy?: FeePolicy): string {
  * service fee before paying, never for the first time on the Paystack page.
  */
 export function describeBuyerFeeExplainer(policy?: FeePolicy): string {
-	if (!policy)
-		return "Service fee: a percentage of your food subtotal, applied at checkout. It covers secure payment processing and running the platform.";
-	return `Service fee: ${describeBuyerFee(
-		policy,
-	)}. It covers secure payment processing and running the platform.`;
+  if (!policy)
+    return "Service fee: a percentage of your food subtotal, applied at checkout. It covers secure payment processing and running the platform.";
+  return `Service fee: ${describeBuyerFee(
+    policy,
+  )}. It covers secure payment processing and running the platform.`;
 }
 
 /** The full vendor-facing fee summary shown on onboarding and settings. */
 export function describeFeePolicy(policy?: FeePolicy): string {
-	if (!policy)
-		return "Prechop charges a commission on the food subtotal of every successful order, and buyers pay a service fee. Paystack processing fees are absorbed by Prechop.";
-	return `Prechop charges a ${describeVendorCommission(
-		policy,
-	)} on every successful order. Buyers pay a service fee of ${describeBuyerFee(
-		policy,
-	)}. Paystack processing fees are absorbed by Prechop.`;
+  if (!policy) {
+    return "Prechop deducts a commission from the food subtotal of every successful order. Paystack transaction charges are borne by Prechop and do not reduce the vendor’s agreed settlement.";
+  }
+
+  return `Prechop deducts ${describeVendorCommission(
+    policy,
+  )} from the food subtotal of every successful order. The vendor receives the remaining balance in accordance with the applicable settlement terms. Paystack transaction charges are borne by Prechop and do not reduce the vendor’s agreed settlement.`;
 }
+// export function describeFeePolicy(policy?: FeePolicy): string {
+//   if (!policy)
+//     return "Prechop charges a commission on the food subtotal of every successful order, and buyers pay a service fee. Paystack processing fees are absorbed by Prechop.";
+//   return `Prechop charges a ${describeVendorCommission(
+//     policy,
+//   )} on every successful order. Buyers pay a service fee of ${describeBuyerFee(
+//     policy,
+//   )}. Paystack processing fees are absorbed by Prechop.`;
+// }
 
 /**
  * The label on the vendor's consent checkbox.
@@ -158,6 +163,6 @@ export function describeFeePolicy(policy?: FeePolicy): string {
  * than naming a rate we cannot stand behind.
  */
 export function describeVendorConsent(policy?: FeePolicy): string {
-	if (!policy) return "I accept Prechop's commission policy.";
-	return `I accept Prechop's ${policy.vendorPercent}% commission policy.`;
+  if (!policy) return "I accept Prechop's commission policy.";
+  return `I accept Prechop's ${policy.vendorPercent}% commission policy.`;
 }

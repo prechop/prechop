@@ -203,6 +203,39 @@ describe("own listings are hidden from the vendor's buyer view", () => {
 		expect(listingIds(anon)).toContain(theirs._id.toString());
 	});
 
+	it("lists active vendors across all campuses when no campus is selected", async () => {
+		const suffix = Math.random().toString(36).slice(2, 7).toUpperCase();
+		const firstCampus = await makeCampus({ shortCode: `G1${suffix}` });
+		const secondCampus = await makeCampus({ shortCode: `G2${suffix}` });
+		if (!firstCampus || !secondCampus) {
+			throw new Error("Expected campus fixtures to be created.");
+		}
+		const firstCampusId = firstCampus._id.toString();
+		const secondCampusId = secondCampus._id.toString();
+		const firstVendor = await vendorOnCampus(firstCampusId);
+		const secondVendor = await vendorOnCampus(secondCampusId);
+		const firstListing = await makeActiveDailyOrder({
+			vendorId: firstVendor.vendorId,
+			campusId: firstCampusId,
+		});
+		const secondListing = await makeActiveDailyOrder({
+			vendorId: secondVendor.vendorId,
+			campusId: secondCampusId,
+		});
+		trackSlots(firstListing);
+		trackSlots(secondListing);
+
+		const rows = await getMarketplace({});
+		const listingIds = rows.flatMap((r) =>
+			r.listings.map((o) => o._id.toString()),
+		);
+
+		expect(rows.map((r) => r.vendor.id)).toContain(firstVendor.vendorId);
+		expect(rows.map((r) => r.vendor.id)).toContain(secondVendor.vendorId);
+		expect(listingIds).toContain(firstListing._id.toString());
+		expect(listingIds).toContain(secondListing._id.toString());
+	});
+
 	it("flags the caller's own listing on the public order page", async () => {
 		const campus = await makeCampus();
 		const campusId = campus!._id.toString();

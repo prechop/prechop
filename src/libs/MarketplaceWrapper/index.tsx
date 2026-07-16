@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -18,7 +18,6 @@ import {
 	Text,
 	Title,
 	useVendorStatus,
-	VendorRating,
 	VendorStatusBadge,
 } from "@/components";
 import { fetcher } from "@/constants/fetcher";
@@ -35,18 +34,48 @@ interface MarketplaceAvailability {
 	marketplaceEnabled: boolean;
 }
 
-const CampusTag = styled.span`
-	display: inline-flex;
+const KNOWN_CAMPUS_COORDS: Record<
+	string,
+	{ latitude: number; longitude: number }
+> = {
+	UI: { latitude: 7.443, longitude: 3.9 },
+	"UNIVERSITY OF IBADAN": { latitude: 7.443, longitude: 3.9 },
+	UNILAG: { latitude: 6.5158, longitude: 3.3899 },
+	"UNIVERSITY OF LAGOS": { latitude: 6.5158, longitude: 3.3899 },
+};
+
+const MAX_LOCATION_ACCURACY_METERS = 5_000;
+const NEARBY_CAMPUS_RADIUS_METERS = 10_000;
+
+const CampusPickerWrap = styled.div`
+	display: flex;
+	gap: 10px;
 	align-items: center;
-	gap: 6px;
-	background: var(--pc-surface);
+	flex-wrap: wrap;
+	justify-content: flex-end;
+`;
+const CampusSelect = styled.select`
+	min-width: min(100%, 220px);
+	height: 40px;
 	border: 1px solid var(--pc-border);
-	color: var(--pc-text-muted);
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-surface);
+	color: var(--pc-text);
+	font: inherit;
+	font-weight: 700;
+	font-size: 13px;
+	padding: 0 34px 0 14px;
+	outline: none;
+	&:focus {
+		border-color: var(--pc-color-primary);
+		box-shadow: 0 0 0 3px var(--pc-color-primary-50);
+	}
+`;
+const Notice = styled.div`
+	margin: 0 0 var(--pc-space-3);
+	color: var(--pc-color-primary);
 	font-size: 13px;
 	font-weight: 700;
-	padding: 7px 14px;
-	border-radius: var(--pc-radius-pill);
-	box-shadow: var(--pc-shadow-sm);
 `;
 const VendorCard = styled(Card)`
 	padding: 0;
@@ -127,6 +156,60 @@ const MatchTag = styled.span`
 	font-weight: 700;
 	text-transform: capitalize;
 `;
+const RatingPill = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	color: var(--pc-text);
+	font-size: 13px;
+	font-weight: 800;
+	padding: 5px 9px;
+	white-space: nowrap;
+`;
+const RatingStar = styled.span`
+	color: var(--pc-color-gold-ink);
+	font-size: 13px;
+	line-height: 1;
+`;
+const RatingCount = styled.span`
+	color: var(--pc-text-muted);
+	font-weight: 700;
+`;
+const MarketIllustration = styled.div`
+	width: 72px;
+	height: 64px;
+	position: relative;
+	&::before {
+		content: "";
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: 0;
+		height: 40px;
+		border-radius: 8px;
+		background: var(--pc-surface-2);
+		border: 1px solid var(--pc-border);
+		box-shadow: inset 0 12px 0 var(--pc-color-primary-50);
+	}
+	&::after {
+		content: "";
+		position: absolute;
+		left: 4px;
+		right: 4px;
+		top: 6px;
+		height: 22px;
+		border-radius: 12px 12px 5px 5px;
+		background: repeating-linear-gradient(
+			90deg,
+			var(--pc-color-primary) 0 12px,
+			var(--pc-color-gold) 12px 24px
+		);
+		box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+	}
+`;
 
 function isMarketplaceUnavailable(error: unknown): boolean {
 	const err = error as {
@@ -160,18 +243,102 @@ function fulfillmentLabel(listing?: DailyOrder): string {
 		.join(" / ");
 }
 
+function ratingText(rating: number | null | undefined): string {
+	return (rating ?? 0).toFixed(1);
+}
+
+function campusCoordinate(campus: Campus) {
+	return (
+		KNOWN_CAMPUS_COORDS[campus.shortCode?.toUpperCase()] ??
+		KNOWN_CAMPUS_COORDS[campus.name?.toUpperCase()]
+	);
+}
+
+function distanceMeters(
+	a: { latitude: number; longitude: number },
+	b: { latitude: number; longitude: number },
+): number {
+	const radius = 6_371_000;
+	const toRad = (value: number) => (value * Math.PI) / 180;
+	const dLat = toRad(b.latitude - a.latitude);
+	const dLng = toRad(b.longitude - a.longitude);
+	const lat1 = toRad(a.latitude);
+	const lat2 = toRad(b.latitude);
+	const h =
+		Math.sin(dLat / 2) ** 2 +
+		Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+	return 2 * radius * Math.asin(Math.sqrt(h));
+}
+
+function nearestSupportedCampus(
+	campuses: Campus[],
+	position: GeolocationPosition,
+): Campus | null {
+	if (position.coords.accuracy > MAX_LOCATION_ACCURACY_METERS) return null;
+	const here = {
+		latitude: position.coords.latitude,
+		longitude: position.coords.longitude,
+	};
+	const nearest = campuses
+		.map((campus) => {
+			const coords = campusCoordinate(campus);
+			return coords
+				? { campus, distance: distanceMeters(here, coords) }
+				: null;
+		})
+		.filter((item): item is { campus: Campus; distance: number } => !!item)
+		.sort((a, b) => a.distance - b.distance)[0];
+	return nearest?.distance <= NEARBY_CAMPUS_RADIUS_METERS
+		? nearest.campus
+		: null;
+}
+
+function CampusFilter({
+	campuses,
+	value,
+	onChange,
+}: {
+	campuses: Campus[];
+	value: string;
+	onChange: (value: string) => void;
+}) {
+	return (
+		<CampusPickerWrap>
+			<CampusSelect
+				value={value}
+				onChange={(event) => onChange(event.target.value)}
+				aria-label="Filter marketplace by campus"
+			>
+				<option value="">All campuses</option>
+				{campuses.map((campus) => (
+					<option key={campus.id} value={campus.id}>
+						{campus.name}
+					</option>
+				))}
+			</CampusSelect>
+		</CampusPickerWrap>
+	);
+}
+
 export default function MarketplaceWrapper() {
-	const { user } = useAuth();
-	const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
-	const campusId = user?.campusId ?? campuses?.[0]?.id;
+	const { user, isLoading: authLoading } = useAuth();
+	const { data: campuses, isLoading: campusesLoading } = useSWR<Campus[]>(
+		"/campuses",
+		fetcher,
+	);
+	const [selectedCampusId, setSelectedCampusId] = useState("");
+	const [locationNotice, setLocationNotice] = useState("");
+	const manualCampusRef = useRef(false);
+	const locationRequestedRef = useRef(false);
 	const { data: availability, isLoading: availabilityLoading } =
 		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
 			refreshInterval: 10_000,
 		});
 	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
+	const campusQuery = selectedCampusId ? `campusId=${selectedCampusId}&` : "";
 	const { data, isLoading, error } = useSWR<MarketplaceVendor[]>(
-		campusId && marketplaceEnabled
-			? `/daily-orders/marketplace?campusId=${campusId}&limit=50`
+		marketplaceEnabled
+			? `/daily-orders/marketplace?${campusQuery}limit=50`
 			: null,
 		fetcher,
 	);
@@ -183,22 +350,72 @@ export default function MarketplaceWrapper() {
 		return () => clearTimeout(t);
 	}, [search]);
 	const searching = debounced.length > 0;
+	const searchCampusQuery = selectedCampusId
+		? `campusId=${selectedCampusId}&`
+		: "";
 	const { data: hits, isLoading: hitsLoading } = useSWR<VendorSearchHit[]>(
-		campusId && marketplaceEnabled && searching
-			? `/daily-orders/marketplace/search?campusId=${campusId}&q=${encodeURIComponent(debounced)}`
+		marketplaceEnabled && searching
+			? `/daily-orders/marketplace/search?${searchCampusQuery}q=${encodeURIComponent(debounced)}`
 			: null,
 		fetcher,
 	);
 
-	const campusName = campuses?.find((c) => c.id === campusId)?.name;
+	const campusName = campuses?.find((c) => c.id === selectedCampusId)?.name;
+	const activeCampuses = campuses ?? [];
 
-	if (availabilityLoading || isLoading || !campusId) {
+	useEffect(() => {
+		if (!user?.campusId || manualCampusRef.current) return;
+		setSelectedCampusId(user.campusId);
+	}, [user?.campusId]);
+
+	useEffect(() => {
+		if (
+			user ||
+			locationRequestedRef.current ||
+			manualCampusRef.current ||
+			activeCampuses.length === 0 ||
+			!("geolocation" in navigator)
+		) {
+			return;
+		}
+		locationRequestedRef.current = true;
+		navigator.geolocation.getCurrentPosition(
+			(position) => {
+				if (manualCampusRef.current) return;
+				const campus = nearestSupportedCampus(activeCampuses, position);
+				if (!campus) return;
+				setSelectedCampusId(campus.id);
+				setLocationNotice(`Showing vendors near ${campus.name}.`);
+			},
+			() => {},
+			{
+				enableHighAccuracy: false,
+				timeout: 6_000,
+				maximumAge: 10 * 60 * 1000,
+			},
+		);
+	}, [activeCampuses, user]);
+
+	function handleCampusChange(value: string) {
+		manualCampusRef.current = true;
+		setLocationNotice("");
+		setSelectedCampusId(value);
+	}
+
+	if (availabilityLoading || authLoading || campusesLoading || isLoading) {
 		return (
 			<Stack $gap={0}>
 				<PageHeader
 					eyebrow="Marketplace"
 					title="Campus kitchens"
 					subtitle="Browse food, prices, ratings and order windows."
+					actions={
+						<CampusFilter
+							campuses={activeCampuses}
+							value={selectedCampusId}
+							onChange={handleCampusChange}
+						/>
+					}
 				/>
 				<Grid $min={260} $gap={16}>
 					{[0, 1, 2, 3, 4, 5].map((n) => (
@@ -240,9 +457,19 @@ export default function MarketplaceWrapper() {
 			<PageHeader
 				eyebrow="Marketplace"
 				title="Campus kitchens"
-				subtitle="Browse vendors near you. Open kitchens appear first; closed kitchens stay visible for menus, prices and ratings."
-				actions={<CampusTag>{campusName ?? "Your campus"}</CampusTag>}
+				subtitle="Browse vendors across campuses. Open kitchens appear first; closed kitchens stay visible for menus, prices and ratings."
+				actions={
+					<CampusFilter
+						campuses={activeCampuses}
+						value={selectedCampusId}
+						onChange={handleCampusChange}
+					/>
+				}
 			/>
+			{locationNotice && <Notice>{locationNotice}</Notice>}
+			{campusName && !locationNotice && (
+				<Notice>Showing vendors near {campusName}.</Notice>
+			)}
 
 			<SearchWrap>
 				<Input
@@ -262,7 +489,7 @@ export default function MarketplaceWrapper() {
 				/>
 			) : vendors.length === 0 ? (
 				<EmptyState
-					icon="food"
+					icon={<MarketIllustration />}
 					title="No kitchens found here"
 					description="There are no eligible vendors in this location yet."
 				/>
@@ -279,8 +506,8 @@ export default function MarketplaceWrapper() {
  * a card that says "Closing soon · 12m" decays to "Closed today" on its own
  * rather than lying until the next refetch.
  *
- * Two badges, two orthogonal axes: availability lives in the media corner,
- * trust ("New vendor", via VendorRating) sits beside the shop name in the body.
+ * Availability lives in the media corner; the body keeps the shop name and
+ * numeric rating together so the card scans like a marketplace listing.
  */
 function VendorGridCard({ row }: { row: MarketplaceVendor }) {
 	const primary = row.listings[0];
@@ -315,12 +542,15 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
 						<Title $size={17}>
 							{row.vendor.businessName ?? "Campus kitchen"}
 						</Title>
-						{/* Renders the score, or "New vendor" below 5 reviews —
-						    never a number computed from one review. */}
-						<VendorRating
-							rating={row.vendor.rating}
-							totalReviews={row.vendor.totalReviews}
-						/>
+						<RatingPill
+							aria-label={`Rated ${ratingText(row.vendor.rating)} out of 5 from ${row.vendor.totalReviews} reviews`}
+						>
+							<RatingStar aria-hidden>★</RatingStar>
+							{ratingText(row.vendor.rating)}
+							<RatingCount aria-hidden>
+								({row.vendor.totalReviews})
+							</RatingCount>
+						</RatingPill>
 					</Row>
 					<Chips $gap={6}>
 						<Badge $tone="gold">

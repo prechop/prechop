@@ -52,6 +52,7 @@ export interface PlaceOrderInput {
 		dailyOrderItemId: string;
 		quantity: number;
 		selectedOptionIds?: string[];
+		selectedOptions?: Array<{ optionId: string; quantity: number }>;
 	}>;
 }
 
@@ -116,7 +117,14 @@ export async function placeOrder({
 		);
 		if (!orderItem) throw notFound("Item");
 
-		const selectedIds = new Set(req.selectedOptionIds ?? []);
+		const selectedOptionQuantities = new Map<string, number>();
+		for (const id of req.selectedOptionIds ?? []) {
+			selectedOptionQuantities.set(id, req.quantity);
+		}
+		for (const option of req.selectedOptions ?? []) {
+			selectedOptionQuantities.set(option.optionId, option.quantity);
+		}
+		const selectedIds = new Set(selectedOptionQuantities.keys());
 		const resolvedOptions: IBuyerOrderItem["selectedOptions"] = [];
 
 		// Walk the item's option groups, enforcing each group's rules and
@@ -148,8 +156,15 @@ export async function placeOrder({
 					groupName: group.name,
 					snapshotName: o.name,
 					snapshotPriceKobo: o.priceKobo,
-					quantity: req.quantity,
-					subtotalKobo: o.priceKobo * req.quantity,
+					quantity:
+						selectedOptionQuantities.get(
+							(o.id ?? o._id)?.toString() ?? "",
+						) ?? req.quantity,
+					subtotalKobo:
+						o.priceKobo *
+						(selectedOptionQuantities.get(
+							(o.id ?? o._id)?.toString() ?? "",
+						) ?? req.quantity),
 				});
 			}
 		}

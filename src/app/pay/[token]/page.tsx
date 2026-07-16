@@ -1,3 +1,4 @@
+import AppShell from "@/layouts/AppShell";
 import ExternalPaymentWrapper from "@/libs/ExternalPaymentWrapper";
 
 export default async function ExternalPaymentPage({
@@ -7,8 +8,8 @@ export default async function ExternalPaymentPage({
 }) {
 	const { token } = await params;
 	return (
-		<main style={{ padding: "24px 16px 0" }}>
+		<AppShell shellRole="BUYER" publicAccess>
 			<ExternalPaymentWrapper token={token} />
-		</main>
+		</AppShell>
 	);
 }

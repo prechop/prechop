@@ -1,3 +1,4 @@
+import AppShell from "@/layouts/AppShell";
 import ReceiptWrapper from "@/libs/ReceiptWrapper";
 
 export default async function ReceiptPage({
@@ -7,8 +8,8 @@ export default async function ReceiptPage({
 }) {
 	const { token } = await params;
 	return (
-		<main style={{ padding: "24px 16px 0" }}>
+		<AppShell shellRole="BUYER" publicAccess>
 			<ReceiptWrapper token={token} />
-		</main>
+		</AppShell>
 	);
 }

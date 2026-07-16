@@ -21,6 +21,11 @@ type Step = "phone" | "otp";
 const PHONE_DIGITS = 11;
 const OTP_DIGITS = 6;
 const PHONE_ERROR = "Enter a valid Nigerian phone number.";
+const STAFF_PERMISSIONS = [
+	"iam:user:read",
+	"onboarding:read",
+	"analytics:read",
+];
 
 const Screen = styled.div`
 	min-height: 100dvh;
@@ -176,12 +181,15 @@ export default function LoginWrapper() {
 			const next = params.get("next");
 			// Staff (anyone who can read the IAM or onboarding console) → /admin.
 			const isStaff =
-				permissions.includes("iam:user:read") ||
-				permissions.includes("onboarding:read") ||
-				permissions.includes("analytics:read") ||
+				STAFF_PERMISSIONS.some((p) => permissions.includes(p)) ||
 				groups.includes("Administrators");
-			if (next) router.replace(next);
-			else if (isStaff) router.replace("/admin");
+			if (isStaff) {
+				router.replace(
+					isLocalPath(next) && next.startsWith("/admin")
+						? next
+						: "/admin",
+				);
+			} else if (isLocalPath(next)) router.replace(next);
 			else if (groups.includes("Vendors")) router.replace("/dashboard");
 			else router.replace("/marketplace");
 		} catch (e) {
@@ -389,6 +397,10 @@ function errMsg(e: unknown): string {
 
 function onlyDigits(value: string): string {
 	return value.replace(/\D/g, "");
+}
+
+function isLocalPath(value: string | null): value is string {
+	return !!value && value.startsWith("/") && !value.startsWith("//");
 }
 
 function isValidPhone(value: string): boolean {
