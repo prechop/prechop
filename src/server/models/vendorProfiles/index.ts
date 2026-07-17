@@ -1,4 +1,5 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
+import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { ErrVendorNotFound, encrypt, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { LocationType, MenuCategory, VendorStatus, VendorType } from "../enums";
@@ -75,6 +76,10 @@ const schema = new mongoose.Schema<any>(
 		defaultPickupAvailable: { type: Boolean, default: true },
 		defaultDeliveryAvailable: { type: Boolean, default: false },
 		defaultDeliveryFeeKobo: { type: Number, default: 0 },
+		defaultDeliveryCoverage: { type: String },
+		defaultDeliveryEstimateMinutes: { type: Number },
+		defaultDeliveryContactPhone: { type: String },
+		defaultDeliveryResponsibilityAccepted: { type: Boolean, default: false },
 		// ── Onboarding review trail ──────────────────────────────────────
 		submittedAt: { type: Date },
 		reviewedAt: { type: Date },
@@ -102,6 +107,17 @@ export const VendorProfile: VendorProfileModel =
 	(mongoose.models[collectionName] as VendorProfileModel | undefined) ??
 	mongoose.model<any>(collectionName, schema);
 
+function normalizeVendorCategories<T extends { categories?: string[] }>(
+	vendor: T,
+): T {
+	return {
+		...vendor,
+		categories: Array.from(
+			new Set((vendor.categories ?? []).map(normalizeMenuCategory)),
+		),
+	};
+}
+
 // ── Writes ────────────────────────────────────────────────────────────────
 
 export async function createVendorProfileDB({
@@ -119,6 +135,15 @@ export async function createVendorProfileDB({
 		if (typeof toSave.accountNumber === "string" && toSave.accountNumber) {
 			toSave.accountNumber = encrypt(toSave.accountNumber);
 		}
+		if (Array.isArray(toSave.categories)) {
+			toSave.categories = Array.from(
+				new Set(
+					toSave.categories.map((c) =>
+						normalizeMenuCategory(String(c)),
+					),
+				),
+			);
+		}
 		const doc = await new VendorProfile(toSave).save({ session });
 		timer({
 			operation: IOperationType.Create,
@@ -126,7 +151,9 @@ export async function createVendorProfileDB({
 			method: "createVendorProfileDB",
 			success: "true",
 		});
-		return doc.toObject() as unknown as IVendorProfile;
+		return normalizeVendorCategories(
+			doc.toObject() as unknown as IVendorProfile,
+		);
 	} catch {
 		timer({
 			operation: IOperationType.Create,
@@ -154,6 +181,15 @@ export async function updateVendorProfileDB({
 		if (typeof update.accountNumber === "string" && update.accountNumber) {
 			update.accountNumber = encrypt(update.accountNumber);
 		}
+		if (Array.isArray(update.categories)) {
+			update.categories = Array.from(
+				new Set(
+					update.categories.map((c) =>
+						normalizeMenuCategory(String(c)),
+					),
+				),
+			);
+		}
 		if (Array.isArray(update.campusIds)) {
 			update.campusIds = update.campusIds
 				.filter((campusId) =>
@@ -175,7 +211,9 @@ export async function updateVendorProfileDB({
 			method: "updateVendorProfileDB",
 			success: "true",
 		});
-		return res.toObject() as unknown as IVendorProfile;
+		return normalizeVendorCategories(
+			res.toObject() as unknown as IVendorProfile,
+		);
 	} catch {
 		timer({
 			operation: IOperationType.Update,
@@ -404,7 +442,7 @@ export async function getVendorProfileByIdDB({
 }): Promise<IVendorProfile | null> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return null;
-		return (
+		const vendor =
 			(
 				await VendorProfile.aggregate<IVendorProfile>(
 					[
@@ -413,8 +451,8 @@ export async function getVendorProfileByIdDB({
 					],
 					{ session },
 				)
-			).at(0) ?? null
-		);
+			).at(0) ?? null;
+		return vendor ? normalizeVendorCategories(vendor) : null;
 	} catch {
 		return null;
 	}
@@ -437,10 +475,11 @@ export async function listVendorsByIdsDB(
 			.filter((id) => mongoose.Types.ObjectId.isValid(id))
 			.map((id) => new mongoose.Types.ObjectId(id));
 		if (objectIds.length === 0) return [];
-		return await VendorProfile.aggregate<IVendorProfile>(
+		const vendors = await VendorProfile.aggregate<IVendorProfile>(
 			[{ $match: { _id: { $in: objectIds } } }],
 			{ session },
 		);
+		return vendors.map(normalizeVendorCategories);
 	} catch {
 		return [];
 	}
@@ -454,14 +493,14 @@ export async function getVendorProfileByEmailDB({
 	session?: ClientSession;
 }): Promise<IVendorProfile | null> {
 	try {
-		return (
+		const vendor =
 			(
 				await VendorProfile.aggregate<IVendorProfile>(
 					[{ $match: { email: email.toLowerCase() } }, { $limit: 1 }],
 					{ session },
 				)
-			).at(0) ?? null
-		);
+			).at(0) ?? null;
+		return vendor ? normalizeVendorCategories(vendor) : null;
 	} catch {
 		return null;
 	}
@@ -476,7 +515,7 @@ export async function getVendorProfileByUserIdDB({
 }): Promise<IVendorProfile | null> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(userId)) return null;
-		return (
+		const vendor =
 			(
 				await VendorProfile.aggregate<IVendorProfile>(
 					[
@@ -489,8 +528,8 @@ export async function getVendorProfileByUserIdDB({
 					],
 					{ session },
 				)
-			).at(0) ?? null
-		);
+			).at(0) ?? null;
+		return vendor ? normalizeVendorCategories(vendor) : null;
 	} catch {
 		return null;
 	}
@@ -513,7 +552,10 @@ export async function getVendorWithSecretsDB({
 			.select("+accountNumber")
 			.lean<IVendorProfile>();
 		return res
-			? ({ ...res, id: res._id.toString() } as IVendorProfile)
+			? normalizeVendorCategories({
+					...res,
+					id: res._id.toString(),
+				} as IVendorProfile)
 			: null;
 	} catch {
 		return null;
@@ -543,9 +585,18 @@ export async function listVendorsDB({
 			match.campusId = new mongoose.Types.ObjectId(campusId);
 		}
 		if (status) match.status = status;
-		if (category) match.categories = category;
+		if (category) {
+			const normalized = normalizeMenuCategory(category);
+			const legacy =
+				normalized === "SNACKS_PASTRIES"
+					? ["SNACKS"]
+					: normalized === "CAKES_DESSERTS"
+						? ["BAKED_GOODS"]
+						: [];
+			match.categories = { $in: [normalized, ...legacy] };
+		}
 		if (openOnly) match.isOpenForOrders = true;
-		return await VendorProfile.aggregate<IVendorProfile>(
+		const vendors = await VendorProfile.aggregate<IVendorProfile>(
 			[
 				{ $match: match },
 				{ $sort: { rating: -1, totalOrders: -1 } },
@@ -554,6 +605,7 @@ export async function listVendorsDB({
 			],
 			{ session },
 		);
+		return vendors.map(normalizeVendorCategories);
 	} catch {
 		return [];
 	}
@@ -588,7 +640,7 @@ export async function listMarketplaceVendorsDB({
 		) {
 			match._id = { $ne: new mongoose.Types.ObjectId(excludeVendorId) };
 		}
-		return await VendorProfile.aggregate<IVendorProfile>(
+		const vendors = await VendorProfile.aggregate<IVendorProfile>(
 			[
 				{ $match: match },
 				{
@@ -603,6 +655,7 @@ export async function listMarketplaceVendorsDB({
 			],
 			{ session },
 		);
+		return vendors.map(normalizeVendorCategories);
 	} catch {
 		return [];
 	}

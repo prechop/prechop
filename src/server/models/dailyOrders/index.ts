@@ -86,6 +86,10 @@ const schema = new mongoose.Schema<any>(
 		pickupAvailable: { type: Boolean, default: true },
 		deliveryAvailable: { type: Boolean, default: false },
 		deliveryFeeKobo: { type: Number, default: 0 },
+		deliveryCoverage: { type: String },
+		deliveryEstimateMinutes: { type: Number },
+		deliveryContactPhone: { type: String },
+		deliveryResponsibilityAccepted: { type: Boolean, default: false },
 		totalOrdersCount: { type: Number, default: 0 },
 		items: { type: [itemSchema], default: [] },
 		deleted: { type: Boolean, default: false, select: false },
@@ -218,6 +222,11 @@ export async function createDailyOrderDB({
 			pickupAvailable: payload.pickupAvailable ?? true,
 			deliveryAvailable: payload.deliveryAvailable ?? false,
 			deliveryFeeKobo: payload.deliveryFeeKobo ?? 0,
+			deliveryCoverage: payload.deliveryCoverage,
+			deliveryEstimateMinutes: payload.deliveryEstimateMinutes,
+			deliveryContactPhone: payload.deliveryContactPhone,
+			deliveryResponsibilityAccepted:
+				payload.deliveryResponsibilityAccepted ?? false,
 			items: mapItems(payload.items),
 		}).save({ session });
 		timer({
@@ -384,6 +393,75 @@ export async function listActivePublicListingsForVendorIdsDB({
 		}
 		return await DailyOrder.aggregate<IDailyOrder>([
 			{ $match: match },
+			{
+				$lookup: {
+					from: "menuitems",
+					localField: "items.menuItemId",
+					foreignField: "_id",
+					as: "_menuItems",
+				},
+			},
+			{
+				$addFields: {
+					items: {
+						$map: {
+							input: { $ifNull: ["$items", []] },
+							as: "it",
+							in: {
+								$let: {
+									vars: {
+										menuItem: {
+											$arrayElemAt: [
+												{
+													$filter: {
+														input: "$_menuItems",
+														as: "menuItem",
+														cond: {
+															$eq: [
+																"$$menuItem._id",
+																"$$it.menuItemId",
+															],
+														},
+													},
+												},
+												0,
+											],
+										},
+									},
+									in: {
+										$mergeObjects: [
+											"$$it",
+											{
+												snapshotImageUrl: {
+													$cond: [
+														{
+															$gt: [
+																{
+																	$strLenCP: {
+																		$ifNull:
+																			[
+																				"$$it.snapshotImageUrl",
+																				"",
+																			],
+																	},
+																},
+																0,
+															],
+														},
+														"$$it.snapshotImageUrl",
+														"$$menuItem.imageUrl",
+													],
+												},
+											},
+										],
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{ $unset: "_menuItems" },
 			{ $sort: { scheduledDate: -1 } },
 		]);
 	} catch {
@@ -557,6 +635,16 @@ export async function updateDailyOrderDraftDB({
 			set.deliveryAvailable = payload.deliveryAvailable;
 		if (payload.deliveryFeeKobo !== undefined)
 			set.deliveryFeeKobo = payload.deliveryFeeKobo;
+		if (payload.deliveryCoverage !== undefined)
+			set.deliveryCoverage = payload.deliveryCoverage;
+		if (payload.deliveryEstimateMinutes !== undefined)
+			set.deliveryEstimateMinutes = payload.deliveryEstimateMinutes;
+		if (payload.deliveryContactPhone !== undefined)
+			set.deliveryContactPhone = payload.deliveryContactPhone;
+		if (payload.deliveryResponsibilityAccepted !== undefined) {
+			set.deliveryResponsibilityAccepted =
+				payload.deliveryResponsibilityAccepted;
+		}
 		if (payload.items !== undefined) set.items = mapItems(payload.items);
 
 		// A listing is editable only until it opens for orders: it must not be

@@ -52,6 +52,10 @@ export interface IVendorProfile {
 	defaultPickupAvailable: boolean;
 	defaultDeliveryAvailable: boolean;
 	defaultDeliveryFeeKobo: number;
+	defaultDeliveryCoverage?: string;
+	defaultDeliveryEstimateMinutes?: number;
+	defaultDeliveryContactPhone?: string;
+	defaultDeliveryResponsibilityAccepted?: boolean;
 	// Onboarding review trail
 	submittedAt?: Date;
 	reviewedAt?: Date;

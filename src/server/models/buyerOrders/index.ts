@@ -14,6 +14,13 @@ const collectionName = "buyerOrders";
 
 export type BuyerOrderModel = Model<any>;
 
+const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.PAID,
+	OrderStatus.CONFIRMED,
+	OrderStatus.PREPARING,
+	OrderStatus.READY,
+];
+
 const selectedOptionSchema = new mongoose.Schema(
 	{
 		dailyOrderOptionId: { type: mongoose.Schema.Types.ObjectId },
@@ -89,6 +96,8 @@ const schema = new mongoose.Schema<any>(
 		deliveryRoomNumber: { type: String },
 		deliveryAdditionalInfo: { type: String },
 		deliveryFullAddress: { type: String },
+		deliveryPhone: { type: String },
+		customerMessage: { type: String, maxlength: 150 },
 		subtotalKobo: { type: Number, required: true },
 		deliveryFeeKobo: { type: Number, default: 0 },
 		platformFeeKobo: { type: Number, required: true },
@@ -114,6 +123,7 @@ const schema = new mongoose.Schema<any>(
 );
 
 schema.index({ vendorId: 1, dailyOrderId: 1 });
+schema.index({ vendorId: 1, status: 1, createdAt: 1 });
 schema.index({ buyerId: 1, createdAt: -1 });
 schema.index({ receiptUrl: 1 }, { sparse: true });
 // NOTE: the stale-PAID-past-cutoff sweep (findStalePaidOrdersPastCutoffDB) is
@@ -210,6 +220,8 @@ export async function createBuyerOrderDB({
 			deliveryRoomNumber: payload.deliveryRoomNumber,
 			deliveryAdditionalInfo: payload.deliveryAdditionalInfo,
 			deliveryFullAddress: payload.deliveryFullAddress,
+			deliveryPhone: payload.deliveryPhone,
+			customerMessage: payload.customerMessage,
 			subtotalKobo: payload.subtotalKobo,
 			deliveryFeeKobo: payload.deliveryFeeKobo,
 			platformFeeKobo: payload.platformFeeKobo,
@@ -438,6 +450,34 @@ export async function listBuyerOrdersByVendorAndDailyOrderDB({
 					},
 				},
 				{ $sort: { createdAt: 1 } },
+			],
+			{ session },
+		);
+	} catch {
+		return [];
+	}
+}
+
+export async function listIncomingBuyerOrdersByVendorDB({
+	vendorId,
+	limit = MAX_LIMIT,
+	session,
+}: {
+	vendorId: string;
+	limit?: number;
+	session?: ClientSession;
+}): Promise<IBuyerOrder[]> {
+	try {
+		return await BuyerOrder.aggregate<IBuyerOrder>(
+			[
+				{
+					$match: {
+						vendorId: new mongoose.Types.ObjectId(vendorId),
+						status: { $in: VENDOR_ATTENTION_ORDER_STATUSES },
+					},
+				},
+				{ $sort: { createdAt: 1 } },
+				{ $limit: Math.min(Math.max(limit, 1), MAX_LIMIT) },
 			],
 			{ session },
 		);

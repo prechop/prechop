@@ -1,4 +1,5 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
+import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { ErrMenuItemNotFound, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { MenuCategory, VendorStatus } from "../enums";
@@ -77,6 +78,24 @@ export const MenuItem: MenuItemModel =
 	(mongoose.models[collectionName] as MenuItemModel | undefined) ??
 	mongoose.model<any>(collectionName, schema);
 
+function normalizeMenuItemCategory<T extends { category: string }>(item: T): T {
+	return {
+		...item,
+		category: normalizeMenuCategory(item.category),
+	};
+}
+
+function categoryFilter(category: MenuCategory): { $in: string[] } {
+	const normalized = normalizeMenuCategory(category);
+	const legacy =
+		normalized === "SNACKS_PASTRIES"
+			? ["SNACKS"]
+			: normalized === "CAKES_DESSERTS"
+				? ["BAKED_GOODS"]
+				: [];
+	return { $in: [normalized, ...legacy] };
+}
+
 export async function createMenuItemDB({
 	payload,
 	session,
@@ -86,14 +105,19 @@ export async function createMenuItemDB({
 }): Promise<IMenuItem | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
-		const doc = await new MenuItem(payload).save({ session });
+		const doc = await new MenuItem({
+			...payload,
+			category: normalizeMenuCategory(payload.category) as MenuCategory,
+		}).save({ session });
 		timer({
 			operation: IOperationType.Create,
 			collection: collectionName,
 			method: "createMenuItemDB",
 			success: "true",
 		});
-		return doc.toObject() as unknown as IMenuItem;
+		return normalizeMenuItemCategory(
+			doc.toObject() as unknown as IMenuItem,
+		);
 	} catch {
 		timer({
 			operation: IOperationType.Create,
@@ -117,17 +141,28 @@ export async function updateMenuItemDB({
 	session?: ClientSession;
 }): Promise<IMenuItem | null> {
 	try {
+		const update =
+			typeof payload.category === "string"
+				? {
+						...payload,
+						category: normalizeMenuCategory(
+							payload.category,
+						) as MenuCategory,
+					}
+				: payload;
 		const res = await MenuItem.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				vendorId: new mongoose.Types.ObjectId(vendorId),
 				deleted: false,
 			},
-			{ $set: payload },
+			{ $set: update },
 			{ session, returnDocument: "after" },
 		);
 		if (!res) throw ErrMenuItemNotFound;
-		return res.toObject() as unknown as IMenuItem;
+		return normalizeMenuItemCategory(
+			res.toObject() as unknown as IMenuItem,
+		);
 	} catch {
 		return null;
 	}
@@ -166,7 +201,7 @@ export async function getMenuItemByIdDB({
 }): Promise<IMenuItem | null> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return null;
-		return (
+		const item =
 			(
 				await MenuItem.aggregate<IMenuItem>(
 					[
@@ -175,8 +210,8 @@ export async function getMenuItemByIdDB({
 					],
 					{ session },
 				)
-			).at(0) ?? null
-		);
+			).at(0) ?? null;
+		return item ? normalizeMenuItemCategory(item) : null;
 	} catch {
 		return null;
 	}
@@ -202,7 +237,7 @@ export async function listMenuItemsByVendorDB({
 		const match: Record<string, unknown> = {
 			vendorId: new mongoose.Types.ObjectId(vendorId),
 		};
-		if (category) match.category = category;
+		if (category) match.category = categoryFilter(category);
 		if (availableOnly) match.isAvailable = true;
 		return await MenuItem.aggregate<IMenuItem>(
 			[
@@ -212,7 +247,7 @@ export async function listMenuItemsByVendorDB({
 				{ $limit: Math.min(limit, MAX_LIMIT) },
 			],
 			{ session },
-		);
+		).then((items) => items.map(normalizeMenuItemCategory));
 	} catch {
 		return [];
 	}
@@ -344,7 +379,7 @@ export async function listAllMenuItemsDB({
 				{ $unset: ["_vendor", "_campus"] },
 			],
 			{ session },
-		),
+		).then((items) => items.map(normalizeMenuItemCategory)),
 		MenuItem.countDocuments(match, { session }),
 	]);
 	return { items, total };
@@ -458,7 +493,7 @@ export async function getMenuItemsByIdsDB({
 	session?: ClientSession;
 }): Promise<IMenuItem[]> {
 	try {
-		return await MenuItem.aggregate<IMenuItem>(
+		const items = await MenuItem.aggregate<IMenuItem>(
 			[
 				{
 					$match: {
@@ -474,6 +509,7 @@ export async function getMenuItemsByIdsDB({
 			],
 			{ session },
 		);
+		return items.map(normalizeMenuItemCategory);
 	} catch {
 		return [];
 	}

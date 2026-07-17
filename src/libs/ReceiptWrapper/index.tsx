@@ -22,7 +22,7 @@ const Wrap = styled(Stack)`
 `;
 
 const Hero = styled(Card)`
-	background: var(--pc-gradient-warm);
+	background: var(--pc-gradient-calm-orange);
 	border: none;
 `;
 

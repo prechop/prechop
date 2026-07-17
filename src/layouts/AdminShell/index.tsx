@@ -76,6 +76,12 @@ const nav: NavItemDef[] = [
 		permission: "notification:send",
 	},
 	{
+		href: "/admin/support",
+		label: "Support",
+		icon: "?",
+		permission: "support:read",
+	},
+	{
 		href: "/admin/campuses",
 		label: "Campuses",
 		icon: "🏫",

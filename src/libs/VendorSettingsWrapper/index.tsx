@@ -21,6 +21,10 @@ import {
 import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
+import {
+	MENU_CATEGORIES,
+	normalizeMenuCategory,
+} from "@/constants/menuCategories";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { describeFeePolicy, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
@@ -40,12 +44,14 @@ const VENDOR_TYPES = [
 	{ value: "RESTAURANT", label: "Restaurant" },
 	{ value: "BAKERY", label: "Bakery" },
 ];
-const CATEGORIES = [
-	{ value: "MEALS", label: "Meals" },
-	{ value: "SNACKS", label: "Snacks" },
-	{ value: "DRINKS", label: "Drinks" },
-	{ value: "BAKED_GOODS", label: "Baked goods" },
-];
+const CATEGORIES = MENU_CATEGORIES;
+type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
+
+function fulfilmentChoice(pickup: boolean, delivery: boolean): FulfilmentChoice {
+	if (pickup && delivery) return "BOTH";
+	if (delivery) return "DELIVERY";
+	return "PICKUP";
+}
 
 const CatGrid = styled.div`
 	display: grid;
@@ -104,6 +110,26 @@ const Switch = styled.button<{ $on: boolean }>`
 		background: var(--pc-text-inverse);
 		box-shadow: var(--pc-shadow);
 		transition: left var(--pc-dur) var(--pc-ease);
+	}
+`;
+const ConfirmLabel = styled.label`
+	display: flex;
+	gap: var(--pc-space-3);
+	align-items: flex-start;
+	padding: var(--pc-space-3);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	color: var(--pc-text);
+	font-size: 13px;
+	line-height: 1.45;
+
+	input {
+		margin-top: 3px;
+		width: 18px;
+		height: 18px;
+		accent-color: var(--pc-color-primary);
+		flex-shrink: 0;
 	}
 `;
 const AccountLink = styled(Link)`
@@ -191,6 +217,10 @@ export default function VendorSettingsWrapper() {
 	const [defPickup, setDefPickup] = useState(true);
 	const [defDelivery, setDefDelivery] = useState(false);
 	const [defFee, setDefFee] = useState("");
+	const [defCoverage, setDefCoverage] = useState("");
+	const [defEstimate, setDefEstimate] = useState("");
+	const [defContact, setDefContact] = useState("");
+	const [defDeliveryAccepted, setDefDeliveryAccepted] = useState(false);
 
 	// Notifications
 	const [notifyNewOrders, setNotifyNewOrders] = useState(true);
@@ -209,7 +239,7 @@ export default function VendorSettingsWrapper() {
 		setVendorType(vendor.vendorType ?? "");
 		setEmail(vendor.email ?? "");
 		setDescription(vendor.description ?? "");
-		setCats(vendor.categories ?? []);
+		setCats((vendor.categories ?? []).map(normalizeMenuCategory));
 		setLocationType(vendor.locationType ?? "ON_CAMPUS");
 		setSchoolId(vendor.schoolId ?? "");
 		setHostelOrStallName(vendor.hostelOrStallName ?? "");
@@ -223,6 +253,16 @@ export default function VendorSettingsWrapper() {
 				? String(vendor.defaultDeliveryFeeKobo / 100)
 				: "",
 		);
+		setDefCoverage(vendor.defaultDeliveryCoverage ?? "");
+		setDefEstimate(
+			vendor.defaultDeliveryEstimateMinutes
+				? String(vendor.defaultDeliveryEstimateMinutes)
+				: "",
+		);
+		setDefContact(vendor.defaultDeliveryContactPhone ?? user?.phone ?? "");
+		setDefDeliveryAccepted(
+			vendor.defaultDeliveryResponsibilityAccepted ?? false,
+		);
 		setNotifyNewOrders(vendor.notifyNewOrders ?? true);
 		setNotifyPayouts(vendor.notifyPayouts ?? true);
 		setNotifyReviews(vendor.notifyReviews ?? true);
@@ -231,7 +271,12 @@ export default function VendorSettingsWrapper() {
 	if (isLoading || !vendor) return <PageLoader />;
 
 	function toggleCat(v: string) {
-		setCats((c) => (c.includes(v) ? c.filter((x) => x !== v) : [...c, v]));
+		const category = normalizeMenuCategory(v);
+		setCats((c) =>
+			c.includes(category)
+				? c.filter((x) => x !== category)
+				: [...c, category],
+		);
 	}
 
 	function toggleCampus(id: string) {
@@ -333,7 +378,9 @@ export default function VendorSettingsWrapper() {
 			return;
 		}
 		await run("categories", async () => {
-			await api.post("/vendors/me/categories", { categories: cats });
+			await api.post("/vendors/me/categories", {
+				categories: cats.map(normalizeMenuCategory),
+			});
 			toast("Categories saved", "success");
 		});
 	}
@@ -359,14 +406,51 @@ export default function VendorSettingsWrapper() {
 	}
 
 	async function saveDelivery() {
+		if (!defPickup && !defDelivery) {
+			toast("Choose pickup, delivery, or both.", "error");
+			return;
+		}
+		if (defDelivery) {
+			if (defFee.trim() === "" || Number(defFee) < 0) {
+				toast("Add a valid delivery fee. Use 0 for free delivery.", "error");
+				return;
+			}
+			if (!defCoverage.trim()) {
+				toast("Add the supported delivery areas or distance.", "error");
+				return;
+			}
+			if (!Number.isFinite(Number(defEstimate)) || Number(defEstimate) <= 0) {
+				toast("Add a realistic delivery estimate in minutes.", "error");
+				return;
+			}
+			if (!defContact.trim()) {
+				toast("Add a delivery contact number.", "error");
+				return;
+			}
+			if (!defDeliveryAccepted) {
+				toast("Confirm that you manage and complete delivery.", "error");
+				return;
+			}
+		}
 		await run("delivery", async () => {
 			await api.post("/vendors/me/delivery-defaults", {
 				defaultPickupAvailable: defPickup,
 				defaultDeliveryAvailable: defDelivery,
-				defaultDeliveryFeeKobo:
-					defDelivery && Number(defFee) > 0
-						? Math.round(Number(defFee) * 100)
-						: 0,
+				defaultDeliveryFeeKobo: defDelivery
+					? Math.round(Number(defFee) * 100)
+					: 0,
+				defaultDeliveryCoverage: defDelivery
+					? defCoverage.trim()
+					: undefined,
+				defaultDeliveryEstimateMinutes: defDelivery
+					? Math.round(Number(defEstimate))
+					: undefined,
+				defaultDeliveryContactPhone: defDelivery
+					? defContact.trim()
+					: undefined,
+				defaultDeliveryResponsibilityAccepted: defDelivery
+					? defDeliveryAccepted
+					: false,
 			});
 			toast("Delivery defaults saved", "success");
 		});
@@ -703,6 +787,30 @@ export default function VendorSettingsWrapper() {
 						<Text $muted $size={13}>
 							{describeFeePolicy(feePolicy)}
 						</Text>
+						<Text $muted $size={13}>
+							Buyer service fees, vendor commission and Paystack
+							processing are calculated at checkout. Refunds are
+							returned through the original payment route.
+							Settlements are based on food sales plus delivery
+							fees owed to you, minus Prechop commission and
+							processing costs.
+						</Text>
+					</Stack>
+				</Card>
+
+				<Card>
+					<Stack $gap={12}>
+						<SectionHeader title="Help / FAQs" icon="?" />
+						<Text $muted $size={13}>
+							Open vendor help for menu creation, daily order
+							windows, incoming orders, cooking statuses,
+							completion, settlements, refunds and support.
+						</Text>
+						<Row $justify="flex-start">
+							<AccountLink href="/help?audience=vendor">
+								Open Help / FAQs <span aria-hidden>→</span>
+							</AccountLink>
+						</Row>
 					</Stack>
 				</Card>
 
@@ -724,29 +832,81 @@ export default function VendorSettingsWrapper() {
 					<Stack $gap={14}>
 						<SectionHeader title="Delivery defaults" icon="🛵" />
 						<Text $muted $size={13}>
-							Pre-filled every time you compose a new daily order.
+							Vendor-managed delivery. Prechop does not currently
+							provide riders or delivery vehicles. If you enable
+							delivery, you arrange the rider or delivery method,
+							set the fee and coverage, and make sure the order
+							reaches the buyer.
 						</Text>
-						<ToggleSetting
-							title="🥡 Pickup available by default"
-							hint="Buyers collect from your spot"
-							on={defPickup}
-							onToggle={() => setDefPickup((v) => !v)}
-						/>
-						<ToggleSetting
-							title="🛵 Delivery available by default"
-							hint="Deliver to hostels for a fee"
-							on={defDelivery}
-							onToggle={() => setDefDelivery((v) => !v)}
-						/>
+						<Select
+							label="Default fulfilment"
+							value={fulfilmentChoice(defPickup, defDelivery)}
+							onChange={(e) => {
+								const value = e.target.value as FulfilmentChoice;
+								setDefPickup(
+									value === "PICKUP" || value === "BOTH",
+								);
+								setDefDelivery(
+									value === "DELIVERY" || value === "BOTH",
+								);
+							}}
+						>
+							<option value="PICKUP">Pickup only</option>
+							<option value="DELIVERY">Delivery only</option>
+							<option value="BOTH">Pickup and delivery</option>
+						</Select>
 						{defDelivery && (
-							<Input
-								label="Default delivery fee (₦)"
-								type="number"
-								inputMode="decimal"
-								value={defFee}
-								onChange={(e) => setDefFee(e.target.value)}
-								placeholder="200"
-							/>
+							<Stack $gap={10}>
+								<Input
+									label="Default delivery fee (₦)"
+									type="number"
+									inputMode="decimal"
+									value={defFee}
+									onChange={(e) => setDefFee(e.target.value)}
+									placeholder="200"
+								/>
+								<Input
+									label="Supported delivery areas or distance"
+									value={defCoverage}
+									onChange={(e) =>
+										setDefCoverage(e.target.value)
+									}
+									placeholder="Within UI campus, halls and nearby hostels"
+								/>
+								<Input
+									label="Estimated delivery time (minutes)"
+									type="number"
+									inputMode="numeric"
+									value={defEstimate}
+									onChange={(e) =>
+										setDefEstimate(e.target.value)
+									}
+									placeholder="25"
+								/>
+								<Input
+									label="Delivery contact number"
+									type="tel"
+									value={defContact}
+									onChange={(e) => setDefContact(e.target.value)}
+									placeholder="+2348012345678"
+								/>
+								<ConfirmLabel>
+									<input
+										type="checkbox"
+										checked={defDeliveryAccepted}
+										onChange={(e) =>
+											setDefDeliveryAccepted(
+												e.target.checked,
+											)
+										}
+									/>
+									<span>
+										I understand that I am responsible for
+										arranging and completing delivery for
+										this order.
+									</span>
+								</ConfirmLabel>
+							</Stack>
 						)}
 						<Button
 							$loading={busy === "delivery"}

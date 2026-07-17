@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/Auth/useAuth";
 const buyerNav = [
 	{ href: "/marketplace", label: "Browse", icon: "🍲" },
 	{ href: "/my-orders", label: "Orders", icon: "🧾" },
+	{ href: "/notifications", label: "Alerts", icon: "🔔" },
 	{ href: "/account", label: "Account", icon: "👤" },
 ];
 const vendorNav = [

@@ -105,21 +105,60 @@ const Thumbs = styled.div`
 	background: var(--pc-surface-2);
 `;
 const Thumb = styled.div<{ $src?: string | null }>`
+	position: relative;
 	flex: 1;
 	background: ${(p) =>
 		p.$src
 			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-color-primary-50)"};
+			: "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 22px, transparent 23px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 34px;
+	overflow: hidden;
+	&::before {
+		content: "";
+		position: absolute;
+		width: 54px;
+		height: 54px;
+		border-radius: 50%;
+		background: var(--pc-surface);
+		box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.68), 0 10px 24px rgba(0, 0, 0, 0.18);
+		opacity: ${(p) => (p.$src ? 0 : 1)};
+	}
+	&::after {
+		content: "";
+		position: absolute;
+		width: 30px;
+		height: 18px;
+		border-radius: 50%;
+		background: var(--pc-color-primary);
+		box-shadow: 12px -8px 0 -4px var(--pc-color-gold), -10px 7px 0 -5px var(--pc-color-gold-ink);
+		opacity: ${(p) => (p.$src ? 0 : 1)};
+	}
 `;
 const MediaShade = styled.div`
 	position: absolute;
 	inset: 0;
 	pointer-events: none;
 	background: linear-gradient(to top, rgba(0, 0, 0, 0.28), transparent 55%);
+`;
+const ThumbLabel = styled.span`
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1;
+	padding: 20px 8px 7px;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+	color: #fff;
+	font-size: 12px;
+	font-weight: 800;
+	line-height: 1.15;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 `;
 const BadgeFloat = styled.div`
 	position: absolute;
@@ -233,11 +272,33 @@ function vendorPriceRange(listings: DailyOrder[]): string {
 		: `${formatKobo(min)} - ${formatKobo(max)}`;
 }
 
-function fulfillmentLabel(listing?: DailyOrder): string {
-	if (!listing) return "Menu, prices and ratings";
+function activeMenuItems(listings: DailyOrder[]): DailyOrder["items"] {
+	const seen = new Set<string>();
+	const items: DailyOrder["items"] = [];
+	for (const item of listings.flatMap((listing) => listing.items)) {
+		const key = item.menuItemId || item.id;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		items.push(item);
+	}
+	return items;
+}
+
+function menuSummary(total: number): string {
+	if (total <= 0) return "Menu available";
+	if (total > 3) return `3 of ${total} menus`;
+	return `${total} menu${total === 1 ? "" : "s"} available`;
+}
+
+function fulfillmentLabel(listings: DailyOrder[]): string {
+	if (listings.length === 0) return "Menu, prices and ratings";
+	const pickupAvailable = listings.some((listing) => listing.pickupAvailable);
+	const deliveryAvailable = listings.some(
+		(listing) => listing.deliveryAvailable,
+	);
 	return [
-		listing.pickupAvailable ? "Pickup" : null,
-		listing.deliveryAvailable ? "Delivery" : null,
+		pickupAvailable ? "Pickup" : null,
+		deliveryAvailable ? "Delivery" : null,
 	]
 		.filter(Boolean)
 		.join(" / ");
@@ -511,6 +572,9 @@ export default function MarketplaceWrapper() {
  */
 function VendorGridCard({ row }: { row: MarketplaceVendor }) {
 	const primary = row.listings[0];
+	const menus = activeMenuItems(row.listings);
+	const previewMenus = menus.slice(0, 3);
+	const vendorId = row.vendor.id || primary?.vendorId;
 	const status = useVendorStatus({
 		isOpenForOrders: row.vendor.isOpenForOrders,
 		listings: row.listings,
@@ -518,21 +582,35 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
 
 	return (
 		<VendorCard>
-			<CardLink href={`/v/${row.vendor.id}`}>
+			<CardLink href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
 				<Media>
 					<BadgeFloat>
 						<VendorStatusBadge status={status} compact />
 					</BadgeFloat>
 					<Thumbs>
-						{primary?.items.slice(0, 3).map((it) => (
-							<Thumb key={it.id} $src={it.snapshotImageUrl}>
-								{it.snapshotImageUrl ? "" : "food"}
+						{previewMenus.map((it) => (
+							<Thumb
+								key={it.id}
+								$src={it.snapshotImageUrl}
+								aria-label={
+									it.snapshotImageUrl
+										? it.snapshotName
+										: `${it.snapshotName} image placeholder`
+								}
+							>
+								<ThumbLabel>{it.snapshotName}</ThumbLabel>
 							</Thumb>
 						))}
-						{!primary && (
-							<Thumb $src={row.vendor.profileImageUrl}>
-								{row.vendor.profileImageUrl ? "" : "shop"}
-							</Thumb>
+						{previewMenus.length === 0 && (
+							<Thumb
+								$src={row.vendor.profileImageUrl}
+								aria-label={
+									row.vendor.profileImageUrl
+										? (row.vendor.businessName ??
+											"Campus kitchen")
+										: "Kitchen image placeholder"
+								}
+							/>
 						)}
 					</Thumbs>
 					<MediaShade />
@@ -556,12 +634,11 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
 						<Badge $tone="gold">
 							{vendorPriceRange(row.listings)}
 						</Badge>
+						<Badge $tone="muted">{menuSummary(menus.length)}</Badge>
 					</Chips>
 					<Foot $justify="space-between" $align="center">
 						<Text $size={13} $muted>
-							{status.orderable
-								? fulfillmentLabel(primary)
-								: status.description}
+							{fulfillmentLabel(row.listings)}
 						</Text>
 						<Cta>View kitchen -&gt;</Cta>
 					</Foot>

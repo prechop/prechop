@@ -71,6 +71,16 @@ export async function updateDailyOrder({
 		payload.deliveryAvailable = input.deliveryAvailable;
 	if (input.deliveryFeeKobo !== undefined)
 		payload.deliveryFeeKobo = input.deliveryFeeKobo;
+	if (input.deliveryCoverage !== undefined)
+		payload.deliveryCoverage = input.deliveryCoverage;
+	if (input.deliveryEstimateMinutes !== undefined)
+		payload.deliveryEstimateMinutes = input.deliveryEstimateMinutes;
+	if (input.deliveryContactPhone !== undefined)
+		payload.deliveryContactPhone = input.deliveryContactPhone;
+	if (input.deliveryResponsibilityAccepted !== undefined) {
+		payload.deliveryResponsibilityAccepted =
+			input.deliveryResponsibilityAccepted;
+	}
 	if (input.items !== undefined) {
 		payload.items = await buildSnapshotItems({
 			vendorId,

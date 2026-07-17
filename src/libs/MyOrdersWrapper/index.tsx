@@ -9,7 +9,6 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
-	Grid,
 	PageHeader,
 	Row,
 	Skeleton,
@@ -88,6 +87,62 @@ const Chevron = styled.span`
 	font-size: 20px;
 	line-height: 1;
 `;
+const CompactStatsGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	width: 100%;
+
+	@media (max-width: 340px) {
+		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+	}
+
+	> div {
+		min-width: 0;
+		padding: 12px 10px;
+		gap: 6px;
+	}
+
+	> div > div:first-child {
+		min-width: 0;
+		gap: 6px;
+	}
+
+	> div > div:first-child > span:first-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11.5px;
+		font-weight: 800;
+		line-height: 1.15;
+	}
+
+	> div > div:first-child > span:last-child {
+		flex: 0 0 auto;
+		font-size: 15px;
+	}
+
+	> div > div:nth-child(2) {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-size: 20px;
+		font-weight: 900;
+		letter-spacing: 0;
+		line-height: 1.05;
+	}
+
+	> div > span {
+		font-size: 11.5px;
+		line-height: 1.15;
+	}
+
+	@media (min-width: 390px) {
+		> div > div:nth-child(2) {
+			font-size: 22px;
+		}
+	}
+`;
 
 export default function MyOrdersWrapper() {
 	const { data, isLoading } = useSWR<BuyerOrder[]>(
@@ -165,14 +220,14 @@ export default function MyOrdersWrapper() {
 			) : (
 				<>
 					<FadeIn>
-						<Grid $min={150} $gap={12}>
+						<CompactStatsGrid>
 							<StatCard
-								label="Total orders"
+								label="Orders"
 								value={orders.length}
 								icon="🧾"
 							/>
 							<StatCard
-								label="In progress"
+								label="Active"
 								value={activeCount}
 								icon="🔥"
 								tone="var(--pc-color-primary)"
@@ -183,12 +238,12 @@ export default function MyOrdersWrapper() {
 								}
 							/>
 							<StatCard
-								label="Total spent"
+								label="Spent"
 								value={formatKobo(spentKobo)}
 								icon="💳"
 								tone="var(--pc-color-accent)"
 							/>
-						</Grid>
+						</CompactStatsGrid>
 					</FadeIn>
 
 					<Stack $gap={12}>

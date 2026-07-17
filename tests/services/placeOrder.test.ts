@@ -50,10 +50,14 @@ async function activeListing({
 	maxQuantity = 10,
 	campusId,
 	availableFrom,
+	deliveryAvailable = false,
+	deliveryFeeKobo = 0,
 }: {
 	maxQuantity?: number | null;
 	campusId: string;
 	availableFrom?: Date;
+	deliveryAvailable?: boolean;
+	deliveryFeeKobo?: number;
 }) {
 	const vendor = await createVendorProfileDB({
 		payload: {
@@ -81,6 +85,8 @@ async function activeListing({
 			availableFrom,
 			cutoffTime: new Date(Date.now() + 1_800_000),
 			pickupAvailable: true,
+			deliveryAvailable,
+			deliveryFeeKobo,
 			items: [
 				{
 					menuItemId: oid(),
@@ -114,6 +120,7 @@ describe("placeOrder service", () => {
 			input: {
 				dailyOrderId: listing._id.toString(),
 				fulfillmentType: FulfillmentType.PICKUP,
+				customerMessage: "  I dont like much pepper thanks  ",
 				items: [{ dailyOrderItemId: itemId, quantity: 2 }],
 			},
 		});
@@ -132,6 +139,7 @@ describe("placeOrder service", () => {
 		expect(order!.paymentProcessingFeeKobo).toBe(processingFee);
 		expect(order!.prechopCommissionKobo).toBe(commission);
 		expect(order!.vendorSettlementKobo).toBe(vendorSettlement);
+		expect(order!.customerMessage).toBe("I dont like much pepper thanks");
 
 		const payment = await getPaymentByOrderIdDB({
 			buyerOrderId: result.buyerOrderId,
@@ -141,6 +149,48 @@ describe("placeOrder service", () => {
 		expect(payment!.platformFeeKobo).toBe(commission);
 		expect(payment!.paymentProcessingFeeKobo).toBe(processingFee);
 		expect(payment!.vendorAmountKobo).toBe(vendorSettlement);
+	});
+
+	it("adds the listing delivery fee to delivery order totals", async () => {
+		const campusId = oid();
+		const buyerId = oid();
+		const deliveryFeeKobo = 50000;
+		const { listing, itemId } = await activeListing({
+			campusId,
+			deliveryAvailable: true,
+			deliveryFeeKobo,
+		});
+
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				fulfillmentType: FulfillmentType.DELIVERY,
+				deliveryHostelName: "Kofo Hall",
+				deliveryRoomNumber: "B12",
+				deliveryPhone: "+2348012345678",
+				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+			},
+		});
+
+		const subtotalKobo = 150000;
+		const processingFee = calculateBuyerServiceFeeKobo(subtotalKobo);
+		const commission = calculateVendorCommissionKobo(subtotalKobo);
+		expect(result.totalKobo).toBe(
+			subtotalKobo + deliveryFeeKobo + processingFee,
+		);
+
+		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
+		expect(order!.deliveryPhone).toBe("+2348012345678");
+		expect(order!.deliveryFeeKobo).toBe(deliveryFeeKobo);
+		expect(order!.totalKobo).toBe(
+			subtotalKobo + deliveryFeeKobo + processingFee,
+		);
+		expect(order!.vendorDeliveryAmountKobo).toBe(deliveryFeeKobo);
+		expect(order!.vendorSettlementKobo).toBe(
+			subtotalKobo - commission + deliveryFeeKobo,
+		);
 	});
 
 	it("creates a pay-for-me order without initializing Paystack immediately", async () => {

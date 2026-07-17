@@ -33,9 +33,10 @@ export enum LocationType {
 
 export enum MenuCategory {
 	MEALS = "MEALS",
-	SNACKS = "SNACKS",
+	FAST_FOOD_GRILLS = "FAST_FOOD_GRILLS",
+	SNACKS_PASTRIES = "SNACKS_PASTRIES",
+	CAKES_DESSERTS = "CAKES_DESSERTS",
 	DRINKS = "DRINKS",
-	BAKED_GOODS = "BAKED_GOODS",
 }
 
 export enum DailyOrderStatus {

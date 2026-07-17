@@ -90,8 +90,40 @@ export const deliveryDefaultsSchema = zod
 		defaultPickupAvailable: zod.boolean(),
 		defaultDeliveryAvailable: zod.boolean(),
 		defaultDeliveryFeeKobo: zod.number().int().min(0).max(10_000_00),
+		defaultDeliveryCoverage: zod.string().trim().min(2).max(240).optional(),
+		defaultDeliveryEstimateMinutes: zod
+			.number()
+			.int()
+			.positive()
+			.max(240)
+			.optional(),
+		defaultDeliveryContactPhone: zod.string().trim().min(5).max(30).optional(),
+		defaultDeliveryResponsibilityAccepted: zod.boolean().optional(),
 	})
-	.strict();
+	.strict()
+	.superRefine((data, ctx) => {
+		if (!data.defaultDeliveryAvailable) return;
+		for (const key of [
+			"defaultDeliveryCoverage",
+			"defaultDeliveryEstimateMinutes",
+			"defaultDeliveryContactPhone",
+		] as const) {
+			if (!data[key]) {
+				ctx.addIssue({
+					code: zod.ZodIssueCode.custom,
+					path: [key],
+					message: "Required when delivery is enabled.",
+				});
+			}
+		}
+		if (!data.defaultDeliveryResponsibilityAccepted) {
+			ctx.addIssue({
+				code: zod.ZodIssueCode.custom,
+				path: ["defaultDeliveryResponsibilityAccepted"],
+				message: "Vendor-managed delivery confirmation is required.",
+			});
+		}
+	});
 
 export const becomeVendorSchema = zod
 	.object({

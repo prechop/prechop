@@ -48,6 +48,8 @@ export interface PlaceOrderInput {
 	deliveryHostelName?: string;
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
+	deliveryPhone?: string;
+	customerMessage?: string;
 	items: Array<{
 		dailyOrderItemId: string;
 		quantity: number;
@@ -81,6 +83,16 @@ export async function placeOrder({
 			"Ordering is temporarily unavailable. Please try again shortly.",
 		);
 	}
+	const customerMessage = input.customerMessage?.trim();
+	if (customerMessage && customerMessage.length > 150) {
+		throw validationError(
+			"Message for vendor must be 150 characters or less.",
+		);
+	}
+	const deliveryPhone = input.deliveryPhone?.trim();
+	if (deliveryPhone && deliveryPhone.length > 30) {
+		throw validationError("Delivery phone must be 30 characters or less.");
+	}
 
 	// ── 1. Load + validate the daily order ──────────────────────────────
 	const dailyOrder = await getDailyOrderByIdDB({ id: input.dailyOrderId });
@@ -108,6 +120,9 @@ export async function placeOrder({
 		!dailyOrder.deliveryAvailable
 	) {
 		throw validationError("Delivery is not available for this order.");
+	}
+	if (input.fulfillmentType === FulfillmentType.DELIVERY && !deliveryPhone) {
+		throw validationError("Add a phone number for delivery.");
 	}
 
 	// ── 2. Resolve requested items + options against the snapshotted listing ─
@@ -197,7 +212,10 @@ export async function placeOrder({
 	// so a missing or corrupt config charges the standing rate rather than 0.
 	const feePolicy = resolveFeePolicy(config);
 	const subtotalKobo = sumKobo(...resolvedItems.map((i) => i.subtotalKobo));
-	const deliveryFeeKobo = 0;
+	const deliveryFeeKobo =
+		input.fulfillmentType === FulfillmentType.DELIVERY
+			? (dailyOrder.deliveryFeeKobo ?? 0)
+			: 0;
 	const prechopCommissionKobo = calculateVendorCommissionKobo(
 		subtotalKobo,
 		feePolicy,
@@ -206,7 +224,7 @@ export async function placeOrder({
 		0,
 		subtotalKobo - prechopCommissionKobo,
 	);
-	const vendorDeliveryAmountKobo = 0;
+	const vendorDeliveryAmountKobo = deliveryFeeKobo;
 	const vendorSettlementKobo = sumKobo(
 		vendorFoodAmountKobo,
 		vendorDeliveryAmountKobo,
@@ -215,7 +233,11 @@ export async function placeOrder({
 		subtotalKobo,
 		feePolicy,
 	);
-	const totalKobo = sumKobo(subtotalKobo, paymentProcessingFeeKobo);
+	const totalKobo = sumKobo(
+		subtotalKobo,
+		deliveryFeeKobo,
+		paymentProcessingFeeKobo,
+	);
 	const platformFeeKobo = paymentProcessingFeeKobo;
 
 	// ── 4. Vendor payout account ─────────────────────────────────────────
@@ -350,6 +372,8 @@ export async function placeOrder({
 			deliveryRoomNumber: input.deliveryRoomNumber,
 			deliveryAdditionalInfo: input.deliveryAdditionalInfo,
 			deliveryFullAddress,
+			deliveryPhone: deliveryPhone || undefined,
+			customerMessage: customerMessage || undefined,
 			subtotalKobo,
 			deliveryFeeKobo,
 			platformFeeKobo,

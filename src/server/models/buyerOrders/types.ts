@@ -48,6 +48,8 @@ export interface IBuyerOrderCreateInput {
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryFullAddress?: string;
+	deliveryPhone?: string;
+	customerMessage?: string;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
@@ -74,6 +76,8 @@ export interface IBuyerOrder {
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryFullAddress?: string;
+	deliveryPhone?: string;
+	customerMessage?: string;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;

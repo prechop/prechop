@@ -42,6 +42,11 @@ export async function createDailyOrder({
 			pickupAvailable: input.pickupAvailable,
 			deliveryAvailable: input.deliveryAvailable,
 			deliveryFeeKobo: input.deliveryFeeKobo,
+			deliveryCoverage: input.deliveryCoverage,
+			deliveryEstimateMinutes: input.deliveryEstimateMinutes,
+			deliveryContactPhone: input.deliveryContactPhone,
+			deliveryResponsibilityAccepted:
+				input.deliveryResponsibilityAccepted,
 			items,
 		},
 	});

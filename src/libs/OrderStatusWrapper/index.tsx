@@ -9,7 +9,6 @@ import {
 	Button,
 	Card,
 	FadeIn,
-	Grid,
 	Row,
 	Stack,
 	StatCard,
@@ -73,8 +72,59 @@ const Wrap = styled(Stack)`
 	margin: 0 auto;
 `;
 const HeroCard = styled(Card)`
-	background: var(--pc-gradient-warm);
+	background: var(--pc-gradient-calm-orange);
 	border: none;
+`;
+const SummaryGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	width: 100%;
+
+	@media (max-width: 340px) {
+		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+	}
+
+	> div {
+		min-width: 0;
+		padding: 12px 10px;
+		gap: 6px;
+	}
+
+	> div > div:first-child {
+		min-width: 0;
+		gap: 6px;
+	}
+
+	> div > div:first-child > span:first-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11.5px;
+		font-weight: 800;
+		line-height: 1.15;
+	}
+
+	> div > div:first-child > span:last-child {
+		flex: 0 0 auto;
+		font-size: 15px;
+	}
+
+	> div > div:nth-child(2) {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-size: 20px;
+		font-weight: 900;
+		letter-spacing: 0;
+		line-height: 1.05;
+	}
+
+	@media (min-width: 390px) {
+		> div > div:nth-child(2) {
+			font-size: 22px;
+		}
+	}
 `;
 const Track = styled.div`
 	display: flex;
@@ -130,6 +180,10 @@ const Line = styled(Row)`
 const Divider = styled.div`
 	border-top: 1px solid var(--pc-border);
 	margin: 4px 0;
+`;
+const FulfillmentCard = styled(Card)`
+	margin-top: 12px;
+	padding: var(--pc-space-4);
 `;
 const Stars = styled.div`
 	display: flex;
@@ -243,9 +297,9 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 			</FadeIn>
 
 			<FadeIn $delay={60}>
-				<Grid $min={150} $gap={12}>
+				<SummaryGrid>
 					<StatCard
-						label="Order total"
+						label="Total"
 						value={formatKobo(data.totalKobo)}
 						icon="💰"
 					/>
@@ -256,7 +310,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						tone="var(--pc-color-accent)"
 					/>
 					<StatCard
-						label="Fulfilment"
+						label="Mode"
 						value={
 							data.fulfillmentType === "DELIVERY"
 								? "Delivery"
@@ -265,7 +319,47 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						icon={data.fulfillmentType === "DELIVERY" ? "🛵" : "🥡"}
 						tone="var(--pc-color-gold)"
 					/>
-				</Grid>
+				</SummaryGrid>
+				{data.fulfillmentType === "PICKUP" && (
+					<FulfillmentCard>
+						<Row $gap={12} $align="flex-start">
+							<Stack $gap={4}>
+								<Text $weight={800}>Pickup location</Text>
+								<Text $muted $size={14}>
+									{data.vendorPickupLocation ??
+										"Kitchen has not added a pickup spot yet."}
+								</Text>
+							</Stack>
+						</Row>
+					</FulfillmentCard>
+				)}
+				{data.fulfillmentType === "DELIVERY" && (
+					<FulfillmentCard>
+						<Stack $gap={10}>
+							<Stack $gap={4}>
+								<Text $weight={800}>
+									Delivery fulfilled by the vendor
+								</Text>
+								<Text $muted $size={14}>
+									Prechop manages payment and order status,
+									but this kitchen is responsible for arranging
+									and completing delivery. Delivery complaints
+									are reviewed with the vendor by support.
+								</Text>
+							</Stack>
+							<Row $justify="flex-start">
+								<Button
+									as={Link}
+									href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
+									$variant="secondary"
+									$size="sm"
+								>
+									Report delivery issue
+								</Button>
+							</Row>
+						</Stack>
+					</FulfillmentCard>
+				)}
 			</FadeIn>
 
 			{!isTerminalBad && data.status !== "PENDING_PAYMENT" && (

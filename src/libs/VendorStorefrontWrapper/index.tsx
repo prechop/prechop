@@ -19,7 +19,6 @@ import {
 	Title,
 	useListingStatus,
 	useVendorStatus,
-	VendorRating,
 	VendorStatusBadge,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
@@ -46,10 +45,10 @@ const Wrap = styled(Stack)`
 	margin: 0 auto;
 `;
 const Header = styled(Card)`
-	background: var(--pc-gradient-hero);
-	border: none;
+	background: var(--pc-gradient-calm-orange);
+	border: 1px solid rgba(255, 193, 117, 0.18);
 	color: #fff;
-	box-shadow: var(--pc-shadow-primary);
+	box-shadow: var(--pc-shadow-calm-orange);
 `;
 const Avatar = styled.div<{ $src?: string | null }>`
 	width: 68px;
@@ -71,10 +70,21 @@ const CatChip = styled.span`
 	display: inline-flex;
 	padding: 4px 10px;
 	border-radius: var(--pc-radius-pill);
-	background: rgba(255, 255, 255, 0.18);
+	background: rgba(255, 255, 255, 0.14);
+	border: 1px solid rgba(255, 255, 255, 0.18);
 	font-size: 12px;
 	font-weight: 700;
 	color: #fff;
+`;
+const HeroMeta = styled(Text)`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-scrim-on-hero);
+	border: 1px solid var(--pc-scrim-on-hero-border);
+	color: rgba(255, 255, 255, 0.94);
 `;
 const ListingCard = styled(Card)`
 	padding: 0;
@@ -99,16 +109,37 @@ const Thumbs = styled.div`
 	height: 130px;
 	background: var(--pc-surface-2);
 `;
-const Thumb = styled.div<{ $src?: string }>`
+const Thumb = styled.div<{ $src?: string | null }>`
+	position: relative;
 	flex: 1;
 	background: ${(p) =>
 		p.$src
 			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-color-primary-50)"};
+			: "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 20px, transparent 21px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 30px;
+	overflow: hidden;
+	&::before {
+		content: "";
+		position: absolute;
+		width: 50px;
+		height: 50px;
+		border-radius: 50%;
+		background: var(--pc-surface);
+		box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.68), 0 10px 24px rgba(0, 0, 0, 0.18);
+		opacity: ${(p) => (p.$src ? 0 : 1)};
+	}
+	&::after {
+		content: "";
+		position: absolute;
+		width: 28px;
+		height: 17px;
+		border-radius: 50%;
+		background: var(--pc-color-primary);
+		box-shadow: 11px -7px 0 -4px var(--pc-color-gold), -9px 7px 0 -5px var(--pc-color-gold-ink);
+		opacity: ${(p) => (p.$src ? 0 : 1)};
+	}
 `;
 const Body = styled(Stack)`
 	padding: var(--pc-space-4);
@@ -170,11 +201,19 @@ function StorefrontListingCard({
 			<CardLink href={`/o/${listing.shareableToken}`}>
 				<Thumbs>
 					{listing.items.slice(0, 3).map((it) => (
-						<Thumb key={it.id} $src={it.snapshotImageUrl}>
-							{it.snapshotImageUrl ? "" : "🍲"}
-						</Thumb>
+						<Thumb
+							key={it.id}
+							$src={it.snapshotImageUrl}
+							aria-label={
+								it.snapshotImageUrl
+									? it.snapshotName
+									: `${it.snapshotName} image placeholder`
+							}
+						/>
 					))}
-					{listing.items.length === 0 && <Thumb>🍲</Thumb>}
+					{listing.items.length === 0 && (
+						<Thumb aria-label="Food image placeholder" />
+					)}
 				</Thumbs>
 				<Body $gap={10}>
 					<Title $size={16}>{listing.title}</Title>
@@ -289,17 +328,12 @@ export default function VendorStorefrontWrapper({
 									onHero
 									live
 								/>
-								<VendorRating
-									rating={vendor.rating}
-									totalReviews={vendor.totalReviews}
-									onHero
-								/>
-								<Text
+								<HeroMeta
 									$size={13}
 									style={{ color: "rgba(255,255,255,0.92)" }}
 								>
 									🍽️ {vendor.totalOrders} orders
-								</Text>
+								</HeroMeta>
 							</Row>
 							{(vendor.areaOrAddress || vendor.state) && (
 								<Text

@@ -53,6 +53,7 @@ export const Grid = styled.div<{ $min?: number; $gap?: number }>`
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(${(p) => p.$min ?? 240}px, 1fr));
 	gap: ${(p) => p.$gap ?? 16}px;
+
 `;
 
 export default Box;

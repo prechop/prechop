@@ -11,6 +11,7 @@ import {
 	Input,
 	PageHeader,
 	Row,
+	SectionHeader,
 	Select,
 	Stack,
 	Text,
@@ -18,6 +19,10 @@ import {
 } from "@/components";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
+import {
+	MENU_CATEGORIES,
+	normalizeMenuCategory,
+} from "@/constants/menuCategories";
 import {
 	describeFeePolicy,
 	describeVendorConsent,
@@ -55,18 +60,13 @@ const VENDOR_TYPES = [
 	{ value: "BAKERY", label: "Bakery" },
 ];
 
-const CATEGORIES = [
-	{ value: "MEALS", label: "Meals" },
-	{ value: "SNACKS", label: "Snacks" },
-	{ value: "DRINKS", label: "Drinks" },
-	{ value: "BAKED_GOODS", label: "Baked goods" },
-];
+const CATEGORIES = MENU_CATEGORIES;
 
 const ProgressCard = styled(Card)`
-  background: var(--pc-gradient-hero);
+  background: var(--pc-gradient-calm-orange);
   border: none;
   color: #fff;
-  box-shadow: var(--pc-shadow-primary);
+  box-shadow: var(--pc-shadow-calm-orange);
   position: relative;
   overflow: hidden;
   &::after {
@@ -253,7 +253,9 @@ export default function VendorOnboardingWrapper({
 	const [description, setDescription] = useState(vendor.description ?? "");
 
 	// Step 2 — categories
-	const [cats, setCats] = useState<string[]>(vendor.categories ?? []);
+	const [cats, setCats] = useState<string[]>(
+		(vendor.categories ?? []).map(normalizeMenuCategory),
+	);
 
 	// Step 3 — location
 	const [locationType, setLocationType] = useState<
@@ -350,7 +352,9 @@ export default function VendorOnboardingWrapper({
 			return;
 		}
 		await submit(async () => {
-			await api.post("/vendors/me/categories", { categories: cats });
+			await api.post("/vendors/me/categories", {
+				categories: cats.map(normalizeMenuCategory),
+			});
 			toast("Categories saved", "success");
 			setOpen("location");
 		});
@@ -410,7 +414,12 @@ export default function VendorOnboardingWrapper({
 	}
 
 	function toggleCat(v: string) {
-		setCats((c) => (c.includes(v) ? c.filter((x) => x !== v) : [...c, v]));
+		const category = normalizeMenuCategory(v);
+		setCats((c) =>
+			c.includes(category)
+				? c.filter((x) => x !== category)
+				: [...c, category],
+		);
 	}
 
 	function toggleCampus(id: string) {
@@ -503,6 +512,20 @@ export default function VendorOnboardingWrapper({
 						</Bar>
 					</ProgressInner>
 				</ProgressCard>
+
+				<Card>
+					<Stack $gap={8}>
+						<SectionHeader title="Vendor-managed delivery" icon="🛵" />
+						<Text $muted $size={13}>
+							Prechop does not currently provide riders or
+							delivery vehicles. If you enable delivery after
+							approval, you are responsible for arranging the
+							rider or delivery method, setting the fee and
+							coverage area, giving a realistic delivery estimate,
+							and making sure the order reaches the buyer.
+						</Text>
+					</Stack>
+				</Card>
 
 				{rows.map((r) => {
 					const isOpen = open === r.key;

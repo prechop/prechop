@@ -121,6 +121,11 @@ export async function createDailyOrderFromTemplate({
 			pickupAvailable: input.pickupAvailable,
 			deliveryAvailable: input.deliveryAvailable,
 			deliveryFeeKobo: input.deliveryFeeKobo,
+			deliveryCoverage: input.deliveryCoverage,
+			deliveryEstimateMinutes: input.deliveryEstimateMinutes,
+			deliveryContactPhone: input.deliveryContactPhone,
+			deliveryResponsibilityAccepted:
+				input.deliveryResponsibilityAccepted,
 			items,
 		},
 	});

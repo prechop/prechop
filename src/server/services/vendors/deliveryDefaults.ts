@@ -5,6 +5,10 @@ export interface DeliveryDefaultsInput {
 	defaultPickupAvailable: boolean;
 	defaultDeliveryAvailable: boolean;
 	defaultDeliveryFeeKobo: number;
+	defaultDeliveryCoverage?: string;
+	defaultDeliveryEstimateMinutes?: number;
+	defaultDeliveryContactPhone?: string;
+	defaultDeliveryResponsibilityAccepted?: boolean;
 }
 
 /**
@@ -26,6 +30,12 @@ export async function updateDeliveryDefaults({
 			defaultPickupAvailable: defaults.defaultPickupAvailable,
 			defaultDeliveryAvailable: defaults.defaultDeliveryAvailable,
 			defaultDeliveryFeeKobo: defaults.defaultDeliveryFeeKobo,
+			defaultDeliveryCoverage: defaults.defaultDeliveryCoverage,
+			defaultDeliveryEstimateMinutes:
+				defaults.defaultDeliveryEstimateMinutes,
+			defaultDeliveryContactPhone: defaults.defaultDeliveryContactPhone,
+			defaultDeliveryResponsibilityAccepted:
+				defaults.defaultDeliveryResponsibilityAccepted ?? false,
 		},
 	});
 }

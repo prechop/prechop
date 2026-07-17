@@ -78,7 +78,7 @@ describe("menuItems model", () => {
 			payload: {
 				vendorId,
 				campusId,
-				category: MenuCategory.SNACKS,
+				category: MenuCategory.SNACKS_PASTRIES,
 				name: "Puff Puff",
 				priceKobo: 20000,
 				displayOrder: 1,

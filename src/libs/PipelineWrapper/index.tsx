@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import styled from "styled-components";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
 	Badge,
 	Button,
@@ -233,7 +233,10 @@ export default function PipelineWrapper() {
 				`Order ${o.orderNumber} → ${statusLabel(next.to)}`,
 				"success",
 			);
-			await mutate();
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+			]);
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
@@ -250,7 +253,10 @@ export default function PipelineWrapper() {
 				reason: reason.trim(),
 			});
 			toast("Order cancelled", "success");
-			await mutate();
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+			]);
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {

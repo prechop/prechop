@@ -39,7 +39,55 @@ const dailyOrderItemInputSchema = z.object({
 	optionGroups: z.array(optionGroupInputSchema).optional(),
 });
 
-export const createDailyOrderSchema = z.object({
+const deliveryFields = {
+	deliveryCoverage: z.string().trim().min(2).max(240).optional(),
+	deliveryEstimateMinutes: z.number().int().positive().max(240).optional(),
+	deliveryContactPhone: z.string().trim().min(5).max(30).optional(),
+	deliveryResponsibilityAccepted: z.boolean().optional(),
+};
+
+function requireDeliveryDetails<
+	T extends {
+		deliveryAvailable?: boolean;
+		deliveryFeeKobo?: number;
+		deliveryCoverage?: string;
+		deliveryEstimateMinutes?: number;
+		deliveryContactPhone?: string;
+		deliveryResponsibilityAccepted?: boolean;
+	},
+>(data: T, ctx: z.RefinementCtx) {
+	if (!data.deliveryAvailable) return;
+	if (data.deliveryFeeKobo == null) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			path: ["deliveryFeeKobo"],
+			message: "Delivery fee is required when delivery is enabled.",
+		});
+	}
+	for (const key of [
+		"deliveryCoverage",
+		"deliveryEstimateMinutes",
+		"deliveryContactPhone",
+	] as const) {
+		if (!data[key]) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: [key],
+				message: "Required when delivery is enabled.",
+			});
+		}
+	}
+	if (!data.deliveryResponsibilityAccepted) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			path: ["deliveryResponsibilityAccepted"],
+			message: "Vendor-managed delivery confirmation is required.",
+		});
+	}
+}
+
+export const createDailyOrderSchema = z
+	.object({
 	title: z.string().min(1),
 	scheduledDate: z.string().datetime(),
 	availableFrom: z.string().datetime().optional(),
@@ -47,11 +95,14 @@ export const createDailyOrderSchema = z.object({
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),
 	deliveryFeeKobo: z.number().int().nonnegative().optional(),
+	...deliveryFields,
 	draft: z.boolean().optional(),
 	items: z.array(dailyOrderItemInputSchema).min(1),
-});
+	})
+	.superRefine(requireDeliveryDetails);
 
-export const createFromTemplateSchema = z.object({
+export const createFromTemplateSchema = z
+	.object({
 	title: z.string().min(1),
 	scheduledDate: z.string().datetime(),
 	availableFrom: z.string().datetime().optional(),
@@ -59,10 +110,13 @@ export const createFromTemplateSchema = z.object({
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),
 	deliveryFeeKobo: z.number().int().nonnegative().optional(),
+	...deliveryFields,
 	draft: z.boolean().optional(),
-});
+	})
+	.superRefine(requireDeliveryDetails);
 
-export const updateDailyOrderDraftSchema = z.object({
+export const updateDailyOrderDraftSchema = z
+	.object({
 	title: z.string().min(1).optional(),
 	scheduledDate: z.string().datetime().optional(),
 	availableFrom: z.string().datetime().optional(),
@@ -70,8 +124,10 @@ export const updateDailyOrderDraftSchema = z.object({
 	pickupAvailable: z.boolean().optional(),
 	deliveryAvailable: z.boolean().optional(),
 	deliveryFeeKobo: z.number().int().nonnegative().optional(),
+	...deliveryFields,
 	items: z.array(dailyOrderItemInputSchema).optional(),
-});
+	})
+	.superRefine(requireDeliveryDetails);
 
 export const marketplaceQuerySchema = z
 	.object({

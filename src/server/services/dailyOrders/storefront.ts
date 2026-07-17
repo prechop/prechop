@@ -40,6 +40,23 @@ async function activeListingsForVendor(
 	);
 }
 
+function withMenuImages(listings: IDailyOrder[], menu: IMenuItem[]) {
+	const imageByMenuItemId = new Map(
+		menu
+			.filter((item) => item.imageUrl)
+			.map((item) => [(item.id ?? item._id).toString(), item.imageUrl]),
+	);
+	return listings.map((listing) => ({
+		...listing,
+		items: listing.items.map((item) => ({
+			...item,
+			snapshotImageUrl:
+				item.snapshotImageUrl?.trim() ||
+				imageByMenuItemId.get(item.menuItemId.toString()),
+		})),
+	}));
+}
+
 /**
  * A vendor's public storefront: profile, everything they're cooking today
  * (active listings), and their full available menu. Used by `/v/[vendorId]`.
@@ -61,7 +78,11 @@ export async function getVendorStorefront({
 		activeListingsForVendor(vendorId),
 		listMenuItemsByVendorDB({ vendorId, availableOnly: true }),
 	]);
-	return { vendor: toPublicVendor(vendor), listings, menu };
+	return {
+		vendor: toPublicVendor(vendor),
+		listings: withMenuImages(listings, menu),
+		menu,
+	};
 }
 
 export interface VendorSearchHit {

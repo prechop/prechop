@@ -32,7 +32,7 @@ const Hero = styled.div<{ $tone?: "warm" | "muted" }>`
 	background: ${(p) =>
 		p.$tone === "muted"
 			? "var(--pc-surface-2)"
-			: "var(--pc-gradient-hero)"};
+			: "var(--pc-gradient-calm-orange)"};
 	padding: var(--pc-space-8) var(--pc-space-5) var(--pc-space-6);
 	text-align: center;
 	color: ${(p) => (p.$tone === "muted" ? "var(--pc-text)" : "#fff")};

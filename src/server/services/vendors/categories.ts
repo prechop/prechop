@@ -1,3 +1,4 @@
+import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { type MenuCategory, updateVendorProfileDB } from "@/server/models";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
@@ -14,7 +15,16 @@ export async function setCategories({
 
 	const updated = await updateVendorProfileDB({
 		id: vendorId,
-		payload: { categories },
+		payload: {
+			categories: Array.from(
+				new Set(
+					categories.map(
+						(category) =>
+							normalizeMenuCategory(category) as MenuCategory,
+					),
+				),
+			),
+		},
 	});
 	await recomputeVendorCompleteness({ vendorId, userId });
 	return updated;

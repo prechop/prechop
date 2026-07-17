@@ -17,6 +17,7 @@
 		"fix-unsafe": "biome check --write --unsafe",
 		"seed": "node --conditions react-server --import tsx --env-file=.env scripts/seed.ts",
 		"migrate:iam": "node --conditions react-server --import tsx --env-file=.env scripts/migrate-iam.ts",
+		"migrate:menu-categories": "node --conditions react-server --import tsx --env-file=.env scripts/migrate-menu-categories.ts",
 		"e2e": "playwright test",
 		"test": "vitest run",
 		"test.coverage": "vitest run --coverage"

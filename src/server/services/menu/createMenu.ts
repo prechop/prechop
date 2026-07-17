@@ -1,4 +1,5 @@
 import { nairaToKobo } from "@/server/constants";
+import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { createMenuItemDB, type MenuCategory } from "@/server/models";
 import {
 	recomputeVendorCompleteness,
@@ -33,7 +34,7 @@ export async function createMenuItem({
 		payload: {
 			vendorId,
 			campusId: vendor.campusId,
-			category,
+			category: normalizeMenuCategory(category) as MenuCategory,
 			name,
 			priceKobo: nairaToKobo(priceNaira),
 			description,

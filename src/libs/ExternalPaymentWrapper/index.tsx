@@ -47,7 +47,7 @@ const Wrap = styled(Stack)`
 	margin: 0 auto;
 `;
 const Hero = styled(Card)`
-	background: var(--pc-gradient-warm);
+	background: var(--pc-gradient-calm-orange);
 	border: none;
 `;
 const Line = styled(Row)`

@@ -103,7 +103,7 @@ const Cover = styled.div<{ $src?: string }>`
   background: ${(p) =>
 		p.$src
 			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-gradient-hero)"};
+			: "var(--pc-gradient-calm-orange)"};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -149,6 +149,18 @@ const Chip = styled.span`
   font-size: 12.5px;
   font-weight: 600;
   color: var(--pc-text-muted);
+`;
+const PickupLocation = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  color: var(--pc-text-muted);
+  font-size: 13.5px;
+  line-height: 1.45;
 `;
 const ItemCard = styled(Card)`
   padding: var(--pc-space-4);
@@ -341,7 +353,7 @@ function ruleLabel(group: DailyOrderOptionGroup, min: number): string {
 
 export default function OrderDetailWrapper({ token }: { token: string }) {
 	const router = useRouter();
-	const { isAuthenticated, isLoading: authLoading } = useAuth();
+	const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 	const { toast } = useToast();
 
 	const { data: availability, isLoading: availabilityLoading } =
@@ -362,6 +374,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	const [hostel, setHostel] = useState("");
 	const [room, setRoom] = useState("");
 	const [extra, setExtra] = useState("");
+	const [deliveryPhone, setDeliveryPhone] = useState("");
+	const [customerMessage, setCustomerMessage] = useState("");
 	const [paymentMode, setPaymentMode] = useState<PaymentMode>("SELF");
 	const [externalPayment, setExternalPayment] =
 		useState<ExternalPaymentResult | null>(null);
@@ -378,6 +392,26 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	// false for a closed kitchen, an inactive/past-cutoff listing, AND for a
 	// listing that is visible but hasn't opened yet ("Opens 11:30am").
 	const orderable = status?.orderable ?? false;
+
+	useEffect(() => {
+		if (!data) return;
+		setFulfillment((current) => {
+			if (data.deliveryAvailable && !data.pickupAvailable)
+				return "DELIVERY";
+			if (data.pickupAvailable && !data.deliveryAvailable)
+				return "PICKUP";
+			if (current === "DELIVERY" && !data.deliveryAvailable)
+				return "PICKUP";
+			if (current === "PICKUP" && !data.pickupAvailable)
+				return "DELIVERY";
+			return current;
+		});
+	}, [data]);
+
+	useEffect(() => {
+		if (!user?.phone || deliveryPhone.trim()) return;
+		setDeliveryPhone(user.phone);
+	}, [deliveryPhone, user?.phone]);
 
 	const { subtotal, itemCount, optionsValid } = useMemo(() => {
 		if (!data) return { subtotal: 0, itemCount: 0, optionsValid: true };
@@ -405,6 +439,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				hostel?: string;
 				room?: string;
 				extra?: string;
+				deliveryPhone?: string;
+				customerMessage?: string;
 				paymentMode?: PaymentMode;
 			};
 			if (parsed.lines) {
@@ -431,12 +467,14 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			setHostel(parsed.hostel ?? "");
 			setRoom(parsed.room ?? "");
 			setExtra(parsed.extra ?? "");
+			setDeliveryPhone(parsed.deliveryPhone ?? user?.phone ?? "");
+			setCustomerMessage(parsed.customerMessage ?? "");
 			if (parsed.paymentMode) setPaymentMode(parsed.paymentMode);
 			window.sessionStorage.removeItem(cartStorageKey);
 		} catch {
 			window.sessionStorage.removeItem(cartStorageKey);
 		}
-	}, [cartStorageKey, data]);
+	}, [cartStorageKey, data, user?.phone]);
 
 	/**
 	 * "Order again" prefill. ReorderSheet writes the resolvable lines under
@@ -589,7 +627,11 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		itemCount > 0 && feePolicy
 			? calculateBuyerServiceFeeKobo(subtotal, feePolicy)
 			: 0;
-	const checkoutTotal = subtotal + processingFee;
+	const deliveryFee =
+		fulfillment === "DELIVERY" && data.deliveryAvailable
+			? data.deliveryFeeKobo
+			: 0;
+	const checkoutTotal = subtotal + deliveryFee + processingFee;
 	const feeExplainer = describeBuyerFeeExplainer(feePolicy);
 	const canOrder = orderable && itemCount > 0 && optionsValid && canQuoteFee;
 
@@ -611,6 +653,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				hostel,
 				room,
 				extra,
+				deliveryPhone,
+				customerMessage,
 				paymentMode,
 			}),
 		);
@@ -703,8 +747,11 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			return;
 		}
 		if (!canOrder) return;
-		if (fulfillment === "DELIVERY" && (!hostel.trim() || !room.trim())) {
-			toast("Add your hostel and room for delivery.", "error");
+		if (
+			fulfillment === "DELIVERY" &&
+			(!deliveryPhone.trim() || !hostel.trim() || !room.trim())
+		) {
+			toast("Add your phone, hostel and room for delivery.", "error");
 			return;
 		}
 		const items = Object.entries(lines)
@@ -731,8 +778,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							deliveryHostelName: hostel.trim(),
 							deliveryRoomNumber: room.trim(),
 							deliveryAdditionalInfo: extra.trim() || undefined,
+							deliveryPhone: deliveryPhone.trim(),
 						}
 					: {}),
+				customerMessage: customerMessage.trim() || undefined,
 				items,
 			});
 			const payload = res.data?.data as {
@@ -868,11 +917,40 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							{data.pickupAvailable && <Chip>🥡 Pickup</Chip>}
 							{data.deliveryAvailable && (
 								<Chip>
-									🛵 Delivery{" "}
+									🛵 Vendor-managed delivery{" "}
 									{formatKobo(data.deliveryFeeKobo)}
 								</Chip>
 							)}
 						</Chips>
+						{fulfillment === "PICKUP" &&
+							(data.vendorPickupLocation || data.vendorPhone) && (
+								<PickupLocation>
+									<span aria-hidden>📍</span>
+									<span>
+										{data.vendorPickupLocation && (
+											<>
+												Pick up at{" "}
+												<strong>
+													{data.vendorPickupLocation}
+												</strong>
+											</>
+										)}
+										{data.vendorPhone && (
+											<>
+												{data.vendorPickupLocation && (
+													<br />
+												)}
+												Call vendor:{" "}
+												<a
+													href={`tel:${data.vendorPhone}`}
+												>
+													{data.vendorPhone}
+												</a>
+											</>
+										)}
+									</span>
+								</PickupLocation>
+							)}
 					</HeroBody>
 				</Hero>
 			</FadeIn>
@@ -1135,6 +1213,41 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				<Card>
 					<Stack $gap={12}>
 						<Text $weight={700}>Delivery details</Text>
+						<Text $muted $size={13}>
+							Delivery fulfilled by the vendor. Prechop manages
+							payment and order status, but this kitchen arranges
+							the rider or delivery method.
+						</Text>
+						{(data.deliveryCoverage ||
+							data.deliveryEstimateMinutes ||
+							data.deliveryContactPhone) && (
+							<Stack $gap={4}>
+								{data.deliveryCoverage && (
+									<Text $muted $size={12}>
+										Coverage: {data.deliveryCoverage}
+									</Text>
+								)}
+								{data.deliveryEstimateMinutes && (
+									<Text $muted $size={12}>
+										Estimated delivery:{" "}
+										{data.deliveryEstimateMinutes} minutes
+									</Text>
+								)}
+								{data.deliveryContactPhone && (
+									<Text $muted $size={12}>
+										Vendor delivery contact:{" "}
+										{data.deliveryContactPhone}
+									</Text>
+								)}
+							</Stack>
+						)}
+						<Input
+							label="Phone number"
+							type="tel"
+							value={deliveryPhone}
+							onChange={(e) => setDeliveryPhone(e.target.value)}
+							placeholder="+2348012345678"
+						/>
 						<Input
 							label="Hostel / hall"
 							value={hostel}
@@ -1156,6 +1269,23 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 					</Stack>
 				</Card>
 			)}
+
+			<Card>
+				<Stack $gap={8}>
+					<Textarea
+						label="Message for vendor (optional)"
+						value={customerMessage}
+						onChange={(e) =>
+							setCustomerMessage(e.target.value.slice(0, 150))
+						}
+						maxLength={150}
+						placeholder="I don't like much pepper, thanks"
+					/>
+					<Text $muted $size={12}>
+						{customerMessage.length}/150 characters
+					</Text>
+				</Stack>
+			</Card>
 
 			{externalPayment && (
 				<Card $accent>
@@ -1213,6 +1343,16 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 								<Text $muted>Subtotal</Text>
 								<Text>{formatKobo(subtotal)}</Text>
 							</FeeRow>
+							{fulfillment === "DELIVERY" && (
+								<FeeRow>
+									<Text $muted>Delivery fee</Text>
+									<Text>
+										{deliveryFee === 0
+											? "Free"
+											: formatKobo(deliveryFee)}
+									</Text>
+								</FeeRow>
+							)}
 							<FeeRow>
 								<Row $gap={6} $align="center">
 									<Text $muted>Service fee</Text>

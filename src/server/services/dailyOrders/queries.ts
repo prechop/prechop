@@ -1,9 +1,14 @@
-import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
+import {
+	ErrDailyOrderNotFound,
+	ErrForbidden,
+	tryDecrypt,
+} from "../../constants";
 import {
 	type DailyOrderStatus,
 	getCampusByIdDB,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
+	getUserByIdWithPhoneDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	type IDailyOrder,
@@ -41,6 +46,18 @@ export async function marketplaceCampusIds(
 	if (campusId) return campusIdsInSameState(campusId);
 	const campuses = await listCampusesDB({ activeOnly: true });
 	return campuses.map((campus) => campus._id.toString());
+}
+
+function pickupLocation(
+	vendor: Awaited<ReturnType<typeof getVendorProfileByIdDB>>,
+) {
+	if (!vendor) return null;
+	return (
+		[vendor.hostelOrStallName, vendor.areaOrAddress]
+			.map((part) => part?.trim())
+			.filter(Boolean)
+			.join(" · ") || null
+	);
 }
 
 export async function getMarketplace({
@@ -132,6 +149,9 @@ export async function getPublicDailyOrder({
 	const vendor = await getVendorProfileByIdDB({
 		id: order.vendorId.toString(),
 	});
+	const vendorUser = vendor?.userId
+		? await getUserByIdWithPhoneDB({ id: vendor.userId.toString() })
+		: null;
 	const vendorOpen = vendor?.isOpenForOrders ?? false;
 	const isOwnListing =
 		!!viewerUserId && vendor?.userId?.toString() === viewerUserId;
@@ -147,6 +167,8 @@ export async function getPublicDailyOrder({
 		vendorOpen,
 		vendorId,
 		vendorName,
+		vendorPickupLocation: pickupLocation(vendor),
+		vendorPhone: vendorUser?.phone ? tryDecrypt(vendorUser.phone) : null,
 		vendorRating,
 		vendorTotalReviews,
 	};

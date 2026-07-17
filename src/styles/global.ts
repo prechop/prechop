@@ -81,6 +81,7 @@ export const GlobalStyle = createGlobalStyle`
 
     --pc-gradient-hero: linear-gradient(135deg, #FF5A1F 0%, #F4B400 100%);
     --pc-gradient-warm: linear-gradient(135deg, #FF7A3D 0%, #FF5A1F 100%);
+    --pc-gradient-calm-orange: radial-gradient(circle at 88% 12%, rgba(244, 180, 0, 0.34), transparent 34%), linear-gradient(135deg, #8F2F08 0%, #B44809 47%, #8A4D04 100%);
     --pc-gradient-mesh: radial-gradient(1000px 600px at 80% -10%, rgba(244,180,0,0.22), transparent 60%), radial-gradient(800px 500px at -10% 10%, rgba(255,90,31,0.18), transparent 55%);
 
     --pc-radius-sm: 10px;
@@ -93,6 +94,7 @@ export const GlobalStyle = createGlobalStyle`
     --pc-shadow: 0 4px 16px rgba(26, 20, 16, 0.08);
     --pc-shadow-lg: 0 18px 48px rgba(26, 20, 16, 0.14);
     --pc-shadow-primary: 0 10px 28px rgba(255, 90, 31, 0.30);
+    --pc-shadow-calm-orange: 0 22px 52px rgba(111, 35, 4, 0.24);
 
     --pc-space-1: 4px;
     --pc-space-2: 8px;

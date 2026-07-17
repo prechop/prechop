@@ -11,7 +11,6 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
-	Grid,
 	PageHeader,
 	Row,
 	SectionHeader,
@@ -23,23 +22,18 @@ import {
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
+import {
+	MENU_CATEGORIES,
+	MENU_CATEGORY_ICONS,
+	normalizeMenuCategory,
+} from "@/constants/menuCategories";
 import { useToast } from "@/hooks/useToast";
 import OptionGroupsManager from "@/libs/OptionGroupsManager";
 import type { MenuItem } from "@/types";
 
-const CATEGORIES = [
-	{ value: "MEALS", label: "Meals" },
-	{ value: "SNACKS", label: "Snacks" },
-	{ value: "DRINKS", label: "Drinks" },
-	{ value: "BAKED_GOODS", label: "Baked goods" },
-];
+const CATEGORIES = MENU_CATEGORIES;
 const CATEGORY_ORDER = CATEGORIES.map((c) => c.value);
-const CATEGORY_ICON: Record<string, string> = {
-	MEALS: "🍲",
-	SNACKS: "🥟",
-	DRINKS: "🥤",
-	BAKED_GOODS: "🥐",
-};
+const CATEGORY_ICON = MENU_CATEGORY_ICONS;
 
 const ReorderCol = styled.div`
 	display: flex;
@@ -142,6 +136,57 @@ const IconBtn = styled.button`
 		background: var(--pc-surface-2);
 	}
 `;
+const CompactStatsGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	width: 100%;
+
+	@media (max-width: 340px) {
+		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+	}
+
+	> div {
+		min-width: 0;
+		padding: 12px 10px;
+		gap: 6px;
+	}
+
+	> div > div:first-child {
+		min-width: 0;
+		gap: 6px;
+	}
+
+	> div > div:first-child > span:first-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11.5px;
+		font-weight: 800;
+		line-height: 1.15;
+	}
+
+	> div > div:first-child > span:last-child {
+		flex: 0 0 auto;
+		font-size: 15px;
+	}
+
+	> div > div:nth-child(2) {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-size: 20px;
+		font-weight: 900;
+		letter-spacing: 0;
+		line-height: 1.05;
+	}
+
+	@media (min-width: 390px) {
+		> div > div:nth-child(2) {
+			font-size: 22px;
+		}
+	}
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -182,12 +227,14 @@ export default function MenuWrapper() {
 		const [moved] = reorderedCat.splice(index, 1);
 		reorderedCat.splice(target, 0, moved);
 
-		const movedCat = moved.category;
+		const movedCat = normalizeMenuCategory(moved.category);
 		const nextList = CATEGORY_ORDER.flatMap((cat) =>
 			cat === movedCat
 				? reorderedCat
 				: items
-						.filter((i) => i.category === cat)
+						.filter(
+							(i) => normalizeMenuCategory(i.category) === cat,
+						)
 						.sort((a, b) => a.displayOrder - b.displayOrder),
 		).map((it, i) => ({ ...it, displayOrder: i }));
 
@@ -256,7 +303,7 @@ export default function MenuWrapper() {
 		cat,
 		label: CATEGORIES.find((c) => c.value === cat)?.label ?? cat,
 		items: items
-			.filter((i) => i.category === cat)
+			.filter((i) => normalizeMenuCategory(i.category) === cat)
 			.sort((a, b) => a.displayOrder - b.displayOrder),
 	})).filter((g) => g.items.length > 0);
 
@@ -306,9 +353,9 @@ export default function MenuWrapper() {
 					/>
 				) : (
 					<>
-						<Grid $min={150} $gap={12}>
+						<CompactStatsGrid>
 							<StatCard
-								label="Menu items"
+								label="Items"
 								value={items.length}
 								icon="🍽️"
 							/>
@@ -324,7 +371,7 @@ export default function MenuWrapper() {
 								icon="🚫"
 								tone="var(--pc-color-danger)"
 							/>
-						</Grid>
+						</CompactStatsGrid>
 
 						{grouped.map((g) => (
 							<Stack key={g.cat} $gap={12}>

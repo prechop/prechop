@@ -150,6 +150,59 @@ const Skel = styled.div<{ $h?: number; $w?: string }>`
 	border-radius: 8px;
 	background: var(--pc-surface-2);
 `;
+const EarningsStatsGrid = styled(Grid)`
+	@media (max-width: 520px) {
+		gap: 10px;
+
+		> div {
+			min-width: 0;
+			padding: 16px 14px;
+			gap: 7px;
+		}
+
+		> div > div:first-child {
+			min-width: 0;
+			gap: 8px;
+		}
+
+		> div > div:first-child > span:first-child {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			font-size: 13px;
+			line-height: 1.15;
+		}
+
+		> div > div:first-child > span:last-child {
+			flex: 0 0 auto;
+			font-size: 17px;
+		}
+
+		> div > div:nth-child(2) {
+			min-width: 0;
+			overflow-wrap: anywhere;
+			font-size: 26px;
+			letter-spacing: 0;
+			line-height: 1.05;
+		}
+
+		> div > span {
+			font-size: 12.5px;
+			line-height: 1.25;
+		}
+	}
+
+	@media (max-width: 360px) {
+		> div {
+			padding: 14px 12px;
+		}
+
+		> div > div:nth-child(2) {
+			font-size: 24px;
+		}
+	}
+`;
 
 /* -------------------------------------------------------------------- pieces */
 
@@ -331,7 +384,7 @@ export default function EarningsWrapper() {
 					))}
 				</RangeBar>
 
-				<Grid $min={160} $gap={12}>
+				<EarningsStatsGrid $min={160} $gap={12}>
 					<StatCard
 						label="Gross sales"
 						value={formatKobo(totals.grossKobo)}
@@ -369,7 +422,7 @@ export default function EarningsWrapper() {
 						tone="var(--pc-color-gold)"
 						hint="Completed paid orders"
 					/>
-				</Grid>
+				</EarningsStatsGrid>
 
 				<SectionHeader title="Daily breakdown" icon="📅" />
 				{sortedDays.length === 0 ? (

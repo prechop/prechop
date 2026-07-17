@@ -59,12 +59,20 @@ async function activeListing({
 	campusId,
 	title,
 	itemName,
+	menuItemId,
 }: {
 	vendorId: string;
 	campusId: string;
 	title: string;
 	itemName: string;
+	menuItemId?: string;
 }) {
+	let resolvedMenuItemId = menuItemId;
+	if (!resolvedMenuItemId) {
+		const fallbackMenuItemId = await makeCampus();
+		if (!fallbackMenuItemId) throw new Error("Expected fallback item id");
+		resolvedMenuItemId = fallbackMenuItemId._id.toString();
+	}
 	const listing = await createDailyOrderDB({
 		payload: {
 			vendorId,
@@ -76,7 +84,7 @@ async function activeListing({
 			pickupAvailable: true,
 			items: [
 				{
-					menuItemId: (await makeCampus())!._id.toString(),
+					menuItemId: resolvedMenuItemId,
 					snapshotName: itemName,
 					snapshotPriceKobo: 150000,
 					snapshotPrepMin: 20,
@@ -135,6 +143,39 @@ describe("getMarketplace — same-state scope", () => {
 		// Each card carries the shop name.
 		const cardB = seenFromA.find((row) => row.vendor.id === vB.vendorId);
 		expect(cardB?.vendor.businessName).toBe("Bola Buka");
+	});
+
+	it("hydrates missing listing item photos from the posted menu item", async () => {
+		const campus = await makeCampus({ state: "Lagos" });
+		if (!campus) throw new Error("Expected campus");
+		const campusId = campus._id.toString();
+		const vendor = await activeVendorOnCampus(campusId, "Photo Kitchen");
+		const menuItem = await createMenuItemDB({
+			payload: {
+				vendorId: vendor.vendorId,
+				campusId,
+				category: MenuCategory.MEALS,
+				name: "Picture Plate",
+				priceKobo: 200000,
+				imageUrl: "/api/images/menu-items/picture-plate.jpg",
+			},
+		});
+		if (!menuItem) throw new Error("Expected menu item");
+		await activeListing({
+			vendorId: vendor.vendorId,
+			campusId,
+			title: "Photo lunch",
+			itemName: "Picture Plate",
+			menuItemId: menuItem._id.toString(),
+		});
+
+		const rows = await getMarketplace({ campusId });
+		const listingItem = rows.find(
+			(row) => row.vendor.id === vendor.vendorId,
+		)?.listings[0]?.items[0];
+		expect(listingItem?.snapshotImageUrl).toBe(
+			"/api/images/menu-items/picture-plate.jpg",
+		);
 	});
 });
 
@@ -225,6 +266,39 @@ describe("getVendorStorefront", () => {
 		await expect(
 			getVendorStorefront({ vendorId: pending.vendorId }),
 		).rejects.toBeTruthy();
+	});
+
+	it("hydrates missing storefront listing photos from the posted menu item", async () => {
+		const campus = await makeCampus({ state: "Lagos" });
+		if (!campus) throw new Error("Expected campus");
+		const campusId = campus._id.toString();
+		const vendor = await activeVendorOnCampus(
+			campusId,
+			"Storefront Photos",
+		);
+		const menuItem = await createMenuItemDB({
+			payload: {
+				vendorId: vendor.vendorId,
+				campusId,
+				category: MenuCategory.MEALS,
+				name: "Menu Photo Plate",
+				priceKobo: 300000,
+				imageUrl: "/api/images/menu-items/menu-photo-plate.jpg",
+			},
+		});
+		if (!menuItem) throw new Error("Expected menu item");
+		await activeListing({
+			vendorId: vendor.vendorId,
+			campusId,
+			title: "Photo Storefront",
+			itemName: "Menu Photo Plate",
+			menuItemId: menuItem._id.toString(),
+		});
+
+		const store = await getVendorStorefront({ vendorId: vendor.vendorId });
+		expect(store.listings[0].items[0].snapshotImageUrl).toBe(
+			"/api/images/menu-items/menu-photo-plate.jpg",
+		);
 	});
 });
 

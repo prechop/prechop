@@ -41,6 +41,8 @@ interface IncomingOrder {
 	deliveryFeeKobo?: number;
 	prechopCommissionKobo?: number;
 	vendorSettlementKobo?: number;
+	deliveryPhone?: string;
+	customerMessage?: string;
 	createdAt?: string;
 	items: Array<{ snapshotName: string; quantity: number }>;
 }
@@ -228,8 +230,8 @@ export default function VendorDailyOrderDetailWrapper({
 		refreshInterval: 15_000,
 	});
 
-	// Buyer orders placed against this listing (vendor-scoped, same source the
-	// dashboard's "Incoming orders" uses). Only meaningful once it has opened.
+	// Buyer orders placed against this listing. The dashboard uses a separate
+	// vendor-wide attention queue so completed history can remain visible here.
 	const { data: incoming } = useSWR<IncomingOrder[]>(
 		order ? `/vendor/daily-orders/${orderId}/orders` : null,
 		fetcher,
@@ -594,6 +596,23 @@ export default function VendorDailyOrderDetailWrapper({
 													)}
 												</Text>
 											)}
+											{o.customerMessage && (
+												<Text $size={12}>
+													Buyer note:{" "}
+													{o.customerMessage}
+												</Text>
+											)}
+											{o.fulfillmentType === "DELIVERY" &&
+												o.deliveryPhone && (
+													<Text $size={12}>
+														Buyer phone:{" "}
+														<a
+															href={`tel:${o.deliveryPhone}`}
+														>
+															{o.deliveryPhone}
+														</a>
+													</Text>
+												)}
 										</Stack>
 										<Stack
 											$gap={2}

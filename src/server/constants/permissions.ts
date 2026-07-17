@@ -100,6 +100,14 @@ export const PERMISSION_CATALOG = {
 			"notification:send": "Send / broadcast notifications",
 		},
 	},
+	support: {
+		label: "Support",
+		actions: {
+			"support:read": "View support requests",
+			"support:update": "Assign and update support requests",
+			"support:reply": "Reply to support conversations",
+		},
+	},
 	audit: {
 		label: "Audit log",
 		actions: {
@@ -264,6 +272,9 @@ export const BUILTIN_POLICIES: Record<
 					"review:moderate",
 					"campus:read",
 					"school:read",
+					"support:read",
+					"support:update",
+					"support:reply",
 				],
 			},
 		],

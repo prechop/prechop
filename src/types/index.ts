@@ -88,6 +88,10 @@ export interface VendorProfile {
   defaultPickupAvailable?: boolean;
   defaultDeliveryAvailable?: boolean;
   defaultDeliveryFeeKobo?: number;
+  defaultDeliveryCoverage?: string;
+  defaultDeliveryEstimateMinutes?: number;
+  defaultDeliveryContactPhone?: string;
+  defaultDeliveryResponsibilityAccepted?: boolean;
 }
 
 export interface DailyOrderOption {
@@ -134,6 +138,10 @@ export interface DailyOrder {
   pickupAvailable: boolean;
   deliveryAvailable: boolean;
   deliveryFeeKobo: number;
+  deliveryCoverage?: string;
+  deliveryEstimateMinutes?: number;
+  deliveryContactPhone?: string;
+  deliveryResponsibilityAccepted?: boolean;
   totalOrdersCount: number;
   items: DailyOrderItem[];
   /** True on the public listing response when the signed-in caller owns it. */
@@ -142,6 +150,10 @@ export interface DailyOrder {
   vendorOpen?: boolean;
   /** On the public listing response: the shop's display name (may be null). */
   vendorName?: string | null;
+  /** On the public listing response: where pickup buyers should collect from. */
+  vendorPickupLocation?: string | null;
+  /** On the public listing response: vendor contact for pickup coordination. */
+  vendorPhone?: string | null;
   /**
    * On public listing/marketplace responses: the shop's publishable rating, or
    * null when it has fewer than 5 reviews (trust gate, PRD §8.12). Render
@@ -305,6 +317,10 @@ export interface BuyerOrder {
   buyerId: string;
   status: OrderStatus;
   fulfillmentType: "PICKUP" | "DELIVERY";
+  /** Served on order detail responses so pickup buyers know where to collect. */
+  vendorPickupLocation?: string | null;
+  deliveryPhone?: string;
+  customerMessage?: string;
   subtotalKobo: number;
   deliveryFeeKobo: number;
   platformFeeKobo: number;

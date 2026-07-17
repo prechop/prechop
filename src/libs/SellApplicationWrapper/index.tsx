@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import styled from "styled-components";
 import {
 	Button,
@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 
 type Step = "form" | "otp";
+const OTP_DIGITS = 6;
 
 const Screen = styled.div`
 	min-height: 100dvh;
@@ -73,6 +74,39 @@ const Foot = styled(Text)`
 	text-align: center;
 	margin-top: var(--pc-space-5);
 `;
+const OtpBoxes = styled.div`
+	display: grid;
+	grid-template-columns: repeat(${OTP_DIGITS}, minmax(0, 1fr));
+	gap: 8px;
+`;
+const OtpBox = styled.input`
+	width: 100%;
+	aspect-ratio: 1;
+	border: 1.5px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface);
+	color: var(--pc-text);
+	font-family: inherit;
+	font-size: 20px;
+	font-weight: 800;
+	text-align: center;
+	outline: none;
+	transition:
+		border-color var(--pc-dur) var(--pc-ease),
+		box-shadow var(--pc-dur) var(--pc-ease);
+
+	&:focus {
+		border-color: var(--pc-color-primary);
+		box-shadow: 0 0 0 4px var(--pc-color-primary-50);
+	}
+
+	&::placeholder {
+		color: var(--pc-text-faint);
+	}
+`;
+const FieldError = styled(Text)`
+	color: var(--pc-color-danger);
+`;
 
 /**
  * Vendor application ("Sell on Prechop"). Separate from the unified login: a
@@ -93,7 +127,13 @@ export default function SellApplicationWrapper() {
 	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [phone, setPhone] = useState("");
-	const [otp, setOtp] = useState("");
+	const [otpDigits, setOtpDigits] = useState<string[]>(
+		Array(OTP_DIGITS).fill(""),
+	);
+	const [otpError, setOtpError] = useState("");
+	const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
+	const otp = otpDigits.join("");
+	const isOtpComplete = otp.length === OTP_DIGITS;
 
 	async function submit() {
 		if (!firstName.trim() || !businessName.trim() || !phone.trim()) {
@@ -110,6 +150,8 @@ export default function SellApplicationWrapper() {
 				businessName: businessName.trim(),
 			});
 			toast("Code sent to your phone", "success");
+			setOtpDigits(Array(OTP_DIGITS).fill(""));
+			setOtpError("");
 			setStep("otp");
 		} catch (e) {
 			if (appCode(e) === "BUYER_ACCOUNT_EXISTS") {
@@ -123,6 +165,12 @@ export default function SellApplicationWrapper() {
 	}
 
 	async function verify() {
+		if (!isOtpComplete) {
+			const message = "Enter the complete 6-digit verification code.";
+			setOtpError(message);
+			toast(message, "error");
+			return;
+		}
 		setLoading(true);
 		try {
 			await api.post("/auth/otp/verify", { phone: phone.trim(), otp });
@@ -134,6 +182,41 @@ export default function SellApplicationWrapper() {
 			setLoading(false);
 		}
 	}
+
+	function handleOtpChange(index: number, value: string) {
+		const digit = onlyDigits(value).slice(-1);
+		const next = [...otpDigits];
+		next[index] = digit;
+		setOtpDigits(next);
+		if (otpError) setOtpError("");
+		if (digit && index < OTP_DIGITS - 1) {
+			otpRefs.current[index + 1]?.focus();
+		}
+	}
+
+	function handleOtpKeyDown(index: number, key: string) {
+		if (key === "Backspace" && !otpDigits[index] && index > 0) {
+			otpRefs.current[index - 1]?.focus();
+		}
+		if (key === "Enter") verify();
+	}
+
+	function handleOtpPaste(value: string) {
+		const pasted = onlyDigits(value).slice(0, OTP_DIGITS);
+		if (pasted.length !== OTP_DIGITS) {
+			setOtpError("Paste the full 6-digit verification code.");
+			return;
+		}
+		setOtpDigits(pasted.split(""));
+		setOtpError("");
+		otpRefs.current[OTP_DIGITS - 1]?.focus();
+	}
+
+	const otpValidationMessage =
+		otpError ||
+		(otp.length > 0 && !isOtpComplete
+			? "Enter all 6 digits to continue."
+			: "");
 
 	return (
 		<Screen>
@@ -187,6 +270,8 @@ export default function SellApplicationWrapper() {
 									onChange={(e) => setPhone(e.target.value)}
 									placeholder="08012345678"
 									inputMode="tel"
+									maxLength={11}
+									type="number"
 								/>
 								<Button
 									$full
@@ -208,18 +293,61 @@ export default function SellApplicationWrapper() {
 										Enter the 6-digit code sent to {phone}.
 									</Text>
 								</Stack>
-								<Input
-									label="Verification code"
-									value={otp}
-									onChange={(e) => setOtp(e.target.value)}
-									placeholder="123456"
-									inputMode="numeric"
-									maxLength={6}
-								/>
+								<Stack $gap={7}>
+									<Text
+										as="label"
+										$weight={700}
+										$size={13}
+										htmlFor="vendor-otp-0"
+									>
+										Verification code
+									</Text>
+									<OtpBoxes>
+										{otpDigits.map((digit, index) => (
+											<OtpBox
+												key={`vendor-otp-${index}`}
+												id={`vendor-otp-${index}`}
+												ref={(el) => {
+													otpRefs.current[index] = el;
+												}}
+												value={digit}
+												inputMode="numeric"
+												maxLength={1}
+												aria-label={`Verification code digit ${index + 1}`}
+												onChange={(e) =>
+													handleOtpChange(
+														index,
+														e.target.value,
+													)
+												}
+												onKeyDown={(e) =>
+													handleOtpKeyDown(
+														index,
+														e.key,
+													)
+												}
+												onPaste={(e) => {
+													e.preventDefault();
+													handleOtpPaste(
+														e.clipboardData.getData(
+															"text",
+														),
+													);
+												}}
+											/>
+										))}
+									</OtpBoxes>
+									{otpValidationMessage && (
+										<FieldError $size={13}>
+											{otpValidationMessage}
+										</FieldError>
+									)}
+								</Stack>
 								<Button
 									$full
 									$size="lg"
 									$loading={loading}
+									disabled={!isOtpComplete}
 									onClick={verify}
 								>
 									Verify &amp; continue
@@ -261,4 +389,8 @@ function errMsg(e: unknown): string {
 function appCode(e: unknown): string | undefined {
 	const err = e as { response?: { data?: { appCode?: string } } };
 	return err?.response?.data?.appCode;
+}
+
+function onlyDigits(value: string): string {
+	return value.replace(/\D/g, "");
 }

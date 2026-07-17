@@ -66,6 +66,10 @@ export interface IDailyOrderCreateInput {
 	pickupAvailable?: boolean;
 	deliveryAvailable?: boolean;
 	deliveryFeeKobo?: number;
+	deliveryCoverage?: string;
+	deliveryEstimateMinutes?: number;
+	deliveryContactPhone?: string;
+	deliveryResponsibilityAccepted?: boolean;
 	items: IDailyOrderItemInput[];
 }
 
@@ -84,6 +88,10 @@ export interface IDailyOrder {
 	pickupAvailable: boolean;
 	deliveryAvailable: boolean;
 	deliveryFeeKobo: number;
+	deliveryCoverage?: string;
+	deliveryEstimateMinutes?: number;
+	deliveryContactPhone?: string;
+	deliveryResponsibilityAccepted?: boolean;
 	totalOrdersCount: number;
 	items: IDailyOrderItem[];
 	deleted: boolean;

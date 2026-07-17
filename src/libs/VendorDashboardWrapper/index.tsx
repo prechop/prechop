@@ -10,7 +10,6 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
-	Grid,
 	Input,
 	PageHeader,
 	Row,
@@ -51,10 +50,10 @@ const OpenCard = styled(Card)`
   align-items: center;
   justify-content: space-between;
   gap: var(--pc-space-4);
-  background: var(--pc-gradient-warm);
+  background: var(--pc-gradient-calm-orange);
   border: none;
   color: var(--pc-text-inverse);
-  box-shadow: var(--pc-shadow-primary);
+  box-shadow: var(--pc-shadow-calm-orange);
   position: relative;
   overflow: hidden;
   &::after {
@@ -69,6 +68,62 @@ const OpenCard = styled(Card)`
     /* Decorative only — must never swallow clicks on the toggle beneath it. */
     pointer-events: none;
   }
+`;
+const CompactStatsGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	width: 100%;
+
+	@media (max-width: 340px) {
+		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+	}
+
+	> div {
+		min-width: 0;
+		padding: 12px 10px;
+		gap: 6px;
+	}
+
+	> div > div:first-child {
+		min-width: 0;
+		gap: 6px;
+	}
+
+	> div > div:first-child > span:first-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 11.5px;
+		font-weight: 800;
+		line-height: 1.15;
+	}
+
+	> div > div:first-child > span:last-child {
+		flex: 0 0 auto;
+		font-size: 15px;
+	}
+
+	> div > div:nth-child(2) {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-size: 20px;
+		font-weight: 900;
+		letter-spacing: 0;
+		line-height: 1.05;
+	}
+
+	> div > span {
+		font-size: 11.5px;
+		line-height: 1.15;
+	}
+
+	@media (min-width: 390px) {
+		> div > div:nth-child(2) {
+			font-size: 22px;
+		}
+	}
 `;
 const OpenText = styled.div`
   position: relative;
@@ -96,18 +151,17 @@ const NewButton = styled(Link)`
   width: 100%;
   padding: 16px;
   border-radius: var(--pc-radius);
-  background: var(--pc-color-primary);
+  background: var(--pc-gradient-calm-orange);
   color: var(--pc-text-inverse);
   font-family: var(--pc-font-display);
   font-weight: 800;
   font-size: 16px;
   letter-spacing: -0.01em;
-  box-shadow: var(--pc-shadow-primary);
+  box-shadow: var(--pc-shadow-calm-orange);
   transition:
     transform var(--pc-dur) var(--pc-ease),
     background var(--pc-dur) var(--pc-ease);
   &:hover {
-    background: var(--pc-color-primary-600);
     transform: translateY(-2px);
   }
 `;
@@ -358,13 +412,12 @@ export default function VendorDashboardWrapper() {
 		{ refreshInterval: 15_000 },
 	);
 
-	// Live incoming buyer orders for the vendor's current active daily order.
-	const activeDailyId =
-		orders?.find((o) => o.status === "ACTIVE")?.id ?? null;
-	const { data: incoming } = useSWR<IncomingOrder[]>(
-		activeDailyId ? `/vendor/daily-orders/${activeDailyId}/orders` : null,
+	// Live incoming buyer orders that still need vendor attention, across every
+	// paid payment path and daily order.
+	const { data: incoming, mutate: mutateIncoming } = useSWR<IncomingOrder[]>(
+		isActive ? "/vendor/orders/incoming" : null,
 		fetcher,
-		{ refreshInterval: 15_000 },
+		{ refreshInterval: 5_000 },
 	);
 
 	const [toggling, setToggling] = useState(false);
@@ -416,7 +469,11 @@ export default function VendorDashboardWrapper() {
 				...(reason?.trim() ? { reason: reason.trim() } : {}),
 			});
 			toast("Daily order closed", "success");
-			await Promise.all([mutateOrders(), mutateFiltered()]);
+			await Promise.all([
+				mutateOrders(),
+				mutateFiltered(),
+				mutateIncoming(),
+			]);
 		} catch (e) {
 			toast(errMsg(e), "error");
 		}
@@ -470,34 +527,34 @@ export default function VendorDashboardWrapper() {
 					/>
 				</OpenCard>
 
-				<Grid $min={150} $gap={12}>
+				<CompactStatsGrid>
 					<StatCard
-						label="Daily orders"
+						label="Menus"
 						value={statList.length}
 						icon="🍲"
 						hint="Posted this period"
 					/>
 					<StatCard
-						label="Live now"
+						label="Live"
 						value={activeCount}
 						icon="🔥"
 						tone="var(--pc-color-accent)"
 						hint="Active daily orders"
 					/>
 					<StatCard
-						label="Orders placed"
+						label="Orders"
 						value={ordersPlaced}
 						icon="🧾"
 						tone="var(--pc-color-gold)"
 						hint="Across all your posts"
 					/>
-				</Grid>
+				</CompactStatsGrid>
 
 				<NewButton href="/dashboard/new">
 					<span aria-hidden>＋</span> New daily order
 				</NewButton>
 
-				{activeDailyId && (incoming?.length ?? 0) > 0 && (
+				{(incoming?.length ?? 0) > 0 && (
 					<Card>
 						<SectionHeader
 							title="Incoming orders"

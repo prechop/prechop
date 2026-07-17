@@ -20,16 +20,18 @@ import {
 import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
+import {
+	CATEGORY_OPTION_GROUP_SUGGESTIONS,
+	MENU_CATEGORIES,
+	MENU_CATEGORY_LABELS,
+	normalizeMenuCategory,
+	type OptionGroupSuggestion,
+} from "@/constants/menuCategories";
 import { useToast } from "@/hooks/useToast";
 import OptionGroupsManager from "@/libs/OptionGroupsManager";
 import type { MenuItem, MenuOptionGroup } from "@/types";
 
-const CATEGORIES = [
-	{ value: "MEALS", label: "Meals" },
-	{ value: "SNACKS", label: "Snacks" },
-	{ value: "DRINKS", label: "Drinks" },
-	{ value: "BAKED_GOODS", label: "Baked goods" },
-];
+const CATEGORIES = MENU_CATEGORIES;
 
 interface Draft {
 	name: string;
@@ -130,6 +132,26 @@ const ManageBtn = styled.button`
 		background: var(--pc-surface-2);
 	}
 `;
+const SuggestionBox = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const SuggestionName = styled.span`
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 10px;
+	border-radius: var(--pc-radius-pill);
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--pc-text-muted);
+	background: var(--pc-surface);
+	border: 1px solid var(--pc-border);
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -184,7 +206,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		hydrated.current = true;
 		setDraft({
 			name: item.name,
-			category: item.category,
+			category: normalizeMenuCategory(item.category),
 			priceNaira: String((item.priceKobo ?? 0) / 100),
 			description: item.description ?? "",
 			estimatedPrepMin: item.estimatedPrepMin
@@ -226,6 +248,60 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		});
 	}
 
+	function suggestionBody(suggestion: OptionGroupSuggestion) {
+		return {
+			name: suggestion.name,
+			required: suggestion.required ?? false,
+			minSelect: suggestion.minSelect ?? 0,
+			maxSelect: suggestion.maxSelect ?? null,
+			options: suggestion.options,
+		};
+	}
+
+	async function applyCategorySuggestions() {
+		const category = normalizeMenuCategory(draft.category);
+		const suggestions = CATEGORY_OPTION_GROUP_SUGGESTIONS[category] ?? [];
+		if (suggestions.length === 0) return;
+
+		setBusy(true);
+		try {
+			const nextIds = new Set(draft.optionGroupIds);
+			const lowerNameToGroup = new Map(
+				optionGroups.map((g) => [g.name.trim().toLowerCase(), g]),
+			);
+
+			for (const suggestion of suggestions) {
+				const existing = lowerNameToGroup.get(
+					suggestion.name.toLowerCase(),
+				);
+				if (existing) {
+					nextIds.add(existing.id);
+					continue;
+				}
+
+				const created = await apiData<MenuOptionGroup>(
+					api.post("/menu/option-groups", suggestionBody(suggestion)),
+				);
+				nextIds.add(created.id);
+				lowerNameToGroup.set(
+					created.name.trim().toLowerCase(),
+					created,
+				);
+			}
+
+			setDraft((current) => ({
+				...current,
+				optionGroupIds: Array.from(nextIds),
+			}));
+			await globalMutate("/menu/option-groups");
+			toast("Suggested option groups added", "success");
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	async function save() {
 		const price = Number(draft.priceNaira);
 		if (!draft.name.trim() || !(price > 0)) {
@@ -236,7 +312,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		try {
 			const body: Record<string, unknown> = {
 				name: draft.name.trim(),
-				category: draft.category,
+				category: normalizeMenuCategory(draft.category),
 				priceNaira: price,
 				optionGroupIds: draft.optionGroupIds,
 			};
@@ -321,6 +397,17 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 	}
 
 	const shownImage = previewUrl ?? existingImageUrl;
+	const currentCategory = normalizeMenuCategory(draft.category);
+	const categorySuggestions =
+		CATEGORY_OPTION_GROUP_SUGGESTIONS[currentCategory] ?? [];
+	const suggestedNames = categorySuggestions.map((s) => s.name);
+	const allSuggestionsAttached = categorySuggestions.every((suggestion) => {
+		const existing = optionGroups.find(
+			(g) =>
+				g.name.trim().toLowerCase() === suggestion.name.toLowerCase(),
+		);
+		return existing ? draft.optionGroupIds.includes(existing.id) : false;
+	});
 
 	return (
 		<FadeIn>
@@ -375,7 +462,12 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 							label="Category"
 							value={draft.category}
 							onChange={(e) =>
-								setDraft({ ...draft, category: e.target.value })
+								setDraft({
+									...draft,
+									category: normalizeMenuCategory(
+										e.target.value,
+									),
+								})
 							}
 						>
 							{CATEGORIES.map((c) => (
@@ -476,6 +568,48 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 										);
 									})}
 								</Row>
+							)}
+							{categorySuggestions.length > 0 && (
+								<SuggestionBox>
+									<Row
+										$justify="space-between"
+										$gap={10}
+										$wrap
+									>
+										<Stack $gap={4} style={{ flex: 1 }}>
+											<Text $weight={700} $size={13}>
+												Suggested for{" "}
+												{
+													MENU_CATEGORY_LABELS[
+														currentCategory
+													]
+												}
+											</Text>
+											<Text $muted $size={12}>
+												Add these as editable option
+												groups, then change or remove
+												anything you do not need.
+											</Text>
+										</Stack>
+										<Button
+											$size="sm"
+											$variant="secondary"
+											disabled={
+												busy || allSuggestionsAttached
+											}
+											onClick={applyCategorySuggestions}
+										>
+											Use suggestions
+										</Button>
+									</Row>
+									<Row $gap={8} $wrap>
+										{suggestedNames.map((name) => (
+											<SuggestionName key={name}>
+												{name}
+											</SuggestionName>
+										))}
+									</Row>
+								</SuggestionBox>
 							)}
 						</Stack>
 

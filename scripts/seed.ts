@@ -731,7 +731,7 @@ async function main(): Promise<void> {
 				status: VendorStatus.PENDING_REVIEW,
 				locationType: LocationType.ON_CAMPUS,
 				description: "Quick campus snacks and drinks.",
-				categories: [MenuCategory.SNACKS, MenuCategory.DRINKS],
+				categories: [MenuCategory.SNACKS_PASTRIES, MenuCategory.DRINKS],
 				profileImageUrl: "/seed/campus-bites.svg",
 				profileCompleteness: 100,
 				submittedAt: new Date(),

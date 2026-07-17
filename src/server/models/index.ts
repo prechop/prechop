@@ -16,6 +16,7 @@ export * from "./refunds";
 export * from "./reviews";
 export * from "./schools";
 export * from "./siteConfigs";
+export * from "./supportRequests";
 export * from "./timetableEntries";
 export * from "./users";
 export * from "./vendorProfiles";

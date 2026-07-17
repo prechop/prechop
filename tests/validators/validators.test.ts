@@ -162,10 +162,16 @@ describe("placeOrderBodySchema", () => {
 		const parsed = placeOrderBodySchema.safeParse({
 			dailyOrderId: "d1",
 			fulfillmentType: FulfillmentType.PICKUP,
+			customerMessage: "  No pepper, thanks  ",
+			deliveryPhone: "  +2348012345678  ",
 			items: [{ dailyOrderItemId: "i1", quantity: "2" }],
 		});
 		expect(parsed.success).toBe(true);
-		if (parsed.success) expect(parsed.data.items[0].quantity).toBe(2);
+		if (parsed.success) {
+			expect(parsed.data.items[0].quantity).toBe(2);
+			expect(parsed.data.customerMessage).toBe("No pepper, thanks");
+			expect(parsed.data.deliveryPhone).toBe("+2348012345678");
+		}
 	});
 
 	it("accepts selected add-on quantities", () => {
@@ -202,6 +208,28 @@ describe("placeOrderBodySchema", () => {
 				dailyOrderId: "d1",
 				fulfillmentType: FulfillmentType.DELIVERY,
 				items: [{ dailyOrderItemId: "i1", quantity: 51 }],
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects a customer message above 150 characters", () => {
+		expect(
+			placeOrderBodySchema.safeParse({
+				dailyOrderId: "d1",
+				fulfillmentType: FulfillmentType.PICKUP,
+				customerMessage: "x".repeat(151),
+				items: [{ dailyOrderItemId: "i1", quantity: 1 }],
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects a delivery phone above 30 characters", () => {
+		expect(
+			placeOrderBodySchema.safeParse({
+				dailyOrderId: "d1",
+				fulfillmentType: FulfillmentType.DELIVERY,
+				deliveryPhone: "1".repeat(31),
+				items: [{ dailyOrderItemId: "i1", quantity: 1 }],
 			}).success,
 		).toBe(false);
 	});
