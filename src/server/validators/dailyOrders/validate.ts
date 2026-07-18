@@ -88,44 +88,44 @@ function requireDeliveryDetails<
 
 export const createDailyOrderSchema = z
 	.object({
-	title: z.string().min(1),
-	scheduledDate: z.string().datetime(),
-	availableFrom: z.string().datetime().optional(),
-	cutoffTime: z.string().datetime(),
-	pickupAvailable: z.boolean().optional(),
-	deliveryAvailable: z.boolean().optional(),
-	deliveryFeeKobo: z.number().int().nonnegative().optional(),
-	...deliveryFields,
-	draft: z.boolean().optional(),
-	items: z.array(dailyOrderItemInputSchema).min(1),
+		title: z.string().min(1),
+		scheduledDate: z.string().datetime(),
+		availableFrom: z.string().datetime().optional(),
+		cutoffTime: z.string().datetime(),
+		pickupAvailable: z.boolean().optional(),
+		deliveryAvailable: z.boolean().optional(),
+		deliveryFeeKobo: z.number().int().nonnegative().optional(),
+		...deliveryFields,
+		draft: z.boolean().optional(),
+		items: z.array(dailyOrderItemInputSchema).min(1),
 	})
 	.superRefine(requireDeliveryDetails);
 
 export const createFromTemplateSchema = z
 	.object({
-	title: z.string().min(1),
-	scheduledDate: z.string().datetime(),
-	availableFrom: z.string().datetime().optional(),
-	cutoffTime: z.string().datetime(),
-	pickupAvailable: z.boolean().optional(),
-	deliveryAvailable: z.boolean().optional(),
-	deliveryFeeKobo: z.number().int().nonnegative().optional(),
-	...deliveryFields,
-	draft: z.boolean().optional(),
+		title: z.string().min(1),
+		scheduledDate: z.string().datetime(),
+		availableFrom: z.string().datetime().optional(),
+		cutoffTime: z.string().datetime(),
+		pickupAvailable: z.boolean().optional(),
+		deliveryAvailable: z.boolean().optional(),
+		deliveryFeeKobo: z.number().int().nonnegative().optional(),
+		...deliveryFields,
+		draft: z.boolean().optional(),
 	})
 	.superRefine(requireDeliveryDetails);
 
 export const updateDailyOrderDraftSchema = z
 	.object({
-	title: z.string().min(1).optional(),
-	scheduledDate: z.string().datetime().optional(),
-	availableFrom: z.string().datetime().optional(),
-	cutoffTime: z.string().datetime().optional(),
-	pickupAvailable: z.boolean().optional(),
-	deliveryAvailable: z.boolean().optional(),
-	deliveryFeeKobo: z.number().int().nonnegative().optional(),
-	...deliveryFields,
-	items: z.array(dailyOrderItemInputSchema).optional(),
+		title: z.string().min(1).optional(),
+		scheduledDate: z.string().datetime().optional(),
+		availableFrom: z.string().datetime().optional(),
+		cutoffTime: z.string().datetime().optional(),
+		pickupAvailable: z.boolean().optional(),
+		deliveryAvailable: z.boolean().optional(),
+		deliveryFeeKobo: z.number().int().nonnegative().optional(),
+		...deliveryFields,
+		items: z.array(dailyOrderItemInputSchema).optional(),
 	})
 	.superRefine(requireDeliveryDetails);
 

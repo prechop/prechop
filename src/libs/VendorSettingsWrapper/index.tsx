@@ -47,7 +47,10 @@ const VENDOR_TYPES = [
 const CATEGORIES = MENU_CATEGORIES;
 type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
 
-function fulfilmentChoice(pickup: boolean, delivery: boolean): FulfilmentChoice {
+function fulfilmentChoice(
+	pickup: boolean,
+	delivery: boolean,
+): FulfilmentChoice {
 	if (pickup && delivery) return "BOTH";
 	if (delivery) return "DELIVERY";
 	return "PICKUP";
@@ -412,14 +415,20 @@ export default function VendorSettingsWrapper() {
 		}
 		if (defDelivery) {
 			if (defFee.trim() === "" || Number(defFee) < 0) {
-				toast("Add a valid delivery fee. Use 0 for free delivery.", "error");
+				toast(
+					"Add a valid delivery fee. Use 0 for free delivery.",
+					"error",
+				);
 				return;
 			}
 			if (!defCoverage.trim()) {
 				toast("Add the supported delivery areas or distance.", "error");
 				return;
 			}
-			if (!Number.isFinite(Number(defEstimate)) || Number(defEstimate) <= 0) {
+			if (
+				!Number.isFinite(Number(defEstimate)) ||
+				Number(defEstimate) <= 0
+			) {
 				toast("Add a realistic delivery estimate in minutes.", "error");
 				return;
 			}
@@ -428,7 +437,10 @@ export default function VendorSettingsWrapper() {
 				return;
 			}
 			if (!defDeliveryAccepted) {
-				toast("Confirm that you manage and complete delivery.", "error");
+				toast(
+					"Confirm that you manage and complete delivery.",
+					"error",
+				);
 				return;
 			}
 		}
@@ -842,7 +854,8 @@ export default function VendorSettingsWrapper() {
 							label="Default fulfilment"
 							value={fulfilmentChoice(defPickup, defDelivery)}
 							onChange={(e) => {
-								const value = e.target.value as FulfilmentChoice;
+								const value = e.target
+									.value as FulfilmentChoice;
 								setDefPickup(
 									value === "PICKUP" || value === "BOTH",
 								);
@@ -887,7 +900,9 @@ export default function VendorSettingsWrapper() {
 									label="Delivery contact number"
 									type="tel"
 									value={defContact}
-									onChange={(e) => setDefContact(e.target.value)}
+									onChange={(e) =>
+										setDefContact(e.target.value)
+									}
 									placeholder="+2348012345678"
 								/>
 								<ConfirmLabel>

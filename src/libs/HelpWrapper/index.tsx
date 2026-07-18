@@ -287,18 +287,25 @@ function topicMatches(topic: HelpTopic, audience: Audience, query: string) {
 
 export default function HelpWrapper({
 	initialAudience = "buyer",
+	initialCategory = "ORDER",
+	initialOrderRef = "",
+	initialPaymentRef = "",
 }: {
 	initialAudience?: Audience;
+	initialCategory?: string;
+	initialOrderRef?: string;
+	initialPaymentRef?: string;
 }) {
 	const { isAuthenticated, can } = useAuth();
 	const { toast } = useToast();
 	const [audience, setAudience] = useState<Audience>(initialAudience);
 	const [query, setQuery] = useState("");
-	const [category, setCategory] = useState("ORDER");
+	const [category, setCategory] = useState(initialCategory.toUpperCase());
 	const [subject, setSubject] = useState("");
 	const [message, setMessage] = useState("");
-	const [relatedOrderRef, setRelatedOrderRef] = useState("");
-	const [relatedPaymentRef, setRelatedPaymentRef] = useState("");
+	const [relatedOrderRef, setRelatedOrderRef] = useState(initialOrderRef);
+	const [relatedPaymentRef, setRelatedPaymentRef] =
+		useState(initialPaymentRef);
 	const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
 		null,
 	);

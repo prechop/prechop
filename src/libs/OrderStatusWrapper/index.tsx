@@ -342,9 +342,10 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 								</Text>
 								<Text $muted $size={14}>
 									Prechop manages payment and order status,
-									but this kitchen is responsible for arranging
-									and completing delivery. Delivery complaints
-									are reviewed with the vendor by support.
+									but this kitchen is responsible for
+									arranging and completing delivery. Delivery
+									complaints are reviewed with the vendor by
+									support.
 								</Text>
 							</Stack>
 							<Row $justify="flex-start">

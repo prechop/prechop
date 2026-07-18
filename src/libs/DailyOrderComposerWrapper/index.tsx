@@ -36,7 +36,10 @@ interface TemplateEntry {
 }
 type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
 
-function fulfilmentChoice(pickup: boolean, delivery: boolean): FulfilmentChoice {
+function fulfilmentChoice(
+	pickup: boolean,
+	delivery: boolean,
+): FulfilmentChoice {
 	if (pickup && delivery) return "BOTH";
 	if (delivery) return "DELIVERY";
 	return "PICKUP";
@@ -617,7 +620,10 @@ export default function DailyOrderComposerWrapper({
 		}
 		if (delivery) {
 			if (deliveryFee.trim() === "" || Number(deliveryFee) < 0) {
-				toast("Add a valid delivery fee. Use 0 for free delivery.", "error");
+				toast(
+					"Add a valid delivery fee. Use 0 for free delivery.",
+					"error",
+				);
 				return;
 			}
 			if (!deliveryCoverage.trim()) {
@@ -636,7 +642,10 @@ export default function DailyOrderComposerWrapper({
 				return;
 			}
 			if (!deliveryAccepted) {
-				toast("Confirm that you manage and complete delivery.", "error");
+				toast(
+					"Confirm that you manage and complete delivery.",
+					"error",
+				);
 				return;
 			}
 		}
@@ -652,7 +661,9 @@ export default function DailyOrderComposerWrapper({
 				deliveryFeeKobo: delivery
 					? Math.round(Number(deliveryFee) * 100)
 					: 0,
-				deliveryCoverage: delivery ? deliveryCoverage.trim() : undefined,
+				deliveryCoverage: delivery
+					? deliveryCoverage.trim()
+					: undefined,
 				deliveryEstimateMinutes: delivery
 					? Math.round(Number(deliveryEstimate))
 					: undefined,
@@ -891,26 +902,29 @@ export default function DailyOrderComposerWrapper({
 							<Text $muted $size={13}>
 								Vendor-managed delivery. Prechop does not
 								currently provide riders or vehicles. If you
-								enable delivery, you arrange the delivery method,
-								fee, coverage, timing, and completion.
+								enable delivery, you arrange the delivery
+								method, fee, coverage, timing, and completion.
 							</Text>
 							<Select
 								label="Fulfilment"
 								value={fulfilmentChoice(pickup, delivery)}
 								onChange={(e) => {
-									const value =
-										e.target.value as FulfilmentChoice;
+									const value = e.target
+										.value as FulfilmentChoice;
 									setPickup(
 										value === "PICKUP" || value === "BOTH",
 									);
 									setDelivery(
-										value === "DELIVERY" || value === "BOTH",
+										value === "DELIVERY" ||
+											value === "BOTH",
 									);
 								}}
 							>
 								<option value="PICKUP">Pickup only</option>
 								<option value="DELIVERY">Delivery only</option>
-								<option value="BOTH">Pickup and delivery</option>
+								<option value="BOTH">
+									Pickup and delivery
+								</option>
 							</Select>
 							{delivery && (
 								<Stack $gap={10}>

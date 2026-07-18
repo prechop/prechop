@@ -515,7 +515,10 @@ export default function VendorOnboardingWrapper({
 
 				<Card>
 					<Stack $gap={8}>
-						<SectionHeader title="Vendor-managed delivery" icon="🛵" />
+						<SectionHeader
+							title="Vendor-managed delivery"
+							icon="🛵"
+						/>
 						<Text $muted $size={13}>
 							Prechop does not currently provide riders or
 							delivery vehicles. If you enable delivery after

@@ -97,7 +97,12 @@ export const deliveryDefaultsSchema = zod
 			.positive()
 			.max(240)
 			.optional(),
-		defaultDeliveryContactPhone: zod.string().trim().min(5).max(30).optional(),
+		defaultDeliveryContactPhone: zod
+			.string()
+			.trim()
+			.min(5)
+			.max(30)
+			.optional(),
 		defaultDeliveryResponsibilityAccepted: zod.boolean().optional(),
 	})
 	.strict()
