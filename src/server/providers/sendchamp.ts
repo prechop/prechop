@@ -4,6 +4,7 @@ import {
 	OTP_CONSOLE_MODE,
 	SENDCHAMP_API_KEY,
 	SENDCHAMP_SENDER_ID,
+	SENDCHAMP_TIMEOUT_MS,
 } from "../constants";
 
 const SENDCHAMP_BASE_URL = "https://api.sendchamp.com/api/v1";
@@ -33,7 +34,7 @@ class SendchampProvider {
 	constructor() {
 		this.client = axios.create({
 			baseURL: SENDCHAMP_BASE_URL,
-			timeout: 10000,
+			timeout: SENDCHAMP_TIMEOUT_MS,
 			headers: {
 				Authorization: `Bearer ${SENDCHAMP_API_KEY}`,
 				"Content-Type": "application/json",

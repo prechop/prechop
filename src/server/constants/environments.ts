@@ -66,6 +66,9 @@ export const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY ?? "";
 // Comms
 export const OTP_PROVIDER = process.env.OTP_PROVIDER ?? "console";
 export const SENDCHAMP_API_KEY = process.env.SENDCHAMP_API_KEY ?? "";
+export const SENDCHAMP_TIMEOUT_MS = Number(
+	process.env.SENDCHAMP_TIMEOUT_MS ?? 30_000,
+);
 
 /**
  * The ONLY opt-in that lets a `NODE_ENV=production` process route OTPs to
