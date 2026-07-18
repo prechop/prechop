@@ -159,7 +159,7 @@ export function evaluateOtpSinkHatch(): OtpSinkHatchStatus {
 export const OTP_CONSOLE_MODE =
 	OTP_PROVIDER === "console" && (!IS_PROD || evaluateOtpSinkHatch().engaged);
 export const SENDCHAMP_SENDER_ID = process.env.SENDCHAMP_SENDER_ID ?? "PreChop";
-export const SENDCHAMP_OTP_CHANNEL = process.env.SENDCHAMP_OTP_CHANNEL ?? "SMS";
+export const SENDCHAMP_OTP_CHANNEL = process.env.SENDCHAMP_OTP_CHANNEL ?? "sms";
 export const SENDCHAMP_OTP_SENDER_ID =
 	process.env.SENDCHAMP_OTP_SENDER_ID ?? SENDCHAMP_SENDER_ID;
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";

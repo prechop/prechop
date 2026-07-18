@@ -11,10 +11,38 @@ import {
 
 const SENDCHAMP_BASE_URL = "https://api.sendchamp.com/api/v1";
 
+type SendchampOtpPayload = {
+	channel: string;
+	sender?: string;
+	token_type: "numeric";
+	token_length: number;
+	expiration_time: number;
+	customer_mobile_number: string;
+	meta_data: {
+		token: string;
+	};
+};
+
 function toInternationalFormat(localPhone: string): string {
 	const digits = localPhone.replace(/\D/g, "");
 	// 08012345678 -> 2348012345678, +2348012345678 -> 2348012345678
 	return digits.replace(/^0/, "234");
+}
+
+function normalizeOtpChannel(channel: string): string {
+	const value = channel.trim().toLowerCase();
+	if (value === "whatsapp") return "whatsapp";
+	if (value === "voice") return "voice";
+	if (value === "email") return "email";
+	return "sms";
+}
+
+function documentedOtpChannel(channel: string): string {
+	const value = normalizeOtpChannel(channel);
+	if (value === "whatsapp") return "WhatsApp";
+	if (value === "voice") return "Voice";
+	if (value === "email") return "Email";
+	return "SMS";
 }
 
 function logSendchampError(context: string, error: unknown): void {
@@ -76,9 +104,9 @@ class SendchampProvider {
 		}
 
 		try {
-			await this.client.post("/verification/create", {
-				channel: SENDCHAMP_OTP_CHANNEL,
-				sender: SENDCHAMP_OTP_SENDER_ID,
+			const channel = normalizeOtpChannel(SENDCHAMP_OTP_CHANNEL);
+			const payload: SendchampOtpPayload = {
+				channel,
 				token_type: "numeric",
 				token_length: otp.length,
 				expiration_time: 10,
@@ -86,7 +114,32 @@ class SendchampProvider {
 				meta_data: {
 					token: otp,
 				},
-			});
+			};
+			if (SENDCHAMP_OTP_SENDER_ID.trim()) {
+				payload.sender = SENDCHAMP_OTP_SENDER_ID.trim();
+			}
+			try {
+				await this.client.post("/verification/create", payload);
+			} catch (error) {
+				if (
+					!axios.isAxiosError(error) ||
+					error.response?.status !== 400
+				) {
+					throw error;
+				}
+				// Some Sendchamp dashboard examples display title-case channels
+				// even though API requests may accept lowercase. Retry the same OTP
+				// once with the documented casing before surfacing the provider
+				// rejection.
+				const documentedChannel = documentedOtpChannel(
+					SENDCHAMP_OTP_CHANNEL,
+				);
+				if (payload.channel === documentedChannel) throw error;
+				await this.client.post("/verification/create", {
+					...payload,
+					channel: documentedChannel,
+				});
+			}
 		} catch (error) {
 			logSendchampError("verification.create", error);
 			throw error;
