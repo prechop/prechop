@@ -54,8 +54,9 @@ function setValidProdEnv(): void {
 		"ENCRYPTION_KEY",
 		"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 	);
-	vi.stubEnv("OTP_PROVIDER", "sendchamp");
-	vi.stubEnv("SENDCHAMP_API_KEY", "prod-fake-key-not-real");
+	vi.stubEnv("OTP_PROVIDER", "termii");
+	vi.stubEnv("TERMII_API_KEY", "prod-fake-termii-key-not-real");
+	vi.stubEnv("TERMII_SENDER_ID", "PreChop");
 	vi.stubEnv("PAYSTACK_SECRET_KEY", "prod-fake-paystack-not-real");
 	vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://prechop.ng");
 	vi.stubEnv("MONGODB_URI", "mongodb://127.0.0.1:27019");
@@ -98,7 +99,7 @@ describe("assertRuntimeConfig — baseline", () => {
 		vi.stubEnv("OTP_PROVIDER", "console");
 		expect(() => assertRuntimeConfig()).toThrow(/OTP_PROVIDER=console/);
 
-		vi.stubEnv("OTP_PROVIDER", "sendchamp");
+		vi.stubEnv("OTP_PROVIDER", "termii");
 		expect(() => assertRuntimeConfig()).not.toThrow();
 	});
 });
@@ -114,14 +115,6 @@ describe("assertRuntimeConfig — OTP silent-failure guard in production", () =>
 		setValidProdEnv();
 		vi.stubEnv("OTP_PROVIDER", "console");
 		expect(() => assertRuntimeConfig()).toThrow(/OTP_PROVIDER=console/);
-	});
-
-	it("throws when OTP_PROVIDER=sendchamp but SENDCHAMP_API_KEY is missing", () => {
-		setValidProdEnv();
-		vi.stubEnv("SENDCHAMP_API_KEY", undefined);
-		expect(() => assertRuntimeConfig()).toThrow(
-			/SENDCHAMP_API_KEY is missing/,
-		);
 	});
 
 	it("throws when OTP_PROVIDER=termii but Termii credentials are missing", () => {
@@ -467,7 +460,7 @@ describe("OTP_CONSOLE_MODE — derived at import time from IS_PROD", () => {
 
 	it("is false in production for every provider value", async () => {
 		vi.stubEnv("NODE_ENV", "production");
-		vi.stubEnv("OTP_PROVIDER", "sendchamp");
+		vi.stubEnv("OTP_PROVIDER", "termii");
 		expect(await loadOtpConsoleMode()).toBe(false);
 	});
 
@@ -485,7 +478,7 @@ describe("OTP_CONSOLE_MODE — derived at import time from IS_PROD", () => {
 
 	it("is false outside production when a real provider is configured", async () => {
 		vi.stubEnv("NODE_ENV", "development");
-		vi.stubEnv("OTP_PROVIDER", "sendchamp");
+		vi.stubEnv("OTP_PROVIDER", "termii");
 		expect(await loadOtpConsoleMode()).toBe(false);
 	});
 });

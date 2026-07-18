@@ -12,8 +12,8 @@ declare global {
 	var __prechopBootstrapped: boolean | undefined;
 }
 
-/** OTP_PROVIDER values the app actually knows how to dispatch. */
-const KNOWN_OTP_PROVIDERS = ["console", "sendchamp", "termii"] as const;
+/** OTP_PROVIDER values the app actually knows how to dispatch for login OTP. */
+const KNOWN_OTP_PROVIDERS = ["console", "termii"] as const;
 
 function collectSecretProblems(): string[] {
 	const required: Array<[string, string | undefined, number]> = [
@@ -100,11 +100,6 @@ function collectSilentFailureProblems(): string[] {
 	} else if (!KNOWN_OTP_PROVIDERS.includes(otpProvider as never)) {
 		problems.push(
 			`OTP_PROVIDER="${otpProvider}" is not a known provider (${KNOWN_OTP_PROVIDERS.join(", ")})`,
-		);
-	}
-	if (otpProvider === "sendchamp" && !process.env.SENDCHAMP_API_KEY) {
-		problems.push(
-			"OTP_PROVIDER=sendchamp but SENDCHAMP_API_KEY is missing — every OTP send would fail",
 		);
 	}
 	if (otpProvider === "termii") {

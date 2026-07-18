@@ -4,11 +4,11 @@ import {
 	hashOtp,
 	NIGERIAN_PHONE_ERROR_MESSAGE,
 	normalizeNigerianMobilePhone,
-	OTP_PROVIDER,
+	OTP_CONSOLE_MODE,
 	validationError,
 } from "../../constants";
 import { Redis } from "../../databases";
-import { sendchampProvider, termiiProvider } from "../../providers";
+import { termiiProvider } from "../../providers";
 
 const OTP_TTL_SECONDS = 60 * 10; // 10 min
 const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 30; // 30 min
@@ -49,18 +49,18 @@ export async function requestOtp(
 	if (attempts > OTP_MAX_ATTEMPTS) throw ErrOtpRateLimited;
 
 	try {
-		if (OTP_PROVIDER === "termii") {
+		if (OTP_CONSOLE_MODE) {
+			const otp = generateOtp();
+			const hashed = await hashOtp(otp);
+			await Redis.setex(otpKey(normalizedPhone), OTP_TTL_SECONDS, hashed);
+			console.log(`[DEV OTP] To: ${normalizedPhone} | ${otp}`);
+		} else {
 			const pinId = await termiiProvider.sendOtp(normalizedPhone);
 			await Redis.setex(
 				otpKey(normalizedPhone),
 				OTP_TTL_SECONDS,
 				JSON.stringify({ provider: "termii", pinId }),
 			);
-		} else {
-			const otp = generateOtp();
-			const hashed = await hashOtp(otp);
-			await Redis.setex(otpKey(normalizedPhone), OTP_TTL_SECONDS, hashed);
-			await sendchampProvider.sendOtp(normalizedPhone, otp);
 		}
 	} catch (error) {
 		console.error("OTP SMS delivery failed:", error);
