@@ -3,6 +3,8 @@ import axios, { type AxiosInstance } from "axios";
 import {
 	OTP_CONSOLE_MODE,
 	SENDCHAMP_API_KEY,
+	SENDCHAMP_OTP_CHANNEL,
+	SENDCHAMP_OTP_SENDER_ID,
 	SENDCHAMP_SENDER_ID,
 	SENDCHAMP_TIMEOUT_MS,
 } from "../constants";
@@ -75,13 +77,12 @@ class SendchampProvider {
 
 		try {
 			await this.client.post("/verification/create", {
-				channel: "sms",
-				sender: SENDCHAMP_SENDER_ID,
+				channel: SENDCHAMP_OTP_CHANNEL,
+				sender: SENDCHAMP_OTP_SENDER_ID,
 				token_type: "numeric",
 				token_length: otp.length,
 				expiration_time: 10,
 				customer_mobile_number: toInternationalFormat(phone),
-				token: otp,
 				meta_data: {
 					token: otp,
 				},
