@@ -9,13 +9,13 @@ import {
 import { Redis } from "../../databases";
 import { sendchampProvider } from "../../providers";
 
-// const OTP_TTL_SECONDS = 60 * 10; // 10 min
-// const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 30; // 30 min
-// const OTP_MAX_ATTEMPTS = 5;
-
-const OTP_TTL_SECONDS = 60 * 10; // 10 minutes
-const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 1; // 1 minute
+const OTP_TTL_SECONDS = 60 * 10; // 10 min
+const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 30; // 30 min
 const OTP_MAX_ATTEMPTS = 5;
+
+// const OTP_TTL_SECONDS = 60 * 10; // 10 minutes
+// const OTP_RATE_LIMIT_WINDOW_SECONDS = 60 * 1; // 1 minute
+// const OTP_MAX_ATTEMPTS = 5;
 
 export function otpKey(phone: string): string {
   return `otp:code:${phone}`;
