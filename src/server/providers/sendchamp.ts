@@ -14,6 +14,19 @@ function toInternationalFormat(localPhone: string): string {
 	return digits.replace(/^0/, "234");
 }
 
+function logSendchampError(context: string, error: unknown): void {
+	if (axios.isAxiosError(error)) {
+		console.error("Sendchamp request failed:", {
+			context,
+			status: error.response?.status,
+			code: error.code,
+			response: error.response?.data,
+		});
+		return;
+	}
+	console.error("Sendchamp request failed:", { context, error });
+}
+
 class SendchampProvider {
 	private client: AxiosInstance;
 
@@ -37,12 +50,17 @@ class SendchampProvider {
 			console.log(`[DEV SMS] To: ${to} | ${message}`);
 			return;
 		}
-		await this.client.post("/sms/send", {
-			to: toInternationalFormat(to),
-			message,
-			sender_name: SENDCHAMP_SENDER_ID,
-			route: "dnd",
-		});
+		try {
+			await this.client.post("/sms/send", {
+				to: toInternationalFormat(to),
+				message,
+				sender_name: SENDCHAMP_SENDER_ID,
+				route: "dnd",
+			});
+		} catch (error) {
+			logSendchampError("sms.send", error);
+			throw error;
+		}
 	}
 
 	async sendOtp(phone: string, otp: string): Promise<void> {
@@ -54,17 +72,22 @@ class SendchampProvider {
 			return;
 		}
 
-		await this.client.post("/verification/create", {
-			channel: "sms",
-			sender: SENDCHAMP_SENDER_ID,
-			token_type: "numeric",
-			token_length: otp.length,
-			expiration_time: 10,
-			customer_mobile_number: toInternationalFormat(phone),
-			meta_data: {
-				token: otp,
-			},
-		});
+		try {
+			await this.client.post("/verification/create", {
+				channel: "sms",
+				sender: SENDCHAMP_SENDER_ID,
+				token_type: "numeric",
+				token_length: otp.length,
+				expiration_time: 10,
+				customer_mobile_number: toInternationalFormat(phone),
+				meta_data: {
+					token: otp,
+				},
+			});
+		} catch (error) {
+			logSendchampError("verification.create", error);
+			throw error;
+		}
 	}
 
 	async sendOrderConfirmation(
