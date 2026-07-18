@@ -72,7 +72,7 @@ export async function registerBuyer({
 	lastName: string;
 	phone: string;
 	campusId: string;
-}): Promise<{ message: string }> {
+}): Promise<{ message: string; recipientPhone: string }> {
 	const normalizedPhone = requireNigerianMobilePhone(phone);
 	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
 	if (!existing) {
@@ -117,7 +117,7 @@ export async function registerVendor({
 	campusId?: string;
 	email: string;
 	businessName?: string;
-}): Promise<{ message: string }> {
+}): Promise<{ message: string; recipientPhone: string }> {
 	const normalizedPhone = requireNigerianMobilePhone(phone);
 	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
 	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);

@@ -130,6 +130,7 @@ export default function LoginWrapper() {
 	const [step, setStep] = useState<Step>("phone");
 	const [loading, setLoading] = useState(false);
 	const [phone, setPhone] = useState("");
+	const [sentToPhone, setSentToPhone] = useState("");
 	const [phoneError, setPhoneError] = useState("");
 	const [otpDigits, setOtpDigits] = useState<string[]>(
 		Array(OTP_DIGITS).fill(""),
@@ -147,8 +148,10 @@ export default function LoginWrapper() {
 		}
 		setLoading(true);
 		try {
-			await api.post("/auth/otp/request", { phone });
+			const res = await api.post("/auth/otp/request", { phone });
+			const recipientPhone = getRecipientPhone(res.data);
 			toast("Code sent to your phone", "success");
+			setSentToPhone(recipientPhone ?? phone);
 			setOtpDigits(Array(OTP_DIGITS).fill(""));
 			setOtpError("");
 			setStep("otp");
@@ -202,6 +205,7 @@ export default function LoginWrapper() {
 	function handlePhoneChange(value: string) {
 		const next = onlyDigits(value).slice(0, PHONE_DIGITS);
 		setPhone(next);
+		setSentToPhone("");
 		if (phoneError) setPhoneError("");
 	}
 
@@ -299,7 +303,8 @@ export default function LoginWrapper() {
 										Check your phone
 									</Text>
 									<Text $muted $size={14}>
-										Enter the 6-digit code sent to {phone}.
+										Enter the 6-digit code sent to{" "}
+										{sentToPhone || phone}.
 									</Text>
 								</Stack>
 								<Stack $gap={7}>
@@ -364,7 +369,10 @@ export default function LoginWrapper() {
 								<Button
 									$variant="ghost"
 									$size="sm"
-									onClick={() => setStep("phone")}
+									onClick={() => {
+										setSentToPhone("");
+										setStep("phone");
+									}}
 								>
 									Use a different number
 								</Button>
@@ -393,6 +401,11 @@ export default function LoginWrapper() {
 function errMsg(e: unknown): string {
 	const err = e as { response?: { data?: { message?: string } } };
 	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+}
+
+function getRecipientPhone(data: unknown): string | undefined {
+	const res = data as { data?: { recipientPhone?: string } };
+	return res.data?.recipientPhone;
 }
 
 function onlyDigits(value: string): string {

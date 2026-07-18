@@ -127,6 +127,7 @@ export default function SellApplicationWrapper() {
 	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [phone, setPhone] = useState("");
+	const [sentToPhone, setSentToPhone] = useState("");
 	const [otpDigits, setOtpDigits] = useState<string[]>(
 		Array(OTP_DIGITS).fill(""),
 	);
@@ -142,14 +143,16 @@ export default function SellApplicationWrapper() {
 		}
 		setLoading(true);
 		try {
-			await api.post("/auth/register/vendor", {
+			const res = await api.post("/auth/register/vendor", {
 				firstName: firstName.trim(),
 				lastName: lastName.trim(),
 				phone: phone.trim(),
 				email: email.trim(),
 				businessName: businessName.trim(),
 			});
+			const recipientPhone = getRecipientPhone(res.data);
 			toast("Code sent to your phone", "success");
+			setSentToPhone(recipientPhone ?? phone.trim());
 			setOtpDigits(Array(OTP_DIGITS).fill(""));
 			setOtpError("");
 			setStep("otp");
@@ -267,7 +270,10 @@ export default function SellApplicationWrapper() {
 								<Input
 									label="Phone number"
 									value={phone}
-									onChange={(e) => setPhone(e.target.value)}
+									onChange={(e) => {
+										setPhone(e.target.value);
+										setSentToPhone("");
+									}}
 									placeholder="08012345678"
 									inputMode="tel"
 									maxLength={11}
@@ -290,7 +296,8 @@ export default function SellApplicationWrapper() {
 										Check your phone
 									</Text>
 									<Text $muted $size={14}>
-										Enter the 6-digit code sent to {phone}.
+										Enter the 6-digit code sent to{" "}
+										{sentToPhone || phone}.
 									</Text>
 								</Stack>
 								<Stack $gap={7}>
@@ -355,7 +362,10 @@ export default function SellApplicationWrapper() {
 								<Button
 									$variant="ghost"
 									$size="sm"
-									onClick={() => setStep("form")}
+									onClick={() => {
+										setSentToPhone("");
+										setStep("form");
+									}}
 								>
 									Change details
 								</Button>
@@ -389,6 +399,11 @@ function errMsg(e: unknown): string {
 function appCode(e: unknown): string | undefined {
 	const err = e as { response?: { data?: { appCode?: string } } };
 	return err?.response?.data?.appCode;
+}
+
+function getRecipientPhone(data: unknown): string | undefined {
+	const res = data as { data?: { recipientPhone?: string } };
+	return res.data?.recipientPhone;
 }
 
 function onlyDigits(value: string): string {
