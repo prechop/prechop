@@ -81,6 +81,7 @@ class SendchampProvider {
 				token_length: otp.length,
 				expiration_time: 10,
 				customer_mobile_number: toInternationalFormat(phone),
+				token: otp,
 				meta_data: {
 					token: otp,
 				},
