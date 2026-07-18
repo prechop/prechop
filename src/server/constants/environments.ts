@@ -162,6 +162,14 @@ export const SENDCHAMP_SENDER_ID = process.env.SENDCHAMP_SENDER_ID ?? "PreChop";
 export const SENDCHAMP_OTP_CHANNEL = process.env.SENDCHAMP_OTP_CHANNEL ?? "sms";
 export const SENDCHAMP_OTP_SENDER_ID =
 	process.env.SENDCHAMP_OTP_SENDER_ID ?? SENDCHAMP_SENDER_ID;
+export const TERMII_API_KEY = process.env.TERMII_API_KEY ?? "";
+export const TERMII_BASE_URL =
+	process.env.TERMII_BASE_URL ?? "https://api.ng.termii.com";
+export const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID ?? "";
+export const TERMII_CHANNEL = process.env.TERMII_CHANNEL ?? "generic";
+export const TERMII_TIMEOUT_MS = Number(
+	process.env.TERMII_TIMEOUT_MS ?? 30_000,
+);
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 export const RESEND_FROM_EMAIL =
 	process.env.RESEND_FROM_EMAIL ?? "noreply@prechop.ng";

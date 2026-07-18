@@ -124,6 +124,19 @@ describe("assertRuntimeConfig — OTP silent-failure guard in production", () =>
 		);
 	});
 
+	it("throws when OTP_PROVIDER=termii but Termii credentials are missing", () => {
+		setValidProdEnv();
+		vi.stubEnv("OTP_PROVIDER", "termii");
+		vi.stubEnv("TERMII_API_KEY", undefined);
+		vi.stubEnv("TERMII_SENDER_ID", undefined);
+		expect(() => assertRuntimeConfig()).toThrow(
+			/TERMII_API_KEY is missing/,
+		);
+		expect(() => assertRuntimeConfig()).toThrow(
+			/TERMII_SENDER_ID is missing/,
+		);
+	});
+
 	it("throws on a provider it cannot dispatch", () => {
 		setValidProdEnv();
 		vi.stubEnv("OTP_PROVIDER", "twilio");

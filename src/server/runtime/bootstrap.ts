@@ -13,7 +13,7 @@ declare global {
 }
 
 /** OTP_PROVIDER values the app actually knows how to dispatch. */
-const KNOWN_OTP_PROVIDERS = ["console", "sendchamp"] as const;
+const KNOWN_OTP_PROVIDERS = ["console", "sendchamp", "termii"] as const;
 
 function collectSecretProblems(): string[] {
 	const required: Array<[string, string | undefined, number]> = [
@@ -85,7 +85,7 @@ function collectSilentFailureProblems(): string[] {
 	// reports "OTP sent successfully" — nobody can log in and nothing errors.
 	if (!otpProvider) {
 		problems.push(
-			"OTP_PROVIDER is unset — it defaults to `console`, which logs OTPs to stdout instead of sending SMS while the API still reports success. Set OTP_PROVIDER=sendchamp",
+			"OTP_PROVIDER is unset — it defaults to `console`, which logs OTPs to stdout instead of sending SMS while the API still reports success. Set OTP_PROVIDER=termii",
 		);
 	} else if (otpProvider === "console") {
 		// The one exception: an explicit, exactly-matching, uncontradicted e2e
@@ -94,7 +94,7 @@ function collectSilentFailureProblems(): string[] {
 		// this process sends SMS.
 		if (!hatch.engaged) {
 			problems.push(
-				`OTP_PROVIDER=console logs OTPs to stdout instead of sending SMS — never valid in production. Set OTP_PROVIDER=sendchamp (an e2e harness under \`next start\` may instead set ${E2E_OTP_SINK_VAR})`,
+				`OTP_PROVIDER=console logs OTPs to stdout instead of sending SMS — never valid in production. Set OTP_PROVIDER=termii (an e2e harness under \`next start\` may instead set ${E2E_OTP_SINK_VAR})`,
 			);
 		}
 	} else if (!KNOWN_OTP_PROVIDERS.includes(otpProvider as never)) {
@@ -106,6 +106,18 @@ function collectSilentFailureProblems(): string[] {
 		problems.push(
 			"OTP_PROVIDER=sendchamp but SENDCHAMP_API_KEY is missing — every OTP send would fail",
 		);
+	}
+	if (otpProvider === "termii") {
+		if (!process.env.TERMII_API_KEY) {
+			problems.push(
+				"OTP_PROVIDER=termii but TERMII_API_KEY is missing — every OTP send would fail",
+			);
+		}
+		if (!process.env.TERMII_SENDER_ID) {
+			problems.push(
+				"OTP_PROVIDER=termii but TERMII_SENDER_ID is missing — Termii requires an approved sender ID",
+			);
+		}
 	}
 
 	// Paystack: verifyWebhookSignature HMACs with this key. Empty string is a

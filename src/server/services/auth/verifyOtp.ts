@@ -15,6 +15,7 @@ import {
 	updateLastLoginDB,
 } from "../../models";
 import type { IUserPublic } from "../../models/users/types";
+import { termiiProvider } from "../../providers";
 import type { IJwtPayload } from "../../types";
 import { resolvePermissions } from "../iam";
 import { toPublicUser } from "../users/toPublicUser";
@@ -28,12 +29,29 @@ import { otpKey, otpRateLimitKey, otpVerifyRateLimitKey } from "./requestOtp";
 const OTP_VERIFY_WINDOW_SECONDS = 60 * 10; // 10 min
 const OTP_VERIFY_MAX_ATTEMPTS = 5;
 
+type StoredProviderOtp = {
+	provider: "termii";
+	pinId: string;
+};
+
 const ErrOtpVerifyRateLimited = (): AppError =>
 	new AppError(
 		"Too many verification attempts. Request a new code in 10 minutes.",
 		429,
 		"OTP_VERIFY_RATE_LIMITED",
 	);
+
+function parseProviderOtp(value: string): StoredProviderOtp | null {
+	try {
+		const parsed = JSON.parse(value) as Partial<StoredProviderOtp>;
+		if (parsed.provider === "termii" && typeof parsed.pinId === "string") {
+			return parsed as StoredProviderOtp;
+		}
+	} catch {
+		return null;
+	}
+	return null;
+}
 
 export interface VerifyOtpResult {
 	token: IJwtPayload;
@@ -72,7 +90,17 @@ export async function verifyOtpService({
 	const storedHash = await Redis.get(otpKey(normalizedPhone));
 	if (!storedHash) throw ErrOtpInvalid;
 
-	const valid = await compareOtp(otp, storedHash);
+	const providerOtp = parseProviderOtp(storedHash);
+	let valid = false;
+	if (providerOtp?.provider === "termii") {
+		try {
+			valid = await termiiProvider.verifyOtp(providerOtp.pinId, otp);
+		} catch {
+			valid = false;
+		}
+	} else {
+		valid = await compareOtp(otp, storedHash);
+	}
 	if (!valid) throw ErrOtpInvalid;
 
 	// Single-use — delete immediately on success.
