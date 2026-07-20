@@ -176,7 +176,7 @@ export default function AccountWrapper() {
 			});
 			toast("Vendor application started.", "success");
 			await refresh();
-			router.push("/vendor/settings");
+			router.push("/vendor/onboarding");
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
