@@ -1,5 +1,5 @@
-import { nairaToKobo } from "@/server/constants";
 import { normalizeMenuCategory } from "@/constants/menuCategories";
+import { nairaToKobo, validationError } from "@/server/constants";
 import { createMenuItemDB, type MenuCategory } from "@/server/models";
 import {
 	recomputeVendorCompleteness,
@@ -29,6 +29,11 @@ export async function createMenuItem({
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
+	if (!vendor.campusId) {
+		throw validationError(
+			"Complete your vendor campus before adding menu items.",
+		);
+	}
 
 	const item = await createMenuItemDB({
 		payload: {

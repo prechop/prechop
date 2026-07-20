@@ -32,11 +32,11 @@ api.interceptors.response.use(
 		if (status === 401 && original && !original.__retried) {
 			const reqUrl: string = original.url ?? "";
 
-			// Auth endpoints must never trigger a refresh: a 401 from OTP verify,
-			// login, register or the refresh call itself is a genuine failure, not
+			// Auth endpoints must never trigger a refresh: a 401 from sign-in
+			// routes or the refresh call itself is a genuine failure, not
 			// an expired session. Attempting a refresh here deadlocks (the refresh
 			// call's own 401 re-enters this interceptor and awaits the in-flight
-			// refresh promise) — which is what made OTP verify spin forever.
+			// refresh promise).
 			if (reqUrl.startsWith("/auth/")) return Promise.reject(error);
 
 			original.__retried = true;
@@ -54,13 +54,13 @@ api.interceptors.response.use(
 			// landing, shared listing links — must stay browsable for visitors).
 			const isAuthProbe = reqUrl.includes("/users/me");
 			if (!isAuthProbe && typeof window !== "undefined") {
-				const path = window.location.pathname;
+				const path = `${window.location.pathname}${window.location.search}`;
 				// Public pages must not force a login redirect on a background 401.
 				const isPublicPage =
-					path === "/" ||
-					path === "/login" ||
-					path.startsWith("/o/") ||
-					path.startsWith("/order/");
+					window.location.pathname === "/" ||
+					window.location.pathname === "/login" ||
+					window.location.pathname.startsWith("/o/") ||
+					window.location.pathname.startsWith("/order/");
 				if (!isPublicPage) {
 					window.location.href = `/login?next=${encodeURIComponent(path)}`;
 				}

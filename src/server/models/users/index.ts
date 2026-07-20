@@ -5,6 +5,7 @@ import {
 	ErrUserNotFound,
 	encrypt,
 	MAX_LIMIT,
+	NODE_ENV,
 	normalizeNigerianMobilePhone,
 } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
@@ -27,7 +28,7 @@ const schema = new mongoose.Schema<any>(
 		campusId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "campuses",
-			required: true,
+			required: false,
 			index: true,
 		},
 		// Authorization is driven entirely by IAM: the union of policies from a
@@ -44,37 +45,26 @@ const schema = new mongoose.Schema<any>(
 		},
 		firstName: { type: String, required: true, trim: true },
 		lastName: { type: String, required: true, trim: true },
-		// Optional notification address, never a credential — login is phone +
-		// OTP. Most users have none; the field is then ABSENT, not "", so
-		// `buyer?.email ?? ""` stays falsy and "has an email" is a single
-		// `$exists` check.
-		//
-		// Deliberately NOT unique and NOT indexed:
-		//  - nothing queries users by email (the only by-email lookup in the
-		//    codebase is `getVendorProfileByEmailDB`, on a different collection),
-		//    so an index here would be pure write cost on every user write;
-		//  - email grants no account access, so a duplicate is not an auth risk,
-		//    and a unique constraint would turn a best-effort receipt address
-		//    into a hard write failure for two flatmates sharing an inbox.
-		// If a by-email lookup or a uniqueness rule ever lands, add
-		// `{ unique: true, sparse: true }` THEN — sparse so the ~100% of users
-		// without one don't collide on null.
+		profileImageUrl: { type: String },
+		googleSubject: { type: String, sparse: true, index: true },
+		googleEmailVerified: { type: Boolean },
+		// Account identity. Sign-in is passwordless by email or Google; any phone
+		// numbers elsewhere are order or delivery contact details.
 		email: {
 			type: String,
-			required: false,
+			required: true,
 			trim: true,
 			lowercase: true,
 			maxlength: EMAIL_MAX_LENGTH,
+			unique: true,
+			index: true,
 			validate: {
 				validator: isStorableEmail,
 				message: "Invalid email address.",
 			},
 		},
-		// Encrypted at rest. `phoneHash` carries the unique constraint since the
-		// ciphertext is non-deterministic.
-		phone: { type: String, required: true, select: false },
-		phoneHash: { type: String, required: true, unique: true, index: true },
-		isPhoneVerified: { type: Boolean, default: false },
+		phone: { type: String, required: false, select: false },
+		phoneHash: { type: String, required: false, sparse: true, index: true },
 		isActive: { type: Boolean, default: true },
 		lastLoginAt: { type: Date, required: false },
 		refreshTokens: {
@@ -100,7 +90,6 @@ schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
 	this.pipeline().push({
 		$project: {
-			phone: 0,
 			phoneHash: 0,
 			refreshTokens: 0,
 			deleted: 0,
@@ -153,10 +142,15 @@ export async function createUserDB({
 }): Promise<IUser | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
-		const normalizedPhone =
-			normalizeNigerianMobilePhone(payload.phone) ?? payload.phone;
+		const normalizedEmail = normalizeEmail(payload.email);
+		if (!normalizedEmail) return null;
+		const normalizedPhone = payload.phone
+			? (normalizeNigerianMobilePhone(payload.phone) ?? payload.phone)
+			: null;
 		const doc = await new User({
-			campusId: payload.campusId,
+			...(payload.campusId
+				? { campusId: new mongoose.Types.ObjectId(payload.campusId) }
+				: {}),
 			groupIds: (payload.groupIds ?? []).map(
 				(g) => new mongoose.Types.ObjectId(g),
 			),
@@ -165,9 +159,16 @@ export async function createUserDB({
 			),
 			firstName: payload.firstName,
 			lastName: payload.lastName,
-			phone: encrypt(normalizedPhone),
-			phoneHash: computePhoneHash(normalizedPhone),
-			isPhoneVerified: payload.isPhoneVerified ?? false,
+			profileImageUrl: payload.profileImageUrl,
+			googleSubject: payload.googleSubject,
+			googleEmailVerified: payload.googleEmailVerified,
+			email: normalizedEmail,
+			...(normalizedPhone
+				? {
+						phone: encrypt(normalizedPhone),
+						phoneHash: computePhoneHash(normalizedPhone),
+					}
+				: {}),
 			isActive: payload.isActive ?? true,
 		}).save({ session });
 		timer({
@@ -177,33 +178,59 @@ export async function createUserDB({
 			success: "true",
 		});
 		return doc.toObject() as unknown as IUser;
-	} catch {
+	} catch (error) {
 		timer({
 			operation: IOperationType.Create,
 			collection: collectionName,
 			method: "createUserDB",
 			success: "false",
 		});
+		if (NODE_ENV !== "production") {
+			console.error("[users.createUserDB] create failed", error);
+			throw error;
+		}
 		return null;
 	}
 }
 
-export async function markPhoneVerifiedDB({
+export async function linkGoogleUserDB({
 	id,
+	googleSubject,
+	googleEmailVerified,
+	profileImageUrl,
+	firstName,
+	lastName,
 	session,
 }: {
 	id: string;
+	googleSubject?: string;
+	googleEmailVerified?: boolean;
+	profileImageUrl?: string;
+	firstName?: string;
+	lastName?: string;
 	session?: ClientSession;
-}): Promise<boolean> {
+}): Promise<IUser | null> {
 	try {
+		const set: Partial<IUser> = {};
+		if (googleSubject) set.googleSubject = googleSubject;
+		if (googleEmailVerified !== undefined)
+			set.googleEmailVerified = googleEmailVerified;
+		if (profileImageUrl) set.profileImageUrl = profileImageUrl;
+		if (firstName) set.firstName = firstName;
+		if (lastName) set.lastName = lastName;
+		if (!Object.keys(set).length) return getUserByIdDB({ id, session });
 		const res = await User.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
-			{ $set: { isPhoneVerified: true, lastLoginAt: new Date() } },
-			{ session, returnDocument: "after" },
+			{ $set: set },
+			{ session, returnDocument: "after", runValidators: true },
 		);
-		return !!res;
-	} catch {
-		return false;
+		return res ? (res.toObject() as unknown as IUser) : null;
+	} catch (error) {
+		if (NODE_ENV !== "production") {
+			console.error("[users.linkGoogleUserDB] update failed", error);
+			throw error;
+		}
+		return null;
 	}
 }
 
@@ -314,34 +341,6 @@ export async function updateUserProfileDB({
 
 // ── Reads ─────────────────────────────────────────────────────────────────
 
-export async function updateUserPhoneDB({
-	id,
-	phone,
-	session,
-}: {
-	id: string;
-	phone: string;
-	session?: ClientSession;
-}): Promise<IUser | null> {
-	try {
-		const normalizedPhone = normalizeNigerianMobilePhone(phone) ?? phone;
-		const res = await User.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
-			{
-				$set: {
-					phone: encrypt(normalizedPhone),
-					phoneHash: computePhoneHash(normalizedPhone),
-					isPhoneVerified: true,
-				},
-			},
-			{ session, returnDocument: "after" },
-		);
-		return res ? (res.toObject() as unknown as IUser) : null;
-	} catch {
-		return null;
-	}
-}
-
 export async function getUserByIdDB({
 	id,
 	session,
@@ -410,32 +409,28 @@ export async function getUsersByIdsDB({
 	}
 }
 
-/**
- * Look up a user by phone (plaintext). Returns the FULL doc including the
- * encrypted `phone`, `phoneHash`, and `refreshTokens` — for internal auth use
- * only; never return this shape to a client.
- */
-export async function getUserByPhoneDB({
-	phone,
+// IAM attachments (groups & direct policies) ─────────────────────────────
+
+export async function getUserByEmailDB({
+	email,
 	session,
 }: {
-	phone: string;
+	email: string;
 	session?: ClientSession;
 }): Promise<IUser | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
-		const normalizedPhone = normalizeNigerianMobilePhone(phone) ?? phone;
+		const normalizedEmail = normalizeEmail(email);
+		if (!normalizedEmail) return null;
 		const result = await User.findOne(
-			{ phoneHash: computePhoneHash(normalizedPhone), deleted: false },
+			{ email: normalizedEmail, deleted: false },
 			null,
 			{ session },
-		)
-			.select("+phone +phoneHash +refreshTokens")
-			.lean<IUser>();
+		).lean<IUser>();
 		timer({
 			operation: IOperationType.Read,
 			collection: collectionName,
-			method: "getUserByPhoneDB",
+			method: "getUserByEmailDB",
 			success: "true",
 		});
 		return result
@@ -445,14 +440,12 @@ export async function getUserByPhoneDB({
 		timer({
 			operation: IOperationType.Read,
 			collection: collectionName,
-			method: "getUserByPhoneDB",
+			method: "getUserByEmailDB",
 			success: "false",
 		});
 		return null;
 	}
 }
-
-// ── IAM attachments (groups & direct policies) ─────────────────────────────
 
 export async function setUserGroupsDB({
 	id,

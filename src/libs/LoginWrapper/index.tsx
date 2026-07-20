@@ -1,425 +1,549 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import styled from "styled-components";
 import {
-	Button,
-	Card,
-	Container,
-	FadeIn,
-	Input,
-	Stack,
-	Text,
+  Button,
+  Card,
+  Container,
+  FadeIn,
+  Input,
+  Stack,
+  Text,
 } from "@/components";
 import { api } from "@/constants/api";
-import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 
-type Step = "phone" | "otp";
-const PHONE_DIGITS = 11;
-const OTP_DIGITS = 6;
-const PHONE_ERROR = "Enter a valid Nigerian phone number.";
-const STAFF_PERMISSIONS = [
-	"iam:user:read",
-	"onboarding:read",
-	"analytics:read",
-];
+const CardTitle = styled.h2`
+  margin: 0;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 800;
+  color: var(--pc-color-text);
+`;
+
+const GoogleButtonContent = styled.span`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+`;
+
+const GoogleIcon = styled.span`
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #4285f4;
+  font-weight: 900;
+`;
+
+const EmailButtonContent = styled.span`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+`;
+
+const EmailIcon = styled.span`
+  color: var(--pc-color-primary);
+  font-size: 1.35rem;
+`;
+
+const SellPrompt = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 24px;
+`;
+
+const SellButton = styled.button`
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pc-color-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const SellApplicationWrapper = styled.div`
+  display: grid;
+  width: 100%;
+  min-height: min(680px, 80vh);
+  place-items: center;
+`;
+
+const SellCard = styled.div`
+  display: flex;
+  width: min(100%, 520px);
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: clamp(28px, 6vw, 48px);
+  border: 1px solid var(--pc-color-border);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top, rgba(255, 94, 31, 0.12), transparent 42%),
+    var(--pc-color-surface);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  text-align: center;
+`;
+
+const SellMark = styled.div`
+  display: grid;
+  width: 78px;
+  height: 78px;
+  place-items: center;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #ff5e1f, #ff9f0a);
+  font-size: 2rem;
+  box-shadow: 0 14px 34px rgba(255, 94, 31, 0.24);
+`;
+
+const SellTitle = styled.h1`
+  margin: 0;
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+  font-weight: 850;
+  color: var(--pc-color-text);
+`;
+
+const SellDescription = styled.p`
+  max-width: 410px;
+  margin: 0;
+  color: var(--pc-color-text-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+`;
+
+const BackButton = styled.button`
+  border: 0;
+  background: transparent;
+  color: var(--pc-color-text-muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--pc-color-text);
+  }
+`;
 
 const Screen = styled.div`
-	min-height: 100dvh;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: var(--pc-space-6) 0 var(--pc-space-8);
-	background: var(--pc-gradient-mesh);
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pc-space-6) 0 var(--pc-space-8);
+  background: var(--pc-gradient-mesh);
 `;
 const Wrap = styled(Container)`
-	max-width: 460px;
+  max-width: 500px;
 `;
 const Brand = styled.div`
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	text-align: center;
-	gap: var(--pc-space-3);
-	margin-bottom: var(--pc-space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--pc-space-3);
+  margin-bottom: var(--pc-space-5);
 `;
 const Mark = styled.div`
-	width: 60px;
-	height: 60px;
-	display: grid;
-	place-items: center;
-	font-size: 30px;
-	border-radius: var(--pc-radius-lg);
-	background: var(--pc-gradient-hero);
-	box-shadow: var(--pc-shadow-primary);
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  border-radius: var(--pc-radius-lg);
+  background: var(--pc-gradient-hero);
+  box-shadow: var(--pc-shadow-primary);
 `;
-const Wordmark = styled.h1`
-	font-family: var(--pc-font-display);
-	font-size: clamp(28px, 6vw, 34px);
-	font-weight: 800;
-	letter-spacing: -0.03em;
-	color: var(--pc-text);
+const Title = styled.h1`
+  font-family: var(--pc-font-display);
+  font-size: clamp(28px, 6vw, 36px);
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--pc-text);
 `;
 const AuthCard = styled(Card)`
-	padding: var(--pc-space-6);
-	box-shadow: var(--pc-shadow-lg);
+  padding: var(--pc-space-6);
+  box-shadow: var(--pc-shadow-lg);
+  justify-self: center;
+ 
 `;
-const OtpBadge = styled.div`
-	width: 52px;
-	height: 52px;
-	display: grid;
-	place-items: center;
-	font-size: 26px;
-	border-radius: var(--pc-radius);
-	background: var(--pc-color-primary-50);
-	margin: 0 auto var(--pc-space-1);
+const Divider = styled.div`
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--pc-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  &::before,
+  &::after {
+    content: "";
+    height: 1px;
+    background: var(--pc-border);
+  }
+`;
+const Panel = styled.div`
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  background: var(--pc-surface-2);
+  padding: var(--pc-space-4);
 `;
 const Foot = styled(Text)`
-	text-align: center;
-	margin-top: var(--pc-space-5);
-`;
-const OtpBoxes = styled.div`
-	display: grid;
-	grid-template-columns: repeat(${OTP_DIGITS}, minmax(0, 1fr));
-	gap: 8px;
-`;
-const OtpBox = styled.input`
-	width: 100%;
-	aspect-ratio: 1;
-	border: 1.5px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-surface);
-	color: var(--pc-text);
-	font-family: inherit;
-	font-size: 20px;
-	font-weight: 800;
-	text-align: center;
-	outline: none;
-	transition:
-		border-color var(--pc-dur) var(--pc-ease),
-		box-shadow var(--pc-dur) var(--pc-ease);
-
-	&:focus {
-		border-color: var(--pc-color-primary);
-		box-shadow: 0 0 0 4px var(--pc-color-primary-50);
-	}
-
-	&::placeholder {
-		color: var(--pc-text-faint);
-	}
-`;
-const FieldError = styled(Text)`
-	color: var(--pc-color-danger);
+  text-align: center;
+  margin-top: var(--pc-space-5);
 `;
 
-/**
- * Single unified login for every user. Enter a phone, receive an OTP, and on
- * verify the server auto-provisions a buyer for first-time phones; existing
- * accounts (buyer, vendor, staff) are redirected by their resolved permissions.
- * Vendors who want to sell apply separately via /sell.
- */
 export default function LoginWrapper() {
-	const router = useRouter();
-	const params = useSearchParams();
-	const { refresh } = useAuth();
-	const { toast } = useToast();
+  const params = useSearchParams();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [sellOpen, setSellOpen] = useState(params.get("intent") === "sell");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const next = useMemo(() => cleanNext(params.get("next")), [params]);
+  const [authNext, setAuthNext] = useState(
+    sellOpen ? "/vendor/settings" : next,
+  );
+  const [authView, setAuthView] = useState<"default" | "sell">("default");
 
-	const [step, setStep] = useState<Step>("phone");
-	const [loading, setLoading] = useState(false);
-	const [phone, setPhone] = useState("");
-	const [sentToPhone, setSentToPhone] = useState("");
-	const [phoneError, setPhoneError] = useState("");
-	const [otpDigits, setOtpDigits] = useState<string[]>(
-		Array(OTP_DIGITS).fill(""),
-	);
-	const [otpError, setOtpError] = useState("");
-	const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
-	const otp = otpDigits.join("");
-	const isOtpComplete = otp.length === OTP_DIGITS;
+  async function continueWithEmail() {
+    if (!emailOpen) {
+      setEmailOpen(true);
+      setSellOpen(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/email/request", {
+        email,
+        next: authNext,
+      });
+      const devLink = res.data?.data?.devLink;
+      setSent(true);
+      toast("Check your email for a secure sign-in link.", "success");
+      if (devLink) {
+        console.info("Prechop dev sign-in link:", devLink);
+      }
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-	async function sendCode() {
-		if (!isValidPhone(phone)) {
-			setPhoneError(PHONE_ERROR);
-			toast(PHONE_ERROR, "error");
-			return;
-		}
-		setLoading(true);
-		try {
-			const res = await api.post("/auth/otp/request", { phone });
-			const recipientPhone = getRecipientPhone(res.data);
-			toast("Code sent to your phone", "success");
-			setSentToPhone(recipientPhone ?? phone);
-			setOtpDigits(Array(OTP_DIGITS).fill(""));
-			setOtpError("");
-			setStep("otp");
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setLoading(false);
-		}
-	}
+  function continueWithGoogle() {
+    const query = new URLSearchParams({ next: authNext });
+    window.location.href = `/api/auth/google/start?${query.toString()}`;
+  }
 
-	async function verify() {
-		if (!isOtpComplete) {
-			const message = "Enter the complete 6-digit verification code.";
-			setOtpError(message);
-			toast(message, "error");
-			return;
-		}
-		setLoading(true);
-		try {
-			const res = await api.post("/auth/otp/verify", {
-				phone,
-				otp,
-			});
-			const u = res.data?.data?.user as
-				| { groups?: string[]; permissions?: string[] }
-				| undefined;
-			const groups = u?.groups ?? [];
-			const permissions = u?.permissions ?? [];
-			await refresh();
-			const next = params.get("next");
-			// Staff (anyone who can read the IAM or onboarding console) → /admin.
-			const isStaff =
-				STAFF_PERMISSIONS.some((p) => permissions.includes(p)) ||
-				groups.includes("Administrators");
-			if (isStaff) {
-				router.replace(
-					isLocalPath(next) && next.startsWith("/admin")
-						? next
-						: "/admin",
-				);
-			} else if (isLocalPath(next)) router.replace(next);
-			else if (groups.includes("Vendors")) router.replace("/dashboard");
-			else router.replace("/marketplace");
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setLoading(false);
-		}
-	}
+  function setNextPath(path: string) {
+    setAuthNext(path);
+  }
 
-	function handlePhoneChange(value: string) {
-		const next = onlyDigits(value).slice(0, PHONE_DIGITS);
-		setPhone(next);
-		setSentToPhone("");
-		if (phoneError) setPhoneError("");
-	}
+  // 	return (
+  // 		<Screen>
+  // 			<Wrap>
+  // 				<FadeIn>
+  // 					<Brand>
+  // 						<Mark aria-hidden>🍲</Mark>
+  // 						<Stack $gap={2}>
+  // 							<Title>Continue to Prechop</Title>
+  // 							<Text $muted>
+  // 								One account for buying and selling.
+  // 							</Text>
+  // 						</Stack>
+  // 					</Brand>
 
-	function handleOtpChange(index: number, value: string) {
-		const digit = onlyDigits(value).slice(-1);
-		const next = [...otpDigits];
-		next[index] = digit;
-		setOtpDigits(next);
-		if (otpError) setOtpError("");
-		if (digit && index < OTP_DIGITS - 1) {
-			otpRefs.current[index + 1]?.focus();
-		}
-	}
+  // 					<AuthCard>
+  // 						<Stack $gap={14}>
+  // 							<Button
+  // 								$full
+  // 								$size="lg"
+  // 								onClick={continueWithGoogle}
+  // 							>
+  // 								Continue with Google
+  // 							</Button>
 
-	function handleOtpKeyDown(index: number, key: string) {
-		if (key === "Backspace" && !otpDigits[index] && index > 0) {
-			otpRefs.current[index - 1]?.focus();
-		}
-		if (key === "Enter") verify();
-	}
+  // 							<Divider>or</Divider>
 
-	function handleOtpPaste(value: string) {
-		const pasted = onlyDigits(value).slice(0, OTP_DIGITS);
-		if (pasted.length !== OTP_DIGITS) {
-			setOtpError("Paste the full 6-digit verification code.");
-			return;
-		}
-		setOtpDigits(pasted.split(""));
-		setOtpError("");
-		otpRefs.current[OTP_DIGITS - 1]?.focus();
-	}
+  // 							<Button
+  // 								$full
+  // 								$size="lg"
+  // 								$variant={emailOpen ? "secondary" : "primary"}
+  // 								onClick={continueWithEmail}
+  // 								$loading={loading}
+  // 							>
+  // 								Continue with email
+  // 							</Button>
 
-	const otpValidationMessage =
-		otpError ||
-		(otp.length > 0 && !isOtpComplete
-			? "Enter all 6 digits to continue."
-			: "");
+  // 							{emailOpen && (
+  // 								<Panel>
+  // 									<Stack $gap={12}>
+  // 										<Input
+  // 											label="Email"
+  // 											type="email"
+  // 											value={email}
+  // 											onChange={(e) => {
+  // 												setEmail(e.target.value);
+  // 												setSent(false);
+  // 											}}
+  // 											placeholder="you@example.com"
+  // 											onKeyDown={(e) => {
+  // 												if (e.key === "Enter")
+  // 													continueWithEmail();
+  // 											}}
+  // 										/>
+  // 										{sent && (
+  // 											<Text $muted $size={13}>
+  // 												Open the link in your email to
+  // 												finish signing in. It works for
+  // 												new and returning accounts.
+  // 											</Text>
+  // 										)}
+  // 									</Stack>
+  // 								</Panel>
+  // 							)}
 
-	return (
-		<Screen>
-			<Wrap>
-				<FadeIn>
-					<Brand>
-						<Mark aria-hidden>🍲</Mark>
-						<Stack $gap={2}>
-							<Wordmark>Prechop</Wordmark>
-							<Text $muted>Order before they cook.</Text>
-						</Stack>
-					</Brand>
+  // 							<Button
+  // 								$full
+  // 								$size="lg"
+  // 								$variant="ghost"
+  // 								onClick={() => {
+  // 									setSellOpen(true);
+  // 									setEmailOpen(false);
+  // 								}}
+  // 							>
+  // 								Sell on Prechop
+  // 							</Button>
 
-					<AuthCard>
-						{step === "phone" ? (
-							<Stack $gap={14}>
-								<Stack $gap={2}>
-									<Text $weight={700} $size={18}>
-										Log in or sign up
-									</Text>
-									<Text $muted $size={14}>
-										Enter your phone number — we&apos;ll
-										text you a code.
-									</Text>
-								</Stack>
-								<Input
-									label="Phone number"
-									value={phone}
-									onChange={(e) =>
-										handlePhoneChange(e.target.value)
-									}
-									placeholder="08012345678"
-									inputMode="tel"
-									maxLength={PHONE_DIGITS}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") sendCode();
-									}}
-								/>
-								{phoneError && (
-									<FieldError $size={13}>
-										{phoneError}
-									</FieldError>
-								)}
-								<Button
-									$full
-									$size="lg"
-									$loading={loading}
-									onClick={sendCode}
-								>
-									Send code
-								</Button>
-							</Stack>
-						) : (
-							<Stack $gap={14}>
-								<Stack $gap={4} style={{ textAlign: "center" }}>
-									<OtpBadge aria-hidden>📱</OtpBadge>
-									<Text $weight={700} $size={17}>
-										Check your phone
-									</Text>
-									<Text $muted $size={14}>
-										Enter the 6-digit code sent to{" "}
-										{sentToPhone || phone}.
-									</Text>
-								</Stack>
-								<Stack $gap={7}>
-									<Text
-										as="label"
-										$weight={700}
-										$size={13}
-										htmlFor="otp-0"
-									>
-										Verification code
-									</Text>
-									<OtpBoxes>
-										{otpDigits.map((digit, index) => (
-											<OtpBox
-												key={`otp-${index}`}
-												id={`otp-${index}`}
-												ref={(el) => {
-													otpRefs.current[index] = el;
-												}}
-												value={digit}
-												inputMode="numeric"
-												maxLength={1}
-												aria-label={`Verification code digit ${index + 1}`}
-												onChange={(e) =>
-													handleOtpChange(
-														index,
-														e.target.value,
-													)
-												}
-												onKeyDown={(e) =>
-													handleOtpKeyDown(
-														index,
-														e.key,
-													)
-												}
-												onPaste={(e) => {
-													e.preventDefault();
-													handleOtpPaste(
-														e.clipboardData.getData(
-															"text",
-														),
-													);
-												}}
-											/>
-										))}
-									</OtpBoxes>
-									{otpValidationMessage && (
-										<FieldError $size={13}>
-											{otpValidationMessage}
-										</FieldError>
-									)}
-								</Stack>
-								<Button
-									$full
-									$size="lg"
-									$loading={loading}
-									disabled={!isOtpComplete}
-									onClick={verify}
-								>
-									Verify &amp; continue
-								</Button>
-								<Button
-									$variant="ghost"
-									$size="sm"
-									onClick={() => {
-										setSentToPhone("");
-										setStep("phone");
-									}}
-								>
-									Use a different number
-								</Button>
-							</Stack>
-						)}
-					</AuthCard>
+  // 							{sellOpen && (
+  // 								<Panel>
+  // 									<Stack $gap={12}>
+  // 										<Text $weight={800}>
+  // 											Use one Prechop account for buying
+  // 											and selling.
+  // 										</Text>
+  // 										<Text $muted $size={14}>
+  // 											Continue first, then we will take
+  // 											you directly to the vendor
+  // 											application and prefill your name
+  // 											and email.
+  // 										</Text>
+  // 										<Button
+  // 											$full
+  // 											onClick={() => {
+  // 												setSellOpen(false);
+  // 												setEmailOpen(true);
+  // 											}}
+  // 										>
+  // 											Continue to Prechop
+  // 										</Button>
+  // 									</Stack>
+  // 								</Panel>
+  // 							)}
+  // 						</Stack>
+  // 					</AuthCard>
 
-					<Foot $muted $size={13}>
-						Want to sell?{" "}
-						<Link
-							href="/sell"
-							style={{
-								color: "var(--pc-color-primary)",
-								fontWeight: 700,
-							}}
-						>
-							Apply as a vendor
-						</Link>
-					</Foot>
-				</FadeIn>
-			</Wrap>
-		</Screen>
-	);
+  // 					<Foot $muted $size={13}>
+  // 						You can still browse{" "}
+  // 						<Link
+  // 							href="/marketplace"
+  // 							style={{
+  // 								color: "var(--pc-color-primary)",
+  // 								fontWeight: 700,
+  // 							}}
+  // 						>
+  // 							vendors and meals
+  // 						</Link>{" "}
+  // 						before signing in.
+  // 					</Foot>
+  // 				</FadeIn>
+  // 			</Wrap>
+  // 		</Screen>
+  // 	);
+  // }
+
+  return (
+    <Screen>
+      <Wrap>
+        <FadeIn>
+          {authView === "default" ? (
+            <>
+              <Brand>
+                <Mark aria-hidden>🍲</Mark>
+
+                <Stack $gap={2}>
+                  <Title>Prechop</Title>
+
+                  <Text $muted>Order before they cook.</Text>
+                </Stack>
+              </Brand>
+
+              <AuthCard>
+                <Stack $gap={18}>
+                  <Stack $gap={6}>
+                    <CardTitle>Continue to Prechop</CardTitle>
+
+                    <Text $muted>Sign in to continue your order.</Text>
+                  </Stack>
+
+                  <Button $full $size="lg" onClick={continueWithGoogle}>
+                    <GoogleButtonContent>
+                      <GoogleIcon aria-hidden>G</GoogleIcon>
+
+                      <span>Continue with Google</span>
+                    </GoogleButtonContent>
+                  </Button>
+
+                  <Divider>or</Divider>
+
+                  <Button
+                    $full
+                    $size="lg"
+                    $variant="secondary"
+                    onClick={() => {
+                      setEmailOpen((current) => !current);
+                      setSent(false);
+                    }}>
+                    <EmailButtonContent>
+                      <EmailIcon aria-hidden>✉</EmailIcon>
+
+                      <span>Continue with Email</span>
+                    </EmailButtonContent>
+                  </Button>
+
+                  {emailOpen && (
+                    <Panel>
+                      <Stack $gap={12}>
+                        <Input
+                          label="Email address"
+                          type="email"
+                          value={email}
+                          onChange={(event) => {
+                            setEmail(event.target.value);
+                            setSent(false);
+                          }}
+                          placeholder="you@example.com"
+                          autoComplete="email"
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              continueWithEmail();
+                            }
+                          }}
+                        />
+
+                        <Button
+                          $full
+                          onClick={continueWithEmail}
+                          $loading={loading}>
+                          Send sign-in link
+                        </Button>
+
+                        {sent && (
+                          <Text $muted $size={13}>
+                            Check your email and open the secure link to
+                            continue.
+                          </Text>
+                        )}
+                      </Stack>
+                    </Panel>
+                  )}
+                </Stack>
+              </AuthCard>
+
+              <SellPrompt>
+                <Text $muted>Want to sell?</Text>
+
+                <SellButton
+                  type="button"
+                  onClick={() => {
+                    setAuthView("sell");
+                    setEmailOpen(false);
+                    setSent(false);
+                  }}>
+                  Sell on Prechop
+                </SellButton>
+              </SellPrompt>
+
+              <Foot $muted $size={13}>
+                You can still browse{" "}
+                <Link
+                  href="/marketplace"
+                  style={{
+                    color: "var(--pc-color-primary)",
+                    fontWeight: 700,
+                  }}>
+                  vendors and meals
+                </Link>{" "}
+                before signing in.
+              </Foot>
+            </>
+          ) : (
+            <SellApplicationWrapper>
+              <SellCard>
+                <SellMark aria-hidden>🍳</SellMark>
+
+                <Stack $gap={10}>
+                  <SellTitle>Sell on Prechop</SellTitle>
+
+                  <SellDescription>
+                    Continue with Google or email, then apply to become a vendor
+                    from your Account.
+                  </SellDescription>
+                </Stack>
+
+                <Button
+                  $full
+                  $size="lg"
+                  onClick={() => {
+                    setAuthView("default");
+
+                    /*
+                     * Keep the vendor intention so successful
+                     * authentication returns the user directly
+                     * to the vendor application.
+                     */
+                    setNextPath?.("/vendor/settings");
+                  }}>
+                  Continue
+                </Button>
+
+                <BackButton
+                  type="button"
+                  onClick={() => setAuthView("default")}>
+                  Back
+                </BackButton>
+              </SellCard>
+            </SellApplicationWrapper>
+          )}
+        </FadeIn>
+      </Wrap>
+    </Screen>
+  );
 }
 
 function errMsg(e: unknown): string {
-	const err = e as { response?: { data?: { message?: string } } };
-	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+  const err = e as { response?: { data?: { message?: string } } };
+  return err?.response?.data?.message ?? "Something went wrong. Try again.";
 }
 
-function getRecipientPhone(data: unknown): string | undefined {
-	const res = data as { data?: { recipientPhone?: string } };
-	return res.data?.recipientPhone;
-}
-
-function onlyDigits(value: string): string {
-	return value.replace(/\D/g, "");
-}
-
-function isLocalPath(value: string | null): value is string {
-	return !!value && value.startsWith("/") && !value.startsWith("//");
-}
-
-function isValidPhone(value: string): boolean {
-	const nationalNumber = value.startsWith("0") ? value.slice(1) : "";
-	return (
-		/^\d{11}$/.test(value) &&
-		/^(?:70[1-9]|80[1-9]|81\d|90[1-9]|91[2-6])\d{7}$/.test(nationalNumber)
-	);
+function cleanNext(value: string | null): string {
+  if (!value?.startsWith("/") || value.startsWith("//")) {
+    return "/marketplace";
+  }
+  return value;
 }

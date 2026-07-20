@@ -21,7 +21,7 @@ export interface PublicVendor {
 	businessName: string | null;
 	description: string | null;
 	profileImageUrl: string | null;
-	campusId: string;
+	campusId: string | null;
 	state: string | null;
 	areaOrAddress: string | null;
 	categories: string[];
@@ -62,7 +62,7 @@ export function toPublicVendor(v: IVendorProfile): PublicVendor {
 		businessName: v.businessName ?? null,
 		description: v.description ?? null,
 		profileImageUrl: v.profileImageUrl ?? null,
-		campusId: v.campusId.toString(),
+		campusId: v.campusId?.toString() ?? null,
 		state: v.state ?? null,
 		areaOrAddress: v.areaOrAddress ?? null,
 		categories: v.categories ?? [],

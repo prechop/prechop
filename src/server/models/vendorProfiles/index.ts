@@ -21,7 +21,7 @@ const schema = new mongoose.Schema<any>(
 		campusId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "campuses",
-			required: true,
+			required: false,
 			index: true,
 		},
 		campusIds: {
@@ -32,6 +32,7 @@ const schema = new mongoose.Schema<any>(
 		vendorType: { type: String, enum: Object.values(VendorType) },
 		businessName: { type: String, trim: true },
 		description: { type: String },
+		contactPhone: { type: String },
 		email: {
 			type: String,
 			required: true,
@@ -79,7 +80,10 @@ const schema = new mongoose.Schema<any>(
 		defaultDeliveryCoverage: { type: String },
 		defaultDeliveryEstimateMinutes: { type: Number },
 		defaultDeliveryContactPhone: { type: String },
-		defaultDeliveryResponsibilityAccepted: { type: Boolean, default: false },
+		defaultDeliveryResponsibilityAccepted: {
+			type: Boolean,
+			default: false,
+		},
 		// ── Onboarding review trail ──────────────────────────────────────
 		submittedAt: { type: Date },
 		reviewedAt: { type: Date },

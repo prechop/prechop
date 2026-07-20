@@ -7,7 +7,7 @@ import type {
 
 export interface IVendorProfileCreateInput {
 	userId: string;
-	campusId: string;
+	campusId?: string;
 	email: string;
 	businessName?: string;
 	vendorType?: VendorType;
@@ -17,12 +17,13 @@ export interface IVendorProfile {
 	_id: string;
 	id?: string;
 	userId: string;
-	campusId: string;
+	campusId?: string;
 	campusIds?: string[];
 	vendorType?: VendorType;
 	businessName?: string;
 	description?: string;
 	email: string;
+	contactPhone?: string;
 	status: VendorStatus;
 	locationType?: LocationType;
 	schoolId?: string;

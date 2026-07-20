@@ -1,50 +1,42 @@
 import { z as zod } from "zod";
-import {
-	NIGERIAN_PHONE_ERROR_MESSAGE,
-	normalizeNigerianMobilePhone,
-} from "@/server/constants";
 
-// Accept supported Nigerian mobile forms and normalize to +234XXXXXXXXXX.
-const phone = zod
+const email = zod.string().trim().toLowerCase().email().max(254);
+const nextPath = zod
 	.string()
 	.trim()
-	.transform((value, ctx) => {
-		const normalized = normalizeNigerianMobilePhone(value);
-		if (!normalized) {
-			ctx.addIssue({
-				code: "custom",
-				message: NIGERIAN_PHONE_ERROR_MESSAGE,
-			});
-			return zod.NEVER;
-		}
-		return normalized;
-	});
+	.max(500)
+	.optional()
+	.refine(
+		(value) => !value || (value.startsWith("/") && !value.startsWith("//")),
+		{
+			message: "Invalid return path.",
+		},
+	);
 
-export const registerBuyerBodySchema = zod
+export const emailSignInRequestBodySchema = zod
 	.object({
-		firstName: zod.string().min(1).max(60),
-		lastName: zod.string().min(1).max(60),
-		phone,
-		campusId: zod.string().min(1),
+		email,
+		next: nextPath,
 	})
 	.strict();
 
-export const registerVendorBodySchema = zod
+export const emailSignInVerifyQuerySchema = zod
 	.object({
-		firstName: zod.string().min(1).max(60),
-		lastName: zod.string().min(1).max(60),
-		phone,
-		campusId: zod.string().min(1).optional(),
-		email: zod.string().email(),
-		businessName: zod.string().min(1).max(120).optional(),
+		token: zod.string().min(20).max(300),
+		next: nextPath,
 	})
 	.strict();
 
-export const requestOtpBodySchema = zod.object({ phone }).strict();
-
-export const verifyOtpBodySchema = zod
+export const googleStartQuerySchema = zod
 	.object({
-		phone,
-		otp: zod.string().regex(/^\d{6}$/, "OTP must be 6 digits"),
+		next: nextPath,
+	})
+	.strict();
+
+export const googleCallbackQuerySchema = zod
+	.object({
+		code: zod.string().min(1).optional(),
+		state: zod.string().min(20).max(500).optional(),
+		error: zod.string().optional(),
 	})
 	.strict();

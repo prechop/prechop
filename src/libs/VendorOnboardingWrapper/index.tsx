@@ -250,6 +250,7 @@ export default function VendorOnboardingWrapper({
 	const [businessName, setBusinessName] = useState(vendor.businessName ?? "");
 	const [vendorType, setVendorType] = useState(vendor.vendorType ?? "");
 	const [email, setEmail] = useState(vendor.email ?? "");
+	const [contactPhone, setContactPhone] = useState(vendor.contactPhone ?? "");
 	const [description, setDescription] = useState(vendor.description ?? "");
 
 	// Step 2 — categories
@@ -261,6 +262,7 @@ export default function VendorOnboardingWrapper({
 	const [locationType, setLocationType] = useState<
 		"ON_CAMPUS" | "OFF_CAMPUS"
 	>(vendor.locationType ?? "ON_CAMPUS");
+	const [campusId, setCampusId] = useState(vendor.campusId ?? "");
 	const [schoolId, setSchoolId] = useState(vendor.schoolId ?? "");
 	const [hostelOrStallName, setHostelOrStallName] = useState(
 		vendor.hostelOrStallName ?? "",
@@ -299,7 +301,7 @@ export default function VendorOnboardingWrapper({
 				? !!vendor.state &&
 					!!vendor.areaOrAddress &&
 					(vendor.campusIds?.length ?? 0) > 0
-				: !!vendor.locationType,
+				: !!vendor.locationType && !!vendor.campusId,
 		bank: !!vendor.bankCode || !!vendor.paystackSubaccountCode,
 		image: !!vendor.profileImageUrl,
 		open: isPending || vendor.status === "ACTIVE",
@@ -340,6 +342,9 @@ export default function VendorOnboardingWrapper({
 					? { description: description.trim() }
 					: {}),
 				email: email.trim(),
+				...(contactPhone.trim()
+					? { contactPhone: contactPhone.trim() }
+					: {}),
 			});
 			toast("Business details saved", "success");
 			setOpen("categories");
@@ -366,6 +371,7 @@ export default function VendorOnboardingWrapper({
 				locationType === "ON_CAMPUS"
 					? {
 							locationType,
+							campusId,
 							...(schoolId ? { schoolId } : {}),
 							hostelOrStallName: hostelOrStallName.trim(),
 						}
@@ -599,6 +605,17 @@ export default function VendorOnboardingWrapper({
 												}
 												placeholder="you@example.com"
 											/>
+											<Input
+												label="Phone / WhatsApp number"
+												type="tel"
+												value={contactPhone}
+												onChange={(e) =>
+													setContactPhone(
+														e.target.value,
+													)
+												}
+												placeholder="+2348012345678"
+											/>
 											<Textarea
 												label="Short description (optional)"
 												value={description}
@@ -677,6 +694,29 @@ export default function VendorOnboardingWrapper({
 											</Select>
 											{locationType === "ON_CAMPUS" ? (
 												<>
+													<Select
+														label="Campus"
+														value={campusId}
+														onChange={(e) =>
+															setCampusId(
+																e.target.value,
+															)
+														}
+													>
+														<option value="">
+															Select campus
+														</option>
+														{(campuses ?? []).map(
+															(c) => (
+																<option
+																	key={c.id}
+																	value={c.id}
+																>
+																	{c.name}
+																</option>
+															),
+														)}
+													</Select>
 													<Select
 														label="School (optional)"
 														value={schoolId}
@@ -801,7 +841,8 @@ export default function VendorOnboardingWrapper({
 												onClick={saveLocation}
 												disabled={
 													locationType === "ON_CAMPUS"
-														? !hostelOrStallName.trim()
+														? !campusId ||
+															!hostelOrStallName.trim()
 														: !state.trim() ||
 															!areaOrAddress.trim() ||
 															campusIds.length ===

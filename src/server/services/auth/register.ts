@@ -1,186 +1,240 @@
+import { randomBytes } from "node:crypto";
 import {
-	AppError,
 	BUYERS_GROUP,
-	NIGERIAN_PHONE_ERROR_MESSAGE,
-	normalizeNigerianMobilePhone,
-	VENDORS_GROUP,
+	ErrInvalidCredentials,
+	ErrUnauthorized,
+	hash,
 	validationError,
 } from "../../constants";
+import { APP_URL } from "../../constants/environments";
+import { Redis } from "../../databases";
 import {
 	createUserDB,
-	createVendorProfileDB,
-	getUserByPhoneDB,
-	getVendorProfileByUserIdDB,
-	listCampusesDB,
+	getUserByEmailDB,
+	getUserByIdDB,
+	linkGoogleUserDB,
+	loginUserDB,
 } from "../../models";
-import type { IUser } from "../../models/users/types";
+import { normalizeEmail } from "../../models/users";
+import type { IUser, IUserPublic } from "../../models/users/types";
+import { resendProvider } from "../../providers";
+import type { IJwtPayload } from "../../types";
 import { recordAudit } from "../audit";
-import { getBuiltInGroupId } from "../iam";
-import { requestOtp } from "./requestOtp";
+import { getBuiltInGroupId, resolvePermissions } from "../iam";
+import { toPublicUser } from "../users/toPublicUser";
 
-/**
- * Create a lightweight Buyer account for a phone that just verified an OTP but
- * has never registered. This backs the single unified login: anyone who can
- * receive a code becomes a buyer on first sign-in and can set their name and
- * campus afterwards from /account. Vendors still apply explicitly via /sell.
- */
-export async function autoProvisionBuyer(phone: string): Promise<IUser | null> {
-	const normalizedPhone = requireNigerianMobilePhone(phone);
-	const [buyersGroupId, campuses] = await Promise.all([
-		getBuiltInGroupId(BUYERS_GROUP),
-		listCampusesDB({ activeOnly: true }),
-	]);
-	const campus = campuses[0];
-	if (!campus) {
-		throw validationError(
-			"No campus is configured yet. Please try again later.",
-		);
-	}
-	const user = await createUserDB({
-		payload: {
-			firstName: "Guest",
-			lastName: "Buyer",
-			phone: normalizedPhone,
-			campusId: campus._id.toString(),
-			groupIds: buyersGroupId ? [buyersGroupId] : [],
-			isPhoneVerified: true,
-		},
-	});
-	if (user) {
-		recordAudit({
-			userId: user._id.toString(),
-			role: BUYERS_GROUP,
-			action: "BUYER_REGISTER",
-			resourceType: "users",
-			resourceId: user._id.toString(),
-		});
-	}
+const EMAIL_SIGN_IN_TTL_SECONDS = 60 * 60;
+const GOOGLE_STATE_TTL_SECONDS = 10 * 60;
+
+export interface AuthResult {
+	token: IJwtPayload;
+	user: IUserPublic;
+}
+
+function tokenKey(token: string): string {
+	return `auth:email-signin:${hash(token)}`;
+}
+
+function googleStateKey(state: string): string {
+	return `auth:google-state:${hash(state)}`;
+}
+
+function makeToken(): string {
+	return randomBytes(32).toString("base64url");
+}
+
+function cleanNext(next?: string | null): string {
+	if (!next?.startsWith("/") || next.startsWith("//")) return "/marketplace";
+	return next;
+}
+
+function nameFromEmail(email: string): { firstName: string; lastName: string } {
+	const local = email
+		.split("@")[0]
+		?.replace(/[._-]+/g, " ")
+		.trim();
+	const words = (local || "Prechop Customer")
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+	return {
+		firstName: words[0] ?? "Prechop",
+		lastName: words.slice(1).join(" ") || "Customer",
+	};
+}
+
+async function publicAuthResult(
+	userId: string,
+	ip: string,
+): Promise<AuthResult> {
+	const token = await loginUserDB({ id: userId, ip });
+	if (!token) throw ErrUnauthorized;
+	const fresh = await getUserByIdForAuth(userId);
+	const resolved = await resolvePermissions(userId);
+	return {
+		token,
+		user: toPublicUser(fresh, {
+			groups: resolved.groups,
+			permissions: resolved.actions,
+		}),
+	};
+}
+
+async function getUserByIdForAuth(userId: string) {
+	const user = await getUserByIdDB({ id: userId });
+	if (!user?.isActive) throw ErrUnauthorized;
 	return user;
 }
 
-/**
- * Register a buyer, then send the first OTP. If the phone already exists this
- * acts as a login request — we never reveal account existence in the response.
- */
-export async function registerBuyer({
-	firstName,
-	lastName,
-	phone,
-	campusId,
-}: {
-	firstName: string;
-	lastName: string;
-	phone: string;
-	campusId: string;
-}): Promise<{ message: string; recipientPhone: string }> {
-	const normalizedPhone = requireNigerianMobilePhone(phone);
-	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
-	if (!existing) {
-		const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
-		const user = await createUserDB({
-			payload: {
-				firstName,
-				lastName,
-				phone: normalizedPhone,
-				campusId,
-				groupIds: buyersGroupId ? [buyersGroupId] : [],
-			},
-		});
-		if (user) {
-			recordAudit({
-				userId: user._id.toString(),
-				role: BUYERS_GROUP,
-				action: "BUYER_REGISTER",
-				resourceType: "users",
-				resourceId: user._id.toString(),
-			});
-		}
-	}
-	return requestOtp(normalizedPhone);
-}
-
-/**
- * Register a vendor account (step 1): creates the user in the Vendors group +
- * an INCOMPLETE vendor profile, then sends the first OTP.
- */
-export async function registerVendor({
-	firstName,
-	lastName,
-	phone,
-	campusId,
+async function findOrCreateBuyer({
 	email,
-	businessName,
+	firstName,
+	lastName,
+	profileImageUrl,
+	googleSubject,
+	googleEmailVerified,
 }: {
-	firstName: string;
-	lastName: string;
-	phone: string;
-	campusId?: string;
 	email: string;
-	businessName?: string;
-}): Promise<{ message: string; recipientPhone: string }> {
-	const normalizedPhone = requireNigerianMobilePhone(phone);
-	const existing = await getUserByPhoneDB({ phone: normalizedPhone });
-	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
-	const existingVendor = existing
-		? await getVendorProfileByUserIdDB({ userId: existing._id.toString() })
-		: null;
-	if (
-		existing &&
-		buyersGroupId &&
-		!existingVendor &&
-		existing.groupIds.map((g) => g.toString()).includes(buyersGroupId)
-	) {
-		throw new AppError(
-			"This phone number is already registered as a buyer. Log in and apply to become a vendor from your account settings.",
-			409,
-			"BUYER_ACCOUNT_EXISTS",
-		);
-	}
-	if (!existing) {
-		const [vendorsGroupId, campuses] = await Promise.all([
-			getBuiltInGroupId(VENDORS_GROUP),
-			campusId
-				? Promise.resolve([])
-				: listCampusesDB({ activeOnly: true }),
-		]);
-		const selectedCampusId = campusId || campuses[0]?._id.toString();
-		if (!selectedCampusId) {
-			throw validationError(
-				"No campus is configured yet. Please try again later.",
-			);
-		}
-		const user = await createUserDB({
-			payload: {
-				firstName,
-				lastName,
-				phone: normalizedPhone,
-				campusId: selectedCampusId,
-				groupIds: vendorsGroupId ? [vendorsGroupId] : [],
-			},
+	firstName?: string;
+	lastName?: string;
+	profileImageUrl?: string;
+	googleSubject?: string;
+	googleEmailVerified?: boolean;
+}): Promise<IUser> {
+	const normalizedEmail = normalizeEmail(email);
+	if (!normalizedEmail) throw validationError("Enter a valid email address.");
+	const existing = await getUserByEmailDB({ email: normalizedEmail });
+	if (existing) {
+		if (!existing.isActive) throw ErrUnauthorized;
+		const linked = await linkGoogleUserDB({
+			id: existing._id.toString(),
+			googleSubject,
+			googleEmailVerified,
+			profileImageUrl,
+			firstName: firstName?.trim() || undefined,
+			lastName: lastName?.trim() || undefined,
 		});
-		if (user) {
-			await createVendorProfileDB({
-				payload: {
-					userId: user._id.toString(),
-					campusId: selectedCampusId,
-					email,
-					businessName,
-				},
-			});
-			recordAudit({
-				userId: user._id.toString(),
-				role: VENDORS_GROUP,
-				action: "VENDOR_REGISTER",
-				resourceType: "users",
-				resourceId: user._id.toString(),
-			});
-		}
+		return linked ?? existing;
 	}
-	return requestOtp(normalizedPhone);
+
+	const fallback = nameFromEmail(normalizedEmail);
+	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+	const user = await createUserDB({
+		payload: {
+			firstName: firstName?.trim() || fallback.firstName,
+			lastName: lastName?.trim() || fallback.lastName,
+			email: normalizedEmail,
+			profileImageUrl,
+			googleSubject,
+			googleEmailVerified,
+			groupIds: buyersGroupId ? [buyersGroupId] : [],
+			isActive: true,
+		},
+	});
+	if (!user) throw validationError("Could not create account.");
+	recordAudit({
+		userId: user._id.toString(),
+		role: BUYERS_GROUP,
+		action: "BUYER_REGISTER_PASSWORDLESS",
+		resourceType: "users",
+		resourceId: user._id.toString(),
+	});
+	return user;
 }
 
-function requireNigerianMobilePhone(phone: string): string {
-	const normalizedPhone = normalizeNigerianMobilePhone(phone);
-	if (!normalizedPhone) throw validationError(NIGERIAN_PHONE_ERROR_MESSAGE);
-	return normalizedPhone;
+export async function requestEmailSignIn({
+	email,
+	next,
+}: {
+	email: string;
+	next?: string;
+}): Promise<{ message: string; devLink?: string }> {
+	const normalizedEmail = normalizeEmail(email);
+	if (!normalizedEmail) throw validationError("Enter a valid email address.");
+	const token = makeToken();
+	const returnTo = cleanNext(next);
+	await Redis.setex(
+		tokenKey(token),
+		EMAIL_SIGN_IN_TTL_SECONDS,
+		JSON.stringify({ email: normalizedEmail, next: returnTo }),
+	);
+	const url = `${APP_URL.replace(/\/$/, "")}/api/auth/email/verify?token=${encodeURIComponent(token)}&next=${encodeURIComponent(returnTo)}`;
+	await resendProvider.sendSignInLink(normalizedEmail, url);
+	return {
+		message: "Check your email for a secure Prechop sign-in link.",
+		...(process.env.NODE_ENV === "production" ? {} : { devLink: url }),
+	};
+}
+
+export async function verifyEmailSignIn({
+	token,
+	next,
+	ip,
+}: {
+	token: string;
+	next?: string;
+	ip: string;
+}): Promise<AuthResult & { next: string }> {
+	const key = tokenKey(token);
+	const raw = await Redis.get(key);
+	if (!raw) throw validationError("Invalid or expired sign-in link.");
+	await Redis.del(key);
+	const data = JSON.parse(raw) as { email: string; next?: string };
+	const user = await findOrCreateBuyer({ email: data.email });
+	return {
+		...(await publicAuthResult(user._id.toString(), ip)),
+		next: cleanNext(next ?? data.next),
+	};
+}
+
+export async function createGoogleAuthState(next?: string): Promise<string> {
+	const state = makeToken();
+	await Redis.setex(
+		googleStateKey(state),
+		GOOGLE_STATE_TTL_SECONDS,
+		JSON.stringify({ next: cleanNext(next) }),
+	);
+	return state;
+}
+
+export async function consumeGoogleAuthState(
+	state: string,
+): Promise<{ next: string }> {
+	const key = googleStateKey(state);
+	const raw = await Redis.get(key);
+	if (!raw) throw ErrInvalidCredentials;
+	await Redis.del(key);
+	const data = JSON.parse(raw) as { next?: string };
+	return { next: cleanNext(data.next) };
+}
+
+export async function signInWithGoogleProfile({
+	email,
+	firstName,
+	lastName,
+	profileImageUrl,
+	googleSubject,
+	emailVerified,
+	ip,
+}: {
+	email: string;
+	firstName?: string;
+	lastName?: string;
+	profileImageUrl?: string;
+	googleSubject?: string;
+	emailVerified: boolean;
+	ip: string;
+}): Promise<AuthResult> {
+	if (!emailVerified) {
+		throw validationError("Google email must be verified.");
+	}
+	const user = await findOrCreateBuyer({
+		email,
+		firstName,
+		lastName,
+		profileImageUrl,
+		googleSubject,
+		googleEmailVerified: true,
+	});
+	return publicAuthResult(user._id.toString(), ip);
 }

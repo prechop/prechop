@@ -7,9 +7,6 @@
  * (SEED_ADMIN_PHONE), one fully-onboarded demo vendor with a menu and a live
  * daily order, and a demo buyer. Safe to re-run — everything keys off natural
  * identifiers (shortCode / phone / token) and is skipped if already present.
- *
- * OTP delivery in dev is console-mode, so you can log in with any seeded phone
- * and read the code from the server logs.
  */
 
 import {
@@ -45,7 +42,7 @@ import {
 	FulfillmentType,
 	getCampusByShortCodeDB,
 	getSiteConfigsDocDB,
-	getUserByPhoneDB,
+	getUserByEmailDB,
 	getVendorProfileByUserIdDB,
 	incrementDailyOrderItemQuantityDB,
 	incrementDailyOrderTotalCountDB,
@@ -69,6 +66,22 @@ import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 
 function log(msg: string): void {
 	process.stdout.write(`  ${msg}\n`);
+}
+
+function seedEmail({
+	firstName,
+	lastName,
+	groupName,
+}: {
+	firstName: string;
+	lastName: string;
+	groupName: string;
+}): string {
+	const slug = `${firstName}.${lastName}.${groupName}`
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "");
+	return `${slug}@seed.prechop.local`;
 }
 
 /** Freeze a library option group into a daily-order-item snapshot shape. */
@@ -152,14 +165,16 @@ async function ensureUser(input: {
 	firstName: string;
 	lastName: string;
 	phone: string;
+	email?: string;
 }): Promise<{ _id: string; created: boolean }> {
 	const groupId = await getBuiltInGroupId(input.groupName);
-	const existing = await getUserByPhoneDB({ phone: input.phone });
+	const email = input.email ?? seedEmail(input);
+	const existing = await getUserByEmailDB({ email });
 	if (existing) {
 		// Backfill group membership on re-seed (e.g. after the IAM migration).
 		if (groupId)
 			await addUserToGroupDB({ id: existing._id.toString(), groupId });
-		log(`user ${input.phone} (${input.groupName}) exists`);
+		log(`user ${email} (${input.groupName}) exists`);
 		return { _id: existing._id.toString(), created: false };
 	}
 	const created = await createUserDB({
@@ -167,14 +182,14 @@ async function ensureUser(input: {
 			campusId: input.campusId,
 			firstName: input.firstName,
 			lastName: input.lastName,
+			email,
 			phone: input.phone,
 			groupIds: groupId ? [groupId] : [],
-			isPhoneVerified: true,
 			isActive: true,
 		},
 	});
-	if (!created) throw new Error(`failed to create user ${input.phone}`);
-	log(`user ${input.phone} (${input.groupName}) created`);
+	if (!created) throw new Error(`failed to create user ${email}`);
+	log(`user ${email} (${input.groupName}) created`);
 	return { _id: created._id.toString(), created: true };
 }
 
@@ -188,7 +203,6 @@ async function ensureUser(input: {
  * up duplicate orders. Uses model helpers directly (bypassing payment) so it
  * can place orders in any target status without a live Paystack call.
  */
-// biome-ignore lint/suspicious/noExplicitAny: aggregated listing/order docs are loosely typed here.
 type Loose = any;
 
 async function enrichDemoData({
@@ -197,7 +211,12 @@ async function enrichDemoData({
 	unilagId: string;
 }): Promise<void> {
 	const SENTINEL_PHONE = "08144444444";
-	if (await getUserByPhoneDB({ phone: SENTINEL_PHONE })) {
+	const sentinelEmail = seedEmail({
+		firstName: "Bola",
+		lastName: "Adeyemi",
+		groupName: VENDORS_GROUP,
+	});
+	if (await getUserByEmailDB({ email: sentinelEmail })) {
 		log("demo data already enriched — skipping orders/reviews/2nd vendor");
 		return;
 	}
@@ -206,7 +225,13 @@ async function enrichDemoData({
 
 	// Extra buyers so orders come from a believable spread of students.
 	const buyers: string[] = [];
-	const demoBuyer = await getUserByPhoneDB({ phone: "08111111111" });
+	const demoBuyer = await getUserByEmailDB({
+		email: seedEmail({
+			firstName: "Ada",
+			lastName: "Obi",
+			groupName: BUYERS_GROUP,
+		}),
+	});
 	if (demoBuyer) buyers.push(demoBuyer._id.toString());
 	for (const b of [
 		{ firstName: "Emeka", lastName: "Okafor", phone: "08150000001" },
@@ -381,7 +406,13 @@ async function enrichDemoData({
 	log("Bola's Buka listings: live, coming-soon, draft, closed, cancelled");
 
 	// ── Buyer orders across the whole lifecycle ─────────────────────────
-	const adaUser = await getUserByPhoneDB({ phone: "08122222222" });
+	const adaUser = await getUserByEmailDB({
+		email: seedEmail({
+			firstName: "Tunde",
+			lastName: "Bakare",
+			groupName: VENDORS_GROUP,
+		}),
+	});
 	const adaVendor = adaUser
 		? await getVendorProfileByUserIdDB({ userId: adaUser._id.toString() })
 		: null;
@@ -939,7 +970,7 @@ async function main(): Promise<void> {
 
 	process.stdout.write("\n✓ Seed complete.\n");
 	process.stdout.write(
-		`\n  Admin login phone : ${SEED_ADMIN_PHONE}\n  Buyer login phone : 08111111111\n  Vendor login phone: 08122222222 (Ada's Kitchen)\n  Vendor login phone: 08144444444 (Bola's Buka)\n  Pending vendor    : 08133333333 (Campus Bites)\n  (OTP prints to server logs in dev.)\n\n`,
+		`\n  Admin seed phone  : ${SEED_ADMIN_PHONE}\n  Buyer seed email  : ${seedEmail({ firstName: "Ada", lastName: "Obi", groupName: BUYERS_GROUP })}\n  Vendor seed email : ${seedEmail({ firstName: "Tunde", lastName: "Bakare", groupName: VENDORS_GROUP })} (Ada's Kitchen)\n  Vendor seed email : ${seedEmail({ firstName: "Bola", lastName: "Adeyemi", groupName: VENDORS_GROUP })} (Bola's Buka)\n  Pending vendor    : 08133333333 (Campus Bites)\n\n`,
 	);
 
 	await disconnectMongoDB();

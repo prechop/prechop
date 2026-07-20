@@ -1,4 +1,4 @@
-import { nairaToKobo, notFound } from "@/server/constants";
+import { nairaToKobo, notFound, validationError } from "@/server/constants";
 import {
 	createOptionGroupDB,
 	type IMenuOptionInput,
@@ -42,6 +42,11 @@ export async function createOptionGroup({
 	options,
 }: { userId: string } & CreateOptionGroupInput): Promise<IOptionGroup> {
 	const vendor = await resolveVendorByUserId({ userId });
+	if (!vendor.campusId) {
+		throw validationError(
+			"Complete your vendor campus before adding options.",
+		);
+	}
 	const group = await createOptionGroupDB({
 		payload: {
 			vendorId: vendorIdOf(vendor),

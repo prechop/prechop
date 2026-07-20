@@ -11,6 +11,7 @@ import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
 export type UpdateLocationInput =
 	| {
 			locationType: LocationType.ON_CAMPUS;
+			campusId: string;
 			schoolId?: string;
 			schoolNameOther?: string;
 			hostelOrStallName: string;
@@ -36,6 +37,7 @@ export async function updateVendorLocation({
 		locationType: input.locationType,
 	};
 	if (input.locationType === LocationType.ON_CAMPUS) {
+		payload.campusId = input.campusId;
 		payload.schoolId = input.schoolId;
 		payload.schoolNameOther = input.schoolNameOther;
 		payload.hostelOrStallName = input.hostelOrStallName;
@@ -60,6 +62,7 @@ export async function updateVendorLocation({
 				"Select campuses available in your chosen state.",
 			);
 		}
+		payload.campusId = selectedCampusIds[0];
 		payload.state = input.state;
 		payload.areaOrAddress = input.areaOrAddress;
 		payload.campusIds = selectedCampusIds;

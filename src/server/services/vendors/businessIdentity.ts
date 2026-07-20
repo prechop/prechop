@@ -13,12 +13,14 @@ export async function updateBusinessIdentity({
 	vendorType,
 	description,
 	email,
+	contactPhone,
 }: {
 	userId: string;
 	businessName: string;
 	vendorType?: VendorType;
 	description?: string;
 	email: string;
+	contactPhone?: string;
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
@@ -30,7 +32,7 @@ export async function updateBusinessIdentity({
 
 	const updated = await updateVendorProfileDB({
 		id: vendorId,
-		payload: { businessName, vendorType, description, email },
+		payload: { businessName, vendorType, description, email, contactPhone },
 	});
 
 	await recomputeVendorCompleteness({ vendorId, userId });

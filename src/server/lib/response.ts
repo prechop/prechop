@@ -34,10 +34,14 @@ export function handleError(error: unknown): NextResponse<IResponseData<null>> {
 	const err = error as Error;
 	const result = getErrorResponse(err);
 	if (result?.code) {
+		const message =
+			NODE_ENV === "production" || result.code < 500
+				? (result.message ?? "Error")
+				: (err?.message ?? result.message ?? "Error");
 		return NextResponse.json(
 			{
 				code: result.code,
-				message: result.message ?? "Error",
+				message,
 				appCode: result.appCode,
 				data: null,
 			},

@@ -7,7 +7,6 @@
 export const ErrInvalidFields: Error = new Error("Invalid fields");
 export const ErrInvalidAction: Error = new Error("Invalid action");
 export const ErrValidation: Error = new Error("Validation failed");
-export const ErrOtpInvalid: Error = new Error("Invalid or expired OTP.");
 export const ErrPaymentVerification: Error = new Error(
 	"Payment verification failed.",
 );
@@ -84,9 +83,6 @@ export const ErrReviewWindowExpired: Error = new Error(
 // ── 429 ──────────────────────────────────────────────────────────────────
 export const ErrTooManyRequests: Error = new Error(
 	"Too many requests, please try again later.",
-);
-export const ErrOtpRateLimited: Error = new Error(
-	"Too many OTP attempts. Try again in 30 minutes.",
 );
 
 // ── 500 ──────────────────────────────────────────────────────────────────

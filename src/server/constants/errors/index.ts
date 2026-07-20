@@ -18,8 +18,6 @@ import {
 	ErrMenuItemNotFound,
 	ErrOrderNotCancellable,
 	ErrOrderNotFound,
-	ErrOtpInvalid,
-	ErrOtpRateLimited,
 	ErrPaymentAmountMismatch,
 	ErrPaymentVerification,
 	ErrPolicyNotFound,
@@ -71,7 +69,6 @@ export function getErrorResponse(error: Error): IErrorResponse {
 		case ErrInvalidFields:
 		case ErrInvalidAction:
 		case ErrValidation:
-		case ErrOtpInvalid:
 		case ErrPaymentVerification:
 		case ErrPaymentAmountMismatch:
 			code = 400;
@@ -116,7 +113,6 @@ export function getErrorResponse(error: Error): IErrorResponse {
 			break;
 
 		case ErrTooManyRequests:
-		case ErrOtpRateLimited:
 			code = 429;
 			break;
 

@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from "next/server";
 // keep auth-only routes out of search indexes — the real data gate lives at
 // the API layer in `withAuth`.
 //
-// Prechop identity is a phone number + OTP; the only auth page is /login.
+// Prechop identity is passwordless email/Google; the auth entry page is /login.
 // The JWT carries just the userId (role/campus are resolved server-side), so
 // this gate cannot route by role — it only distinguishes authenticated from
 // anonymous. Post-login role routing happens in the client boot path.
@@ -86,6 +86,10 @@ export async function proxy(request: NextRequest) {
 	// Already signed in and visiting /login → send home; the home page routes
 	// the user to their role dashboard.
 	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
+		const next = request.nextUrl.searchParams.get("next");
+		if (next?.startsWith("/") && !next.startsWith("//")) {
+			return NextResponse.redirect(new URL(next, request.url));
+		}
 		return NextResponse.redirect(new URL("/", request.url));
 	}
 

@@ -31,9 +31,9 @@ export async function recomputeVendorCompleteness({
 		countMenuItemsByVendorDB({ vendorId }),
 		hasAnyTimetableEntryDB({ vendorId }),
 	]);
+	if (!user) throw ErrVendorNotFound;
 
 	const profileCompleteness = calculateCompleteness({
-		isPhoneVerified: user?.isPhoneVerified ?? false,
 		hasProfileImage: !!vendor.profileImageUrl,
 		hasMenuCategory: (vendor.categories?.length ?? 0) > 0,
 		menuItemCount,

@@ -1,7 +1,6 @@
 import { AppError, ErrVendorNotFound } from "@/server/constants";
 import { onboardingChecklist } from "@/server/helpers";
 import {
-	getUserByIdDB,
 	getVendorProfileByIdDB,
 	submitVendorForReviewDB,
 	VendorStatus,
@@ -51,9 +50,7 @@ export async function submitVendorForReview({
 	// complete before approval — NOT the marketplace completeness score (which
 	// also requires menu items + timetable entries that live behind the
 	// active-vendor gate and would otherwise deadlock every applicant).
-	const user = await getUserByIdDB({ id: userId });
 	const checklist = onboardingChecklist({
-		isPhoneVerified: user?.isPhoneVerified ?? false,
 		hasBusinessIdentity: !!vendor.businessName,
 		hasCategory: (vendor.categories?.length ?? 0) > 0,
 		hasLocation:
@@ -61,7 +58,7 @@ export async function submitVendorForReview({
 				? !!vendor.state &&
 					!!vendor.areaOrAddress &&
 					(vendor.campusIds?.length ?? 0) > 0
-				: !!vendor.locationType,
+				: !!vendor.locationType && !!vendor.campusId,
 		hasBankDetails: !!vendor.paystackSubaccountCode,
 		hasProfileImage: !!vendor.profileImageUrl,
 	});

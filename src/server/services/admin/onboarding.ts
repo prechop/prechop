@@ -1,5 +1,6 @@
-import { AppError, ErrVendorNotFound } from "../../constants";
+import { AppError, ErrVendorNotFound, VENDORS_GROUP } from "../../constants";
 import {
+	addUserToGroupDB,
 	getUserByIdDB,
 	getVendorProfileByIdDB,
 	listVendorsDB,
@@ -8,6 +9,7 @@ import {
 } from "../../models";
 import { resendProvider } from "../../providers";
 import { recordAudit } from "../audit";
+import { getBuiltInGroupId } from "../iam";
 import type { AdminActor } from "./vendors";
 
 const ErrNotUnderReview = new AppError(
@@ -36,7 +38,6 @@ export async function getOnboardingSubmission(id: string) {
 					id: owner._id.toString(),
 					firstName: owner.firstName,
 					lastName: owner.lastName,
-					isPhoneVerified: owner.isPhoneVerified,
 					createdAt: owner.createdAt,
 				}
 			: null,
@@ -62,6 +63,13 @@ export async function approveVendor({
 		reviewedBy: actor.userId,
 		reviewNotes: notes,
 	});
+	const vendorsGroupId = await getBuiltInGroupId(VENDORS_GROUP);
+	if (vendorsGroupId) {
+		await addUserToGroupDB({
+			id: vendor.userId.toString(),
+			groupId: vendorsGroupId,
+		});
+	}
 
 	recordAudit({
 		userId: actor.userId,

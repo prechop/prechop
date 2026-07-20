@@ -132,12 +132,17 @@ export default function AccountWrapper() {
 	}
 
 	async function applyToBecomeVendor() {
+		const userCampusId = user?.campusId;
 		if (!vendorBusinessName.trim()) {
 			toast("Enter your business name", "error");
 			return;
 		}
 		if (locationType === "ON_CAMPUS" && !hostelOrStallName.trim()) {
 			toast("Enter your hostel or stall name", "error");
+			return;
+		}
+		if (locationType === "ON_CAMPUS" && !userCampusId) {
+			toast("Choose your campus before applying.", "error");
 			return;
 		}
 		if (
@@ -159,6 +164,7 @@ export default function AccountWrapper() {
 					locationType === "ON_CAMPUS"
 						? {
 								locationType,
+								campusId: userCampusId,
 								hostelOrStallName: hostelOrStallName.trim(),
 							}
 						: {
@@ -217,7 +223,7 @@ export default function AccountWrapper() {
 									{user.firstName} {user.lastName}
 								</Text>
 								<Text $muted $size={14}>
-									{user.phone}
+									{user.email}
 								</Text>
 							</Stack>
 						</Row>
@@ -280,8 +286,9 @@ export default function AccountWrapper() {
 						<SectionHeader title="Become a Vendor" icon="+" />
 						<Stack $gap={12}>
 							<Text $muted $size={14}>
-								Apply with this buyer account so your phone
-								number, orders and login stay together.
+								Apply with this buyer account so your orders and
+								login stay together. Selling access starts only
+								after admin approval.
 							</Text>
 							<Input
 								label="Business name"

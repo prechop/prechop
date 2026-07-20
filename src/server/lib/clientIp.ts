@@ -6,16 +6,15 @@ import { NODE_ENV, TRUSTED_PROXY } from "../constants/environments";
 // and trivially forgeable unless a trusted edge (CDN / load balancer) rewrites
 // them on the way in. Because `enforceRateLimit` keys on this value, honoring an
 // attacker-controlled header lets a single client mint unlimited rate-limit
-// buckets by rotating one header — defeating every IP-scoped throttle, most
-// dangerously the OTP-request limiter (SMS-cost amplification).
+// buckets by rotating one header, defeating every IP-scoped throttle.
 //
 // So forwarded headers are honored ONLY behind TRUSTED_PROXY=1. Untrusted, we
 // ignore every one of them and fall back to the socket peer address (or, when
-// the runtime does not expose one, a single shared "unknown" bucket) — spoofed
+// the runtime does not expose one, a single shared "unknown" bucket). Spoofed
 // traffic then collapses into one bucket instead of fanning out into unlimited
 // ones. That is fail-closed: over-throttling an untrusted deployment is far
-// better than handing out an SMS-bomb amplifier. Set TRUSTED_PROXY=1 in prod so
-// clients are bucketed individually again (boot warns when it is unset).
+// better than handing out unlimited request buckets. Set TRUSTED_PROXY=1 in prod
+// so clients are bucketed individually again (boot warns when it is unset).
 let warnedAboutUntrustedProxy = false;
 function warnIfUntrustedProxy(): void {
 	if (warnedAboutUntrustedProxy) return;

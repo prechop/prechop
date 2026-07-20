@@ -3,10 +3,8 @@ import {
 	BUYERS_GROUP,
 	conflict,
 	ErrUserNotFound,
-	VENDORS_GROUP,
 } from "@/server/constants";
 import {
-	addUserToGroupDB,
 	createVendorProfileDB,
 	getUserByIdDB,
 	getVendorProfileByUserIdDB,
@@ -17,6 +15,47 @@ import { recordAudit } from "../audit";
 import { getBuiltInGroupId } from "../iam";
 import { recomputeVendorCompleteness } from "../vendors/recomputeVendorCompleteness";
 
+export async function startVendorApplication({ userId }: { userId: string }) {
+	const user = await getUserByIdDB({ id: userId });
+	if (!user) throw ErrUserNotFound;
+
+	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+	if (
+		buyersGroupId &&
+		!user.groupIds.map((g) => g.toString()).includes(buyersGroupId)
+	) {
+		throw new AppError(
+			"Only buyer accounts can apply to become a vendor.",
+			403,
+			"NOT_BUYER_ACCOUNT",
+		);
+	}
+
+	const existingVendor = await getVendorProfileByUserIdDB({ userId });
+	if (existingVendor) return existingVendor;
+
+	const vendor = await createVendorProfileDB({
+		payload: {
+			userId,
+			...(user.campusId ? { campusId: user.campusId.toString() } : {}),
+			email: user.email,
+		},
+	});
+	if (!vendor)
+		throw conflict(
+			"Could not create a vendor application for this account.",
+		);
+
+	await recordAudit({
+		userId,
+		role: BUYERS_GROUP,
+		action: "BUYER_START_VENDOR_APPLICATION",
+		resourceType: "vendorProfiles",
+		resourceId: vendor._id.toString(),
+	});
+	return vendor;
+}
+
 export async function becomeVendor({
 	userId,
 	input,
@@ -24,65 +63,22 @@ export async function becomeVendor({
 	userId: string;
 	input: BecomeVendorInput;
 }) {
-	const user = await getUserByIdDB({ id: userId });
-	if (!user) throw ErrUserNotFound;
-
-	const existingVendor = await getVendorProfileByUserIdDB({ userId });
-	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
-	if (
-		buyersGroupId &&
-		!user.groupIds.map((g) => g.toString()).includes(buyersGroupId)
-	) {
-		throw new AppError(
-			"Only buyer accounts can apply to become a vendor from account settings.",
-			403,
-			"NOT_BUYER_ACCOUNT",
-		);
-	}
-
-	const vendorsGroupId = await getBuiltInGroupId(VENDORS_GROUP);
-	if (existingVendor) {
-		const vendorId = existingVendor._id.toString();
-		await updateVendorProfileDB({
-			id: vendorId,
-			payload: {
-				businessName: input.businessName,
-				vendorType: input.vendorType,
-				...input.location,
-			},
-		});
-		if (vendorsGroupId) {
-			await addUserToGroupDB({ id: userId, groupId: vendorsGroupId });
-		}
-		await recomputeVendorCompleteness({ vendorId, userId });
-		return getVendorProfileByUserIdDB({ userId });
-	}
-
-	const vendor = await createVendorProfileDB({
-		payload: {
-			userId,
-			campusId: user.campusId.toString(),
-			email: `buyer-${userId}@upgrade.prechop.local`,
-			businessName: input.businessName,
-			vendorType: input.vendorType,
-		},
-	});
-	if (!vendor)
-		throw conflict("Could not create a vendor profile for this account.");
-
+	const vendor = await startVendorApplication({ userId });
 	const vendorId = vendor._id.toString();
+
 	await updateVendorProfileDB({
 		id: vendorId,
-		payload: input.location,
+		payload: {
+			businessName: input.businessName,
+			vendorType: input.vendorType,
+			...input.location,
+		},
 	});
-	if (vendorsGroupId) {
-		await addUserToGroupDB({ id: userId, groupId: vendorsGroupId });
-	}
 	await recomputeVendorCompleteness({ vendorId, userId });
 	await recordAudit({
 		userId,
 		role: BUYERS_GROUP,
-		action: "BUYER_BECOME_VENDOR",
+		action: "BUYER_UPDATE_VENDOR_APPLICATION",
 		resourceType: "vendorProfiles",
 		resourceId: vendorId,
 		newState: {

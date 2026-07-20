@@ -1,9 +1,5 @@
 import "server-only";
 import cron from "../constants/cron";
-import {
-	E2E_OTP_SINK_VAR,
-	evaluateOtpSinkHatch,
-} from "../constants/environments";
 import { connectMongoDB, disconnectMongoDB } from "../databases";
 import { disconnectRedis } from "../databases/redis";
 
@@ -11,9 +7,6 @@ declare global {
 	// eslint-disable-next-line no-var
 	var __prechopBootstrapped: boolean | undefined;
 }
-
-/** OTP_PROVIDER values the app actually knows how to dispatch for login OTP. */
-const KNOWN_OTP_PROVIDERS = ["console", "termii"] as const;
 
 function collectSecretProblems(): string[] {
 	const required: Array<[string, string | undefined, number]> = [
@@ -72,56 +65,6 @@ function collectNumericProblem(
  */
 function collectSilentFailureProblems(): string[] {
 	const problems: string[] = [];
-	const otpProvider = process.env.OTP_PROVIDER;
-	const hatch = evaluateOtpSinkHatch();
-
-	// A requested-but-refused hatch is itself fatal in production. Someone put a
-	// test-harness opt-in on this process; either it is a harness (fix the config
-	// it complained about) or it is production (the var must not be there at all).
-	// Staying quiet and booting "normally" would hide which of those is true.
-	problems.push(...hatch.refusals);
-
-	// OTP: `console` (the default) prints the code to stdout while requestOtp
-	// reports "OTP sent successfully" — nobody can log in and nothing errors.
-	if (!otpProvider) {
-		problems.push(
-			"OTP_PROVIDER is unset — it defaults to `console`, which logs OTPs to stdout instead of sending SMS while the API still reports success. Set OTP_PROVIDER=termii",
-		);
-	} else if (otpProvider === "console") {
-		// The one exception: an explicit, exactly-matching, uncontradicted e2e
-		// opt-in. `evaluateOtpSinkHatch` is the single source of truth here and in
-		// `OTP_CONSOLE_MODE`, so boot and runtime cannot disagree about whether
-		// this process sends SMS.
-		if (!hatch.engaged) {
-			problems.push(
-				`OTP_PROVIDER=console logs OTPs to stdout instead of sending SMS — never valid in production. Set OTP_PROVIDER=termii (an e2e harness under \`next start\` may instead set ${E2E_OTP_SINK_VAR})`,
-			);
-		}
-	} else if (!KNOWN_OTP_PROVIDERS.includes(otpProvider as never)) {
-		problems.push(
-			`OTP_PROVIDER="${otpProvider}" is not a known provider (${KNOWN_OTP_PROVIDERS.join(", ")})`,
-		);
-	}
-	if (otpProvider === "termii") {
-		if (!process.env.TERMII_API_KEY) {
-			problems.push(
-				"OTP_PROVIDER=termii but TERMII_API_KEY is missing — every OTP send would fail",
-			);
-		}
-		if (!process.env.TERMII_SENDER_ID) {
-			problems.push(
-				"OTP_PROVIDER=termii but TERMII_SENDER_ID is missing — Termii requires an approved sender ID",
-			);
-		}
-	}
-
-	// Paystack: verifyWebhookSignature HMACs with this key. Empty string is a
-	// *publicly known* key, so anyone could forge a "payment succeeded" webhook.
-	if (!process.env.PAYSTACK_SECRET_KEY) {
-		problems.push(
-			"PAYSTACK_SECRET_KEY is missing — webhook signatures would be verified against an empty (publicly known) HMAC key, letting anyone forge paid orders",
-		);
-	}
 
 	// APP_URL: baked into Paystack callback_url and receipt links. Validate the
 	// RUNTIME origin the server actually resolves (`APP_URL`, falling back to the
@@ -142,14 +85,14 @@ function collectSilentFailureProblems(): string[] {
 
 	// DISABLE_RATE_LIMIT switches off EVERY rate limit globally (read live in
 	// rateLimit.ts). It is a local/e2e escape hatch; in production it turns
-	// POST /api/auth/otp/request into an open SMS-cost amplifier. Like the OTP
-	// sink, the failure mode is a CI env block copy-pasted into prod — so a
-	// truthy value is fatal here, not a silent live read. Match rateLimit.ts's
-	// exact truthy set ("1"/"true") so boot and runtime cannot disagree.
+	// sensitive auth and payment endpoints into open abuse targets. The failure
+	// mode is a CI env block copy-pasted into prod, so a truthy value is fatal
+	// here, not a silent live read. Match rateLimit.ts's exact truthy set
+	// ("1"/"true") so boot and runtime cannot disagree.
 	const disableRateLimit = process.env.DISABLE_RATE_LIMIT;
 	if (disableRateLimit === "1" || disableRateLimit === "true") {
 		problems.push(
-			`DISABLE_RATE_LIMIT="${disableRateLimit}" disables ALL rate limiting — never valid in production; it turns OTP requests into an open SMS-cost amplifier. Unset it (leave it to a local/e2e environment only)`,
+			`DISABLE_RATE_LIMIT="${disableRateLimit}" disables ALL rate limiting - never valid in production. Unset it (leave it to a local/e2e environment only)`,
 		);
 	}
 
@@ -216,29 +159,6 @@ export function assertRuntimeConfig(): void {
 
 	for (const warning of isProd ? collectWarnings() : []) {
 		console.warn(`[bootstrap] ${warning}`);
-	}
-
-	// A hatch-enabled prod process must be impossible to mistake for a real one,
-	// including by someone skimming logs at 3am who did not deploy it.
-	if (isProd && evaluateOtpSinkHatch().engaged) {
-		console.warn(
-			[
-				"",
-				"  ################################################################",
-				"  #  OTP CONSOLE SINK ENGAGED — THIS IS NOT A PRODUCTION SERVER  #",
-				"  ################################################################",
-				`  ${E2E_OTP_SINK_VAR} is set, so this`,
-				"  NODE_ENV=production process prints OTP codes to stdout and sends",
-				"  NO SMS. Anyone who can read these logs can log in as any user.",
-				"  This is an e2e-harness-only mode. If you are seeing this banner",
-				"  on a real deployment, that deployment is COMPROMISED — unset the",
-				"  variable and restart.",
-				"  ################################################################",
-				"",
-			]
-				.map((line) => `[bootstrap]${line}`)
-				.join("\n"),
-		);
 	}
 
 	if (!problems.length) return;

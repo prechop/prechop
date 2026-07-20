@@ -185,6 +185,7 @@ export default function VendorSettingsWrapper() {
 	const { user, refresh } = useAuth();
 	const {
 		data: vendor,
+		error: vendorError,
 		isLoading,
 		mutate,
 	} = useSWR<VendorMe>("/vendors/me", fetcher);
@@ -195,12 +196,10 @@ export default function VendorSettingsWrapper() {
 	// Business identity
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
-	const [phone, setPhone] = useState("");
-	const [phoneOtp, setPhoneOtp] = useState("");
-	const [phoneOtpSent, setPhoneOtpSent] = useState(false);
 	const [businessName, setBusinessName] = useState("");
 	const [vendorType, setVendorType] = useState("");
 	const [email, setEmail] = useState("");
+	const [contactPhone, setContactPhone] = useState("");
 	const [description, setDescription] = useState("");
 
 	// Categories
@@ -210,6 +209,7 @@ export default function VendorSettingsWrapper() {
 	const [locationType, setLocationType] = useState<
 		"ON_CAMPUS" | "OFF_CAMPUS"
 	>("ON_CAMPUS");
+	const [campusId, setCampusId] = useState("");
 	const [schoolId, setSchoolId] = useState("");
 	const [hostelOrStallName, setHostelOrStallName] = useState("");
 	const [stateName, setStateName] = useState("");
@@ -231,19 +231,33 @@ export default function VendorSettingsWrapper() {
 	const [notifyReviews, setNotifyReviews] = useState(true);
 
 	const [busy, setBusy] = useState<string | null>(null);
+	const [startAttempted, setStartAttempted] = useState(false);
+
+	useEffect(() => {
+		const status = vendorError?.response?.status;
+		if (status !== 404 || startAttempted || busy === "start-application")
+			return;
+		setStartAttempted(true);
+		setBusy("start-application");
+		api.post("/users/me/become-vendor", {})
+			.then(() => mutate())
+			.catch((e) => toast(errMsg(e), "error"))
+			.finally(() => setBusy(null));
+	}, [vendorError, busy, mutate, toast, startAttempted]);
 
 	// Seed form state once the profile loads (and whenever it changes).
 	useEffect(() => {
 		if (!vendor) return;
 		setFirstName(user?.firstName ?? "");
 		setLastName(user?.lastName ?? "");
-		setPhone(user?.phone ?? "");
 		setBusinessName(vendor.businessName ?? "");
 		setVendorType(vendor.vendorType ?? "");
-		setEmail(vendor.email ?? "");
+		setEmail(vendor.email ?? user?.email ?? "");
+		setContactPhone(vendor.contactPhone ?? "");
 		setDescription(vendor.description ?? "");
 		setCats((vendor.categories ?? []).map(normalizeMenuCategory));
 		setLocationType(vendor.locationType ?? "ON_CAMPUS");
+		setCampusId(vendor.campusId ?? "");
 		setSchoolId(vendor.schoolId ?? "");
 		setHostelOrStallName(vendor.hostelOrStallName ?? "");
 		setStateName(vendor.state ?? "");
@@ -262,7 +276,7 @@ export default function VendorSettingsWrapper() {
 				? String(vendor.defaultDeliveryEstimateMinutes)
 				: "",
 		);
-		setDefContact(vendor.defaultDeliveryContactPhone ?? user?.phone ?? "");
+		setDefContact(vendor.defaultDeliveryContactPhone ?? "");
 		setDefDeliveryAccepted(
 			vendor.defaultDeliveryResponsibilityAccepted ?? false,
 		);
@@ -271,7 +285,8 @@ export default function VendorSettingsWrapper() {
 		setNotifyReviews(vendor.notifyReviews ?? true);
 	}, [vendor, user]);
 
-	if (isLoading || !vendor) return <PageLoader />;
+	if (isLoading || busy === "start-application" || !vendor)
+		return <PageLoader />;
 
 	function toggleCat(v: string) {
 		const category = normalizeMenuCategory(v);
@@ -314,6 +329,9 @@ export default function VendorSettingsWrapper() {
 					? { description: description.trim() }
 					: {}),
 				email: email.trim(),
+				...(contactPhone.trim()
+					? { contactPhone: contactPhone.trim() }
+					: {}),
 			});
 			toast("Business details saved", "success");
 		});
@@ -327,28 +345,6 @@ export default function VendorSettingsWrapper() {
 			});
 			await refresh();
 			toast("Profile details saved", "success");
-		});
-	}
-
-	async function requestPhoneOtp() {
-		if (!phone.trim() || phone.trim() === user?.phone) return;
-		await run("phone", async () => {
-			await api.post("/users/me/phone/request", { phone: phone.trim() });
-			setPhoneOtpSent(true);
-			toast("Verification code sent", "success");
-		});
-	}
-
-	async function confirmPhone() {
-		await run("phone", async () => {
-			await api.post("/users/me/phone/confirm", {
-				phone: phone.trim(),
-				otp: phoneOtp.trim(),
-			});
-			setPhoneOtp("");
-			setPhoneOtpSent(false);
-			await refresh();
-			toast("Phone number updated", "success");
 		});
 	}
 
@@ -394,6 +390,7 @@ export default function VendorSettingsWrapper() {
 				locationType === "ON_CAMPUS"
 					? {
 							locationType,
+							campusId,
 							...(schoolId ? { schoolId } : {}),
 							hostelOrStallName: hostelOrStallName.trim(),
 						}
@@ -508,7 +505,7 @@ export default function VendorSettingsWrapper() {
 									{user?.firstName} {user?.lastName}
 								</Text>
 								<Text $muted $size={13}>
-									{user?.phone}
+									{user?.email}
 								</Text>
 								<Input
 									type="file"
@@ -547,52 +544,6 @@ export default function VendorSettingsWrapper() {
 						>
 							Save personal details
 						</Button>
-						<Stack $gap={10}>
-							<Input
-								label="Phone number"
-								value={phone}
-								onChange={(e) => {
-									setPhone(e.target.value);
-									setPhoneOtpSent(false);
-								}}
-							/>
-							<Row $gap={10} $wrap>
-								<Button
-									$variant="secondary"
-									$loading={busy === "phone"}
-									disabled={
-										busy === "phone" ||
-										!phone.trim() ||
-										phone.trim() === user?.phone
-									}
-									onClick={requestPhoneOtp}
-								>
-									Send verification code
-								</Button>
-								{phoneOtpSent && (
-									<>
-										<Input
-											label="OTP"
-											value={phoneOtp}
-											onChange={(e) =>
-												setPhoneOtp(e.target.value)
-											}
-											placeholder="6-digit code"
-										/>
-										<Button
-											$loading={busy === "phone"}
-											disabled={
-												busy === "phone" ||
-												phoneOtp.trim().length !== 6
-											}
-											onClick={confirmPhone}
-										>
-											Verify & update phone
-										</Button>
-									</>
-								)}
-							</Row>
-						</Stack>
 					</Stack>
 				</Card>
 
@@ -624,6 +575,13 @@ export default function VendorSettingsWrapper() {
 							value={email}
 							onChange={(e) => setEmail(e.target.value)}
 							placeholder="you@example.com"
+						/>
+						<Input
+							label="Phone / WhatsApp number"
+							type="tel"
+							value={contactPhone}
+							onChange={(e) => setContactPhone(e.target.value)}
+							placeholder="+2348012345678"
 						/>
 						<Textarea
 							label="Short description"
@@ -694,6 +652,20 @@ export default function VendorSettingsWrapper() {
 						</Select>
 						{locationType === "ON_CAMPUS" ? (
 							<>
+								<Select
+									label="Campus"
+									value={campusId}
+									onChange={(e) =>
+										setCampusId(e.target.value)
+									}
+								>
+									<option value="">Select campus</option>
+									{(campuses ?? []).map((c) => (
+										<option key={c.id} value={c.id}>
+											{c.name}
+										</option>
+									))}
+								</Select>
 								<Select
 									label="School (optional)"
 									value={schoolId}
@@ -776,7 +748,7 @@ export default function VendorSettingsWrapper() {
 							disabled={
 								busy === "location" ||
 								(locationType === "ON_CAMPUS"
-									? !hostelOrStallName.trim()
+									? !campusId || !hostelOrStallName.trim()
 									: !stateName.trim() ||
 										!areaOrAddress.trim() ||
 										campusIds.length === 0)

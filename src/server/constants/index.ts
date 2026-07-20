@@ -9,7 +9,6 @@ export { default as hashToken } from "./hashToken";
 export { default as isOriginAllowed } from "./isOriginAllowed";
 export * from "./kobo";
 export * from "./orderNumber";
-export * from "./otp";
 export * from "./permissions";
 export * from "./phone";
 export { default as wait } from "./wait";

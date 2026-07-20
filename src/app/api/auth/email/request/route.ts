@@ -1,21 +1,22 @@
 import { ErrInvalidFields } from "@/server/constants";
 import { handleError, ok, withApiHandler } from "@/server/lib";
-import { registerVendor } from "@/server/services/auth";
-import { registerVendorBodySchema } from "@/server/validators/auth/validate";
+import { requestEmailSignIn } from "@/server/services/auth";
+import { emailSignInRequestBodySchema } from "@/server/validators/auth/validate";
 
 export const runtime = "nodejs";
 
 export const POST = withApiHandler(
 	{
-		route: "/api/auth/register/vendor",
+		route: "/api/auth/email/request",
 		rateLimit: { windowMs: 60_000, maxRequests: 10 },
 	},
 	async ({ req }) => {
 		try {
-			const parsed = registerVendorBodySchema.safeParse(await req.json());
+			const parsed = emailSignInRequestBodySchema.safeParse(
+				await req.json(),
+			);
 			if (!parsed.success) throw ErrInvalidFields;
-			const result = await registerVendor(parsed.data);
-			return ok(result);
+			return ok(await requestEmailSignIn(parsed.data));
 		} catch (error) {
 			return handleError(error);
 		}

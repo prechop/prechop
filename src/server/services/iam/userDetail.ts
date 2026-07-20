@@ -92,7 +92,6 @@ export async function getUserAdminDetail(id: string) {
 			campusName: campus?.name ?? null,
 			campusState: campus?.state ?? null,
 			isActive: user.isActive,
-			isPhoneVerified: user.isPhoneVerified,
 			lastLoginAt: user.lastLoginAt ?? null,
 			activeSessions: (user.refreshTokens ?? []).length,
 			createdAt: user.createdAt,

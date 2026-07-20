@@ -17,12 +17,9 @@ export function toPublicUser(
 		permissions: resolved.permissions,
 		firstName: user.firstName,
 		lastName: user.lastName,
-		phone: user.phone ? tryDecrypt(user.phone) : "",
-		// Only ever returned to the owning user (every `toPublicUser` caller
-		// projects the caller's own record). Omitted entirely when unset, so the
-		// client can distinguish "no email" from an empty string it typed.
-		...(user.email ? { email: user.email } : {}),
-		isPhoneVerified: user.isPhoneVerified,
+		profileImageUrl: user.profileImageUrl,
+		email: user.email,
+		...(user.phone ? { phone: tryDecrypt(user.phone) } : {}),
 		isActive: user.isActive,
 		createdAt: user.createdAt,
 	};

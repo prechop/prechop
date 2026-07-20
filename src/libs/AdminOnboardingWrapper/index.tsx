@@ -40,7 +40,6 @@ interface Submission {
 	owner: {
 		firstName: string;
 		lastName: string;
-		isPhoneVerified: boolean;
 		createdAt: string;
 	} | null;
 }
@@ -202,14 +201,6 @@ export default function AdminOnboardingWrapper() {
 											{submission.owner
 												? `${submission.owner.firstName} ${submission.owner.lastName}`
 												: "—"}
-										</span>
-									</Field>
-									<Field>
-										<span>Phone verified</span>
-										<span>
-											{submission.owner?.isPhoneVerified
-												? "Yes"
-												: "No"}
 										</span>
 									</Field>
 									<Field>

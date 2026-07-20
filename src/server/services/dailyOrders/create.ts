@@ -2,6 +2,7 @@ import {
 	ErrForbidden,
 	ErrVendorNotActive,
 	generateShareableToken,
+	validationError,
 } from "../../constants";
 import {
 	createDailyOrderDB,
@@ -24,6 +25,11 @@ export async function createDailyOrder({
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw ErrForbidden;
 	if (vendor.status !== VendorStatus.ACTIVE) throw ErrVendorNotActive;
+	if (!vendor.campusId) {
+		throw validationError(
+			"Complete your vendor campus before posting food.",
+		);
+	}
 
 	const vendorId = vendor._id.toString();
 	const items = await buildSnapshotItems({ vendorId, items: input.items });

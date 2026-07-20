@@ -2,7 +2,6 @@
 // marketplace until this reaches the configured threshold (default 100).
 
 export interface CompletenessInput {
-	isPhoneVerified: boolean;
 	hasProfileImage: boolean;
 	hasMenuCategory: boolean;
 	menuItemCount: number;
@@ -11,19 +10,17 @@ export interface CompletenessInput {
 }
 
 const WEIGHTS = {
-	phoneVerified: 10,
 	profileImage: 15,
 	menuCategory: 10,
 	menuItems: 25,
 	timetable: 15,
-	bankDetails: 25,
+	bankDetails: 35,
 } as const;
 
 const MIN_MENU_ITEMS_REQUIRED = 3;
 
 export function calculateCompleteness(input: CompletenessInput): number {
 	let score = 0;
-	if (input.isPhoneVerified) score += WEIGHTS.phoneVerified;
 	if (input.hasProfileImage) score += WEIGHTS.profileImage;
 	if (input.hasMenuCategory) score += WEIGHTS.menuCategory;
 	if (input.menuItemCount >= MIN_MENU_ITEMS_REQUIRED)
@@ -41,7 +38,6 @@ export function calculateCompleteness(input: CompletenessInput): number {
 // score would deadlock every applicant at ~60%. Submission therefore requires
 // only the steps an applicant can actually perform pre-approval.
 export interface OnboardingChecklistInput {
-	isPhoneVerified: boolean;
 	hasBusinessIdentity: boolean;
 	hasCategory: boolean;
 	hasLocation: boolean;
@@ -50,7 +46,6 @@ export interface OnboardingChecklistInput {
 }
 
 export interface OnboardingChecklist {
-	phone: boolean;
 	identity: boolean;
 	categories: boolean;
 	location: boolean;
@@ -66,7 +61,6 @@ export function onboardingChecklist(
 	input: OnboardingChecklistInput,
 ): OnboardingChecklist {
 	const steps = {
-		phone: input.isPhoneVerified,
 		identity: input.hasBusinessIdentity,
 		categories: input.hasCategory,
 		location: input.hasLocation,

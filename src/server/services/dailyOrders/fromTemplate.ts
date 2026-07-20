@@ -106,6 +106,11 @@ export async function createDailyOrderFromTemplate({
 	if (items.length === 0) {
 		throw validationError("No menu items are scheduled for today.");
 	}
+	if (!vendor.campusId) {
+		throw validationError(
+			"Complete your vendor campus before posting food.",
+		);
+	}
 
 	const created = await createDailyOrderDB({
 		payload: {

@@ -2,15 +2,16 @@
 
 export interface PublicUser {
 	id: string;
-	campusId: string;
+	campusId?: string;
 	/** IAM group names the user belongs to (e.g. "Vendors", "Administrators"). */
 	groups: string[];
 	/** Resolved effective permission action strings, for UI gating. */
 	permissions: string[];
 	firstName: string;
 	lastName: string;
-	phone: string;
-	isPhoneVerified: boolean;
+	profileImageUrl?: string;
+	email: string;
+	phone?: string;
 	isActive: boolean;
 	createdAt: string;
 }
@@ -58,12 +59,13 @@ export interface MenuOptionGroup {
 export interface VendorProfile {
 	id: string;
 	userId: string;
-	campusId: string;
+	campusId?: string;
 	campusIds?: string[];
 	vendorType?: string;
 	businessName?: string;
 	description?: string;
 	email: string;
+	contactPhone?: string;
 	status:
 		| "INCOMPLETE"
 		| "PENDING_REVIEW"
@@ -215,7 +217,6 @@ export interface AdminUserDetail {
 		campusName: string | null;
 		campusState: string | null;
 		isActive: boolean;
-		isPhoneVerified: boolean;
 		lastLoginAt: string | null;
 		activeSessions: number;
 		createdAt: string;

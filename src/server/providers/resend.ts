@@ -23,6 +23,17 @@ async function safeSend(fn: () => Promise<unknown>): Promise<void> {
 }
 
 class ResendProvider {
+	async sendSignInLink(to: string, signInUrl: string): Promise<void> {
+		await safeSend(() =>
+			resend.emails.send({
+				from: RESEND_FROM_EMAIL,
+				to,
+				subject: "Continue to Prechop",
+				html: `<p>Use this secure link to continue to Prechop:</p><p><a href="${signInUrl}">Continue to Prechop</a></p><p>This link expires in 1 hour. If you did not request it, you can ignore this email.</p>`,
+			}),
+		);
+	}
+
 	async sendReceiptEmail(input: SendReceiptEmailInput): Promise<void> {
 		await safeSend(() =>
 			resend.emails.send({

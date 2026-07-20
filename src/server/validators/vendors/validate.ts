@@ -7,6 +7,7 @@ export const businessIdentitySchema = zod
 		vendorType: zod.enum(VendorType).optional(),
 		description: zod.string().trim().max(2000).optional(),
 		email: zod.string().trim().email(),
+		contactPhone: zod.string().trim().min(5).max(30).optional(),
 	})
 	.strict();
 
@@ -14,6 +15,7 @@ export const locationSchema = zod.discriminatedUnion("locationType", [
 	zod
 		.object({
 			locationType: zod.literal(LocationType.ON_CAMPUS),
+			campusId: zod.string().trim().min(1),
 			schoolId: zod.string().trim().min(1).optional(),
 			schoolNameOther: zod.string().trim().min(1).optional(),
 			hostelOrStallName: zod.string().trim().min(1).max(200),
@@ -139,6 +141,8 @@ export const becomeVendorSchema = zod
 	.strict();
 
 export type BecomeVendorInput = zod.infer<typeof becomeVendorSchema>;
+
+export const startVendorApplicationSchema = zod.object({}).strict();
 
 export const earningsQuerySchema = zod
 	.object({
