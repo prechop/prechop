@@ -68,6 +68,7 @@ function VendorOnboardingContent() {
   // Fallback: show empty form with prefilled email/phone from auth
   const emptyVendor: VendorMe = {
     id: "",
+    userId: "",
     businessName: "",
     vendorType: "",
     email: user?.email ?? "",
@@ -78,6 +79,11 @@ function VendorOnboardingContent() {
     locationType: "ON_CAMPUS",
     campusIds: [],
     schoolId: "",
+    rating: 0,
+    totalReviews: 0,
+    totalOrders: 0,
+    profileCompleteness: 0,
+    isOpenForOrders: false,
   };
 
   return (
