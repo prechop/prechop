@@ -47,11 +47,12 @@ export const E2E_APP_ENV: Record<string, string> = {
 	// into payment callbacks. e2e never completes a real Paystack round-trip.
 	// NOTE: this is NOT the CSRF allow-list; that is `clientAppURLs`, which
 	// already trusts `localhost`, so specs send `origin: http://localhost:3100`.
-	NEXT_PUBLIC_APP_URL: "https://prechop.ng",
+	NEXT_PUBLIC_APP_URL: "https://prechop.com.ng",
 	TRUSTED_PROXY: "1",
 	DISABLE_RATE_LIMIT: "1",
 
 	// Pinned so the seeded admin always matches the phone the specs log in as,
 	// whatever `.env` happens to say.
+	SEED_ADMIN_EMAIL: "prechopofficial@gmail.com",
 	SEED_ADMIN_PHONE: "08130135756",
 };

@@ -102,4 +102,4 @@ export const METRICS_TOKEN = process.env.METRICS_TOKEN ?? "";
 export const TRUSTED_PROXY = process.env.TRUSTED_PROXY === "1";
 
 // Seed
-export const SEED_ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08000000000";
+export const SEED_ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";

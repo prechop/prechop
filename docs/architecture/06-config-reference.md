@@ -122,7 +122,8 @@ Validated at boot in **every** environment.
 ### Seed
 | Variable | Required | Description |
 |---|---|---|
-| `SEED_ADMIN_PHONE` | no | phone for the seeded super-admin (default `08000000000`) |
+| `SEED_ADMIN_EMAIL` | no | phone for the seeded super-admin (default `prechopofficial@gmail.com
+`) |
 
 ---
 

@@ -24,7 +24,7 @@ const DB_NAME = process.env.DB_NAME ?? "prechop";
 
 const VENDOR_PHONE = "08122222222"; // Ada — seeded ACTIVE vendor
 const BUYER_PHONE = "08111111111"; // seeded buyer
-const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08130135756";
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";
 const KNOWN_OTP = "123456";
 
 test.use({ baseURL: ORIGIN });
@@ -150,7 +150,7 @@ test("marketplace search finds vendors by name/menu/listing", async ({
 test("admin can open a user's full detail + analytics page", async ({
 	page,
 }) => {
-	await loginInBrowser(page, ADMIN_PHONE);
+	await loginInBrowser(page, ADMIN_EMAIL);
 	await page.goto("/admin/iam");
 	if (new URL(page.url()).pathname.startsWith("/login")) {
 		test.skip(

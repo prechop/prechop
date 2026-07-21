@@ -30,7 +30,7 @@ const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
 
-const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08130135756";
+const ADMIN_PHONE = process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";
 // A throwaway applicant created/torn down by this spec — never a seeded user.
 const APPLICANT_PHONE = "08155500042";
 const APPLICANT_EMAIL = "throwaway-onboarding@prechop.test";

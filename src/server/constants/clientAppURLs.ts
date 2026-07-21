@@ -5,6 +5,7 @@ const clientAppURLs: { url: string }[] = [
   { url: "localhost" },
   { url: "prechop.vercel.app" },
   { url: "prechop.com.ng" },
+  {url:"www.prechop.com.ng"}
 ];
 
 export default clientAppURLs;
