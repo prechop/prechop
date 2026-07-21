@@ -35,6 +35,7 @@ const tone: Record<
 	CONFIRMED: "primary",
 	PREPARING: "warning",
 	READY: "success",
+	IN_TRANSIT: "success",
 	COMPLETED: "success",
 	CANCELLED: "danger",
 	REFUNDED: "muted",
@@ -46,6 +47,7 @@ const ACTIVE: OrderStatus[] = [
 	"CONFIRMED",
 	"PREPARING",
 	"READY",
+	"IN_TRANSIT",
 ];
 
 const OrderCard = styled(Card)`

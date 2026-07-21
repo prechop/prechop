@@ -19,6 +19,7 @@ const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.CONFIRMED,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
+	OrderStatus.IN_TRANSIT,
 ];
 
 const selectedOptionSchema = new mongoose.Schema(
@@ -110,6 +111,7 @@ const schema = new mongoose.Schema<any>(
 		cancellationReason: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
 		paidAt: { type: Date },
+		deliveryStartedAt: { type: Date },
 		channel: { type: String },
 		receiptUrl: { type: String },
 		// No `default` on purpose — see types.ts. Absent = pre-feature order, and
@@ -384,6 +386,7 @@ export async function aggregateBuyerOrderStatsDB({
 			OrderStatus.CONFIRMED,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.IN_TRANSIT,
 			OrderStatus.COMPLETED,
 		];
 		const rows = await BuyerOrder.aggregate<{
@@ -444,6 +447,7 @@ export async function listBuyerOrdersByVendorAndDailyOrderDB({
 								OrderStatus.CONFIRMED,
 								OrderStatus.PREPARING,
 								OrderStatus.READY,
+								OrderStatus.IN_TRANSIT,
 								OrderStatus.COMPLETED,
 							],
 						},
@@ -490,11 +494,13 @@ export async function setBuyerOrderStatusDB({
 	id,
 	status,
 	fromStatuses,
+	deliveryStartedAt,
 	session,
 }: {
 	id: string;
 	status: OrderStatus;
 	fromStatuses?: OrderStatus[];
+	deliveryStartedAt?: Date;
 	session?: ClientSession;
 }): Promise<IBuyerOrder | null> {
 	try {
@@ -504,7 +510,12 @@ export async function setBuyerOrderStatusDB({
 		if (fromStatuses?.length) filter.status = { $in: fromStatuses };
 		const res = await BuyerOrder.findOneAndUpdate(
 			filter,
-			{ $set: { status } },
+			{
+				$set: {
+					status,
+					...(deliveryStartedAt ? { deliveryStartedAt } : {}),
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return res ? (res.toObject() as unknown as IBuyerOrder) : null;

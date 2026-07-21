@@ -503,9 +503,7 @@ export default function VendorOnboardingWrapper({
 								<ProgressLabel>
 									{doneCount} of {rows.length} steps done
 								</ProgressLabel>
-								<ProgressPct>
-									{vendor.profileCompleteness ?? 0}%
-								</ProgressPct>
+								<ProgressPct>{stepPct}%</ProgressPct>
 							</Stack>
 							<ProgressLabel>
 								{stepPct === 100

@@ -270,7 +270,11 @@ export default function AppShell({
 		shellRole === "VENDOR" ||
 		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
 	const { data: vendor } = useSWR<VendorMe>(
-		isAuthenticated && isVendor ? "/vendors/me" : null,
+		isAuthenticated &&
+			isVendor &&
+			!pathname.startsWith("/vendor/onboarding")
+			? "/vendors/me"
+			: null,
 		fetcher,
 	);
 

@@ -90,17 +90,14 @@ beforeAll(async () => {
 	const vendor = await makeVendor();
 	vendorId = vendor.vendorId;
 	campusId = vendor.campusId;
-	// Deliberately NOT passing an email: `IUserCreateInput` has no such field
-	// and `createUserDB` never maps one, so passing it would be silently
-	// dropped — which is exactly the product bug the BUG GUARD test below pins.
 	const buyer = await createUserDB({
 		payload: {
+			email: buyerEmail,
 			campusId: vendor.campusId,
 			firstName: "Ada",
 			lastName: "Buyer",
 			phone: uniquePhone(),
 			groupIds: [],
-			isPhoneVerified: true,
 		},
 	});
 	buyerId = buyer!._id.toString();

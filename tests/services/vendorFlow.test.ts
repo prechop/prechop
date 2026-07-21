@@ -82,6 +82,7 @@ describe("vendor onboarding services", () => {
 			userId,
 			input: {
 				locationType: LocationType.ON_CAMPUS,
+				campusId: oid(),
 				hostelOrStallName: "Block C",
 			},
 		});
@@ -164,6 +165,7 @@ describe("vendor onboarding services", () => {
 				profileImageUrl: "https://img.test/x.jpg",
 				paystackSubaccountCode: "ACCT_x",
 				locationType: LocationType.ON_CAMPUS,
+				campusId,
 				hostelOrStallName: "Block C",
 			},
 		});

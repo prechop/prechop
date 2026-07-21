@@ -285,6 +285,31 @@ export default function VendorSettingsWrapper() {
 		setNotifyReviews(vendor.notifyReviews ?? true);
 	}, [vendor, user]);
 
+	const vendorErrorStatus =
+		vendorError?.response?.status ?? vendorError?.status;
+	if (vendorErrorStatus === 403) {
+		return (
+			<FadeIn>
+				<Card $accent>
+					<Stack $gap={10}>
+						<PageHeader
+							eyebrow="Vendor setup"
+							title="Finish your vendor submission"
+							subtitle="Complete onboarding before managing vendor settings."
+						/>
+						<Button
+							as={Link}
+							href="/vendor/onboarding"
+							style={{ alignSelf: "flex-start" }}
+						>
+							Continue setup
+						</Button>
+					</Stack>
+				</Card>
+			</FadeIn>
+		);
+	}
+
 	if (isLoading || busy === "start-application" || !vendor)
 		return <PageLoader />;
 

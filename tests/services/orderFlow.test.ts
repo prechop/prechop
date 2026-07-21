@@ -3,9 +3,11 @@ import { generateOrderNumber } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
 import {
 	createBuyerOrderDB,
+	getBuyerOrderByIdDB,
 	setBuyerOrderStatusDB,
 } from "@/server/models/buyerOrders";
 import { FulfillmentType, OrderStatus } from "@/server/models/enums";
+import { listNotificationsDB } from "@/server/models/notifications";
 import { cancelOrderAsBuyer } from "@/server/services/buyerOrders/cancel";
 import {
 	getMyOrders,
@@ -40,11 +42,13 @@ async function makeOrder({
 	buyerId,
 	campusId,
 	status,
+	fulfillmentType = FulfillmentType.PICKUP,
 }: {
 	vendorId: string;
 	buyerId: string;
 	campusId: string;
 	status?: OrderStatus;
+	fulfillmentType?: FulfillmentType;
 }) {
 	const itemId = oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
@@ -55,7 +59,7 @@ async function makeOrder({
 			vendorId,
 			buyerId,
 			campusId,
-			fulfillmentType: FulfillmentType.PICKUP,
+			fulfillmentType,
 			subtotalKobo: 150000,
 			deliveryFeeKobo: 0,
 			platformFeeKobo: 5000,
@@ -139,6 +143,90 @@ describe("updateOrderStatus", () => {
 			status: OrderStatus.PREPARING,
 		});
 		expect(preparing.status).toBe(OrderStatus.PREPARING);
+	});
+
+	it("requires delivery orders to pass through in transit", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+			fulfillmentType: FulfillmentType.DELIVERY,
+		});
+		const orderId = order._id.toString();
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId,
+				status: OrderStatus.COMPLETED,
+			}),
+		).rejects.toThrow();
+
+		const inTransit = await updateOrderStatus({
+			vendorUserId: userId,
+			orderId,
+			status: OrderStatus.IN_TRANSIT,
+		});
+		expect(inTransit.status).toBe(OrderStatus.IN_TRANSIT);
+		expect(inTransit.deliveryStartedAt).toBeInstanceOf(Date);
+
+		for (let i = 0; i < 10; i += 1) {
+			const notifications = await listNotificationsDB({ userId: buyerId });
+			if (
+				notifications.some(
+					(n) =>
+						n.type === "ORDER_IN_TRANSIT" &&
+						n.body === "Your order is on the way.",
+				)
+			) {
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		const notifications = await listNotificationsDB({ userId: buyerId });
+		expect(
+			notifications.some(
+				(n) =>
+					n.type === "ORDER_IN_TRANSIT" &&
+					n.body === "Your order is on the way.",
+			),
+		).toBe(true);
+
+		const completed = await updateOrderStatus({
+			vendorUserId: userId,
+			orderId,
+			status: OrderStatus.COMPLETED,
+		});
+		expect(completed.status).toBe(OrderStatus.COMPLETED);
+	});
+
+	it("keeps in-transit unavailable for pickup orders", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.READY,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.IN_TRANSIT,
+			}),
+		).rejects.toThrow();
+
+		const unchanged = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(unchanged!.deliveryStartedAt).toBeUndefined();
 	});
 
 	it("rejects an illegal transition", async () => {

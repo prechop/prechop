@@ -41,11 +41,14 @@ interface PipelineOrder {
 }
 
 // Next action per current status (matches server VALID_TRANSITIONS).
-const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
+const BASE_NEXT: Partial<
+	Record<OrderStatus, { to: OrderStatus; label: string }>
+> = {
 	PAID: { to: "CONFIRMED", label: "Confirm" },
 	CONFIRMED: { to: "PREPARING", label: "Start preparing" },
 	PREPARING: { to: "READY", label: "Mark ready" },
 	READY: { to: "COMPLETED", label: "Complete" },
+	IN_TRANSIT: { to: "COMPLETED", label: "Mark delivered" },
 };
 
 // Live columns shown top-to-bottom (mobile-first board).
@@ -56,12 +59,15 @@ const COLUMNS: { status: OrderStatus; label: string; icon: string }[] = [
 	{ status: "READY", label: "Ready", icon: "🥡" },
 ];
 
+COLUMNS.push({ status: "IN_TRANSIT", label: "On the way", icon: "->" });
+
 // Presentational lane accent per column (kitchen-board colour coding).
 const LANE_ACCENT: Record<string, string> = {
 	PAID: "var(--pc-color-gold)",
 	CONFIRMED: "var(--pc-color-accent)",
 	PREPARING: "var(--pc-color-primary)",
 	READY: "var(--pc-color-accent)",
+	IN_TRANSIT: "var(--pc-color-gold)",
 };
 
 const PipelineShell = styled.div`
@@ -78,6 +84,7 @@ function statusTone(
 		case "PAID":
 			return "warning";
 		case "READY":
+		case "IN_TRANSIT":
 		case "COMPLETED":
 			return "success";
 		case "CANCELLED":
@@ -86,6 +93,15 @@ function statusTone(
 		default:
 			return "primary";
 	}
+}
+
+function nextAction(
+	order: PipelineOrder,
+): { to: OrderStatus; label: string } | undefined {
+	if (order.status === "READY" && order.fulfillmentType === "DELIVERY") {
+		return { to: "IN_TRANSIT", label: "Start delivery" };
+	}
+	return BASE_NEXT[order.status];
 }
 
 const Board = styled.div`
@@ -100,7 +116,7 @@ const Board = styled.div`
 		grid-template-columns: repeat(2, 1fr);
 	}
 	@media (min-width: 1080px) {
-		grid-template-columns: repeat(4, 1fr);
+		grid-template-columns: repeat(5, 1fr);
 	}
 `;
 const Lane = styled.div<{ $accent: string }>`
@@ -222,7 +238,7 @@ export default function PipelineWrapper() {
 	}
 
 	async function advance(o: PipelineOrder) {
-		const next = NEXT[o.status];
+		const next = nextAction(o);
 		if (!next) return;
 		setBusyId(o.id);
 		try {
@@ -266,7 +282,9 @@ export default function PipelineWrapper() {
 
 	const list = orders ?? [];
 	const liveCount = list.filter((o) =>
-		["PAID", "CONFIRMED", "PREPARING", "READY"].includes(o.status),
+		["PAID", "CONFIRMED", "PREPARING", "READY", "IN_TRANSIT"].includes(
+			o.status,
+		),
 	).length;
 
 	return (
@@ -355,7 +373,7 @@ export default function PipelineWrapper() {
 											<LaneEmpty>Nothing here</LaneEmpty>
 										) : (
 											colOrders.map((o) => {
-												const next = NEXT[o.status];
+												const next = nextAction(o);
 												return (
 													<OrderCard key={o.id}>
 														<Stack $gap={10}>

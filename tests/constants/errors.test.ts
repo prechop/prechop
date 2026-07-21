@@ -7,8 +7,8 @@ import {
 	ErrInternalServerError,
 	ErrInvalidCredentials,
 	ErrInvalidFields,
-	ErrOtpRateLimited,
 	ErrResourceAlreadyExist,
+	ErrTooManyRequests,
 	ErrUserNotFound,
 	getErrorResponse,
 	invalidOrderState,
@@ -47,7 +47,7 @@ describe("getErrorResponse", () => {
 	});
 
 	it("maps 429-class sentinels", () => {
-		expect(getErrorResponse(ErrOtpRateLimited).code).toBe(429);
+		expect(getErrorResponse(ErrTooManyRequests).code).toBe(429);
 	});
 
 	it("maps 500-class sentinels", () => {

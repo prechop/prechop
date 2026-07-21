@@ -32,20 +32,21 @@ test.describe("public pages", () => {
 		).toBeVisible();
 	});
 
-	test("unified login shows a single phone form (no role tabs)", async ({
+	test("unified login shows the passwordless account choices", async ({
 		page,
 	}) => {
 		await page.goto("/login");
 		await expect(
-			page.getByRole("heading", { name: /^prechop$/i }),
+			page.getByRole("heading", { name: /continue to prechop/i }),
 		).toBeVisible();
-		// One login for everyone: just a phone field, no Buyer/Vendor tabs.
-		await expect(page.getByPlaceholder("08012345678")).toBeVisible();
-		await expect(page.getByRole("button", { name: "Vendor" })).toHaveCount(
-			0,
-		);
 		await expect(
-			page.getByRole("link", { name: /apply as a vendor/i }),
+			page.getByRole("button", { name: /continue with google/i }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: /continue with email/i }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: /sell on prechop/i }),
 		).toBeVisible();
 	});
 
@@ -104,7 +105,8 @@ test.describe("public read path (seeded data)", () => {
 			"seed must create at least one ACTIVE daily order with a future cutoff",
 		).toBeTruthy();
 
-		const listing = group!.listings[0];
+		if (!group) throw new Error("seed marketplace has no live listings");
+		const listing = group.listings[0];
 		// Guard the guard: an undefined title would make the heading assertion
 		// below vacuous again.
 		expect(listing.title, "listing must carry a title").toBeTruthy();

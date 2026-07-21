@@ -32,10 +32,10 @@ describe("isOriginAllowed", () => {
 	});
 
 	it("allows whitelisted eTLD+1 and its subdomains", () => {
-		expect(isOriginAllowed("https://prechop.ng")).toBe(true);
-		expect(isOriginAllowed("https://www.prechop.ng")).toBe(true);
-		expect(isOriginAllowed("https://app.prechop.ng")).toBe(true);
-		expect(isOriginAllowed("https://prechop.ng:3000")).toBe(true);
+		expect(isOriginAllowed("https://prechop.com.ng")).toBe(true);
+		expect(isOriginAllowed("https://www.prechop.com.ng")).toBe(true);
+		expect(isOriginAllowed("https://app.prechop.com.ng")).toBe(true);
+		expect(isOriginAllowed("https://prechop.com.ng:3000")).toBe(true);
 	});
 
 	it("allows localhost", () => {
@@ -44,7 +44,7 @@ describe("isOriginAllowed", () => {
 
 	it("rejects non-whitelisted origins", () => {
 		expect(isOriginAllowed("https://evil.com")).toBe(false);
-		expect(isOriginAllowed("https://prechop.ng.evil.com")).toBe(false);
+		expect(isOriginAllowed("https://prechop.com.ng.evil.com")).toBe(false);
 	});
 
 	it("allows local network IPs outside production (test env)", () => {

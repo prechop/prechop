@@ -4,19 +4,25 @@ import {
 	invalidOrderState,
 } from "../../constants";
 import {
+	FulfillmentType,
 	getBuyerOrderByIdDB,
 	getVendorProfileByUserIdDB,
 	OrderStatus,
 	setBuyerOrderStatusDB,
 } from "../../models";
-import { notifyOrderConfirmed, notifyOrderReady } from "../notifications";
+import {
+	notifyOrderConfirmed,
+	notifyOrderInTransit,
+	notifyOrderReady,
+} from "../notifications";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
 	[OrderStatus.PAID]: [OrderStatus.CONFIRMED],
 	[OrderStatus.CONFIRMED]: [OrderStatus.PREPARING],
 	[OrderStatus.PREPARING]: [OrderStatus.READY],
-	[OrderStatus.READY]: [OrderStatus.COMPLETED],
+	[OrderStatus.READY]: [OrderStatus.IN_TRANSIT, OrderStatus.COMPLETED],
+	[OrderStatus.IN_TRANSIT]: [OrderStatus.COMPLETED],
 };
 
 export async function updateOrderStatus({
@@ -41,11 +47,28 @@ export async function updateOrderStatus({
 			`Cannot transition from ${order.status} to ${status}.`,
 		);
 	}
+	if (
+		status === OrderStatus.IN_TRANSIT &&
+		order.fulfillmentType !== FulfillmentType.DELIVERY
+	) {
+		throw invalidOrderState("Only delivery orders can move in transit.");
+	}
+	if (
+		order.status === OrderStatus.READY &&
+		status === OrderStatus.COMPLETED &&
+		order.fulfillmentType === FulfillmentType.DELIVERY
+	) {
+		throw invalidOrderState(
+			"Delivery orders must be marked in transit before completion.",
+		);
+	}
 
 	const updated = await setBuyerOrderStatusDB({
 		id: orderId,
 		status,
 		fromStatuses: [order.status as OrderStatus],
+		deliveryStartedAt:
+			status === OrderStatus.IN_TRANSIT ? new Date() : undefined,
 	});
 	if (!updated)
 		throw invalidOrderState("Order status changed — please retry.");
@@ -71,6 +94,16 @@ export async function updateOrderStatus({
 		}).catch((error) =>
 			console.error(
 				`[orders] ORDER_READY notification failed for ${orderId}:`,
+				error,
+			),
+		);
+	} else if (status === OrderStatus.IN_TRANSIT) {
+		void notifyOrderInTransit({
+			buyerId: order.buyerId.toString(),
+			orderNumber: order.orderNumber,
+		}).catch((error) =>
+			console.error(
+				`[orders] ORDER_IN_TRANSIT notification failed for ${orderId}:`,
 				error,
 			),
 		);

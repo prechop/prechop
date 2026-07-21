@@ -151,7 +151,7 @@ const Points = styled.ul`
 `;
 const Visual = styled.div`
   position: relative;
-  min-height: 420px;
+  min-height: 460px;
   @media (max-width: 900px) {
     min-height: 320px;
   }
@@ -440,6 +440,7 @@ export default function LandingPage() {
 							Become a vendor
 						</Button>
 					</CTAs>
+    
 					<Points>
 						<li>
 							<span>✓</span> Secure Paystack checkout

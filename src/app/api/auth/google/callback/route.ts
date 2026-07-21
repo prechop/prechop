@@ -13,6 +13,7 @@ import {
 } from "@/server/lib";
 import {
 	consumeGoogleAuthState,
+	resolvePostAuthRedirect,
 	signInWithGoogleProfile,
 } from "@/server/services/auth";
 import { googleCallbackQuerySchema } from "@/server/validators/auth/validate";
@@ -103,7 +104,7 @@ export const GET = withApiHandler(
 				.trim()
 				.split(/\s+/)
 				.filter(Boolean);
-			const { token } = await signInWithGoogleProfile({
+			const { token, user } = await signInWithGoogleProfile({
 				email: profile.email,
 				firstName: profile.given_name ?? fallbackFirstName,
 				lastName: profile.family_name ?? fallbackLastName.join(" "),
@@ -113,7 +114,9 @@ export const GET = withApiHandler(
 				ip: getClientIp(req),
 			});
 			await setAuthCookies(token);
-			return NextResponse.redirect(new URL(state.next, req.url));
+			return NextResponse.redirect(
+				new URL(resolvePostAuthRedirect(user, state.next), req.url),
+			);
 		} catch (error) {
 			return handleError(error);
 		}

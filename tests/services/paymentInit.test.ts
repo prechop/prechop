@@ -89,12 +89,12 @@ describe("initializeBuyerPayment — synthetic email must not leak the phone", (
 		});
 		const buyer = await createUserDB({
 			payload: {
+				email: `buyer-${Date.now()}-${Math.random().toString(36).slice(2)}@prechop.test`,
 				campusId,
 				firstName: "Ada",
 				lastName: "Buyer",
 				phone: localPhone,
 				groupIds: [],
-				isPhoneVerified: true,
 			},
 		});
 		const buyerId = buyer!._id.toString();
@@ -172,12 +172,12 @@ describe("initializeBuyerPayment — synthetic email must not leak the phone", (
 		});
 		const buyer = await createUserDB({
 			payload: {
+				email: `buyer-nosub-${Date.now()}-${Math.random().toString(36).slice(2)}@prechop.test`,
 				campusId,
 				firstName: "No",
 				lastName: "Subaccount",
 				phone: "08011112222",
 				groupIds: [],
-				isPhoneVerified: true,
 			},
 		});
 		const buyerId = buyer!._id.toString();

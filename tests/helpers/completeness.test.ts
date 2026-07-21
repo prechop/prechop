@@ -7,7 +7,6 @@ import {
 } from "@/server/helpers/completeness";
 
 const empty: CompletenessInput = {
-	isPhoneVerified: false,
 	hasProfileImage: false,
 	hasMenuCategory: false,
 	menuItemCount: 0,
@@ -23,7 +22,6 @@ describe("calculateCompleteness", () => {
 	it("is 100 for a fully complete profile (>=3 menu items)", () => {
 		expect(
 			calculateCompleteness({
-				isPhoneVerified: true,
 				hasProfileImage: true,
 				hasMenuCategory: true,
 				menuItemCount: 3,
@@ -34,9 +32,6 @@ describe("calculateCompleteness", () => {
 	});
 
 	it("weights each field correctly in isolation", () => {
-		expect(calculateCompleteness({ ...empty, isPhoneVerified: true })).toBe(
-			10,
-		);
 		expect(calculateCompleteness({ ...empty, hasProfileImage: true })).toBe(
 			15,
 		);
@@ -47,7 +42,7 @@ describe("calculateCompleteness", () => {
 			calculateCompleteness({ ...empty, hasTimetableEntry: true }),
 		).toBe(15);
 		expect(calculateCompleteness({ ...empty, hasBankDetails: true })).toBe(
-			25,
+			35,
 		);
 	});
 
@@ -61,7 +56,6 @@ describe("calculateCompleteness", () => {
 		expect(
 			calculateCompleteness({
 				...empty,
-				isPhoneVerified: true,
 				hasBankDetails: true,
 			}),
 		).toBe(35);
@@ -69,7 +63,6 @@ describe("calculateCompleteness", () => {
 });
 
 const emptyChecklist: OnboardingChecklistInput = {
-	isPhoneVerified: false,
 	hasBusinessIdentity: false,
 	hasCategory: false,
 	hasLocation: false,
@@ -78,7 +71,6 @@ const emptyChecklist: OnboardingChecklistInput = {
 };
 
 const fullChecklist: OnboardingChecklistInput = {
-	isPhoneVerified: true,
 	hasBusinessIdentity: true,
 	hasCategory: true,
 	hasLocation: true,
@@ -91,7 +83,6 @@ describe("onboardingChecklist", () => {
 		const res = onboardingChecklist(emptyChecklist);
 		expect(res.complete).toBe(false);
 		expect(res.missing).toEqual([
-			"phone",
 			"identity",
 			"categories",
 			"location",
@@ -105,7 +96,6 @@ describe("onboardingChecklist", () => {
 		expect(res.complete).toBe(true);
 		expect(res.missing).toEqual([]);
 		expect(res).toMatchObject({
-			phone: true,
 			identity: true,
 			categories: true,
 			location: true,
@@ -131,8 +121,8 @@ describe("onboardingChecklist", () => {
 				.missing,
 		).toEqual(["bank"]);
 		expect(
-			onboardingChecklist({ ...fullChecklist, isPhoneVerified: false })
-				.complete,
-		).toBe(false);
+			onboardingChecklist({ ...fullChecklist, hasProfileImage: false })
+				.missing,
+		).toEqual(["image"]);
 	});
 });

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+	ADMINISTRATORS_GROUP,
 	BUYERS_GROUP,
 	ErrInvalidCredentials,
 	ErrUnauthorized,
@@ -46,6 +47,20 @@ function makeToken(): string {
 function cleanNext(next?: string | null): string {
 	if (!next?.startsWith("/") || next.startsWith("//")) return "/marketplace";
 	return next;
+}
+
+export function resolvePostAuthRedirect(
+	user: IUserPublic,
+	next?: string,
+): string {
+	const cleaned = cleanNext(next);
+	if (
+		user.groups.includes(ADMINISTRATORS_GROUP) &&
+		(cleaned === "/" || cleaned === "/marketplace")
+	) {
+		return "/admin";
+	}
+	return cleaned;
 }
 
 function nameFromEmail(email: string): { firstName: string; lastName: string } {

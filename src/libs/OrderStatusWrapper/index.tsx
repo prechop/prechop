@@ -30,7 +30,7 @@ import { OrderAgainButton } from "@/libs/ReorderSheet";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
 // Happy-path progression shown as a timeline (terminal states handled apart).
-const FLOW: OrderStatus[] = [
+const BASE_FLOW: OrderStatus[] = [
 	"PAID",
 	"CONFIRMED",
 	"PREPARING",
@@ -52,6 +52,8 @@ const STEP_META: Record<string, { icon: string; hint: string }> = {
 	COMPLETED: { icon: "🎉", hint: "Order fulfilled — enjoy!" },
 };
 
+STEP_META.IN_TRANSIT = { icon: "->", hint: "Your order is on the way" };
+
 const statusTone: Record<
 	OrderStatus,
 	"primary" | "success" | "warning" | "danger" | "muted"
@@ -62,6 +64,7 @@ const statusTone: Record<
 	CONFIRMED: "primary",
 	PREPARING: "warning",
 	READY: "success",
+	IN_TRANSIT: "success",
 	COMPLETED: "success",
 	CANCELLED: "danger",
 	REFUNDED: "muted",
@@ -234,7 +237,15 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 
 	const isTerminalBad =
 		data.status === "CANCELLED" || data.status === "REFUNDED";
-	const currentIdx = FLOW.indexOf(data.status);
+	const flow =
+		data.fulfillmentType === "DELIVERY"
+			? BASE_FLOW.flatMap((status) =>
+					status === "COMPLETED"
+						? (["IN_TRANSIT", "COMPLETED"] as OrderStatus[])
+						: [status],
+				)
+			: BASE_FLOW;
+	const currentIdx = flow.indexOf(data.status);
 	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
 
 	async function cancel() {
@@ -369,7 +380,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						<Stack $gap={14}>
 							<Text $weight={800}>Order progress</Text>
 							<Track>
-								{FLOW.map((s, i) => {
+								{flow.map((s, i) => {
 									const done = currentIdx > i;
 									const current = currentIdx === i;
 									const meta = STEP_META[s];
@@ -386,7 +397,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 												>
 													{done ? "✓" : i + 1}
 												</Dot>
-												{i < FLOW.length - 1 && (
+												{i < flow.length - 1 && (
 													<Conn $done={done} />
 												)}
 											</DotCol>

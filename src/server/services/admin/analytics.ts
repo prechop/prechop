@@ -20,6 +20,7 @@ export async function getPlatformAnalytics() {
 							OrderStatus.CONFIRMED,
 							OrderStatus.PREPARING,
 							OrderStatus.READY,
+							OrderStatus.IN_TRANSIT,
 							OrderStatus.COMPLETED,
 						],
 					},

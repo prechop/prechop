@@ -40,6 +40,7 @@ export function timeUntil(value: string | Date): string {
 }
 
 export function statusLabel(status: string): string {
+	if (status === "IN_TRANSIT") return "On the way";
 	return status
 		.toLowerCase()
 		.split("_")

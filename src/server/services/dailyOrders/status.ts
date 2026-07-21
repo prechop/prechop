@@ -37,6 +37,7 @@ export async function closeDailyOrder({
 		[
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.IN_TRANSIT,
 			OrderStatus.COMPLETED,
 		].includes(order.status),
 	);

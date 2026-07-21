@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import {
-	registerBuyerBodySchema,
-	registerVendorBodySchema,
-	requestOtpBodySchema,
-	verifyOtpBodySchema,
+	emailSignInRequestBodySchema,
+	emailSignInVerifyQuerySchema,
+	googleCallbackQuerySchema,
+	googleStartQuerySchema,
 } from "@/server/validators/auth/validate";
 import {
 	cancelOrderBodySchema,
@@ -25,135 +25,61 @@ import {
 } from "@/server/validators/users/validate";
 import { locationSchema } from "@/server/validators/vendors/validate";
 
-describe("auth phone regex", () => {
-	const valid = [
-		["08012345678", "+2348012345678"],
-		["2348012345678", "+2348012345678"],
-		["+2348012345678", "+2348012345678"],
-		["07098765432", "+2347098765432"],
-	] as const;
-	const invalid = [
-		"0801234567", // 10 digits total (need 11)
-		"080123456789", // 12 digits
-		"83356781234", // arbitrary 11-digit value, not a supported mobile prefix
-		"2348335678123",
-		"+2348335678123",
-		"080 1234 5678",
-		"080-1234-5678",
-		"8012345678",
-		"abcdefghijk",
-	];
-
-	it("accepts valid Nigerian mobile numbers and normalizes them", () => {
-		for (const [input, normalized] of valid) {
-			const parsed = requestOtpBodySchema.safeParse({ phone: input });
-			expect(parsed.success).toBe(true);
-			if (parsed.success) {
-				expect(parsed.data.phone).toBe(normalized);
-			}
-		}
-	});
-
-	it("rejects malformed numbers", () => {
-		for (const p of invalid) {
-			const parsed = requestOtpBodySchema.safeParse({ phone: p });
-			expect(parsed.success).toBe(false);
-			if (!parsed.success) {
-				expect(parsed.error.issues[0]?.message).toBe(
-					"Enter a valid Nigerian phone number.",
-				);
-			}
-		}
-	});
-
-	it("trims surrounding whitespace before validating", () => {
-		const parsed = requestOtpBodySchema.safeParse({
-			phone: "  08012345678 ",
+describe("auth passwordless schemas", () => {
+	it("accepts and normalizes email sign-in requests", () => {
+		const parsed = emailSignInRequestBodySchema.safeParse({
+			email: "  ADA@Example.COM  ",
+			next: "/checkout?dailyOrderId=d1",
 		});
 		expect(parsed.success).toBe(true);
 		if (parsed.success) {
-			expect(parsed.data.phone).toBe("+2348012345678");
+			expect(parsed.data.email).toBe("ada@example.com");
+			expect(parsed.data.next).toBe("/checkout?dailyOrderId=d1");
 		}
 	});
-});
 
-describe("registerBuyerBodySchema", () => {
-	it("accepts a complete body", () => {
+	it("rejects bad email, external redirects and extra keys", () => {
 		expect(
-			registerBuyerBodySchema.safeParse({
-				firstName: "Ada",
-				lastName: "Obi",
-				phone: "08012345678",
-				campusId: "camp1",
+			emailSignInRequestBodySchema.safeParse({ email: "not-email" })
+				.success,
+		).toBe(false);
+		expect(
+			emailSignInRequestBodySchema.safeParse({
+				email: "ada@example.com",
+				next: "//evil.test",
 			}).success,
-		).toBe(true);
-	});
-
-	it("rejects extra keys (strict)", () => {
+		).toBe(false);
 		expect(
-			registerBuyerBodySchema.safeParse({
-				firstName: "Ada",
-				lastName: "Obi",
-				phone: "08012345678",
-				campusId: "camp1",
+			emailSignInRequestBodySchema.safeParse({
+				email: "ada@example.com",
 				extra: true,
 			}).success,
 		).toBe(false);
 	});
 
-	it("rejects empty names", () => {
+	it("validates email callback tokens and Google start/callback params", () => {
 		expect(
-			registerBuyerBodySchema.safeParse({
-				firstName: "",
-				lastName: "Obi",
-				phone: "08012345678",
-				campusId: "camp1",
-			}).success,
-		).toBe(false);
-	});
-});
-
-describe("registerVendorBodySchema", () => {
-	it("requires a valid email", () => {
-		const base = {
-			firstName: "Ada",
-			lastName: "Obi",
-			phone: "08012345678",
-			campusId: "camp1",
-		};
-		expect(
-			registerVendorBodySchema.safeParse({
-				...base,
-				email: "vendor@example.com",
+			emailSignInVerifyQuerySchema.safeParse({
+				token: "a".repeat(20),
+				next: "/vendor/settings",
 			}).success,
 		).toBe(true);
 		expect(
-			registerVendorBodySchema.safeParse({ ...base, email: "nope" })
+			emailSignInVerifyQuerySchema.safeParse({ token: "short" }).success,
+		).toBe(false);
+		expect(
+			googleStartQuerySchema.safeParse({ next: "/cart" }).success,
+		).toBe(true);
+		expect(
+			googleCallbackQuerySchema.safeParse({
+				code: "google-code",
+				state: "s".repeat(20),
+			}).success,
+		).toBe(true);
+		expect(
+			googleCallbackQuerySchema.safeParse({ error: "access_denied" })
 				.success,
-		).toBe(false);
-	});
-});
-
-describe("verifyOtpBodySchema", () => {
-	it("requires a 6-digit otp", () => {
-		expect(
-			verifyOtpBodySchema.safeParse({
-				phone: "08012345678",
-				otp: "123456",
-			}).success,
 		).toBe(true);
-		expect(
-			verifyOtpBodySchema.safeParse({
-				phone: "08012345678",
-				otp: "12345",
-			}).success,
-		).toBe(false);
-		expect(
-			verifyOtpBodySchema.safeParse({
-				phone: "08012345678",
-				otp: "abcdef",
-			}).success,
-		).toBe(false);
 	});
 });
 
@@ -244,6 +170,11 @@ describe("updateOrderStatusBodySchema / cancelOrderBodySchema", () => {
 		).toBe(true);
 		expect(
 			updateOrderStatusBodySchema.safeParse({
+				status: OrderStatus.IN_TRANSIT,
+			}).success,
+		).toBe(true);
+		expect(
+			updateOrderStatusBodySchema.safeParse({
 				status: OrderStatus.PENDING_PAYMENT,
 			}).success,
 		).toBe(false);
@@ -305,6 +236,7 @@ describe("vendors locationSchema (discriminated union)", () => {
 		expect(
 			locationSchema.safeParse({
 				locationType: "ON_CAMPUS",
+				campusId: "64b64c9f9f1b2c0012345678",
 				hostelOrStallName: "Block A",
 			}).success,
 		).toBe(true);

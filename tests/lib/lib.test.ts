@@ -83,7 +83,7 @@ describe("csrfReject", () => {
 
 	it("passes an allowed origin and rejects a foreign one", () => {
 		expect(
-			csrfReject(req({ origin: "https://prechop.ng" }, "POST")),
+			csrfReject(req({ origin: "https://prechop.com.ng" }, "POST")),
 		).toBeNull();
 		expect(csrfReject(req({ origin: "https://evil.com" }, "POST"))).toBe(
 			"Origin not allowed",
@@ -92,7 +92,7 @@ describe("csrfReject", () => {
 
 	it("falls back to Referer, then rejects when both are missing", () => {
 		expect(
-			csrfReject(req({ referer: "https://prechop.ng/x" }, "POST")),
+			csrfReject(req({ referer: "https://prechop.com.ng/x" }, "POST")),
 		).toBeNull();
 		expect(csrfReject(req({ referer: "not a url" }, "POST"))).toBe(
 			"Malformed Referer",

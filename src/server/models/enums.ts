@@ -53,6 +53,7 @@ export enum OrderStatus {
 	CONFIRMED = "CONFIRMED",
 	PREPARING = "PREPARING",
 	READY = "READY",
+	IN_TRANSIT = "IN_TRANSIT",
 	COMPLETED = "COMPLETED",
 	CANCELLED = "CANCELLED",
 	REFUNDED = "REFUNDED",
@@ -101,5 +102,6 @@ export const SETTLED_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.CONFIRMED,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
+	OrderStatus.IN_TRANSIT,
 	OrderStatus.COMPLETED,
 ];

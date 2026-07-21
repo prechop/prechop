@@ -303,6 +303,7 @@ export type OrderStatus =
 	| "CONFIRMED"
 	| "PREPARING"
 	| "READY"
+	| "IN_TRANSIT"
 	| "COMPLETED"
 	| "CANCELLED"
 	| "REFUNDED";
@@ -343,6 +344,7 @@ export interface BuyerOrder {
 	 * `/receipt/{token}` link and is deliberately never exposed here.
 	 */
 	receiptStatus?: ReceiptStatus | null;
+	deliveryStartedAt?: string | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
 }

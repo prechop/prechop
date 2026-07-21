@@ -90,6 +90,7 @@ export interface IBuyerOrder {
 	cancellationReason?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";
 	paidAt?: Date;
+	deliveryStartedAt?: Date;
 	channel?: string;
 	receiptUrl?: string;
 	/**

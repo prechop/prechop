@@ -19,7 +19,6 @@ function baseUser(overrides: Partial<IUser> = {}): IUser {
 		lastName: "Obi",
 		phone: encrypt("08012345678"),
 		phoneHash: "hash",
-		isPhoneVerified: true,
 		isActive: true,
 		deleted: false,
 		refreshTokens: [{ refreshToken: "secret", deadline: new Date() }],
@@ -44,7 +43,6 @@ describe("toPublicUser", () => {
 		expect(pub.groups).toEqual(["Buyers"]);
 		expect(pub.permissions).toEqual(["buyer:order:read"]);
 		expect(pub.firstName).toBe("Ada");
-		expect(pub.isPhoneVerified).toBe(true);
 		expect(pub.isActive).toBe(true);
 	});
 
@@ -53,11 +51,11 @@ describe("toPublicUser", () => {
 		expect(pub.id).toBe("the-id");
 	});
 
-	it("returns empty phone when none is present (aggregate shape)", () => {
+	it("omits phone when none is present (aggregate shape)", () => {
 		const pub = toPublicUser(
 			baseUser({ phone: undefined as unknown as string }),
 			resolved,
 		);
-		expect(pub.phone).toBe("");
+		expect(pub.phone).toBeUndefined();
 	});
 });

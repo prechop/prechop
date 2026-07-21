@@ -4,44 +4,22 @@ import {
 	request,
 	test,
 } from "@playwright/test";
-import { hash as bcryptHash } from "bcrypt";
-import IoRedis from "ioredis";
 import mongoose from "mongoose";
-import { clearOtpGates, otpCodeKey, otpRateLimitKey } from "./otpKeys";
+import { connectMongoDB } from "../src/server/databases/mongoDB";
+import { createUserDB, createVendorProfileDB } from "../src/server/models";
+import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
+import { ADMIN_EMAIL, authenticatedRequest } from "./auth";
 import { BASE_URL, ORIGIN } from "./urls";
 
-// End-to-end coverage for the vendor onboarding → submit-for-review → admin
-// approval flow, driven against the real server + seeded local Mongo/Redis
-// (run `pnpm seed` first). This is the regression guard for the submit-gate
-// fix: the final "Submit for review" onboarding step must unlock as soon as
-// the five detail steps (identity, categories, location, bank, image) are
-// done — WITHOUT requiring the marketplace completeness score to hit 100%.
-// That score also rewards menu items + timetable entries, which live behind
-// the active-vendor gate and cannot be added before approval; requiring them
-// would deadlock every applicant at ~60%.
-//
-// Auth reuses the OTP-planting technique (see admin-iam.spec.ts): the code is
-// only stored hashed, so we overwrite it with a known value between the
-// request and verify steps — a test-only technique that touches no production
-// code. The server accepts either the auth cookie or `Authorization: Bearer`;
-// the cookie is `secure` under `next start`, so we carry the Bearer token.
-
-const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
 
-const ADMIN_PHONE = process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";
-// A throwaway applicant created/torn down by this spec — never a seeded user.
-const APPLICANT_PHONE = "08155500042";
 const APPLICANT_EMAIL = "throwaway-onboarding@prechop.test";
-const KNOWN_OTP = "123456";
 
-let redis: IoRedis;
 let mongo: mongoose.mongo.MongoClient;
 let applicantVendorId: mongoose.mongo.ObjectId;
+let campusId = "";
 
-/** Remove any applicant left over from a previous run (phones are encrypted at
- * rest, so we find the user via the vendor profile's plaintext email). */
 async function purgeApplicant() {
 	const db = mongo.db(DB_NAME);
 	const profile = await db
@@ -54,9 +32,10 @@ async function purgeApplicant() {
 }
 
 test.beforeAll(async () => {
-	redis = new IoRedis(REDIS_URI, { maxRetriesPerRequest: 3 });
 	mongo = new mongoose.mongo.MongoClient(MONGODB_URI);
 	await mongo.connect();
+	await connectMongoDB();
+	await seedBuiltInIam();
 	await purgeApplicant();
 
 	const anon = await request.newContext({
@@ -65,70 +44,50 @@ test.beforeAll(async () => {
 	});
 	const campuses = (await (await anon.get("/api/campuses")).json())
 		.data as Array<{ id: string }>;
+	await anon.dispose();
 	expect(campuses.length, "seed must create a campus").toBeGreaterThan(0);
+	campusId = campuses[0].id;
 
-	// Create the applicant through the real vendor-application path (encrypts
-	// the phone, joins the Vendors group, opens an INCOMPLETE profile). We omit
-	// businessName so the identity step is genuinely still outstanding.
-	await clearOtpGates(redis, APPLICANT_PHONE);
-	const reg = await anon.post("/api/auth/register/vendor", {
-		data: {
+	const vendorGroupId = await getBuiltInGroupId("Vendors");
+	const user = await createUserDB({
+		payload: {
+			email: APPLICANT_EMAIL,
 			firstName: "Applicant",
 			lastName: "Vendor",
-			phone: APPLICANT_PHONE,
-			campusId: campuses[0].id,
+			campusId,
+			groupIds: vendorGroupId ? [vendorGroupId] : [],
+		},
+	});
+	if (!user) throw new Error("applicant user was not created");
+
+	const profile = await createVendorProfileDB({
+		payload: {
+			userId: user._id.toString(),
+			campusId,
 			email: APPLICANT_EMAIL,
 		},
 	});
-	expect(reg.ok(), "vendor registration").toBeTruthy();
-	await anon.dispose();
-
-	const profile = await mongo
-		.db(DB_NAME)
-		.collection("vendorprofiles")
-		.findOne({ email: APPLICANT_EMAIL });
-	expect(profile, "vendor profile created by registration").toBeTruthy();
-	expect(profile?.status).toBe("INCOMPLETE");
-	applicantVendorId = profile!._id;
+	if (!profile) throw new Error("vendor profile was not created");
+	expect(profile.status).toBe("INCOMPLETE");
+	applicantVendorId = new mongoose.mongo.ObjectId(profile._id.toString());
 });
 
 test.afterAll(async () => {
 	if (mongo) await purgeApplicant();
-	await redis?.del(otpCodeKey(APPLICANT_PHONE));
-	await redis?.del(otpRateLimitKey(APPLICANT_PHONE));
-	await redis?.quit();
 	await mongo?.close();
 });
 
-async function login(phone: string): Promise<APIRequestContext> {
-	const anon = await request.newContext({
-		baseURL: BASE_URL,
-		extraHTTPHeaders: { origin: ORIGIN },
-	});
-	await clearOtpGates(redis, phone);
-	const req = await anon.post("/api/auth/otp/request", { data: { phone } });
-	expect(req.ok(), "otp request").toBeTruthy();
-	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
-	const verify = await anon.post("/api/auth/otp/verify", {
-		data: { phone, otp: KNOWN_OTP },
-	});
-	expect(verify.ok(), "otp verify").toBeTruthy();
-	const accessToken = (await verify.json()).data.accessToken as string;
-	expect(accessToken, "access token").toBeTruthy();
-	await anon.dispose();
-
-	return request.newContext({
-		baseURL: BASE_URL,
-		extraHTTPHeaders: {
-			origin: ORIGIN,
-			authorization: `Bearer ${accessToken}`,
-		},
-	});
+async function applicantLogin(): Promise<APIRequestContext> {
+	return authenticatedRequest(request, APPLICANT_EMAIL);
 }
 
-test.describe("Vendor onboarding → submit → approval", () => {
+async function adminLogin(): Promise<APIRequestContext> {
+	return authenticatedRequest(request, ADMIN_EMAIL);
+}
+
+test.describe("Vendor onboarding submit and approval", () => {
 	test("submit is blocked while onboarding steps are outstanding", async () => {
-		const vendor = await login(APPLICANT_PHONE);
+		const vendor = await applicantLogin();
 
 		const me = (await (await vendor.get("/api/vendors/me")).json())
 			.data as {
@@ -136,8 +95,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 		};
 		expect(me.status).toBe("INCOMPLETE");
 
-		// The final todo is disabled: submitting before the steps are done is
-		// rejected server-side (the client mirrors this by disabling the button).
 		const early = await vendor.post("/api/vendors/me/submit", { data: {} });
 		expect(early.status(), "submit must be blocked while incomplete").toBe(
 			409,
@@ -146,9 +103,8 @@ test.describe("Vendor onboarding → submit → approval", () => {
 	});
 
 	test("completing every step unlocks submit even below 100% completeness", async () => {
-		const vendor = await login(APPLICANT_PHONE);
+		const vendor = await applicantLogin();
 
-		// Step 1 — business identity.
 		expect(
 			(
 				await vendor.post("/api/vendors/me/business-identity", {
@@ -162,7 +118,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 			"identity",
 		).toBeTruthy();
 
-		// Step 2 — categories.
 		expect(
 			(
 				await vendor.post("/api/vendors/me/categories", {
@@ -172,12 +127,12 @@ test.describe("Vendor onboarding → submit → approval", () => {
 			"categories",
 		).toBeTruthy();
 
-		// Step 3 — location.
 		expect(
 			(
 				await vendor.post("/api/vendors/me/location", {
 					data: {
 						locationType: "ON_CAMPUS",
+						campusId,
 						hostelOrStallName: "Block C, Room 12",
 					},
 				})
@@ -185,11 +140,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 			"location",
 		).toBeTruthy();
 
-		// Step 4 — bank. The real endpoint calls Paystack (resolve + create
-		// subaccount), an external service not available to the hermetic e2e
-		// stack, so we persist the completed-bank signal directly. The gate
-		// only reads `paystackSubaccountCode`, which is exactly what a real
-		// bank save writes.
 		await mongo
 			.db(DB_NAME)
 			.collection("vendorprofiles")
@@ -204,7 +154,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 				},
 			);
 
-		// Step 5 — profile image (confirm accepts any URL; upload itself is S3).
 		expect(
 			(
 				await vendor.post("/api/vendors/me/profile-image/confirm", {
@@ -214,8 +163,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 			"image",
 		).toBeTruthy();
 
-		// All five detail steps are done, but the vendor has NO menu items and
-		// NO timetable entries — so completeness is well below 100%.
 		const me = (await (await vendor.get("/api/vendors/me")).json())
 			.data as {
 			profileCompleteness: number;
@@ -224,12 +171,8 @@ test.describe("Vendor onboarding → submit → approval", () => {
 		};
 		expect(me.businessName).toBe("Throwaway Kitchen");
 		expect(me.locationType).toBe("ON_CAMPUS");
-		expect(
-			me.profileCompleteness,
-			"completeness stays <100 without menu/timetable — proves the gate is decoupled",
-		).toBeLessThan(100);
+		expect(me.profileCompleteness).toBeLessThan(100);
 
-		// The final todo is now enabled: submission succeeds.
 		const submit = await vendor.post("/api/vendors/me/submit", {
 			data: {},
 		});
@@ -239,7 +182,6 @@ test.describe("Vendor onboarding → submit → approval", () => {
 		const submitBody = (await submit.json()).data as { status: string };
 		expect(submitBody.status).toBe("PENDING_REVIEW");
 
-		// Persisted: the DB reflects the pending submission.
 		const doc = await mongo
 			.db(DB_NAME)
 			.collection("vendorprofiles")
@@ -250,22 +192,21 @@ test.describe("Vendor onboarding → submit → approval", () => {
 	});
 
 	test("admin sees the applicant in the queue and approval activates it", async () => {
-		const admin = await login(ADMIN_PHONE);
+		const admin = await adminLogin();
 
 		const queue = (await (await admin.get("/api/admin/onboarding")).json())
 			.data as Array<{ id: string; businessName: string }>;
 		const target = queue.find(
 			(v) => v.businessName === "Throwaway Kitchen",
 		);
-		expect(target, "applicant must be in the review queue").toBeTruthy();
+		if (!target) throw new Error("applicant must be in the review queue");
 
 		const approve = await admin.post(
-			`/api/admin/onboarding/${target!.id}/approve`,
+			`/api/admin/onboarding/${target.id}/approve`,
 			{ data: {} },
 		);
 		expect(approve.status()).toBe(200);
 
-		// Persisted: it leaves the queue and is now ACTIVE.
 		const after = (await (await admin.get("/api/admin/onboarding")).json())
 			.data as Array<{ businessName: string }>;
 		expect(

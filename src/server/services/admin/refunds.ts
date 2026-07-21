@@ -19,6 +19,7 @@ const REFUNDABLE: OrderStatus[] = [
 	OrderStatus.CONFIRMED,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
+	OrderStatus.IN_TRANSIT,
 	OrderStatus.COMPLETED,
 	OrderStatus.CANCELLED,
 ];

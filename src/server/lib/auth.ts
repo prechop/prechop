@@ -1,6 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import {
+	ADMINISTRATORS_GROUP,
 	decodeJwtToken,
 	ErrForbidden,
 	ErrUnauthorized,
@@ -204,6 +205,10 @@ export async function assertActiveVendor(
 
 export function assertBuyer(auth: AuthResult): void {
 	requirePermission(auth, "buyer:order:read");
+}
+
+export function assertAdministrator(auth: AuthResult): void {
+	if (!isInGroup(auth, ADMINISTRATORS_GROUP)) throw ErrForbidden;
 }
 
 /** Audit label for an actor derived from their group memberships. */

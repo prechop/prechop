@@ -4,35 +4,17 @@ import {
 	request,
 	test,
 } from "@playwright/test";
-import { hash as bcryptHash } from "bcrypt";
-import IoRedis from "ioredis";
 import mongoose from "mongoose";
-import { clearOtpGates, otpCodeKey } from "./otpKeys";
-import { BASE_URL, ORIGIN } from "./urls";
+import { ADMIN_EMAIL, authenticatedRequest, BUYER_EMAIL } from "./auth";
 
-// End-to-end coverage for the IAM permission system and the vendor onboarding
-// approval gate, driven against the real server + seeded local Mongo/Redis.
-// Run `pnpm seed` first. Auth is completed by planting a known OTP hash into
-// Redis between the request and verify steps (the code is only stored hashed,
-// so a pure black-box login is not possible) — a test-only technique that
-// touches no production code.
-
-const REDIS_URI = process.env.REDIS_URI ?? "redis://127.0.0.1:6379";
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27018";
 const DB_NAME = process.env.DB_NAME ?? "prechop";
 
-const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE ?? "08130135756";
-const BUYER_PHONE = "08111111111";
-const KNOWN_OTP = "123456";
-
-let redis: IoRedis;
 let mongo: mongoose.mongo.MongoClient;
 
 test.beforeAll(async () => {
-	redis = new IoRedis(REDIS_URI, { maxRetriesPerRequest: 3 });
 	mongo = new mongoose.mongo.MongoClient(MONGODB_URI);
 	await mongo.connect();
-	// Guarantee the onboarding queue has a pending vendor every run.
 	await mongo
 		.db(DB_NAME)
 		.collection("vendorprofiles")
@@ -49,48 +31,16 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-	await redis?.quit();
 	await mongo?.close();
 });
 
-/**
- * Complete OTP login for a seeded phone and return a context that carries the
- * access token as a Bearer header — the server accepts either the auth cookie
- * or `Authorization: Bearer`, and the cookie is `secure` under `next start`
- * (production) so it won't travel over plain HTTP in tests.
- */
-async function login(phone: string): Promise<APIRequestContext> {
-	const anon = await request.newContext({
-		baseURL: BASE_URL,
-		extraHTTPHeaders: { origin: ORIGIN },
-	});
-	// Clear any prior OTP gates so the suite is re-runnable. Keyed off the
-	// NORMALISED phone, exactly as the server keys them — see e2e/otpKeys.ts.
-	await clearOtpGates(redis, phone);
-	const req = await anon.post("/api/auth/otp/request", { data: { phone } });
-	expect(req.ok(), "otp request").toBeTruthy();
-	// Overwrite the server-generated hash with a known one.
-	await redis.setex(otpCodeKey(phone), 600, await bcryptHash(KNOWN_OTP, 10));
-	const verify = await anon.post("/api/auth/otp/verify", {
-		data: { phone, otp: KNOWN_OTP },
-	});
-	expect(verify.ok(), "otp verify").toBeTruthy();
-	const accessToken = (await verify.json()).data.accessToken as string;
-	expect(accessToken, "access token").toBeTruthy();
-	await anon.dispose();
-
-	return request.newContext({
-		baseURL: BASE_URL,
-		extraHTTPHeaders: {
-			origin: ORIGIN,
-			authorization: `Bearer ${accessToken}`,
-		},
-	});
+async function login(email: string): Promise<APIRequestContext> {
+	return authenticatedRequest(request, email);
 }
 
-test.describe("IAM — administrator", () => {
+test.describe("IAM - administrator", () => {
 	test("admin resolves full permissions and can read IAM resources", async () => {
-		const admin = await login(ADMIN_PHONE);
+		const admin = await login(ADMIN_EMAIL);
 
 		const me = await (await admin.get("/api/users/me")).json();
 		expect(me.data.groups).toContain("Administrators");
@@ -117,17 +67,15 @@ test.describe("IAM — administrator", () => {
 	});
 
 	test("built-in policy cannot be deleted", async () => {
-		const admin = await login(ADMIN_PHONE);
+		const admin = await login(ADMIN_EMAIL);
 		const policies = (
 			await (await admin.get("/api/admin/iam/policies")).json()
 		).data as Array<{ id: string; name: string }>;
 		const builtin = policies.find(
 			(p) => p.name === "AdministratorFullAccess",
 		);
-		expect(builtin).toBeTruthy();
-		const res = await admin.delete(
-			`/api/admin/iam/policies/${builtin!.id}`,
-		);
+		if (!builtin) throw new Error("AdministratorFullAccess policy missing");
+		const res = await admin.delete(`/api/admin/iam/policies/${builtin.id}`);
 		expect(res.status()).toBe(403);
 		await admin.dispose();
 	});
@@ -135,20 +83,20 @@ test.describe("IAM — administrator", () => {
 
 test.describe("Vendor onboarding gate", () => {
 	test("admin sees the queue, approves a vendor, and it goes ACTIVE", async () => {
-		const admin = await login(ADMIN_PHONE);
+		const admin = await login(ADMIN_EMAIL);
 
 		const queue = (await (await admin.get("/api/admin/onboarding")).json())
 			.data as Array<{ id: string; businessName: string }>;
 		const target = queue.find((v) => v.businessName === "Campus Bites");
-		expect(target, "Campus Bites must be in the review queue").toBeTruthy();
+		if (!target)
+			throw new Error("Campus Bites must be in the review queue");
 
 		const approve = await admin.post(
-			`/api/admin/onboarding/${target!.id}/approve`,
+			`/api/admin/onboarding/${target.id}/approve`,
 			{ data: {} },
 		);
 		expect(approve.status()).toBe(200);
 
-		// Persisted: it leaves the queue and shows as ACTIVE.
 		const after = (await (await admin.get("/api/admin/onboarding")).json())
 			.data as Array<{ businessName: string }>;
 		expect(
@@ -164,19 +112,16 @@ test.describe("Vendor onboarding gate", () => {
 	});
 });
 
-test.describe("IAM — least privilege", () => {
+test.describe("IAM - least privilege", () => {
 	test("a buyer is denied admin endpoints but keeps buyer capabilities", async () => {
-		const buyer = await login(BUYER_PHONE);
+		const buyer = await login(BUYER_EMAIL);
 
 		const me = await (await buyer.get("/api/users/me")).json();
 		expect(me.data.groups).toContain("Buyers");
 		expect(me.data.permissions).not.toContain("iam:user:read");
 
-		// Denied the admin console (regression guard for privilege escalation).
 		expect((await buyer.get("/api/admin/onboarding")).status()).toBe(403);
 		expect((await buyer.get("/api/admin/iam/users")).status()).toBe(403);
-
-		// Buyer capability still works (regression guard for the 403-on-order bug).
 		expect((await buyer.get("/api/orders")).status()).toBe(200);
 		await buyer.dispose();
 	});

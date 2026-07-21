@@ -39,6 +39,7 @@ describe("users services", () => {
 		const { createUserDB } = await import("@/server/models/users");
 		const user = await createUserDB({
 			payload: {
+				email: `ada-${Date.now()}-${Math.random().toString(36).slice(2)}@prechop.test`,
 				campusId: oid(),
 				firstName: "Ada",
 				lastName: "Obi",

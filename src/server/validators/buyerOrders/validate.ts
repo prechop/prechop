@@ -48,6 +48,7 @@ export const updateOrderStatusBodySchema = zod
 			OrderStatus.CONFIRMED,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.IN_TRANSIT,
 			OrderStatus.COMPLETED,
 		]),
 	})

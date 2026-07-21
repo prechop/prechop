@@ -13,7 +13,6 @@ import {
 	FadeIn,
 	Input,
 	PageHeader,
-	Row,
 	SectionHeader,
 	Select,
 	Stack,
@@ -40,6 +39,46 @@ const ProfileCard = styled(Card)`
     height: 4px;
     background: var(--pc-gradient-calm-orange);
   }
+`;
+const ProfileSummary = styled.div`
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+
+	@media (max-width: 520px) {
+		grid-template-columns: 1fr;
+		align-items: flex-start;
+	}
+`;
+const ProfileIdentity = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+`;
+const ProfileText = styled(Stack)`
+	min-width: 0;
+`;
+const ProfileName = styled(Text)`
+	overflow-wrap: anywhere;
+	line-height: 1.2;
+`;
+const ProfileEmail = styled(Text)`
+	overflow-wrap: anywhere;
+`;
+const GroupBadge = styled(Badge)`
+	justify-self: end;
+	max-width: 100%;
+	white-space: normal;
+	text-align: center;
+	overflow-wrap: anywhere;
+
+	@media (max-width: 520px) {
+		justify-self: start;
+		margin-left: 64px;
+	}
 `;
 const CampusGrid = styled.div`
   display: grid;
@@ -212,25 +251,25 @@ export default function AccountWrapper() {
 				/>
 
 				<ProfileCard>
-					<Row $justify="space-between" $align="center" $gap={12}>
-						<Row $gap={12} $align="center">
+					<ProfileSummary>
+						<ProfileIdentity>
 							<Avatar
 								name={`${user.firstName} ${user.lastName}`}
 								size={52}
 							/>
-							<Stack $gap={2}>
-								<Text $weight={700} $size={17}>
+							<ProfileText $gap={2}>
+								<ProfileName $weight={700} $size={17}>
 									{user.firstName} {user.lastName}
-								</Text>
-								<Text $muted $size={14}>
-									{user.email}
-								</Text>
-							</Stack>
-						</Row>
-						<Badge $tone="gold">
+								</ProfileName>
+								<ProfileEmail $muted $size={14}>
+									{user.email || user.phone}
+								</ProfileEmail>
+							</ProfileText>
+						</ProfileIdentity>
+						<GroupBadge $tone="gold">
 							{user.groups?.[0] ?? "Member"}
-						</Badge>
-					</Row>
+						</GroupBadge>
+					</ProfileSummary>
 				</ProfileCard>
 
 				<Section>

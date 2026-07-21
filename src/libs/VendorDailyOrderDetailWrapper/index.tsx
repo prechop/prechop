@@ -196,6 +196,7 @@ function orderTone(
 		case "PAID":
 			return "warning";
 		case "READY":
+		case "IN_TRANSIT":
 		case "COMPLETED":
 			return "success";
 		case "CANCELLED":

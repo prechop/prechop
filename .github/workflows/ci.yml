@@ -111,16 +111,6 @@ jobs:
       REDIS_URI: "redis://127.0.0.1:6379"
       DB_NAME: "prechop-ci"
 
-      # `console` logs the OTP instead of calling Sendchamp — CI must never make
-      # a real network call to an SMS provider. sysops's hardening (now landed)
-      # REJECTS OTP_PROVIDER=console when NODE_ENV=production; that is fine here
-      # precisely because CI never sets NODE_ENV=production (see below), so
-      # assertRuntimeConfig stays in warn mode. If a future step ever runs the
-      # app in production mode, this value will refuse to boot — by design.
-      OTP_PROVIDER: "console"
-      SENDCHAMP_API_KEY: "ci-throwaway-sendchamp-key-not-real"
-      SENDCHAMP_SENDER_ID: "PreChop"
-
       # Localhost is rejected in production for the same reason; harmless in CI,
       # where the built artifact is discarded rather than served to buyers.
       NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3000"
@@ -225,32 +215,19 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   audit:
     name: dependency audit (osv-scanner · lockfile)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # Only the lockfile is scanned; no history needed.
-          fetch-depth: 1
-
-      - name: OSV-Scanner (pnpm-lock.yaml)
-        # Pinned to an exact release, not a floating major, so the scanner
-        # version is reproducible run-to-run. The action's exit code propagates:
-        # any advisory fails this step and therefore the job. No masking.
-        uses: google/osv-scanner-action@v1.9.1
-        with:
-          scan-args: |-
-            --lockfile=pnpm-lock.yaml
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    permissions:
+      contents: read
+    with:
+      upload-sarif: false
+      scan-args: |-
+        --lockfile=pnpm-lock.yaml
 
   # ───────────────────────────────────────────────────────────────────────
   # Playwright e2e — previously omitted because production-mode boot made it
-  # impossible to pass honestly. That blocker is now GONE, via sysops's
-  # explicit opt-in hatch (`PRECHOP_UNSAFE_E2E_OTP_CONSOLE_SINK`), NOT by
-  # weakening the guard: with the token absent, OTP_PROVIDER=console is still
-  # fatal in production. playwright.config.ts sets the token in `webServer.env`
-  # itself, so this job never names it — the hatch stays owned by one file.
+  # impossible to pass honestly. The specs authenticate seeded users by minting
+  # the same signed session cookies the app uses after passwordless or Google
+  # sign-in; no phone OTP or SMS provider is involved.
   #
   # Deliberately NOT `needs: verify`. e2e is an independent verdict: a red lint
   # must not hide an e2e regression (or vice versa). It costs a second
@@ -357,8 +334,8 @@ jobs:
 
       - name: Run e2e specs
         # playwright.config.ts boots its own webServer (`next start`) and pins
-        # the OTP sink hatch there. workers:1 / fullyParallel:false — the specs
-        # mutate and restore shared seed state, so they must stay serial.
+        # workers:1 / fullyParallel:false — the specs mutate and restore shared
+        # seed state, so they must stay serial.
         run: pnpm e2e
 
       - name: Upload Playwright report

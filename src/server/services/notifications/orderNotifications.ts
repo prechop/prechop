@@ -105,3 +105,30 @@ export async function notifyOrderReady({
 		"order-ready",
 	);
 }
+
+export async function notifyOrderInTransit({
+	buyerId,
+	orderNumber,
+	data,
+}: {
+	buyerId: string;
+	orderNumber: string;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	await createUserNotification({
+		userId: buyerId,
+		title: "Order on the way",
+		body: "Your order is on the way.",
+		type: "ORDER_IN_TRANSIT",
+		data: { orderNumber, ...(data ?? {}) },
+	});
+	void trySms(
+		buyerId,
+		(phone) =>
+			sendchampProvider.sendCustom(
+				phone,
+				`PreChop: Your order ${orderNumber} is on the way.`,
+			),
+		"order-in-transit",
+	);
+}

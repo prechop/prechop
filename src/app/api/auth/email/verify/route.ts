@@ -6,7 +6,10 @@ import {
 	setAuthCookies,
 	withApiHandler,
 } from "@/server/lib";
-import { verifyEmailSignIn } from "@/server/services/auth";
+import {
+	resolvePostAuthRedirect,
+	verifyEmailSignIn,
+} from "@/server/services/auth";
 import { emailSignInVerifyQuerySchema } from "@/server/validators/auth/validate";
 
 export const runtime = "nodejs";
@@ -21,12 +24,14 @@ export const GET = withApiHandler(
 				next: url.searchParams.get("next") ?? undefined,
 			});
 			if (!parsed.success) throw ErrInvalidFields;
-			const { token, next } = await verifyEmailSignIn({
+			const { token, user, next } = await verifyEmailSignIn({
 				...parsed.data,
 				ip: getClientIp(req),
 			});
 			await setAuthCookies(token);
-			return NextResponse.redirect(new URL(next, req.url));
+			return NextResponse.redirect(
+				new URL(resolvePostAuthRedirect(user, next), req.url),
+			);
 		} catch (error) {
 			const response = handleError(error);
 			if (response.status >= 400) return response;

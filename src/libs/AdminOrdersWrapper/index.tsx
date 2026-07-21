@@ -32,6 +32,7 @@ const STATUSES: OrderStatus[] = [
 	"CONFIRMED",
 	"PREPARING",
 	"READY",
+	"IN_TRANSIT",
 	"COMPLETED",
 	"CANCELLED",
 	"REFUNDED",
@@ -41,6 +42,7 @@ function tone(
 	s: OrderStatus,
 ): "success" | "warning" | "danger" | "muted" | "primary" {
 	if (s === "COMPLETED") return "success";
+	if (s === "IN_TRANSIT") return "success";
 	if (s === "CANCELLED" || s === "REFUNDED") return "danger";
 	if (s === "PENDING_PAYMENT") return "muted";
 	return "warning";

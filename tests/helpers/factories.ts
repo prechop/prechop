@@ -27,7 +27,7 @@ export async function seedTestIam() {
 /** Create a user already placed in a named built-in group (requires seedTestIam). */
 export async function makeUserInGroup(
 	groupName: string,
-	opts: { campusId?: string; isPhoneVerified?: boolean } = {},
+	opts: { campusId?: string; email?: string } = {},
 ) {
 	const groupId = await getBuiltInGroupId(groupName);
 	return makeUser({ ...opts, groupIds: groupId ? [groupId] : [] });
@@ -46,21 +46,23 @@ export async function makeCampus(overrides: Record<string, unknown> = {}) {
 
 export async function makeUser({
 	campusId,
-	isPhoneVerified = true,
+	email,
 	groupIds = [],
 }: {
 	campusId?: string;
-	isPhoneVerified?: boolean;
+	email?: string;
 	groupIds?: string[];
 } = {}) {
 	return createUserDB({
 		payload: {
+			email:
+				email ??
+				`test-${Date.now()}-${Math.random().toString(36).slice(2)}@prechop.test`,
 			campusId: campusId ?? oid(),
 			firstName: "Test",
 			lastName: "User",
 			phone: uniquePhone(),
 			groupIds,
-			isPhoneVerified,
 		},
 	});
 }

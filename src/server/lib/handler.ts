@@ -2,6 +2,8 @@ import "server-only";
 import type { NextRequest } from "next/server";
 import { connectMongoDB } from "../databases";
 import { restResponseTimeHistogram } from "../metrics";
+import { assertAdministrator, verifyAuthToken } from "./auth";
+import { setAuthCookies } from "./cookies";
 import { csrfReject } from "./csrf";
 import {
 	applyRateLimitHeaders,
@@ -63,6 +65,12 @@ export function withApiHandler<TCtx = unknown>(
 			}
 
 			await connectMongoDB();
+
+			if (options.route.startsWith("/api/admin")) {
+				const auth = await verifyAuthToken(req);
+				assertAdministrator(auth);
+				if (auth.refreshed) await setAuthCookies(auth.token);
+			}
 
 			const response = await handler({ req, context });
 			if (rlResult) applyRateLimitHeaders(response, rlResult);

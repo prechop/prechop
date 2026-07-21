@@ -34,15 +34,12 @@ process.env.ENCRYPTION_KEY =
 process.env.COOKIE_DOMAIN = "localhost";
 process.env.DISABLE_RATE_LIMIT = process.env.DISABLE_RATE_LIMIT ?? "";
 process.env.TRUSTED_PROXY = "0";
-process.env.OTP_PROVIDER = "console";
 
 // Payments / comms — obviously fake, nothing may perform a real network call.
 // Deliberately NOT in `sk_test_...`/`pk_test_...` shape so secret scanners don't
 // flag these placeholders; no code validates the key format (network is mocked).
 process.env.PAYSTACK_SECRET_KEY = "test-paystack-secret-key-not-real";
 process.env.PAYSTACK_PUBLIC_KEY = "test-paystack-public-key-not-real";
-process.env.SENDCHAMP_API_KEY = "vitest-fake-sendchamp";
-process.env.SENDCHAMP_SENDER_ID = "PreChop";
 process.env.RESEND_API_KEY = "re_vitest_fake";
 process.env.RESEND_FROM_EMAIL = "noreply@prechop.test";
 
