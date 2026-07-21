@@ -60,15 +60,30 @@ const CatGrid = styled.div`
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
 	gap: 8px;
+
+	@media (max-width: 420px) {
+		gap: 6px;
+	}
+
+	@media (max-width: 340px) {
+		grid-template-columns: 1fr;
+	}
 `;
 const CatChip = styled.button<{ $on: boolean }>`
 	all: unset;
 	box-sizing: border-box;
+	min-width: 0;
+	min-height: 56px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	text-align: center;
-	padding: 12px;
+	padding: 10px 8px;
 	border-radius: var(--pc-radius-sm);
 	font-size: 14px;
+	line-height: 1.22;
 	font-weight: 700;
+	overflow-wrap: anywhere;
 	cursor: pointer;
 	transition: border-color var(--pc-dur) var(--pc-ease),
 		background var(--pc-dur) var(--pc-ease);
@@ -79,6 +94,17 @@ const CatChip = styled.button<{ $on: boolean }>`
 	color: ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-text)")};
 	&:hover {
 		border-color: var(--pc-color-primary);
+	}
+
+	@media (max-width: 420px) {
+		min-height: 46px;
+		padding: 8px 6px;
+		font-size: 12.5px;
+		line-height: 1.18;
+	}
+
+	@media (max-width: 360px) {
+		font-size: 12px;
 	}
 `;
 const ToggleRow = styled.div`
