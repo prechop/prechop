@@ -63,6 +63,11 @@ import {
 } from "../src/server/models";
 import { paystackProvider } from "../src/server/providers";
 import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
+export const SEED_ADMIN_PHONE =
+  process.env.SEED_ADMIN_PHONE ?? "08130135756";
+  const NORMALIZED_SEED_ADMIN_EMAIL = SEED_ADMIN_EMAIL
+  ?.trim()
+  .toLowerCase();
 
 function log(msg: string): void {
   process.stdout.write(`  ${msg}\n`);
@@ -168,30 +173,37 @@ async function ensureUser(input: {
   email?: string;
 }): Promise<{ _id: string; created: boolean }> {
   const groupId = await getBuiltInGroupId(input.groupName);
+
+  if (!groupId) {
+    throw new Error(`Built-in group not found: ${input.groupName}`);
+  }
+
   const email = (input.email ?? seedEmail(input))
     .trim()
     .toLowerCase();
+
+  if (!email) {
+    throw new Error(
+      `Email is required for ${input.firstName} ${input.lastName}`,
+    );
+  }
+
   const existing = await getUserByEmailDB({ email });
 
   if (existing) {
-    if (!groupId) {
-      throw new Error(`Built-in group not found: ${input.groupName}`);
-    }
-
     await addUserToGroupDB({
       id: existing._id.toString(),
       groupId,
     });
 
-    log(`user ${email} (${input.groupName}) exists`);
+    log(
+      `user ${email} exists; ensured membership in ${input.groupName} (${groupId})`,
+    );
+
     return {
       _id: existing._id.toString(),
       created: false,
     };
-  }
-
-  if (!groupId) {
-    throw new Error(`Built-in group not found: ${input.groupName}`);
   }
 
   const created = await createUserDB({
@@ -210,7 +222,9 @@ async function ensureUser(input: {
     throw new Error(`failed to create user ${email}`);
   }
 
-  log(`user ${email} (${input.groupName}) created`);
+  log(
+    `user ${email} created in ${input.groupName} (${groupId})`,
+  );
 
   return {
     _id: created._id.toString(),
@@ -218,30 +232,7 @@ async function ensureUser(input: {
   };
 }
 
-//   if (existing) {
-//     // Backfill group membership on re-seed (e.g. after the IAM migration).
-//     if (groupId)
-//       await addUserToGroupDB({ id: existing._id.toString(), groupId });
-//     log(`user ${email} (${input.groupName}) exists`);
-//     return { _id: existing._id.toString(), created: false };
-//   }
 
-  
-//   const created = await createUserDB({
-//     payload: {
-//       campusId: input.campusId,
-//       firstName: input.firstName,
-//       lastName: input.lastName,
-//       email: input.email ?? seedEmail(input),
-//       phone: input.phone,
-//       groupIds: groupId ? [groupId] : [],
-//       isActive: true,
-//     },
-//   });
-//   if (!created) throw new Error(`failed to create user ${email}`);
-//   log(`user ${email} (${input.groupName}) created`);
-//   return { _id: created._id.toString(), created: true };
-// }
 
 /**
  * Rich demo data layered on top of the core fixtures so every screen has
@@ -714,18 +705,28 @@ async function main(): Promise<void> {
   process.stdout.write("\nSeeding Prechop…\n\n");
   await connectMongoDB();
 
-  // ── IAM built-ins (policies + groups) ───────────────────────────────
-  await seedBuiltInIam();
-  log("IAM built-in policies & groups seeded");
+  if (!NORMALIZED_SEED_ADMIN_EMAIL) {
+  throw new Error(
+    "SEED_ADMIN_EMAIL is required. Add it to the environment before running the seed.",
+  );
+}
 
-  // ── Site configs ────────────────────────────────────────────────────
-  const cfg = await getSiteConfigsDocDB();
-  if (!cfg) {
-    await upsertSiteConfigsDB({ payload: {}, updatedBy: "seed" });
-    log("site configs initialised with defaults");
-  } else {
-    log("site configs exist");
-  }
+  // ── IAM built-ins (policies + groups) ───────────────────────────────
+ await seedBuiltInIam();
+log("IAM built-in policies & groups seeded");
+
+const administratorsGroupId =
+  await getBuiltInGroupId(ADMINISTRATORS_GROUP);
+
+if (!administratorsGroupId) {
+  throw new Error(
+    `Administrators group was not created or could not be found using name: ${ADMINISTRATORS_GROUP}`,
+  );
+}
+
+log(
+  `Administrators group resolved: ${administratorsGroupId}`,
+);
 
   // ── Campuses ────────────────────────────────────────────────────────
   const unilag = await seedCampus({
@@ -764,14 +765,18 @@ async function main(): Promise<void> {
   }
 
   // ── Super admin ─────────────────────────────────────────────────────
-  await ensureUser({
-    campusId: unilag._id,
-    groupName: ADMINISTRATORS_GROUP,
-    firstName: "Prechop",
-    lastName: "Admin",
-    phone: "2348130135756",
-     email: SEED_ADMIN_EMAIL.trim().toLowerCase(),
-  });
+  
+  
+ const admin = await ensureUser({
+  campusId: unilag._id,
+  groupName: ADMINISTRATORS_GROUP,
+  firstName: "Prechop",
+  lastName: "Admin",
+  phone: SEED_ADMIN_PHONE,
+  email: NORMALIZED_SEED_ADMIN_EMAIL,
+});
+
+log(`admin user ID: ${admin._id}`);
 
   // ── Demo buyer ──────────────────────────────────────────────────────
   await ensureUser({
@@ -840,7 +845,7 @@ async function main(): Promise<void> {
     payload: {
       userId: vendorUser._id,
       campusId: unilag._id,
-      email: "tunde@adaskitchen.ng",
+      email: "aramjay29@gmail.com",
       businessName: "Ada's Kitchen",
       vendorType: VendorType.STUDENT_COOK,
     },
@@ -1016,7 +1021,7 @@ async function main(): Promise<void> {
 
   process.stdout.write("\n✓ Seed complete.\n");
   process.stdout.write(
-    `\n  Admin seed email  : ${SEED_ADMIN_EMAIL}\n  Buyer seed email  : ${seedEmail({ firstName: "Ada", lastName: "Obi", groupName: BUYERS_GROUP })}\n  Vendor seed email : ${seedEmail({ firstName: "Tunde", lastName: "Bakare", groupName: VENDORS_GROUP })} (Ada's Kitchen)\n  Vendor seed email : ${seedEmail({ firstName: "Bola", lastName: "Adeyemi", groupName: VENDORS_GROUP })} (Bola's Buka)\n  Pending vendor    : 08133333333 (Campus Bites)\n\n`,
+    `\n  Admin seed email  : ${NORMALIZED_SEED_ADMIN_EMAIL}\n  Buyer seed email  : ${seedEmail({ firstName: "Ada", lastName: "Obi", groupName: BUYERS_GROUP })}\n  Vendor seed email : ${seedEmail({ firstName: "Tunde", lastName: "Bakare", groupName: VENDORS_GROUP })} (Ada's Kitchen)\n  Vendor seed email : ${seedEmail({ firstName: "Bola", lastName: "Adeyemi", groupName: VENDORS_GROUP })} (Bola's Buka)\n  Pending vendor    : 08133333333 (Campus Bites)\n\n`,
   );
 
   await disconnectMongoDB();
