@@ -15,15 +15,15 @@ const ErrNotSubmittable = new AppError(
 	"NOT_SUBMITTABLE",
 );
 const ErrAlreadySubmitted = new AppError(
-	"Your application is already submitted or approved.",
+	"Your application is already approved or unavailable for submission.",
 	409,
 	"ALREADY_SUBMITTED",
 );
 
 /**
- * Vendor action: submit the profile for admin review. Allowed only from
- * INCOMPLETE or CHANGES_REQUESTED, and only when the profile completeness meets
- * the configured threshold. Moves the vendor to PENDING_REVIEW (read-only).
+ * Vendor action: submit or refresh the profile for admin review. Allowed from
+ * INCOMPLETE, CHANGES_REQUESTED, or PENDING_REVIEW while pre-approval updates
+ * are still permitted. Moves/keeps the vendor in PENDING_REVIEW.
  */
 export async function submitVendorForReview({
 	vendorId,
@@ -41,7 +41,8 @@ export async function submitVendorForReview({
 
 	if (
 		vendor.status !== VendorStatus.INCOMPLETE &&
-		vendor.status !== VendorStatus.CHANGES_REQUESTED
+		vendor.status !== VendorStatus.CHANGES_REQUESTED &&
+		vendor.status !== VendorStatus.PENDING_REVIEW
 	) {
 		throw ErrAlreadySubmitted;
 	}

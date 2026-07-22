@@ -24,9 +24,20 @@ const vendorNav = [
 	{ href: "/earnings", label: "Earnings", icon: "💰" },
 	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
+const vendorSetupNav = [
+	{ href: "/dashboard", label: "Home", icon: "🏠" },
+	{ href: "/vendor/onboarding", label: "Setup", icon: "✅" },
+	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
+];
 
 interface VendorMe {
 	profileImageUrl?: string;
+	status?:
+		| "INCOMPLETE"
+		| "PENDING_REVIEW"
+		| "CHANGES_REQUESTED"
+		| "ACTIVE"
+		| "SUSPENDED";
 }
 
 const Bar = styled.header`
@@ -270,12 +281,9 @@ export default function AppShell({
 		shellRole === "VENDOR" ||
 		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
 	const { data: vendor } = useSWR<VendorMe>(
-		isAuthenticated &&
-			isVendor &&
-			!pathname.startsWith("/vendor/onboarding")
-			? "/vendors/me"
-			: null,
+		isAuthenticated && isVendor ? "/vendors/me" : null,
 		fetcher,
+		{ shouldRetryOnError: false },
 	);
 
 	useEffect(() => {
@@ -287,12 +295,17 @@ export default function AppShell({
 	if (isLoading) return <PageLoader full />;
 	if (!publicAccess && !isAuthenticated) return <PageLoader full />;
 
-	const nav = isVendor ? vendorNav : buyerNav;
+	const isActiveVendor = vendor?.status === "ACTIVE";
+	const nav = isVendor
+		? isActiveVendor
+			? vendorNav
+			: vendorSetupNav
+		: buyerNav;
 	// Vendors can also shop as buyers (from other kitchens). The mode switcher
 	// lets them cross between their selling area and the buyer marketplace; it is
 	// hidden from plain buyers. Its state is derived from the current area, so it
 	// can never desync from the route.
-	const canSell = !!user?.groups?.includes("Vendors");
+	const canSell = !!user?.groups?.includes("Vendors") || isVendor || !!vendor;
 	const fullName = user
 		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
 		: undefined;

@@ -1136,45 +1136,46 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 																				0
 																					? ` · ${formatKobo(o.priceKobo)}`
 																					: ""}
-																				{checked && (
-																					<AddonQty>
-																						<AddonQtyBtn
-																							type="button"
-																							aria-label={`Remove one ${o.name}`}
-																							onClick={() =>
-																								setOptionQty(
-																									item,
-																									o.id,
-																									-1,
-																								)
-																							}
-																						>
-																							-
-																						</AddonQtyBtn>
-																						<AddonQtyValue>
-																							{
-																								optionQty
-																							}
-																						</AddonQtyValue>
-																						<AddonQtyBtn
-																							type="button"
-																							aria-label={`Add one ${o.name}`}
-																							onClick={() =>
-																								setOptionQty(
-																									item,
-																									o.id,
-																									1,
-																								)
-																							}
-																							disabled={
-																								optionQty >=
-																								MAX_PER_ORDER
-																							}
-																						>
-																							+
-																						</AddonQtyBtn>
-																					</AddonQty>
-																				)}
+																				{checked &&
+																					!single && (
+																						<AddonQty>
+																							<AddonQtyBtn
+																								type="button"
+																								aria-label={`Remove one ${o.name}`}
+																								onClick={() =>
+																									setOptionQty(
+																										item,
+																										o.id,
+																										-1,
+																									)
+																								}
+																							>
+																								-
+																							</AddonQtyBtn>
+																							<AddonQtyValue>
+																								{
+																									optionQty
+																								}
+																							</AddonQtyValue>
+																							<AddonQtyBtn
+																								type="button"
+																								aria-label={`Add one ${o.name}`}
+																								onClick={() =>
+																									setOptionQty(
+																										item,
+																										o.id,
+																										1,
+																									)
+																								}
+																								disabled={
+																									optionQty >=
+																									MAX_PER_ORDER
+																								}
+																							>
+																								+
+																							</AddonQtyBtn>
+																						</AddonQty>
+																					)}
 																			</AddonRow>
 																		);
 																	},

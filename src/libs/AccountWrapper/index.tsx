@@ -13,6 +13,7 @@ import {
 	FadeIn,
 	Input,
 	PageHeader,
+	Row,
 	SectionHeader,
 	Select,
 	Stack,
@@ -23,7 +24,7 @@ import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
-import type { Campus } from "@/types";
+import type { Campus, VendorProfile } from "@/types";
 
 const Section = styled(Card)`
   padding: var(--pc-space-5);
@@ -100,12 +101,26 @@ const CampusChip = styled.button<{ $on: boolean }>`
   font-weight: 700;
   text-align: center;
 `;
+const Notice = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 14px 16px;
+	border: 1px solid var(--pc-color-gold);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-color-gold-50);
+`;
 export default function AccountWrapper() {
 	const router = useRouter();
 	const { user, isLoading, refresh, logout } = useAuth();
 	const { toast } = useToast();
 
 	const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
+	const { data: vendorApplication } = useSWR<VendorProfile>(
+		"/vendors/me",
+		fetcher,
+		{ shouldRetryOnError: false },
+	);
 
 	const [savingCampus, setSavingCampus] = useState(false);
 
@@ -224,6 +239,13 @@ export default function AccountWrapper() {
 	}
 
 	const isVendor = user.groups?.includes("Vendors");
+	const hasVendorApplication = !!vendorApplication;
+	const isDraftVendorApplication = vendorApplication?.status === "INCOMPLETE";
+	const isPendingVendorApplication =
+		vendorApplication?.status === "PENDING_REVIEW";
+	const showVendorApplicationSection =
+		!isVendor ||
+		(hasVendorApplication && vendorApplication.status !== "ACTIVE");
 	const stateCampuses = (campuses ?? []).filter(
 		(c) =>
 			state.trim() &&
@@ -320,122 +342,216 @@ export default function AccountWrapper() {
 					</Stack>
 				</Section>
 
-				{!isVendor && (
+				{showVendorApplicationSection && (
 					<Section>
-						<SectionHeader title="Become a Vendor" icon="+" />
-						<Stack $gap={12}>
-							<Text $muted $size={14}>
-								Apply with this buyer account so your orders and
-								login stay together. Selling access starts only
-								after admin approval.
-							</Text>
-							<Input
-								label="Business name"
-								value={vendorBusinessName}
-								onChange={(e) =>
-									setVendorBusinessName(e.target.value)
-								}
-								placeholder="Ada's Kitchen"
-							/>
-							<Select
-								label="Vendor type"
-								value={vendorType}
-								onChange={(e) => setVendorType(e.target.value)}
-							>
-								<option value="STUDENT_COOK">
-									Student cook
-								</option>
-								<option value="CAMPUS_STALL">
-									Campus stall
-								</option>
-								<option value="RESTAURANT">Restaurant</option>
-								<option value="BAKERY">Bakery</option>
-							</Select>
-							<Select
-								label="Location"
-								value={locationType}
-								onChange={(e) =>
-									setLocationType(e.target.value)
-								}
-							>
-								<option value="ON_CAMPUS">On campus</option>
-								<option value="OFF_CAMPUS">Off campus</option>
-							</Select>
-							{locationType === "ON_CAMPUS" ? (
-								<Input
-									label="Hostel or stall name"
-									value={hostelOrStallName}
-									onChange={(e) =>
-										setHostelOrStallName(e.target.value)
+						<SectionHeader
+							title={
+								hasVendorApplication
+									? "Vendor application"
+									: "Apply to be a vendor"
+							}
+							icon="+"
+						/>
+						{isDraftVendorApplication ? (
+							<Notice>
+								<Text $weight={700}>
+									Application saved but not submitted
+								</Text>
+								<Text $muted $size={14}>
+									You started a vendor application but have
+									not submitted it for review.
+								</Text>
+								<Button
+									$variant="secondary"
+									onClick={() =>
+										router.push("/vendor/onboarding")
 									}
-									placeholder="Moremi Hall, Block A"
-								/>
-							) : (
-								<>
-									<Input
-										label="State"
-										value={state}
-										onChange={(e) => {
-											setState(e.target.value);
-											setCampusIds([]);
-										}}
-										placeholder="Lagos"
-									/>
-									<Input
-										label="Area or address"
-										value={areaOrAddress}
-										onChange={(e) =>
-											setAreaOrAddress(e.target.value)
+									style={{ alignSelf: "flex-start" }}
+								>
+									Continue application
+								</Button>
+							</Notice>
+						) : isPendingVendorApplication ? (
+							<Notice>
+								<Text $weight={700}>
+									Vendor application under review
+								</Text>
+								<Text $muted $size={14}>
+									Your application has been submitted
+									successfully and is currently being reviewed
+									by the Prechop team. We&apos;ll notify you
+									once a decision has been made.
+								</Text>
+								<Badge $tone="gold">
+									Status: Pending review
+								</Badge>
+								<Row $gap={8} style={{ flexWrap: "wrap" }}>
+									<Button
+										$variant="secondary"
+										onClick={() =>
+											router.push(
+												"/vendor/onboarding?mode=view",
+											)
 										}
-										placeholder="Yaba, near campus gate"
+									>
+										View application
+									</Button>
+									<Button
+										onClick={() =>
+											router.push("/vendor/onboarding")
+										}
+									>
+										Update application
+									</Button>
+								</Row>
+							</Notice>
+						) : hasVendorApplication ? (
+							<Notice>
+								<Text $weight={700}>Vendor application</Text>
+								<Text $muted $size={14}>
+									Your vendor application is saved on this
+									account. Open it to review your details or
+									make any permitted updates.
+								</Text>
+								<Badge $tone="gold">
+									Status:{" "}
+									{statusLabel(vendorApplication.status)}
+								</Badge>
+								<Button
+									$variant="secondary"
+									onClick={() =>
+										router.push("/vendor/onboarding")
+									}
+									style={{ alignSelf: "flex-start" }}
+								>
+									Open application
+								</Button>
+							</Notice>
+						) : (
+							<Stack $gap={12}>
+								<Text $muted $size={14}>
+									Apply with this buyer account so your orders
+									and login stay together. Selling access
+									starts only after admin approval.
+								</Text>
+								<Input
+									label="Business name"
+									value={vendorBusinessName}
+									onChange={(e) =>
+										setVendorBusinessName(e.target.value)
+									}
+									placeholder="Ada's Kitchen"
+								/>
+								<Select
+									label="Vendor type"
+									value={vendorType}
+									onChange={(e) =>
+										setVendorType(e.target.value)
+									}
+								>
+									<option value="STUDENT_COOK">
+										Student cook
+									</option>
+									<option value="CAMPUS_STALL">
+										Campus stall
+									</option>
+									<option value="RESTAURANT">
+										Restaurant
+									</option>
+									<option value="BAKERY">Bakery</option>
+								</Select>
+								<Select
+									label="Location"
+									value={locationType}
+									onChange={(e) =>
+										setLocationType(e.target.value)
+									}
+								>
+									<option value="ON_CAMPUS">On campus</option>
+									<option value="OFF_CAMPUS">
+										Off campus
+									</option>
+								</Select>
+								{locationType === "ON_CAMPUS" ? (
+									<Input
+										label="Hostel or stall name"
+										value={hostelOrStallName}
+										onChange={(e) =>
+											setHostelOrStallName(e.target.value)
+										}
+										placeholder="Moremi Hall, Block A"
 									/>
-									{state.trim() && (
-										<Stack $gap={8}>
-											<Text $weight={700} $size={13}>
-												Campuses to show your menu on
-											</Text>
-											{stateCampuses.length > 0 ? (
-												<CampusGrid>
-													{stateCampuses.map((c) => (
-														<CampusChip
-															key={c.id}
-															type="button"
-															$on={campusIds.includes(
-																c.id,
-															)}
-															onClick={() =>
-																toggleCampus(
-																	c.id,
-																)
-															}
-														>
-															{c.name}
-														</CampusChip>
-													))}
-												</CampusGrid>
-											) : (
-												<Text $muted $size={13}>
-													No active campuses found for
-													this state.
+								) : (
+									<>
+										<Input
+											label="State"
+											value={state}
+											onChange={(e) => {
+												setState(e.target.value);
+												setCampusIds([]);
+											}}
+											placeholder="Lagos"
+										/>
+										<Input
+											label="Area or address"
+											value={areaOrAddress}
+											onChange={(e) =>
+												setAreaOrAddress(e.target.value)
+											}
+											placeholder="Yaba, near campus gate"
+										/>
+										{state.trim() && (
+											<Stack $gap={8}>
+												<Text $weight={700} $size={13}>
+													Campuses to show your menu
+													on
 												</Text>
-											)}
-											<Text $muted $size={12}>
-												{campusIds.length}/3 selected
-											</Text>
-										</Stack>
-									)}
-								</>
-							)}
-							<Button
-								$variant="secondary"
-								onClick={applyToBecomeVendor}
-								$loading={applyingVendor}
-								disabled={applyingVendor}
-								style={{ alignSelf: "flex-start" }}
-							>
-								Apply to become a vendor
-							</Button>
-						</Stack>
+												{stateCampuses.length > 0 ? (
+													<CampusGrid>
+														{stateCampuses.map(
+															(c) => (
+																<CampusChip
+																	key={c.id}
+																	type="button"
+																	$on={campusIds.includes(
+																		c.id,
+																	)}
+																	onClick={() =>
+																		toggleCampus(
+																			c.id,
+																		)
+																	}
+																>
+																	{c.name}
+																</CampusChip>
+															),
+														)}
+													</CampusGrid>
+												) : (
+													<Text $muted $size={13}>
+														No active campuses found
+														for this state.
+													</Text>
+												)}
+												<Text $muted $size={12}>
+													{campusIds.length}/3
+													selected
+												</Text>
+											</Stack>
+										)}
+									</>
+								)}
+								<Button
+									$variant="secondary"
+									onClick={applyToBecomeVendor}
+									$loading={applyingVendor}
+									disabled={applyingVendor}
+									style={{ alignSelf: "flex-start" }}
+								>
+									Apply to be a vendor
+								</Button>
+							</Stack>
+						)}
 					</Section>
 				)}
 
@@ -468,4 +584,19 @@ export default function AccountWrapper() {
 function errMsg(e: unknown): string {
 	const err = e as { response?: { data?: { message?: string } } };
 	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+}
+
+function statusLabel(status: VendorProfile["status"]): string {
+	switch (status) {
+		case "PENDING_REVIEW":
+			return "Pending review";
+		case "CHANGES_REQUESTED":
+			return "Changes requested";
+		case "ACTIVE":
+			return "Approved";
+		case "SUSPENDED":
+			return "Suspended";
+		default:
+			return "Not submitted";
+	}
 }

@@ -264,9 +264,11 @@ function errMsg(e: unknown): string {
 export default function VendorOnboardingWrapper({
 	vendor,
 	onChanged,
+	readOnly = false,
 }: {
 	vendor: VendorMe;
 	onChanged: () => void;
+	readOnly?: boolean;
 }) {
 	const { toast } = useToast();
 	const [open, setOpen] = useState<string | null>("identity");
@@ -346,6 +348,8 @@ export default function VendorOnboardingWrapper({
 		done.location &&
 		done.bank &&
 		done.image;
+	const canSubmitForReview =
+		detailsComplete && (isPending || (acceptedFeePolicy && feePolicyKnown));
 
 	async function submit(fn: () => Promise<void>) {
 		setBusy(true);
@@ -498,8 +502,16 @@ export default function VendorOnboardingWrapper({
 			<Stack $gap={16}>
 				<PageHeader
 					eyebrow="Welcome to Prechop"
-					title="Finish setting up your kitchen"
-					subtitle="Complete every step below and submit for review. An admin approves your kitchen before it goes live."
+					title={
+						readOnly
+							? "Vendor application"
+							: "Finish setting up your kitchen"
+					}
+					subtitle={
+						readOnly
+							? "Review the details submitted to the Prechop team."
+							: "Complete every step below and submit for review. An admin approves your kitchen before it goes live."
+					}
 				/>
 
 				{isPending && (
@@ -592,6 +604,7 @@ export default function VendorOnboardingWrapper({
 											<Input
 												label="Business name"
 												value={businessName}
+												disabled={readOnly}
 												onChange={(e) =>
 													setBusinessName(
 														e.target.value,
@@ -602,6 +615,7 @@ export default function VendorOnboardingWrapper({
 											<Select
 												label="Vendor type"
 												value={vendorType}
+												disabled={readOnly}
 												onChange={(e) =>
 													setVendorType(
 														e.target.value,
@@ -624,6 +638,7 @@ export default function VendorOnboardingWrapper({
 												label="Contact email"
 												type="email"
 												value={email}
+												disabled={readOnly}
 												onChange={(e) =>
 													setEmail(e.target.value)
 												}
@@ -633,6 +648,7 @@ export default function VendorOnboardingWrapper({
 												label="Phone / WhatsApp number"
 												type="tel"
 												value={contactPhone}
+												disabled={readOnly}
 												onChange={(e) =>
 													setContactPhone(
 														e.target.value,
@@ -643,6 +659,7 @@ export default function VendorOnboardingWrapper({
 											<Textarea
 												label="Short description (optional)"
 												value={description}
+												disabled={readOnly}
 												onChange={(e) =>
 													setDescription(
 														e.target.value,
@@ -655,6 +672,7 @@ export default function VendorOnboardingWrapper({
 												$loading={busy}
 												onClick={saveIdentity}
 												disabled={
+													readOnly ||
 													!businessName.trim() ||
 													!email.trim()
 												}
@@ -677,6 +695,7 @@ export default function VendorOnboardingWrapper({
 														$on={cats.includes(
 															c.value,
 														)}
+														disabled={readOnly}
 														onClick={() =>
 															toggleCat(c.value)
 														}
@@ -690,6 +709,7 @@ export default function VendorOnboardingWrapper({
 												$full
 												$loading={busy}
 												onClick={saveCategories}
+												disabled={readOnly}
 											>
 												Save & continue
 											</Button>
@@ -701,6 +721,7 @@ export default function VendorOnboardingWrapper({
 											<Select
 												label="Location type"
 												value={locationType}
+												disabled={readOnly}
 												onChange={(e) =>
 													setLocationType(
 														e.target.value as
@@ -721,6 +742,7 @@ export default function VendorOnboardingWrapper({
 													<Select
 														label="Campus"
 														value={campusId}
+														disabled={readOnly}
 														onChange={(e) =>
 															setCampusId(
 																e.target.value,
@@ -744,6 +766,7 @@ export default function VendorOnboardingWrapper({
 													<Select
 														label="School (optional)"
 														value={schoolId}
+														disabled={readOnly}
 														onChange={(e) =>
 															setSchoolId(
 																e.target.value,
@@ -769,6 +792,7 @@ export default function VendorOnboardingWrapper({
 														value={
 															hostelOrStallName
 														}
+														disabled={readOnly}
 														onChange={(e) =>
 															setHostelOrStallName(
 																e.target.value,
@@ -782,6 +806,7 @@ export default function VendorOnboardingWrapper({
 													<Input
 														label="State"
 														value={state}
+														disabled={readOnly}
 														onChange={(e) => {
 															setState(
 																e.target.value,
@@ -793,6 +818,7 @@ export default function VendorOnboardingWrapper({
 													<Input
 														label="Area / address"
 														value={areaOrAddress}
+														disabled={readOnly}
 														onChange={(e) =>
 															setAreaOrAddress(
 																e.target.value,
@@ -822,6 +848,9 @@ export default function VendorOnboardingWrapper({
 																				$on={campusIds.includes(
 																					c.id,
 																				)}
+																				disabled={
+																					readOnly
+																				}
 																				onClick={() =>
 																					toggleCampus(
 																						c.id,
@@ -864,13 +893,16 @@ export default function VendorOnboardingWrapper({
 												$loading={busy}
 												onClick={saveLocation}
 												disabled={
-													locationType === "ON_CAMPUS"
-														? !campusId ||
-															!hostelOrStallName.trim()
-														: !state.trim() ||
-															!areaOrAddress.trim() ||
-															campusIds.length ===
-																0
+													readOnly
+														? true
+														: locationType ===
+																"ON_CAMPUS"
+															? !campusId ||
+																!hostelOrStallName.trim()
+															: !state.trim() ||
+																!areaOrAddress.trim() ||
+																campusIds.length ===
+																	0
 												}
 											>
 												Save & continue
@@ -892,6 +924,7 @@ export default function VendorOnboardingWrapper({
 												initialAccountName={
 													vendor.accountName
 												}
+												readOnly={readOnly}
 												saveLabel="Save & continue"
 												onSaved={() => {
 													onChanged();
@@ -922,7 +955,7 @@ export default function VendorOnboardingWrapper({
 												<input
 													type="file"
 													accept="image/jpeg,image/png,image/webp"
-													disabled={busy}
+													disabled={readOnly || busy}
 													onChange={(e) => {
 														const f =
 															e.target.files?.[0];
@@ -937,10 +970,11 @@ export default function VendorOnboardingWrapper({
 										<Stack $gap={12}>
 											{isPending ? (
 												<Text $muted $size={13}>
-													Your application is being
-													reviewed by our team. We'll
-													email you as soon as it's
-													approved.
+													Your application is under
+													review. You can update your
+													details before approval,
+													then resubmit the latest
+													version for the team.
 												</Text>
 											) : (
 												<Stack $gap={10}>
@@ -1004,15 +1038,13 @@ export default function VendorOnboardingWrapper({
 												$loading={busy}
 												disabled={
 													busy ||
-													isPending ||
-													!detailsComplete ||
-													!acceptedFeePolicy ||
-													!feePolicyKnown
+													readOnly ||
+													!canSubmitForReview
 												}
 												onClick={submitForReview}
 											>
 												{isPending
-													? "Under review…"
+													? "Resubmit updated application"
 													: detailsComplete
 														? !feePolicyKnown
 															? "Loading fee policy…"

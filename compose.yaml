@@ -92,7 +92,7 @@ services:
       # external payment links. src/server/constants/environments.ts resolves
       # `APP_URL` first, then the build-inlined NEXT_PUBLIC_APP_URL. Set at run
       # time so a deploy can change its origin without a rebuild.
-      APP_URL: "https://prechop.ng"
+      APP_URL: "https://prechop.com.ng"
       TRUSTED_PROXY: "1"
 
     # Lets the container reach the host's published 27018/6379. Explicit so this

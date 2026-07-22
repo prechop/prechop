@@ -60,11 +60,13 @@ export default function BankDetailsForm({
 	initialAccountName,
 	onSaved,
 	saveLabel = "Save bank details",
+	readOnly = false,
 }: {
 	initialBankCode?: string;
 	initialAccountName?: string;
 	onSaved?: (vendor: VendorProfile) => void;
 	saveLabel?: string;
+	readOnly?: boolean;
 }) {
 	const { toast } = useToast();
 	const { data: banks } = useSWR<Bank[]>("/vendors/banks", fetcher);
@@ -143,6 +145,7 @@ export default function BankDetailsForm({
 			<Select
 				label="Bank"
 				value={bankCode}
+				disabled={readOnly}
 				onChange={(e) => {
 					setBankCode(e.target.value);
 					resetVerification();
@@ -162,6 +165,7 @@ export default function BankDetailsForm({
 				label="Account number"
 				inputMode="numeric"
 				value={accountNumber}
+				disabled={readOnly}
 				onChange={(e) => {
 					setAccountNumber(e.target.value);
 					resetVerification();
@@ -184,7 +188,12 @@ export default function BankDetailsForm({
 					$variant="secondary"
 					$full
 					$loading={verifying}
-					disabled={verifying || !bankCode || !accountNumber.trim()}
+					disabled={
+						readOnly ||
+						verifying ||
+						!bankCode ||
+						!accountNumber.trim()
+					}
 					onClick={verify}
 				>
 					Verify account
@@ -194,7 +203,7 @@ export default function BankDetailsForm({
 			<Button
 				$full
 				$loading={saving}
-				disabled={saving || !isVerified}
+				disabled={readOnly || saving || !isVerified}
 				onClick={save}
 			>
 				{isVerified ? saveLabel : "Verify to continue"}

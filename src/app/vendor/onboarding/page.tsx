@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import useSWR from "swr";
 import { Button, Card, Stack, Text, Title } from "@/components";
@@ -13,6 +14,8 @@ import VendorOnboardingWrapper from "@/libs/VendorOnboardingWrapper";
 
 function VendorOnboardingContent() {
 	const { user } = useAuth();
+	const params = useSearchParams();
+	const readOnly = params.get("mode") === "view";
 	const [vendorInitialized, setVendorInitialized] = useState(false);
 	const [initError, setInitError] = useState("");
 	const {
@@ -89,6 +92,7 @@ function VendorOnboardingContent() {
 		<VendorOnboardingWrapper
 			vendor={vendorWithDefaults}
 			onChanged={() => mutate()}
+			readOnly={readOnly}
 		/>
 	);
 }
