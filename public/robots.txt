@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /vendor/
+Disallow: /admin/
+Sitemap: https://prechop.com.ng/sitemap.xml

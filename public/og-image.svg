@@ -1,0 +1,39 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" role="img" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="630" fill="#FFF8F0"/>
+<circle cx="980" cy="80" r="320" fill="#F2C14E" opacity="0.12"/>
+<circle cx="1100" cy="500" r="200" fill="#E8552E" opacity="0.08"/>
+<circle cx="100" cy="550" r="180" fill="#2D6A4F" opacity="0.07"/>
+<circle cx="200" cy="100" r="120" fill="#E8552E" opacity="0.06"/>
+<rect x="60" y="60" width="64" height="64" rx="16" fill="#E8552E"/>
+<text x="92" y="103" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="32" font-weight="700" fill="#FFF8F0">P</text>
+<text x="148" y="103" font-family="system-ui,-apple-system,sans-serif" font-size="28" font-weight="700" fill="#1A1410" letter-spacing="-0.5">PreChop</text>
+<rect x="60" y="155" width="580" height="6" rx="3" fill="#E8552E" opacity="0.3"/>
+<text x="60" y="290" font-family="system-ui,-apple-system,sans-serif" font-size="78" font-weight="800" fill="#1A1410" letter-spacing="-2">Order before</text>
+<text x="60" y="385" font-family="system-ui,-apple-system,sans-serif" font-size="78" font-weight="800" fill="#E8552E" letter-spacing="-2">they cook.</text>
+<text x="60" y="460" font-family="system-ui,-apple-system,sans-serif" font-size="28" font-weight="400" fill="#7A6E62">Campus food pre-order marketplace for Nigerian universities.</text>
+<rect x="60" y="510" width="220" height="56" rx="28" fill="#E8552E"/>
+<text x="170" y="543" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="20" font-weight="600" fill="#FFF8F0">Browse food</text>
+<rect x="300" y="510" width="200" height="56" rx="28" fill="none" stroke="#E8552E" stroke-width="2"/>
+<text x="400" y="543" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="20" font-weight="600" fill="#E8552E">Sell on PreChop</text>
+<rect x="700" y="100" width="440" height="430" rx="24" fill="#FFFFFF" opacity="0.8"/>
+<rect x="700" y="100" width="440" height="430" rx="24" fill="none" stroke="#EDE0D0" stroke-width="1.5"/>
+<rect x="724" y="124" width="100" height="100" rx="16" fill="#E8552E" opacity="0.12"/>
+<text x="774" y="182" text-anchor="middle" font-size="44">🍲</text>
+<text x="840" y="158" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="600" fill="#1A1410">Mama Titi's Kitchen</text>
+<text x="840" y="182" font-family="system-ui,-apple-system,sans-serif" font-size="14" fill="#7A6E62">Student cook · Amina Hostel</text>
+<rect x="840" y="195" width="80" height="24" rx="12" fill="#E9F3EC"/>
+<text x="880" y="211" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" font-weight="500" fill="#2D6A4F">● Open now</text>
+<rect x="724" y="248" width="392" height="1" fill="#EDE0D0"/>
+<text x="724" y="282" font-family="system-ui,-apple-system,sans-serif" font-size="15" fill="#7A6E62">Thursday special</text>
+<text x="724" y="308" font-family="system-ui,-apple-system,sans-serif" font-size="17" font-weight="600" fill="#1A1410">Semo + Egusi · Pounded Yam</text>
+<text x="724" y="330" font-family="system-ui,-apple-system,sans-serif" font-size="17" font-weight="600" fill="#1A1410">Zobo (Bottle)</text>
+<rect x="724" y="358" width="392" height="1" fill="#EDE0D0"/>
+<text x="724" y="392" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#7A6E62">Closes in</text>
+<text x="800" y="392" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#E8552E">24 min</text>
+<text x="900" y="392" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#7A6E62">From</text>
+<text x="940" y="392" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#1A1410">₦300</text>
+<rect x="724" y="410" width="392" height="52" rx="26" fill="#E8552E"/>
+<text x="920" y="442" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="600" fill="#FFF8F0">Order now</text>
+<text x="724" y="498" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#7A6E62">★ 4.8 · 132 reviews · Pickup + Delivery</text>
+<text x="60" y="595" font-family="system-ui,-apple-system,sans-serif" font-size="18" fill="#A89C8D">prechop.com.ng</text>
+</svg>
