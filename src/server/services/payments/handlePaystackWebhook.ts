@@ -18,7 +18,7 @@ import {
 } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { commitSlots } from "../buyerOrders/slots";
-import { createUserNotification, notifyOrderConfirmed } from "../notifications";
+import { createUserNotification } from "../notifications";
 import { issueRefund } from "../refunds";
 
 interface PaystackChargeEvent {
@@ -70,7 +70,7 @@ export async function handlePaystackWebhook({
 	});
 	if (!claimed) return { received: true };
 
-	// 6. Transition the order to PAID.
+	// 6. Transition the order to paid-and-awaiting vendor acceptance.
 	const order = await getBuyerOrderByIdDB({ id: payment.buyerOrderId });
 	if (!order) throw ErrPaymentVerification;
 	const paid = await markBuyerOrderPaidDB({
@@ -190,12 +190,12 @@ async function notifyParties(order: {
 	// neither a Sendchamp outage nor a Mongo blip here can 500 the webhook and
 	// trigger a Paystack retry against money that has already moved.
 	try {
-		await notifyOrderConfirmed({
-			buyerId: order.buyerId.toString(),
-			orderNumber: order.orderNumber,
-			// Falls back only if the vendor profile is gone/unreadable, which for a
-			// just-paid order means a broken invariant, not a normal path.
-			vendorName: vendorName || "your vendor",
+		await createUserNotification({
+			userId: order.buyerId.toString(),
+			title: "Payment received",
+			body: `Payment for order ${order.orderNumber} is confirmed. ${vendorName || "Your vendor"} has 10 minutes to accept it.`,
+			type: "ORDER_PAID_AWAITING_VENDOR",
+			data: { orderNumber: order.orderNumber },
 		});
 	} catch (error) {
 		console.error("[webhook] notify buyer failed:", error);

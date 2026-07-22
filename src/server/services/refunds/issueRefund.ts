@@ -3,22 +3,45 @@ import {
 	createRefundDB,
 	getPaymentByOrderIdDB,
 	markBuyerOrderRefundedDB,
+	markBuyerOrderRefundFailedDB,
+	markBuyerOrderRefundProcessingDB,
 	markPaymentRefundedDB,
+	markRefundFailedDB,
 	markRefundProcessedDB,
+	markRefundProcessingDB,
 } from "../../models";
 import { paystackProvider } from "../../providers";
+import { openOrderDisputeForReview } from "../orderDisputes";
 
 export type RefundOutcome =
 	/** This call inserted the refund row and moved the money. */
 	| "REFUNDED"
 	/** A refund row already existed — Paystack was NOT called again. */
-	| "ALREADY_REFUNDED";
+	| "ALREADY_REFUNDED"
+	| "REFUND_PENDING"
+	| "REFUND_FAILED";
 
 export interface IssueRefundResult {
 	outcome: RefundOutcome;
 	refundId: string;
 	amountKobo: number;
 	paystackRefundId?: string;
+}
+
+function existingRefundOutcome(refund: {
+	status?: string;
+	processedAt?: Date;
+}): RefundOutcome {
+	if (refund.processedAt || refund.status === "REFUNDED") {
+		return "ALREADY_REFUNDED";
+	}
+	if (refund.status === "REFUND_FAILED") return "REFUND_FAILED";
+	return "REFUND_PENDING";
+}
+
+function refundFailureMessage(error: unknown) {
+	if (error instanceof Error && error.message) return error.message;
+	return "Paystack refund failed.";
 }
 
 /**
@@ -98,7 +121,7 @@ export async function issueRefund({
 		// Double-payout guard. A refund already exists for this payment, so this
 		// caller does not own the payout and must not touch Paystack.
 		return {
-			outcome: "ALREADY_REFUNDED",
+			outcome: existingRefundOutcome(refund),
 			refundId,
 			amountKobo: refund.amountKobo,
 			paystackRefundId: refund.paystackRefundId,
@@ -107,9 +130,31 @@ export async function issueRefund({
 
 	let paystackRefundId: string;
 	try {
+		await markRefundProcessingDB({ id: refundId });
+		await markBuyerOrderRefundProcessingDB({
+			id: orderId,
+			processedAt: new Date(),
+		});
 		const result = await paystackProvider.refund(reference, amountKobo);
 		paystackRefundId = String(result.id);
 	} catch (error) {
+		const failureReason = refundFailureMessage(error);
+		await markRefundFailedDB({ id: refundId, failureReason });
+		await markBuyerOrderRefundFailedDB({
+			id: orderId,
+			failedAt: new Date(),
+			failureReason,
+		});
+		await openOrderDisputeForReview({
+			orderId,
+			reason: "REFUND_FAILURE",
+			vendorNotes: [failureReason],
+		}).catch((reviewError) =>
+			console.error(
+				`[refunds] failed to open refund-failure admin review for ${orderId}:`,
+				reviewError,
+			),
+		);
 		console.error(
 			`[refunds] PAYSTACK REFUND FAILED order=${orderId} refund=${refundId} amountKobo=${amountKobo} — row left unprocessed for reconciliation:`,
 			error,

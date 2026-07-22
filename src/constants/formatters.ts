@@ -40,7 +40,25 @@ export function timeUntil(value: string | Date): string {
 }
 
 export function statusLabel(status: string): string {
+	if (status === "AWAITING_VENDOR_ACCEPTANCE")
+		return "Awaiting vendor acceptance";
+	if (status === "COOKING") return "Cooking";
 	if (status === "IN_TRANSIT") return "On the way";
+	if (status === "AWAITING_BUYER_NO_SHOW_RESPONSE")
+		return "Awaiting buyer response";
+	if (status === "COMPLETED_BUYER_NO_SHOW") return "Completed: buyer no-show";
+	if (status === "PICKUP_PROBLEM_REPORTED") return "Pickup problem reported";
+	if (status === "BUYER_UNREACHABLE_REPORTED")
+		return "Buyer unreachable reported";
+	if (status === "DELIVERY_FAILED") return "Delivery failed";
+	if (status === "PICKED_UP") return "Picked up";
+	if (status === "DELIVERED") return "Delivered";
+	if (status === "VENDOR_REJECTED") return "Vendor rejected";
+	if (status === "EXPIRED_VENDOR_NO_RESPONSE")
+		return "Expired: no vendor response";
+	if (status === "REFUND_PENDING") return "Refund pending";
+	if (status === "REFUND_PROCESSING") return "Refund processing";
+	if (status === "REFUND_FAILED") return "Refund failed";
 	return status
 		.toLowerCase()
 		.split("_")

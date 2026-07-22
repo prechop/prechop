@@ -175,6 +175,16 @@ describe("updateOrderStatusBodySchema / cancelOrderBodySchema", () => {
 		).toBe(true);
 		expect(
 			updateOrderStatusBodySchema.safeParse({
+				status: OrderStatus.ACCEPTED,
+			}).success,
+		).toBe(true);
+		expect(
+			updateOrderStatusBodySchema.safeParse({
+				status: OrderStatus.VENDOR_REJECTED,
+			}).success,
+		).toBe(true);
+		expect(
+			updateOrderStatusBodySchema.safeParse({
 				status: OrderStatus.PENDING_PAYMENT,
 			}).success,
 		).toBe(false);

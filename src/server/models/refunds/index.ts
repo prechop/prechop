@@ -20,6 +20,17 @@ const schema = new mongoose.Schema<any>(
 		// credit against the payment — cannot be stored at all.
 		amountKobo: { type: Number, required: true, min: 0 },
 		reason: { type: String, required: true },
+		status: {
+			type: String,
+			enum: [
+				"REFUND_PENDING",
+				"REFUND_PROCESSING",
+				"REFUNDED",
+				"REFUND_FAILED",
+			],
+			default: "REFUND_PENDING",
+			index: true,
+		},
 		paystackRefundId: {
 			type: String,
 			required: false,
@@ -30,6 +41,8 @@ const schema = new mongoose.Schema<any>(
 			set: (v: unknown) => (v === null ? undefined : v),
 		},
 		processedAt: { type: Date, required: false },
+		failedAt: { type: Date, required: false },
+		failureReason: { type: String, required: false },
 	},
 	{ timestamps: true },
 );
@@ -105,11 +118,16 @@ export async function createRefundDB({
 				$setOnInsert: {
 					amountKobo: payload.amountKobo,
 					reason: payload.reason,
+					status: payload.status ?? "REFUND_PENDING",
 					...(payload.paystackRefundId
 						? { paystackRefundId: payload.paystackRefundId }
 						: {}),
 					...(payload.processedAt
 						? { processedAt: payload.processedAt }
+						: {}),
+					...(payload.failedAt ? { failedAt: payload.failedAt } : {}),
+					...(payload.failureReason
+						? { failureReason: payload.failureReason }
 						: {}),
 				},
 			},
@@ -166,7 +184,62 @@ export async function markRefundProcessedDB({
 		if (!mongoose.Types.ObjectId.isValid(id)) return false;
 		const res = await Refund.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
-			{ $set: { paystackRefundId, processedAt: new Date() } },
+			{
+				$set: {
+					status: "REFUNDED",
+					paystackRefundId,
+					processedAt: new Date(),
+				},
+				$unset: { failedAt: "", failureReason: "" },
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markRefundProcessingDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await Refund.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { status: "REFUND_PROCESSING" } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markRefundFailedDB({
+	id,
+	failureReason,
+	session,
+}: {
+	id: string;
+	failureReason: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await Refund.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					status: "REFUND_FAILED",
+					failedAt: new Date(),
+					failureReason,
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return !!res;

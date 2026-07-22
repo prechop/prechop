@@ -45,7 +45,10 @@ export const placeOrderBodySchema = zod
 export const updateOrderStatusBodySchema = zod
 	.object({
 		status: zod.enum([
+			OrderStatus.ACCEPTED,
+			OrderStatus.VENDOR_REJECTED,
 			OrderStatus.CONFIRMED,
+			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
 			OrderStatus.IN_TRANSIT,
@@ -56,6 +59,29 @@ export const updateOrderStatusBodySchema = zod
 
 export const cancelOrderBodySchema = zod
 	.object({ reason: zod.string().min(1).max(500) })
+	.strict();
+
+export const confirmHandoverBodySchema = zod
+	.object({
+		method: zod.enum(["QR", "PIN"]),
+		code: zod.string().trim().min(1).max(256),
+	})
+	.strict();
+
+export const pickupNoShowResponseBodySchema = zod
+	.object({
+		response: zod.enum(["CONFIRMED_COLLECTION", "PROBLEM_REPORTED"]),
+		note: zod.string().trim().min(1).max(500).optional(),
+	})
+	.strict();
+
+export const buyerUnreachableBodySchema = zod
+	.object({
+		arrivalTime: zod.coerce.date(),
+		contactAttempts: zod.coerce.number().int().min(1).max(20),
+		note: zod.string().trim().min(1).max(500),
+		photoUrl: zod.string().trim().url().max(2048).optional(),
+	})
 	.strict();
 
 export const externalPaymentInitializeSchema = zod

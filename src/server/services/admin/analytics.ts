@@ -17,10 +17,15 @@ export async function getPlatformAnalytics() {
 					status: {
 						$in: [
 							OrderStatus.PAID,
+							OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+							OrderStatus.ACCEPTED,
 							OrderStatus.CONFIRMED,
+							OrderStatus.COOKING,
 							OrderStatus.PREPARING,
 							OrderStatus.READY,
 							OrderStatus.IN_TRANSIT,
+							OrderStatus.PICKED_UP,
+							OrderStatus.DELIVERED,
 							OrderStatus.COMPLETED,
 						],
 					},

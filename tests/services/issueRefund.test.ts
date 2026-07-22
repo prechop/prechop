@@ -79,12 +79,13 @@ async function paidOrder(amountKobo: number = AMOUNT_KOBO) {
 			],
 		},
 	});
-	const orderId = order!._id.toString();
+	expect(order).toBeTruthy();
+	const orderId = order?._id.toString() ?? "";
 	const ref = generatePaystackRef();
 	await createPaymentDB({
 		payload: {
 			buyerOrderId: orderId,
-			buyerId: order!.buyerId.toString(),
+			buyerId: order?.buyerId.toString() ?? "",
 			vendorId,
 			paystackRef: ref,
 			amountKobo,
@@ -123,13 +124,13 @@ describe("issueRefund — the double-payout guard", () => {
 		// The reconciliation trail is written and marked processed.
 		const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
 		const refund = await getRefundByPaymentIdDB({
-			paymentId: payment!._id.toString(),
+			paymentId: payment?._id.toString() ?? "",
 		});
-		expect(refund!.paystackRefundId).toBe("987");
-		expect(refund!.processedAt).toBeTruthy();
+		expect(refund?.paystackRefundId).toBe("987");
+		expect(refund?.processedAt).toBeTruthy();
 
 		const order = await getBuyerOrderByIdDB({ id: orderId });
-		expect(order!.status).toBe(OrderStatus.REFUNDED);
+		expect(order?.status).toBe(OrderStatus.REFUNDED);
 	});
 
 	it("does NOT call Paystack a second time for the same payment", async () => {
@@ -212,15 +213,17 @@ describe("issueRefund — the double-payout guard", () => {
 
 		const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
 		const refund = await getRefundByPaymentIdDB({
-			paymentId: payment!._id.toString(),
+			paymentId: payment?._id.toString() ?? "",
 		});
 		expect(refund).not.toBeNull();
-		expect(refund!.processedAt).toBeFalsy();
-		expect(refund!.paystackRefundId).toBeFalsy();
+		expect(refund?.status).toBe("REFUND_FAILED");
+		expect(refund?.processedAt).toBeFalsy();
+		expect(refund?.paystackRefundId).toBeFalsy();
 
 		// The order is not marked refunded — the money never moved.
 		const order = await getBuyerOrderByIdDB({ id: orderId });
-		expect(order!.status).not.toBe(OrderStatus.REFUNDED);
+		expect(order?.status).toBe(OrderStatus.REFUND_FAILED);
+		expect(order?.adminReviewReason).toBe("REFUND_FAILURE");
 	});
 
 	it("a failed payout is retryable only through reconciliation, never re-paid automatically", async () => {
@@ -250,7 +253,7 @@ describe("issueRefund — the double-payout guard", () => {
 			amountKobo: AMOUNT_KOBO,
 			reason: "x",
 		});
-		expect(retry.outcome).toBe("ALREADY_REFUNDED");
+		expect(retry.outcome).toBe("REFUND_FAILED");
 		expect(refundSpy).not.toHaveBeenCalled();
 	});
 });

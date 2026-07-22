@@ -28,8 +28,14 @@ export async function refundOrdersForDailyOrder({
 	});
 	let refunded = 0;
 	let failed = 0;
+	const refundableStatuses = [
+		OrderStatus.PAID,
+		OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+		OrderStatus.ACCEPTED,
+		OrderStatus.CONFIRMED,
+	];
 	for (const order of orders) {
-		if (![OrderStatus.PAID, OrderStatus.CONFIRMED].includes(order.status)) {
+		if (!refundableStatuses.includes(order.status)) {
 			continue;
 		}
 		try {
@@ -37,7 +43,7 @@ export async function refundOrdersForDailyOrder({
 				id: order._id.toString(),
 				reason,
 				cancelledBy: "vendor",
-				fromStatuses: [OrderStatus.PAID, OrderStatus.CONFIRMED],
+				fromStatuses: refundableStatuses,
 			});
 			if (!cancelled) continue;
 			const payment = await getPaymentByOrderIdDB({

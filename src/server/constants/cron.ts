@@ -49,6 +49,12 @@ export default async function cron(): Promise<void> {
 	const { sweepStalePaidOrders } = await import(
 		"../services/buyerOrders/sweepStalePaidOrders"
 	);
+	const { sweepVendorAcceptanceDeadlines } = await import(
+		"../services/buyerOrders/vendorAcceptance"
+	);
+	const { sweepPickupNoShowTimers } = await import(
+		"../services/buyerOrders/exceptions"
+	);
 	const { sendCutoffWarnings } = await import(
 		"../services/buyerOrders/cutoffWarning"
 	);
@@ -116,6 +122,30 @@ export default async function cron(): Promise<void> {
 			() => {
 				void runSingleInstance("cutoff-enforce", 280, () =>
 					sweepStalePaidOrders(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		new CronJob(
+			"*/1 * * * *",
+			() => {
+				void runSingleInstance("vendor-acceptance", 50, () =>
+					sweepVendorAcceptanceDeadlines(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		new CronJob(
+			"*/1 * * * *",
+			() => {
+				void runSingleInstance("pickup-noshow", 50, () =>
+					sweepPickupNoShowTimers(),
 				);
 			},
 			null,

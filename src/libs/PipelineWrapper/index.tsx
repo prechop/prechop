@@ -44,8 +44,13 @@ interface PipelineOrder {
 const BASE_NEXT: Partial<
 	Record<OrderStatus, { to: OrderStatus; label: string }>
 > = {
+	AWAITING_VENDOR_ACCEPTANCE: {
+		to: "ACCEPTED",
+		label: "Accept & Start Cooking",
+	},
 	PAID: { to: "CONFIRMED", label: "Confirm" },
 	CONFIRMED: { to: "PREPARING", label: "Start preparing" },
+	COOKING: { to: "READY", label: "Mark ready" },
 	PREPARING: { to: "READY", label: "Mark ready" },
 	READY: { to: "COMPLETED", label: "Complete" },
 	IN_TRANSIT: { to: "COMPLETED", label: "Mark delivered" },
@@ -60,11 +65,31 @@ const COLUMNS: { status: OrderStatus; label: string; icon: string }[] = [
 ];
 
 COLUMNS.push({ status: "IN_TRANSIT", label: "On the way", icon: "->" });
+COLUMNS.unshift({
+	status: "AWAITING_VENDOR_ACCEPTANCE",
+	label: "New",
+	icon: "!",
+});
+COLUMNS.push({ status: "COOKING", label: "Cooking", icon: "..." });
+COLUMNS.splice(
+	0,
+	COLUMNS.length,
+	{
+		status: "AWAITING_VENDOR_ACCEPTANCE",
+		label: "New",
+		icon: "!",
+	},
+	{ status: "COOKING", label: "Cooking", icon: "..." },
+	{ status: "READY", label: "Ready", icon: "OK" },
+	{ status: "IN_TRANSIT", label: "On the way", icon: "->" },
+);
 
 // Presentational lane accent per column (kitchen-board colour coding).
 const LANE_ACCENT: Record<string, string> = {
 	PAID: "var(--pc-color-gold)",
+	AWAITING_VENDOR_ACCEPTANCE: "var(--pc-color-gold)",
 	CONFIRMED: "var(--pc-color-accent)",
+	COOKING: "var(--pc-color-primary)",
 	PREPARING: "var(--pc-color-primary)",
 	READY: "var(--pc-color-accent)",
 	IN_TRANSIT: "var(--pc-color-gold)",
@@ -82,13 +107,21 @@ function statusTone(
 ): "primary" | "success" | "warning" | "danger" | "muted" {
 	switch (s) {
 		case "PAID":
+		case "AWAITING_VENDOR_ACCEPTANCE":
+		case "REFUND_PENDING":
+		case "REFUND_PROCESSING":
 			return "warning";
 		case "READY":
 		case "IN_TRANSIT":
+		case "PICKED_UP":
+		case "DELIVERED":
 		case "COMPLETED":
 			return "success";
 		case "CANCELLED":
 		case "REFUNDED":
+		case "VENDOR_REJECTED":
+		case "EXPIRED_VENDOR_NO_RESPONSE":
+		case "REFUND_FAILED":
 			return "danger";
 		default:
 			return "primary";
@@ -100,6 +133,9 @@ function nextAction(
 ): { to: OrderStatus; label: string } | undefined {
 	if (order.status === "READY" && order.fulfillmentType === "DELIVERY") {
 		return { to: "IN_TRANSIT", label: "Start delivery" };
+	}
+	if (order.status === "READY" || order.status === "IN_TRANSIT") {
+		return undefined;
 	}
 	return BASE_NEXT[order.status];
 }
@@ -260,6 +296,48 @@ export default function PipelineWrapper() {
 		}
 	}
 
+	async function reject(o: PipelineOrder) {
+		setBusyId(o.id);
+		try {
+			await api.patch(`/vendor/orders/${o.id}/status`, {
+				status: "VENDOR_REJECTED",
+			});
+			toast("Order rejected. Refund started.", "success");
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function confirmHandover(o: PipelineOrder) {
+		const code = window.prompt(
+			`Scan QR or enter the 6-digit PIN for ${o.orderNumber}:`,
+		);
+		if (!code?.trim()) return;
+		const trimmed = code.trim();
+		setBusyId(o.id);
+		try {
+			await api.post(`/vendor/orders/${o.id}/confirm-handover`, {
+				method: /^\d{6}$/.test(trimmed) ? "PIN" : "QR",
+				code: trimmed,
+			});
+			toast("Handover confirmed.", "success");
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
 	async function cancel(o: PipelineOrder) {
 		const reason = window.prompt(`Cancel order ${o.orderNumber}? Reason:`);
 		if (!reason?.trim()) return;
@@ -282,9 +360,15 @@ export default function PipelineWrapper() {
 
 	const list = orders ?? [];
 	const liveCount = list.filter((o) =>
-		["PAID", "CONFIRMED", "PREPARING", "READY", "IN_TRANSIT"].includes(
-			o.status,
-		),
+		[
+			"AWAITING_VENDOR_ACCEPTANCE",
+			"PAID",
+			"CONFIRMED",
+			"COOKING",
+			"PREPARING",
+			"READY",
+			"IN_TRANSIT",
+		].includes(o.status),
 	).length;
 
 	return (
@@ -518,6 +602,49 @@ export default function PipelineWrapper() {
 																		{
 																			next.label
 																		}
+																	</Button>
+																)}
+																{o.status ===
+																	"AWAITING_VENDOR_ACCEPTANCE" && (
+																	<Button
+																		$size="sm"
+																		$variant="danger"
+																		$loading={
+																			busyId ===
+																			o.id
+																		}
+																		onClick={() =>
+																			reject(
+																				o,
+																			)
+																		}
+																	>
+																		Reject
+																		Order
+																	</Button>
+																)}
+																{((o.fulfillmentType ===
+																	"PICKUP" &&
+																	o.status ===
+																		"READY") ||
+																	(o.fulfillmentType ===
+																		"DELIVERY" &&
+																		o.status ===
+																			"IN_TRANSIT")) && (
+																	<Button
+																		$size="sm"
+																		$loading={
+																			busyId ===
+																			o.id
+																		}
+																		onClick={() =>
+																			confirmHandover(
+																				o,
+																			)
+																		}
+																	>
+																		Confirm
+																		handover
 																	</Button>
 																)}
 															</Row>

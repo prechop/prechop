@@ -35,9 +35,12 @@ export async function closeDailyOrder({
 	});
 	const cookingStarted = buyerOrders.some((order) =>
 		[
+			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
 			OrderStatus.IN_TRANSIT,
+			OrderStatus.PICKED_UP,
+			OrderStatus.DELIVERED,
 			OrderStatus.COMPLETED,
 		].includes(order.status),
 	);
@@ -47,7 +50,12 @@ export async function closeDailyOrder({
 		);
 	}
 	const refundable = buyerOrders.filter((order) =>
-		[OrderStatus.PAID, OrderStatus.CONFIRMED].includes(order.status),
+		[
+			OrderStatus.PAID,
+			OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			OrderStatus.ACCEPTED,
+			OrderStatus.CONFIRMED,
+		].includes(order.status),
 	);
 	if (refundable.length > 0 && !reason?.trim()) {
 		throw validationError("Enter a cancellation reason before closing.");

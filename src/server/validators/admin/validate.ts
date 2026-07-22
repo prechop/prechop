@@ -1,5 +1,11 @@
 import { z as zod } from "zod";
-import { OrderStatus, VendorStatus } from "@/server/models";
+import {
+	ORDER_DISPUTE_ACTIONS,
+	ORDER_DISPUTE_REASONS,
+	ORDER_DISPUTE_STATUSES,
+	OrderStatus,
+	VendorStatus,
+} from "@/server/models";
 
 export const createCampusSchema = zod
 	.object({
@@ -66,6 +72,32 @@ export const ordersQuerySchema = zod
 		status: zod.enum(OrderStatus).optional(),
 		limit: zod.coerce.number().int().min(1).max(50).optional(),
 		offset: zod.coerce.number().int().min(0).optional(),
+	})
+	.strict();
+
+export const disputesQuerySchema = zod
+	.object({
+		status: zod.enum(ORDER_DISPUTE_STATUSES).optional(),
+		limit: zod.coerce.number().int().min(1).max(100).optional(),
+		offset: zod.coerce.number().int().min(0).optional(),
+	})
+	.strict();
+
+export const openOrderDisputeSchema = zod
+	.object({
+		reason: zod.enum(ORDER_DISPUTE_REASONS),
+		buyerNotes: zod.array(zod.string().trim().min(1).max(1000)).optional(),
+		vendorNotes: zod.array(zod.string().trim().min(1).max(1000)).optional(),
+		photos: zod.array(zod.string().trim().url()).optional(),
+		messages: zod.array(zod.unknown()).optional(),
+	})
+	.strict();
+
+export const reviewOrderDisputeSchema = zod
+	.object({
+		action: zod.enum(ORDER_DISPUTE_ACTIONS),
+		note: zod.string().trim().min(1).max(2000).optional(),
+		amountKobo: zod.number().int().positive().optional(),
 	})
 	.strict();
 

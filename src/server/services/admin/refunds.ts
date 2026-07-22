@@ -16,18 +16,29 @@ import type { AdminActor } from "./vendors";
  */
 const REFUNDABLE: OrderStatus[] = [
 	OrderStatus.PAID,
+	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+	OrderStatus.ACCEPTED,
 	OrderStatus.CONFIRMED,
+	OrderStatus.COOKING,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
 	OrderStatus.IN_TRANSIT,
+	OrderStatus.PICKED_UP,
+	OrderStatus.DELIVERED,
 	OrderStatus.COMPLETED,
+	OrderStatus.REFUND_PENDING,
+	OrderStatus.REFUND_FAILED,
 	OrderStatus.CANCELLED,
 ];
 
 export interface AdminRefundResult {
 	orderId: string;
 	orderNumber: string;
-	outcome: "REFUNDED" | "ALREADY_REFUNDED";
+	outcome:
+		| "REFUNDED"
+		| "ALREADY_REFUNDED"
+		| "REFUND_PENDING"
+		| "REFUND_FAILED";
 	amountKobo: number;
 	refundId: string;
 	paystackRefundId?: string;
@@ -117,6 +128,10 @@ export async function refundOrderAsAdmin({
 		message:
 			result.outcome === "ALREADY_REFUNDED"
 				? "A refund already exists for this order — no second payout was sent."
-				: "Refund issued.",
+				: result.outcome === "REFUND_PENDING"
+					? "A refund request already exists and is awaiting confirmation."
+					: result.outcome === "REFUND_FAILED"
+						? "A previous refund attempt failed and needs admin review."
+						: "Refund confirmed.",
 	};
 }

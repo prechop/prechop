@@ -36,6 +36,15 @@ export interface IBuyerOrderItem {
 	selectedOptions: IBuyerOrderItemSelectedOption[];
 }
 
+export interface IBuyerOrderTimelineEntry {
+	at: Date;
+	type: string;
+	actor?: "buyer" | "vendor" | "system" | "admin";
+	actorId?: string;
+	note?: string;
+	data?: Record<string, unknown>;
+}
+
 export interface IBuyerOrderCreateInput {
 	orderNumber: string;
 	dailyOrderId: string;
@@ -90,7 +99,49 @@ export interface IBuyerOrder {
 	cancellationReason?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";
 	paidAt?: Date;
+	acceptedAt?: Date;
+	acceptanceDeadline?: Date;
+	vendorAcceptanceReminder5SentAt?: Date;
+	vendorAcceptanceWarning8SentAt?: Date;
+	vendorRejectedAt?: Date;
+	refundPendingAt?: Date;
+	refundProcessingAt?: Date;
+	refundFailedAt?: Date;
+	refundFailureReason?: string;
+	vendorNoResponseExpiredAt?: Date;
+	readyAt?: Date;
+	pickupReminder60SentAt?: Date;
+	pickupWarning90SentAt?: Date;
+	pickupNoShowReportableAt?: Date;
+	pickupNoShowReportedAt?: Date;
+	pickupBuyerResponseDeadline?: Date;
+	pickupBuyerRespondedAt?: Date;
+	pickupProblemReportedAt?: Date;
+	pickupProblemNote?: string;
 	deliveryStartedAt?: Date;
+	deliveryBuyerUnreachableReportedAt?: Date;
+	deliveryBuyerResponseDeadline?: Date;
+	deliveryFailedAt?: Date;
+	deliveryArrivalTime?: Date;
+	deliveryContactAttempts?: number;
+	deliveryFailureNote?: string;
+	deliveryEvidencePhotoUrl?: string;
+	adminReviewRequiredAt?: Date;
+	adminReviewReason?: string;
+	pickedUpAt?: Date;
+	deliveredAt?: Date;
+	confirmedAt?: Date;
+	confirmedBy?: string;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT";
+	confirmationVendorId?: string;
+	confirmationBuyerId?: string;
+	confirmationOrderId?: string;
+	handoverTokenHash?: string;
+	handoverPinHash?: string;
+	handoverCredentialCreatedAt?: Date;
+	handoverCredentialUsedAt?: Date;
+	handoverFailedAttempts?: number;
+	handoverLockedUntil?: Date;
 	channel?: string;
 	receiptUrl?: string;
 	/**
@@ -107,6 +158,7 @@ export interface IBuyerOrder {
 	 * historical order has a receipt pending.
 	 */
 	receiptStatus?: ReceiptStatus;
+	timeline?: IBuyerOrderTimelineEntry[];
 	items: IBuyerOrderItem[];
 	createdAt: Date;
 	updatedAt: Date;

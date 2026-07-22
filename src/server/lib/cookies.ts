@@ -33,7 +33,11 @@ export function getAuthCookieOptions(extra?: {
 	const opts: CookieOptions = {
 		httpOnly: true,
 		secure: IS_PROD,
-		sameSite: IS_PROD ? "strict" : "lax",
+		// OAuth providers send users back to us through a cross-site top-level
+		// redirect. `strict` can hide freshly-set auth cookies on that immediate
+		// return path, which makes protected destinations like /admin bounce to
+		// login even though the session exists moments later.
+		sameSite: "lax",
 		path: "/",
 	};
 	if (!IS_PROD && COOKIE_DOMAIN) opts.domain = COOKIE_DOMAIN;

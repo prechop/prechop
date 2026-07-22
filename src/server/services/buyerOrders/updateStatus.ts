@@ -11,18 +11,26 @@ import {
 	setBuyerOrderStatusDB,
 } from "../../models";
 import {
+	notifyOrderAccepted,
 	notifyOrderConfirmed,
 	notifyOrderInTransit,
 	notifyOrderReady,
+	notifyOrderRefundPending,
 } from "../notifications";
+import { issueRefund } from "../refunds";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
+	[OrderStatus.AWAITING_VENDOR_ACCEPTANCE]: [
+		OrderStatus.ACCEPTED,
+		OrderStatus.VENDOR_REJECTED,
+	],
+	[OrderStatus.ACCEPTED]: [OrderStatus.COOKING],
 	[OrderStatus.PAID]: [OrderStatus.CONFIRMED],
 	[OrderStatus.CONFIRMED]: [OrderStatus.PREPARING],
+	[OrderStatus.COOKING]: [OrderStatus.READY],
 	[OrderStatus.PREPARING]: [OrderStatus.READY],
-	[OrderStatus.READY]: [OrderStatus.IN_TRANSIT, OrderStatus.COMPLETED],
-	[OrderStatus.IN_TRANSIT]: [OrderStatus.COMPLETED],
+	[OrderStatus.READY]: [OrderStatus.IN_TRANSIT],
 };
 
 export async function updateOrderStatus({
@@ -54,6 +62,18 @@ export async function updateOrderStatus({
 		throw invalidOrderState("Only delivery orders can move in transit.");
 	}
 	if (
+		status === OrderStatus.ACCEPTED &&
+		order.status !== OrderStatus.AWAITING_VENDOR_ACCEPTANCE
+	) {
+		throw invalidOrderState("Only awaiting orders can be accepted.");
+	}
+	if (
+		status === OrderStatus.VENDOR_REJECTED &&
+		order.status !== OrderStatus.AWAITING_VENDOR_ACCEPTANCE
+	) {
+		throw invalidOrderState("Only awaiting orders can be rejected.");
+	}
+	if (
 		order.status === OrderStatus.READY &&
 		status === OrderStatus.COMPLETED &&
 		order.fulfillmentType === FulfillmentType.DELIVERY
@@ -63,10 +83,84 @@ export async function updateOrderStatus({
 		);
 	}
 
+	if (status === OrderStatus.ACCEPTED) {
+		const acceptedAt = new Date();
+		const accepted = await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.ACCEPTED,
+			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
+			acceptedAt,
+			acceptanceDeadline: order.acceptanceDeadline,
+		});
+		if (!accepted)
+			throw invalidOrderState("Order status changed â€” please retry.");
+
+		const cooking = await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.COOKING,
+			fromStatuses: [OrderStatus.ACCEPTED],
+		});
+		if (!cooking)
+			throw invalidOrderState("Order status changed â€” please retry.");
+
+		void notifyOrderAccepted({
+			buyerId: order.buyerId.toString(),
+			orderNumber: order.orderNumber,
+			vendorName: vendor.businessName || "Your vendor",
+		}).catch((error) =>
+			console.error(
+				`[orders] ORDER_ACCEPTED notification failed for ${orderId}:`,
+				error,
+			),
+		);
+		return cooking;
+	}
+
+	if (status === OrderStatus.VENDOR_REJECTED) {
+		const rejected = await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.VENDOR_REJECTED,
+			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
+			vendorRejectedAt: new Date(),
+		});
+		if (!rejected)
+			throw invalidOrderState("Order status changed â€” please retry.");
+
+		await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.REFUND_PENDING,
+			fromStatuses: [OrderStatus.VENDOR_REJECTED],
+			refundPendingAt: new Date(),
+		});
+
+		const reason =
+			"The vendor rejected this order, so your refund has started.";
+		try {
+			await issueRefund({
+				orderId,
+				amountKobo: order.totalKobo,
+				reason,
+			});
+		} finally {
+			void notifyOrderRefundPending({
+				buyerId: order.buyerId.toString(),
+				orderNumber: order.orderNumber,
+				reason,
+			}).catch((error) =>
+				console.error(
+					`[orders] ORDER_REFUND_PENDING notification failed for ${orderId}:`,
+					error,
+				),
+			);
+		}
+		return (await getBuyerOrderByIdDB({ id: orderId })) ?? rejected;
+	}
+
 	const updated = await setBuyerOrderStatusDB({
 		id: orderId,
 		status,
 		fromStatuses: [order.status as OrderStatus],
+		readyAt: status === OrderStatus.READY ? new Date() : undefined,
 		deliveryStartedAt:
 			status === OrderStatus.IN_TRANSIT ? new Date() : undefined,
 	});

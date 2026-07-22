@@ -300,11 +300,26 @@ export type OrderStatus =
 	| "PENDING_PAYMENT"
 	| "AWAITING_EXTERNAL_PAYMENT"
 	| "PAID"
+	| "AWAITING_VENDOR_ACCEPTANCE"
+	| "ACCEPTED"
 	| "CONFIRMED"
+	| "COOKING"
 	| "PREPARING"
 	| "READY"
 	| "IN_TRANSIT"
+	| "AWAITING_BUYER_NO_SHOW_RESPONSE"
+	| "COMPLETED_BUYER_NO_SHOW"
+	| "PICKUP_PROBLEM_REPORTED"
+	| "BUYER_UNREACHABLE_REPORTED"
+	| "DELIVERY_FAILED"
+	| "PICKED_UP"
+	| "DELIVERED"
 	| "COMPLETED"
+	| "VENDOR_REJECTED"
+	| "EXPIRED_VENDOR_NO_RESPONSE"
+	| "REFUND_PENDING"
+	| "REFUND_PROCESSING"
+	| "REFUND_FAILED"
 	| "CANCELLED"
 	| "REFUNDED";
 
@@ -344,7 +359,14 @@ export interface BuyerOrder {
 	 * `/receipt/{token}` link and is deliberately never exposed here.
 	 */
 	receiptStatus?: ReceiptStatus | null;
+	acceptedAt?: string | null;
+	acceptanceDeadline?: string | null;
 	deliveryStartedAt?: string | null;
+	pickedUpAt?: string | null;
+	deliveredAt?: string | null;
+	confirmedAt?: string | null;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | null;
+	handoverCredentialUsedAt?: string | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
 }

@@ -21,6 +21,8 @@ import { releaseSlots } from "./slots";
 const CANCELLABLE: OrderStatus[] = [
 	OrderStatus.AWAITING_EXTERNAL_PAYMENT,
 	OrderStatus.PAID,
+	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+	OrderStatus.ACCEPTED,
 	OrderStatus.CONFIRMED,
 ];
 

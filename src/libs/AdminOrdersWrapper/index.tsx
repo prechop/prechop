@@ -29,11 +29,26 @@ import type { BuyerOrder, OrderStatus } from "@/types";
 const STATUSES: OrderStatus[] = [
 	"PENDING_PAYMENT",
 	"PAID",
+	"AWAITING_VENDOR_ACCEPTANCE",
+	"ACCEPTED",
 	"CONFIRMED",
+	"COOKING",
 	"PREPARING",
 	"READY",
 	"IN_TRANSIT",
+	"AWAITING_BUYER_NO_SHOW_RESPONSE",
+	"COMPLETED_BUYER_NO_SHOW",
+	"PICKUP_PROBLEM_REPORTED",
+	"BUYER_UNREACHABLE_REPORTED",
+	"DELIVERY_FAILED",
+	"PICKED_UP",
+	"DELIVERED",
 	"COMPLETED",
+	"VENDOR_REJECTED",
+	"EXPIRED_VENDOR_NO_RESPONSE",
+	"REFUND_PENDING",
+	"REFUND_PROCESSING",
+	"REFUND_FAILED",
 	"CANCELLED",
 	"REFUNDED",
 ];
@@ -42,8 +57,25 @@ function tone(
 	s: OrderStatus,
 ): "success" | "warning" | "danger" | "muted" | "primary" {
 	if (s === "COMPLETED") return "success";
+	if (s === "COMPLETED_BUYER_NO_SHOW") return "success";
 	if (s === "IN_TRANSIT") return "success";
-	if (s === "CANCELLED" || s === "REFUNDED") return "danger";
+	if (s === "PICKED_UP" || s === "DELIVERED") return "success";
+	if (
+		s === "CANCELLED" ||
+		s === "REFUNDED" ||
+		s === "VENDOR_REJECTED" ||
+		s === "EXPIRED_VENDOR_NO_RESPONSE" ||
+		s === "DELIVERY_FAILED" ||
+		s === "REFUND_FAILED"
+	)
+		return "danger";
+	if (
+		s === "AWAITING_BUYER_NO_SHOW_RESPONSE" ||
+		s === "PICKUP_PROBLEM_REPORTED" ||
+		s === "BUYER_UNREACHABLE_REPORTED" ||
+		s === "REFUND_PROCESSING"
+	)
+		return "warning";
 	if (s === "PENDING_PAYMENT") return "muted";
 	return "warning";
 }

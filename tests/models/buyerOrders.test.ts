@@ -71,8 +71,9 @@ describe("buyerOrders model", () => {
 		const order = await createBuyerOrderDB({ payload: makePayload() });
 		const id = order!._id.toString();
 		const paid = await markBuyerOrderPaidDB({ id, channel: "card" });
-		expect(paid!.status).toBe(OrderStatus.PAID);
+		expect(paid!.status).toBe(OrderStatus.AWAITING_VENDOR_ACCEPTANCE);
 		expect(paid!.paidAt).toBeTruthy();
+		expect(paid!.acceptanceDeadline).toBeTruthy();
 		// second call finds no PENDING_PAYMENT doc → null
 		const again = await markBuyerOrderPaidDB({ id, channel: "card" });
 		expect(again).toBeNull();
@@ -85,7 +86,7 @@ describe("buyerOrders model", () => {
 		const confirmed = await setBuyerOrderStatusDB({
 			id,
 			status: OrderStatus.CONFIRMED,
-			fromStatuses: [OrderStatus.PAID],
+			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
 		});
 		expect(confirmed!.status).toBe(OrderStatus.CONFIRMED);
 		// wrong precondition

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import styled from "styled-components";
@@ -31,9 +32,8 @@ import type { BuyerOrder, OrderStatus } from "@/types";
 
 // Happy-path progression shown as a timeline (terminal states handled apart).
 const BASE_FLOW: OrderStatus[] = [
-	"PAID",
-	"CONFIRMED",
-	"PREPARING",
+	"AWAITING_VENDOR_ACCEPTANCE",
+	"COOKING",
 	"READY",
 	"COMPLETED",
 ];
@@ -41,6 +41,8 @@ const CANCELLABLE: OrderStatus[] = [
 	"PENDING_PAYMENT",
 	"AWAITING_EXTERNAL_PAYMENT",
 	"PAID",
+	"AWAITING_VENDOR_ACCEPTANCE",
+	"ACCEPTED",
 	"CONFIRMED",
 ];
 
@@ -53,6 +55,33 @@ const STEP_META: Record<string, { icon: string; hint: string }> = {
 };
 
 STEP_META.IN_TRANSIT = { icon: "->", hint: "Your order is on the way" };
+STEP_META.AWAITING_BUYER_NO_SHOW_RESPONSE = {
+	icon: "!",
+	hint: "Please respond to the pickup report",
+};
+STEP_META.COMPLETED_BUYER_NO_SHOW = {
+	icon: "OK",
+	hint: "Closed as buyer no-show",
+};
+STEP_META.PICKUP_PROBLEM_REPORTED = {
+	icon: "!",
+	hint: "Pickup problem sent for review",
+};
+STEP_META.BUYER_UNREACHABLE_REPORTED = {
+	icon: "!",
+	hint: "The vendor could not reach you",
+};
+STEP_META.DELIVERY_FAILED = {
+	icon: "!",
+	hint: "Delivery failed and is under review",
+};
+STEP_META.AWAITING_VENDOR_ACCEPTANCE = {
+	icon: "!",
+	hint: "Waiting for the kitchen to accept",
+};
+STEP_META.COOKING = { icon: "...", hint: "Your food is being cooked" };
+STEP_META.PICKED_UP = { icon: "OK", hint: "Pickup confirmed" };
+STEP_META.DELIVERED = { icon: "OK", hint: "Delivery confirmed" };
 
 const statusTone: Record<
 	OrderStatus,
@@ -61,11 +90,26 @@ const statusTone: Record<
 	PENDING_PAYMENT: "warning",
 	AWAITING_EXTERNAL_PAYMENT: "warning",
 	PAID: "primary",
+	AWAITING_VENDOR_ACCEPTANCE: "warning",
+	ACCEPTED: "primary",
 	CONFIRMED: "primary",
+	COOKING: "warning",
 	PREPARING: "warning",
 	READY: "success",
 	IN_TRANSIT: "success",
+	AWAITING_BUYER_NO_SHOW_RESPONSE: "warning",
+	COMPLETED_BUYER_NO_SHOW: "success",
+	PICKUP_PROBLEM_REPORTED: "warning",
+	BUYER_UNREACHABLE_REPORTED: "warning",
+	DELIVERY_FAILED: "danger",
+	PICKED_UP: "success",
+	DELIVERED: "success",
 	COMPLETED: "success",
+	VENDOR_REJECTED: "danger",
+	EXPIRED_VENDOR_NO_RESPONSE: "danger",
+	REFUND_PENDING: "warning",
+	REFUND_PROCESSING: "warning",
+	REFUND_FAILED: "danger",
 	CANCELLED: "danger",
 	REFUNDED: "muted",
 };
@@ -216,6 +260,15 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 		id: string;
 		rating: number;
 	} | null>(`/orders/${orderId}/review`, fetcher);
+	const canViewHandover =
+		data?.handoverCredentialUsedAt == null &&
+		((data?.fulfillmentType === "PICKUP" && data.status === "READY") ||
+			(data?.fulfillmentType === "DELIVERY" &&
+				data.status === "IN_TRANSIT"));
+	const { data: handover } = useSWR<{
+		qrDataUrl: string;
+		pin: string;
+	}>(canViewHandover ? `/orders/${orderId}/handover` : null, fetcher);
 
 	const [cancelling, setCancelling] = useState(false);
 	const [reason, setReason] = useState("");
@@ -241,10 +294,18 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 		data.fulfillmentType === "DELIVERY"
 			? BASE_FLOW.flatMap((status) =>
 					status === "COMPLETED"
-						? (["IN_TRANSIT", "COMPLETED"] as OrderStatus[])
+						? ([
+								"IN_TRANSIT",
+								"DELIVERED",
+								"COMPLETED",
+							] as OrderStatus[])
 						: [status],
 				)
-			: BASE_FLOW;
+			: BASE_FLOW.flatMap((status) =>
+					status === "COMPLETED"
+						? (["PICKED_UP", "COMPLETED"] as OrderStatus[])
+						: [status],
+				);
 	const currentIdx = flow.indexOf(data.status);
 	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
 
@@ -421,6 +482,35 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						</Stack>
 					</Card>
 				</FadeIn>
+			)}
+
+			{canViewHandover && handover && (
+				<Card $accent>
+					<Stack $gap={12}>
+						<Text $weight={800}>Handover confirmation</Text>
+						<Row $gap={14} $align="center">
+							<Image
+								src={handover.qrDataUrl}
+								alt="Order confirmation QR code"
+								width={160}
+								height={160}
+								unoptimized
+								style={{ borderRadius: 8 }}
+							/>
+							<Stack $gap={4}>
+								<Text $muted $size={13}>
+									Show this QR code to the vendor.
+								</Text>
+								<Text $weight={900} $size={28}>
+									{handover.pin}
+								</Text>
+								<Text $muted $size={13}>
+									Use the PIN only if scanning does not work.
+								</Text>
+							</Stack>
+						</Row>
+					</Stack>
+				</Card>
 			)}
 
 			{data.status === "PENDING_PAYMENT" && (

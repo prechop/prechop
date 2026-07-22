@@ -6,6 +6,7 @@ import { IOperationType, PLATFORM_TIMEZONE } from "../utils";
 import type {
 	IBuyerOrder,
 	IBuyerOrderCreateInput,
+	IBuyerOrderTimelineEntry,
 	ReceiptStatus,
 } from "./types";
 import { RECEIPT_STATUSES } from "./types";
@@ -16,10 +17,15 @@ export type BuyerOrderModel = Model<any>;
 
 const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.PAID,
+	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+	OrderStatus.ACCEPTED,
 	OrderStatus.CONFIRMED,
+	OrderStatus.COOKING,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
 	OrderStatus.IN_TRANSIT,
+	OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+	OrderStatus.BUYER_UNREACHABLE_REPORTED,
 ];
 
 const selectedOptionSchema = new mongoose.Schema(
@@ -46,6 +52,21 @@ const itemSchema = new mongoose.Schema(
 		quantity: { type: Number, required: true, min: 1 },
 		subtotalKobo: { type: Number, required: true },
 		selectedOptions: { type: [selectedOptionSchema], default: [] },
+	},
+	{ _id: false },
+);
+
+const timelineSchema = new mongoose.Schema(
+	{
+		at: { type: Date, required: true },
+		type: { type: String, required: true },
+		actor: {
+			type: String,
+			enum: ["buyer", "vendor", "system", "admin"],
+		},
+		actorId: { type: mongoose.Schema.Types.ObjectId },
+		note: { type: String },
+		data: { type: mongoose.Schema.Types.Mixed },
 	},
 	{ _id: false },
 );
@@ -111,7 +132,61 @@ const schema = new mongoose.Schema<any>(
 		cancellationReason: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
 		paidAt: { type: Date },
+		acceptedAt: { type: Date },
+		acceptanceDeadline: { type: Date, index: true },
+		vendorAcceptanceReminder5SentAt: { type: Date },
+		vendorAcceptanceWarning8SentAt: { type: Date },
+		vendorRejectedAt: { type: Date },
+		refundPendingAt: { type: Date },
+		refundProcessingAt: { type: Date },
+		refundFailedAt: { type: Date },
+		refundFailureReason: { type: String },
+		vendorNoResponseExpiredAt: { type: Date },
+		readyAt: { type: Date, index: true },
+		pickupReminder60SentAt: { type: Date },
+		pickupWarning90SentAt: { type: Date },
+		pickupNoShowReportableAt: { type: Date },
+		pickupNoShowReportedAt: { type: Date },
+		pickupBuyerResponseDeadline: { type: Date, index: true },
+		pickupBuyerRespondedAt: { type: Date },
+		pickupProblemReportedAt: { type: Date },
+		pickupProblemNote: { type: String },
 		deliveryStartedAt: { type: Date },
+		deliveryBuyerUnreachableReportedAt: { type: Date },
+		deliveryBuyerResponseDeadline: { type: Date, index: true },
+		deliveryFailedAt: { type: Date },
+		deliveryArrivalTime: { type: Date },
+		deliveryContactAttempts: { type: Number },
+		deliveryFailureNote: { type: String },
+		deliveryEvidencePhotoUrl: { type: String },
+		adminReviewRequiredAt: { type: Date, index: true },
+		adminReviewReason: { type: String },
+		pickedUpAt: { type: Date },
+		deliveredAt: { type: Date },
+		confirmedAt: { type: Date },
+		confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+		confirmationMethod: {
+			type: String,
+			enum: ["QR", "PIN", "SUPPORT"],
+		},
+		confirmationVendorId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "vendorProfiles",
+		},
+		confirmationBuyerId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "users",
+		},
+		confirmationOrderId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "buyerOrders",
+		},
+		handoverTokenHash: { type: String },
+		handoverPinHash: { type: String },
+		handoverCredentialCreatedAt: { type: Date },
+		handoverCredentialUsedAt: { type: Date },
+		handoverFailedAttempts: { type: Number, default: 0 },
+		handoverLockedUntil: { type: Date },
 		channel: { type: String },
 		receiptUrl: { type: String },
 		// No `default` on purpose — see types.ts. Absent = pre-feature order, and
@@ -119,6 +194,7 @@ const schema = new mongoose.Schema<any>(
 		// PENDING would make every historical order advertise a receipt that no
 		// job will ever produce.
 		receiptStatus: { type: String, enum: RECEIPT_STATUSES },
+		timeline: { type: [timelineSchema], default: [] },
 		items: { type: [itemSchema], default: [] },
 	},
 	{ timestamps: true },
@@ -383,10 +459,20 @@ export async function aggregateBuyerOrderStatsDB({
 		if (!mongoose.Types.ObjectId.isValid(buyerId)) return empty;
 		const spentStatuses = [
 			OrderStatus.PAID,
+			OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			OrderStatus.ACCEPTED,
 			OrderStatus.CONFIRMED,
+			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
 			OrderStatus.IN_TRANSIT,
+			OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+			OrderStatus.COMPLETED_BUYER_NO_SHOW,
+			OrderStatus.PICKUP_PROBLEM_REPORTED,
+			OrderStatus.BUYER_UNREACHABLE_REPORTED,
+			OrderStatus.DELIVERY_FAILED,
+			OrderStatus.PICKED_UP,
+			OrderStatus.DELIVERED,
 			OrderStatus.COMPLETED,
 		];
 		const rows = await BuyerOrder.aggregate<{
@@ -444,10 +530,20 @@ export async function listBuyerOrdersByVendorAndDailyOrderDB({
 						status: {
 							$in: [
 								OrderStatus.PAID,
+								OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+								OrderStatus.ACCEPTED,
 								OrderStatus.CONFIRMED,
+								OrderStatus.COOKING,
 								OrderStatus.PREPARING,
 								OrderStatus.READY,
 								OrderStatus.IN_TRANSIT,
+								OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+								OrderStatus.COMPLETED_BUYER_NO_SHOW,
+								OrderStatus.PICKUP_PROBLEM_REPORTED,
+								OrderStatus.BUYER_UNREACHABLE_REPORTED,
+								OrderStatus.DELIVERY_FAILED,
+								OrderStatus.PICKED_UP,
+								OrderStatus.DELIVERED,
 								OrderStatus.COMPLETED,
 							],
 						},
@@ -494,13 +590,29 @@ export async function setBuyerOrderStatusDB({
 	id,
 	status,
 	fromStatuses,
+	acceptedAt,
+	acceptanceDeadline,
+	refundPendingAt,
+	vendorRejectedAt,
+	vendorNoResponseExpiredAt,
+	readyAt,
 	deliveryStartedAt,
+	pickedUpAt,
+	deliveredAt,
 	session,
 }: {
 	id: string;
 	status: OrderStatus;
 	fromStatuses?: OrderStatus[];
+	acceptedAt?: Date;
+	acceptanceDeadline?: Date;
+	refundPendingAt?: Date;
+	vendorRejectedAt?: Date;
+	vendorNoResponseExpiredAt?: Date;
+	readyAt?: Date;
 	deliveryStartedAt?: Date;
+	pickedUpAt?: Date;
+	deliveredAt?: Date;
 	session?: ClientSession;
 }): Promise<IBuyerOrder | null> {
 	try {
@@ -513,7 +625,17 @@ export async function setBuyerOrderStatusDB({
 			{
 				$set: {
 					status,
+					...(acceptedAt ? { acceptedAt } : {}),
+					...(acceptanceDeadline ? { acceptanceDeadline } : {}),
+					...(refundPendingAt ? { refundPendingAt } : {}),
+					...(vendorRejectedAt ? { vendorRejectedAt } : {}),
+					...(vendorNoResponseExpiredAt
+						? { vendorNoResponseExpiredAt }
+						: {}),
+					...(readyAt ? { readyAt } : {}),
 					...(deliveryStartedAt ? { deliveryStartedAt } : {}),
+					...(pickedUpAt ? { pickedUpAt } : {}),
+					...(deliveredAt ? { deliveredAt } : {}),
 				},
 			},
 			{ session, returnDocument: "after" },
@@ -524,13 +646,422 @@ export async function setBuyerOrderStatusDB({
 	}
 }
 
+function timelineEntry(input: IBuyerOrderTimelineEntry) {
+	return {
+		...input,
+		...(input.actorId && mongoose.Types.ObjectId.isValid(input.actorId)
+			? { actorId: new mongoose.Types.ObjectId(input.actorId) }
+			: {}),
+	};
+}
+
+export async function appendBuyerOrderTimelineDB({
+	id,
+	entry,
+	session,
+}: {
+	id: string;
+	entry: IBuyerOrderTimelineEntry;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $push: { timeline: timelineEntry(entry) } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markPickupReminderSentDB({
+	id,
+	kind,
+	sentAt,
+}: {
+	id: string;
+	kind: "reminder60" | "warning90";
+	sentAt: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const field =
+			kind === "reminder60"
+				? "pickupReminder60SentAt"
+				: "pickupWarning90SentAt";
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.READY,
+				[field]: { $exists: false },
+			},
+			{
+				$set: { [field]: sentAt },
+				$push: {
+					timeline: timelineEntry({
+						at: sentAt,
+						type:
+							kind === "reminder60"
+								? "PICKUP_REMINDER_60_SENT"
+								: "PICKUP_WARNING_90_SENT",
+						actor: "system",
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function reportPickupNoShowDB({
+	id,
+	vendorUserId,
+	reportedAt,
+	responseDeadline,
+}: {
+	id: string;
+	vendorUserId: string;
+	reportedAt: Date;
+	responseDeadline: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.READY,
+			},
+			{
+				$set: {
+					status: OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+					pickupNoShowReportedAt: reportedAt,
+					pickupBuyerResponseDeadline: responseDeadline,
+					adminReviewRequiredAt: reportedAt,
+					adminReviewReason: "PICKUP_NO_SHOW_REPORTED",
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: reportedAt,
+						type: "VENDOR_REPORTED_PICKUP_NO_SHOW",
+						actor: "vendor",
+						actorId: vendorUserId,
+						data: {
+							responseDeadline: responseDeadline.toISOString(),
+						},
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function respondToPickupNoShowDB({
+	id,
+	buyerId,
+	response,
+	note,
+	respondedAt,
+}: {
+	id: string;
+	buyerId: string;
+	response: "CONFIRMED_COLLECTION" | "PROBLEM_REPORTED";
+	note?: string;
+	respondedAt: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const status =
+			response === "CONFIRMED_COLLECTION"
+				? OrderStatus.COMPLETED
+				: OrderStatus.PICKUP_PROBLEM_REPORTED;
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				buyerId: new mongoose.Types.ObjectId(buyerId),
+				status: OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+			},
+			{
+				$set: {
+					status,
+					pickupBuyerRespondedAt: respondedAt,
+					...(response === "CONFIRMED_COLLECTION"
+						? {
+								pickedUpAt: respondedAt,
+								confirmedAt: respondedAt,
+								confirmedBy: new mongoose.Types.ObjectId(
+									buyerId,
+								),
+								confirmationMethod: "SUPPORT",
+							}
+						: {
+								pickupProblemReportedAt: respondedAt,
+								pickupProblemNote: note,
+								adminReviewRequiredAt: respondedAt,
+								adminReviewReason: "PICKUP_PROBLEM_REPORTED",
+							}),
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: respondedAt,
+						type:
+							response === "CONFIRMED_COLLECTION"
+								? "BUYER_CONFIRMED_COLLECTION"
+								: "BUYER_REPORTED_PICKUP_PROBLEM",
+						actor: "buyer",
+						actorId: buyerId,
+						...(note ? { note } : {}),
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function completeExpiredPickupNoShowDB({
+	id,
+	completedAt,
+}: {
+	id: string;
+	completedAt: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+				pickupBuyerResponseDeadline: { $lte: completedAt },
+				pickupBuyerRespondedAt: { $exists: false },
+			},
+			{
+				$set: {
+					status: OrderStatus.COMPLETED_BUYER_NO_SHOW,
+					confirmedAt: completedAt,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: completedAt,
+						type: "BUYER_NO_SHOW_COMPLETED_NO_RESPONSE",
+						actor: "system",
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function reportBuyerUnreachableDB({
+	id,
+	vendorUserId,
+	reportedAt,
+	responseDeadline,
+	arrivalTime,
+	contactAttempts,
+	note,
+	photoUrl,
+}: {
+	id: string;
+	vendorUserId: string;
+	reportedAt: Date;
+	responseDeadline: Date;
+	arrivalTime: Date;
+	contactAttempts: number;
+	note: string;
+	photoUrl?: string;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.IN_TRANSIT,
+				fulfillmentType: FulfillmentType.DELIVERY,
+			},
+			{
+				$set: {
+					status: OrderStatus.BUYER_UNREACHABLE_REPORTED,
+					deliveryBuyerUnreachableReportedAt: reportedAt,
+					deliveryBuyerResponseDeadline: responseDeadline,
+					deliveryArrivalTime: arrivalTime,
+					deliveryContactAttempts: contactAttempts,
+					deliveryFailureNote: note,
+					...(photoUrl ? { deliveryEvidencePhotoUrl: photoUrl } : {}),
+					adminReviewRequiredAt: reportedAt,
+					adminReviewReason: "BUYER_UNREACHABLE_REPORTED",
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: reportedAt,
+						type: "VENDOR_REPORTED_BUYER_UNREACHABLE",
+						actor: "vendor",
+						actorId: vendorUserId,
+						note,
+						data: {
+							arrivalTime: arrivalTime.toISOString(),
+							contactAttempts,
+							...(photoUrl ? { photoUrl } : {}),
+							responseDeadline: responseDeadline.toISOString(),
+						},
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function markDeliveryFailedDB({
+	id,
+	vendorUserId,
+	failedAt,
+}: {
+	id: string;
+	vendorUserId: string;
+	failedAt: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.BUYER_UNREACHABLE_REPORTED,
+				deliveryBuyerResponseDeadline: { $lte: failedAt },
+			},
+			{
+				$set: {
+					status: OrderStatus.DELIVERY_FAILED,
+					deliveryFailedAt: failedAt,
+					adminReviewRequiredAt: failedAt,
+					adminReviewReason: "DELIVERY_FAILED",
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: failedAt,
+						type: "VENDOR_MARKED_DELIVERY_FAILED",
+						actor: "vendor",
+						actorId: vendorUserId,
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function findReadyPickupOrdersForNoShowTimersDB({
+	now,
+	limit = 200,
+}: {
+	now: Date;
+	limit?: number;
+}): Promise<IBuyerOrder[]> {
+	try {
+		const since60 = new Date(now.getTime() - 60 * 60 * 1000);
+		const since90 = new Date(now.getTime() - 90 * 60 * 1000);
+		const since120 = new Date(now.getTime() - 120 * 60 * 1000);
+		return await BuyerOrder.find({
+			status: OrderStatus.READY,
+			fulfillmentType: FulfillmentType.PICKUP,
+			$or: [
+				{
+					readyAt: { $lte: since60 },
+					pickupReminder60SentAt: { $exists: false },
+				},
+				{
+					readyAt: { $lte: since90 },
+					pickupWarning90SentAt: { $exists: false },
+				},
+				{
+					readyAt: { $lte: since120 },
+					pickupNoShowReportableAt: { $exists: false },
+				},
+			],
+		})
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+	} catch {
+		return [];
+	}
+}
+
+export async function markPickupNoShowReportableDB({
+	id,
+	reportableAt,
+}: {
+	id: string;
+	reportableAt: Date;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.READY,
+				pickupNoShowReportableAt: { $exists: false },
+			},
+			{
+				$set: { pickupNoShowReportableAt: reportableAt },
+				$push: {
+					timeline: timelineEntry({
+						at: reportableAt,
+						type: "PICKUP_NO_SHOW_REPORT_ENABLED",
+						actor: "system",
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function findExpiredPickupNoShowResponsesDB({
+	now,
+	limit = 200,
+}: {
+	now: Date;
+	limit?: number;
+}): Promise<IBuyerOrder[]> {
+	try {
+		return await BuyerOrder.find({
+			status: OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+			pickupBuyerResponseDeadline: { $lte: now },
+			pickupBuyerRespondedAt: { $exists: false },
+		})
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+	} catch {
+		return [];
+	}
+}
+
 export async function markBuyerOrderPaidDB({
 	id,
 	channel,
+	acceptanceDeadline,
 	session,
 }: {
 	id: string;
 	channel?: string;
+	acceptanceDeadline?: Date;
 	session?: ClientSession;
 }): Promise<IBuyerOrder | null> {
 	try {
@@ -544,7 +1075,16 @@ export async function markBuyerOrderPaidDB({
 					],
 				},
 			},
-			{ $set: { status: OrderStatus.PAID, paidAt: new Date(), channel } },
+			{
+				$set: {
+					status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+					paidAt: new Date(),
+					acceptanceDeadline:
+						acceptanceDeadline ??
+						new Date(Date.now() + 10 * 60 * 1000),
+					channel,
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
@@ -626,6 +1166,201 @@ export async function markBuyerOrderRefundedDB({
 		return !!res;
 	} catch {
 		return false;
+	}
+}
+
+export async function markBuyerOrderRefundProcessingDB({
+	id,
+	processedAt,
+	session,
+}: {
+	id: string;
+	processedAt: Date;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					status: OrderStatus.REFUND_PROCESSING,
+					refundProcessingAt: processedAt,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: processedAt,
+						type: "REFUND_PROCESSING",
+						actor: "system",
+					}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markBuyerOrderRefundFailedDB({
+	id,
+	failedAt,
+	failureReason,
+	session,
+}: {
+	id: string;
+	failedAt: Date;
+	failureReason: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: {
+					status: OrderStatus.REFUND_FAILED,
+					refundFailedAt: failedAt,
+					refundFailureReason: failureReason,
+					adminReviewRequiredAt: failedAt,
+					adminReviewReason: "REFUND_FAILURE",
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: failedAt,
+						type: "REFUND_FAILED",
+						actor: "system",
+						note: failureReason,
+					}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function setBuyerOrderHandoverCredentialDB({
+	id,
+	tokenHash,
+	pinHash,
+	now = new Date(),
+}: {
+	id: string;
+	tokenHash: string;
+	pinHash: string;
+	now?: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				handoverCredentialUsedAt: { $exists: false },
+			},
+			{
+				$set: {
+					handoverTokenHash: tokenHash,
+					handoverPinHash: pinHash,
+					handoverCredentialCreatedAt: now,
+				},
+				$setOnInsert: {},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function recordHandoverFailedAttemptDB({
+	id,
+	lockUntil,
+}: {
+	id: string;
+	lockUntil?: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$inc: { handoverFailedAttempts: 1 },
+				...(lockUntil
+					? { $set: { handoverLockedUntil: lockUntil } }
+					: {}),
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function completeBuyerOrderHandoverDB({
+	id,
+	fromStatus,
+	intermediateStatus,
+	confirmedAt,
+	confirmedBy,
+	confirmationMethod,
+	vendorId,
+	buyerId,
+}: {
+	id: string;
+	fromStatus: OrderStatus;
+	intermediateStatus: OrderStatus;
+	confirmedAt: Date;
+	confirmedBy: string;
+	confirmationMethod: "QR" | "PIN" | "SUPPORT";
+	vendorId: string;
+	buyerId: string;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const objectId = new mongoose.Types.ObjectId(id);
+		const intermediate = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: objectId,
+				status: fromStatus,
+				handoverCredentialUsedAt: { $exists: false },
+			},
+			{
+				$set: {
+					status: intermediateStatus,
+					handoverCredentialUsedAt: confirmedAt,
+					confirmedAt,
+					confirmedBy: new mongoose.Types.ObjectId(confirmedBy),
+					confirmationMethod,
+					confirmationVendorId: new mongoose.Types.ObjectId(vendorId),
+					confirmationBuyerId: new mongoose.Types.ObjectId(buyerId),
+					confirmationOrderId: objectId,
+					handoverFailedAttempts: 0,
+					...(intermediateStatus === OrderStatus.PICKED_UP
+						? { pickedUpAt: confirmedAt }
+						: {}),
+					...(intermediateStatus === OrderStatus.DELIVERED
+						? { deliveredAt: confirmedAt }
+						: {}),
+				},
+				$unset: { handoverLockedUntil: "" },
+			},
+			{ returnDocument: "after" },
+		);
+		if (!intermediate) return null;
+		const completed = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: objectId,
+				status: intermediateStatus,
+			},
+			{ $set: { status: OrderStatus.COMPLETED } },
+			{ returnDocument: "after" },
+		);
+		return completed
+			? (completed.toObject() as unknown as IBuyerOrder)
+			: null;
+	} catch {
+		return null;
 	}
 }
 
@@ -1018,6 +1753,142 @@ export interface IStalePaidOrder {
 	dailyOrderId: string;
 	totalKobo: number;
 	cutoffTime: Date;
+}
+
+export interface IVendorAcceptanceOrder {
+	id: string;
+	vendorId: string;
+	buyerId: string;
+	orderNumber: string;
+	totalKobo: number;
+	acceptanceDeadline: Date;
+}
+
+function mapVendorAcceptanceOrder(row: {
+	_id: mongoose.Types.ObjectId;
+	vendorId: mongoose.Types.ObjectId;
+	buyerId: mongoose.Types.ObjectId;
+	orderNumber: string;
+	totalKobo: number;
+	acceptanceDeadline: Date;
+}): IVendorAcceptanceOrder {
+	return {
+		id: row._id.toString(),
+		vendorId: row.vendorId.toString(),
+		buyerId: row.buyerId.toString(),
+		orderNumber: row.orderNumber,
+		totalKobo: row.totalKobo,
+		acceptanceDeadline: row.acceptanceDeadline,
+	};
+}
+
+export async function listVendorAcceptanceReminderDueDB({
+	now = new Date(),
+	minutes,
+	limit = 200,
+}: {
+	now?: Date;
+	minutes: 5 | 8;
+	limit?: number;
+}): Promise<IVendorAcceptanceOrder[]> {
+	try {
+		const dueAt = new Date(now.getTime() + (10 - minutes) * 60 * 1000);
+		const sentField =
+			minutes === 5
+				? "vendorAcceptanceReminder5SentAt"
+				: "vendorAcceptanceWarning8SentAt";
+		const rows = await BuyerOrder.find(
+			{
+				status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+				acceptanceDeadline: { $lte: dueAt, $gt: now },
+				[sentField]: { $exists: false },
+			},
+			{
+				vendorId: 1,
+				buyerId: 1,
+				orderNumber: 1,
+				totalKobo: 1,
+				acceptanceDeadline: 1,
+			},
+		)
+			.sort({ acceptanceDeadline: 1 })
+			.limit(limit)
+			.lean();
+		return rows.map((row) =>
+			mapVendorAcceptanceOrder(
+				row as unknown as Parameters<
+					typeof mapVendorAcceptanceOrder
+				>[0],
+			),
+		);
+	} catch {
+		return [];
+	}
+}
+
+export async function markVendorAcceptanceReminderSentDB({
+	id,
+	minutes,
+	now = new Date(),
+}: {
+	id: string;
+	minutes: 5 | 8;
+	now?: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const field =
+			minutes === 5
+				? "vendorAcceptanceReminder5SentAt"
+				: "vendorAcceptanceWarning8SentAt";
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+				[field]: { $exists: false },
+			},
+			{ $set: { [field]: now } },
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function listExpiredVendorAcceptanceOrdersDB({
+	now = new Date(),
+	limit = 200,
+}: {
+	now?: Date;
+	limit?: number;
+} = {}): Promise<IVendorAcceptanceOrder[]> {
+	try {
+		const rows = await BuyerOrder.find(
+			{
+				status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+				acceptanceDeadline: { $lte: now },
+			},
+			{
+				vendorId: 1,
+				buyerId: 1,
+				orderNumber: 1,
+				totalKobo: 1,
+				acceptanceDeadline: 1,
+			},
+		)
+			.sort({ acceptanceDeadline: 1 })
+			.limit(limit)
+			.lean();
+		return rows.map((row) =>
+			mapVendorAcceptanceOrder(
+				row as unknown as Parameters<
+					typeof mapVendorAcceptanceOrder
+				>[0],
+			),
+		);
+	} catch {
+		return [];
+	}
 }
 
 /**
