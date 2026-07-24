@@ -32,12 +32,7 @@ export default async function AdminLayout({
     ) {
       redirect("/login?next=/admin");
     }
-<<<<<<< HEAD
     throw error;
-=======
-
-    redirect("/marketplace");
->>>>>>> 05f9d673fd84583b8ae3e21aaa23b918ce41d770
   }
 
   return children;
