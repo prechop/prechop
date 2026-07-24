@@ -1,75 +1,93 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import {
-	ADMINISTRATORS_GROUP,
-	decodeJwtToken,
-	ErrForbidden,
-	ErrUnauthorized,
-	ErrVendorNotActive,
+  ADMINISTRATORS_GROUP,
+  decodeJwtToken,
+  ErrForbidden,
+  ErrUnauthorized,
+  ErrVendorNotActive,
 } from "../constants";
 import {
-	getUserByIdDB,
-	getVendorProfileByUserIdDB,
-	type IPolicyStatement,
-	type IVendorProfile,
-	VendorStatus,
+  getUserByIdDB,
+  getVendorProfileByUserIdDB,
+  listGroupsDB,
+  type IPolicyStatement,
+  type IVendorProfile,
+  VendorStatus,
 } from "../models";
 import reLoginUserWithRefreshToken from "../services/auth/reLoginUserWithRefreshToken";
 import {
-	can,
-	type PermissionContext,
-	resolvePermissions,
+  can,
+  type PermissionContext,
+  resolvePermissions,
 } from "../services/iam";
 import type { IJwtPayload } from "../types";
 import { getClientIp } from "./clientIp";
 import {
-	ACCESS_COOKIE,
-	clearAuthCookies,
-	getCookieValue,
-	REFRESH_COOKIE,
-	setAuthCookies,
+  ACCESS_COOKIE,
+  clearAuthCookies,
+  getCookieValue,
+  REFRESH_COOKIE,
+  setAuthCookies,
 } from "./cookies";
 
 export interface AuthResult {
-	userId: string;
-	token: IJwtPayload;
-	/** True when the access token was refreshed during this request. */
-	refreshed: boolean;
-	campusId: string;
-	isActive: boolean;
-	/** Names of the IAM groups the user belongs to (for audit labels & UI). */
-	groups: string[];
-	/** Concrete allowed action strings (for coarse UI-style checks). */
-	permissions: string[];
-	/** Resolved policy statements — the source of truth for `requirePermission`. */
-	statements: IPolicyStatement[];
+  userId: string;
+  token: IJwtPayload;
+  /** True when the access token was refreshed during this request. */
+  refreshed: boolean;
+  campusId: string;
+  isActive: boolean;
+  /** Names of the IAM groups the user belongs to (for audit labels & UI). */
+  groups: string[];
+  /** Concrete allowed action strings (for coarse UI-style checks). */
+  permissions: string[];
+  /** Resolved policy statements — the source of truth for `requirePermission`. */
+  statements: IPolicyStatement[];
 }
 
 function readAccessToken(req: Request | NextRequest, cookieVal: string | null) {
-	if (cookieVal) return cookieVal;
-	const header = req.headers.get("authorization");
-	if (!header) return null;
-	return header.replace("Bearer ", "");
+  if (cookieVal) return cookieVal;
+  const header = req.headers.get("authorization");
+  if (!header) return null;
+  return header.replace("Bearer ", "");
+}
+
+async function resolveUserGroupNamesFromUser(user: {
+  groupIds?: unknown[];
+}): Promise<string[]> {
+  const groupIds = (user.groupIds ?? []).map((groupId) => String(groupId));
+  const groups = await listGroupsDB({ ids: groupIds });
+  return groups.map((group) => group.name);
+}
+
+export async function resolveUserGroupNames(userId: string): Promise<string[]> {
+  const user = await getUserByIdDB({ id: userId });
+  if (!user) return [];
+  return resolveUserGroupNamesFromUser(user);
 }
 
 async function resolveScope(userId: string): Promise<{
-	campusId: string;
-	isActive: boolean;
-	groups: string[];
-	permissions: string[];
-	statements: IPolicyStatement[];
+  campusId: string;
+  isActive: boolean;
+  groups: string[];
+  permissions: string[];
+  statements: IPolicyStatement[];
 }> {
-	const user = await getUserByIdDB({ id: userId });
-	if (!user) throw ErrUnauthorized;
-	if (!user.isActive) throw ErrUnauthorized;
-	const resolved = await resolvePermissions(userId);
-	return {
-		campusId: user.campusId?.toString() ?? "",
-		isActive: user.isActive,
-		groups: resolved.groups,
-		permissions: resolved.actions,
-		statements: resolved.statements,
-	};
+  const user = await getUserByIdDB({ id: userId });
+  if (!user) throw ErrUnauthorized;
+  if (!user.isActive) throw ErrUnauthorized;
+  const [resolved, groups] = await Promise.all([
+    resolvePermissions(userId),
+    resolveUserGroupNamesFromUser(user),
+  ]);
+  return {
+    campusId: user.campusId?.toString() ?? "",
+    isActive: user.isActive,
+    groups,
+    permissions: resolved.actions,
+    statements: resolved.statements,
+  };
 }
 
 /**
@@ -77,47 +95,47 @@ async function resolveScope(userId: string): Promise<{
  * refresh token if necessary. Throws on any failure.
  */
 export async function verifyAuthToken(
-	req: Request | NextRequest,
+  req: Request | NextRequest,
 ): Promise<AuthResult> {
-	const accessFromCookie = await getCookieValue(ACCESS_COOKIE);
-	const accessToken = readAccessToken(req, accessFromCookie);
+  const accessFromCookie = await getCookieValue(ACCESS_COOKIE);
+  const accessToken = readAccessToken(req, accessFromCookie);
 
-	const decodedAccess = accessToken
-		? await decodeJwtToken({ accessToken }).catch(() => null)
-		: null;
+  const decodedAccess = accessToken
+    ? await decodeJwtToken({ accessToken }).catch(() => null)
+    : null;
 
-	if (decodedAccess) {
-		const scope = await resolveScope(decodedAccess.userId);
-		return {
-			userId: decodedAccess.userId,
-			token: decodedAccess,
-			refreshed: false,
-			...scope,
-		};
-	}
+  if (decodedAccess) {
+    const scope = await resolveScope(decodedAccess.userId);
+    return {
+      userId: decodedAccess.userId,
+      token: decodedAccess,
+      refreshed: false,
+      ...scope,
+    };
+  }
 
-	const refreshToken = await getCookieValue(REFRESH_COOKIE);
-	if (!refreshToken) throw ErrUnauthorized;
+  const refreshToken = await getCookieValue(REFRESH_COOKIE);
+  if (!refreshToken) throw ErrUnauthorized;
 
-	const decodedRefresh = await decodeJwtToken({ refreshToken }).catch(
-		() => null,
-	);
-	if (!decodedRefresh) throw ErrUnauthorized;
+  const decodedRefresh = await decodeJwtToken({ refreshToken }).catch(
+    () => null,
+  );
+  if (!decodedRefresh) throw ErrUnauthorized;
 
-	const next = await reLoginUserWithRefreshToken({
-		id: decodedRefresh.userId,
-		refreshToken,
-		ip: decodedRefresh.ip || getClientIp(req),
-	});
-	if (!next) throw ErrUnauthorized;
+  const next = await reLoginUserWithRefreshToken({
+    id: decodedRefresh.userId,
+    refreshToken,
+    ip: decodedRefresh.ip || getClientIp(req),
+  });
+  if (!next) throw ErrUnauthorized;
 
-	const scope = await resolveScope(decodedRefresh.userId);
-	return {
-		userId: decodedRefresh.userId,
-		token: next,
-		refreshed: true,
-		...scope,
-	};
+  const scope = await resolveScope(decodedRefresh.userId);
+  return {
+    userId: decodedRefresh.userId,
+    token: next,
+    refreshed: true,
+    ...scope,
+  };
 }
 
 /**
@@ -130,13 +148,13 @@ export async function verifyAuthToken(
  * vendor's own listings from the marketplace) without gating anonymous access.
  */
 export async function optionalUserId(
-	req: Request | NextRequest,
+  req: Request | NextRequest,
 ): Promise<string | undefined> {
-	const accessFromCookie = await getCookieValue(ACCESS_COOKIE);
-	const accessToken = readAccessToken(req, accessFromCookie);
-	if (!accessToken) return undefined;
-	const decoded = await decodeJwtToken({ accessToken }).catch(() => null);
-	return decoded?.userId;
+  const accessFromCookie = await getCookieValue(ACCESS_COOKIE);
+  const accessToken = readAccessToken(req, accessFromCookie);
+  if (!accessToken) return undefined;
+  const decoded = await decodeJwtToken({ accessToken }).catch(() => null);
+  return decoded?.userId;
 }
 
 // ── Permission guards ────────────────────────────────────────────────────────
@@ -147,33 +165,33 @@ export async function optionalUserId(
  * campus-scoped policies (`{ campusId: "$user.campusId" }`) evaluate correctly.
  */
 export function requirePermission(
-	auth: AuthResult,
-	action: string,
-	ctx: PermissionContext = {},
+  auth: AuthResult,
+  action: string,
+  ctx: PermissionContext = {},
 ): void {
-	const context: PermissionContext = {
-		...ctx,
-		user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
-	};
-	if (!can(auth.statements, action, context)) throw ErrForbidden;
+  const context: PermissionContext = {
+    ...ctx,
+    user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
+  };
+  if (!can(auth.statements, action, context)) throw ErrForbidden;
 }
 
 /** Non-throwing capability check (for branching, not gating). */
 export function hasPermission(
-	auth: AuthResult,
-	action: string,
-	ctx: PermissionContext = {},
+  auth: AuthResult,
+  action: string,
+  ctx: PermissionContext = {},
 ): boolean {
-	const context: PermissionContext = {
-		...ctx,
-		user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
-	};
-	return can(auth.statements, action, context);
+  const context: PermissionContext = {
+    ...ctx,
+    user: { campusId: auth.campusId, ...(ctx.user ?? {}) },
+  };
+  return can(auth.statements, action, context);
 }
 
 /** Membership check against a group name. */
 export function isInGroup(auth: AuthResult, groupName: string): boolean {
-	return auth.groups.includes(groupName);
+  return auth.groups.includes(groupName);
 }
 
 // ── App-role guards (re-expressed as permission probes) ──────────────────────
@@ -181,7 +199,7 @@ export function isInGroup(auth: AuthResult, groupName: string): boolean {
 // IAM: every vendor has `vendorApp:manage`, every buyer has `buyer:order:read`.
 
 export function assertVendor(auth: AuthResult): void {
-	requirePermission(auth, "vendorApp:manage");
+  requirePermission(auth, "vendorApp:manage");
 }
 
 /**
@@ -194,52 +212,60 @@ export function assertVendor(auth: AuthResult): void {
  * vendor *write*; reads keep the lighter `assertVendor`.
  */
 export async function assertActiveVendor(
-	auth: AuthResult,
+  auth: AuthResult,
 ): Promise<IVendorProfile> {
-	assertVendor(auth);
-	const vendor = await getVendorProfileByUserIdDB({ userId: auth.userId });
-	if (!vendor) throw ErrForbidden;
-	if (vendor.status !== VendorStatus.ACTIVE) throw ErrVendorNotActive;
-	return vendor;
+  assertVendor(auth);
+  const vendor = await getVendorProfileByUserIdDB({ userId: auth.userId });
+  if (!vendor) throw ErrForbidden;
+  if (vendor.status !== VendorStatus.ACTIVE) throw ErrVendorNotActive;
+  return vendor;
 }
 
 export function assertBuyer(auth: AuthResult): void {
-	requirePermission(auth, "buyer:order:read");
+  requirePermission(auth, "buyer:order:read");
 }
 
 export function assertAdministrator(auth: AuthResult): void {
-	if (!isInGroup(auth, ADMINISTRATORS_GROUP)) throw ErrForbidden;
+  if (!isInGroup(auth, ADMINISTRATORS_GROUP)) throw ErrForbidden;
 }
 
 /** Audit label for an actor derived from their group memberships. */
 export function auditRoleLabel(auth: AuthResult): string {
-	return auth.groups.join(",");
+  return auth.groups.join(",");
 }
 
 // ── withAuth wrapper ─────────────────────────────────────────────────────────
 
 export type AuthedHandler<TCtx = unknown> = (args: {
-	req: NextRequest;
-	auth: AuthResult;
-	context: TCtx;
+  req: NextRequest;
+  auth: AuthResult;
+  context: TCtx;
 }) => Promise<Response> | Response;
 
 export function withAuth<TCtx = unknown>(
-	handler: AuthedHandler<TCtx>,
+  handler: AuthedHandler<TCtx>,
 ): (args: { req: NextRequest; context: TCtx }) => Promise<Response> {
-	return async ({ req, context }) => {
-		let auth: AuthResult;
-		try {
-			auth = await verifyAuthToken(req);
-		} catch (error) {
-			await clearAuthCookies();
-			const { handleError } = await import("./response");
-			return handleError(error);
-		}
-		const response = await handler({ req, auth, context });
-		if (auth.refreshed) {
-			await setAuthCookies(auth.token);
-		}
-		return response;
-	};
+  return async ({ req, context }) => {
+    let auth: AuthResult;
+    try {
+      auth = await verifyAuthToken(req);
+    } catch (error) {
+      await clearAuthCookies();
+      const { handleError } = await import("./response");
+      return handleError(error);
+    }
+    const response = await handler({ req, auth, context });
+    if (auth.refreshed) {
+      await setAuthCookies(auth.token);
+    }
+    return response;
+  };
 }
+
+
+export type AuthUserLike = {
+  userId?: string;
+  id?: string;
+  groups?: Array<string | null | undefined>;
+};
+
