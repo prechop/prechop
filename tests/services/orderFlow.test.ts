@@ -183,7 +183,7 @@ describe("buyerOrders queries", () => {
 });
 
 describe("updateOrderStatus", () => {
-	it("accepts an awaiting order and starts cooking", async () => {
+	it("accepts an awaiting order before starting cooking", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -200,8 +200,16 @@ describe("updateOrderStatus", () => {
 			status: OrderStatus.ACCEPTED,
 		});
 
-		expect(accepted.status).toBe(OrderStatus.COOKING);
+		expect(accepted.status).toBe(OrderStatus.ACCEPTED);
 		expect(accepted.acceptedAt).toBeInstanceOf(Date);
+
+		const cooking = await updateOrderStatus({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+			status: OrderStatus.COOKING,
+		});
+		expect(cooking.status).toBe(OrderStatus.COOKING);
+
 		const notifications = await listNotificationsDB({
 			userId: buyer!._id.toString(),
 		});
@@ -266,6 +274,29 @@ describe("updateOrderStatus", () => {
 			id: order._id.toString(),
 		});
 		expect(expired!.status).toBe(OrderStatus.REFUNDED);
+	});
+
+	it("records a missing payment as a refund failure instead of leaving the order pending", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			acceptanceDeadline: new Date(Date.now() - 1000),
+		});
+
+		const result = await sweepVendorAcceptanceDeadlines();
+
+		expect(result.failed).toBeGreaterThanOrEqual(1);
+		const failed = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(failed!.status).toBe(OrderStatus.REFUND_FAILED);
+		expect(failed!.refundFailureReason).toBe(
+			"Payment for this order not found.",
+		);
 	});
 
 	it("prevents acceptance after expiry", async () => {
@@ -361,7 +392,7 @@ describe("updateOrderStatus", () => {
 		expect(preparing.status).toBe(OrderStatus.PREPARING);
 	});
 
-	it("requires delivery orders to pass through in transit", async () => {
+	it("requires delivery orders to pass through in transit and QR/PIN handover", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const buyerId = buyer!._id.toString();
@@ -369,7 +400,7 @@ describe("updateOrderStatus", () => {
 			vendorId,
 			buyerId,
 			campusId,
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_DELIVERY,
 			fulfillmentType: FulfillmentType.DELIVERY,
 		});
 		const orderId = order._id.toString();
@@ -415,6 +446,14 @@ describe("updateOrderStatus", () => {
 			),
 		).toBe(true);
 
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId,
+				status: OrderStatus.DELIVERED,
+			}),
+		).rejects.toThrow();
+
 		const credential = await getBuyerHandoverCredential({
 			buyerId,
 			orderId,
@@ -426,6 +465,7 @@ describe("updateOrderStatus", () => {
 			code: credential.pin,
 		});
 		expect(completed.status).toBe(OrderStatus.COMPLETED);
+		expect(completed.deliveredAt).toBeInstanceOf(Date);
 	});
 
 	it("keeps in-transit unavailable for pickup orders", async () => {
@@ -435,7 +475,7 @@ describe("updateOrderStatus", () => {
 			vendorId,
 			buyerId: buyer!._id.toString(),
 			campusId,
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			fulfillmentType: FulfillmentType.PICKUP,
 		});
 
@@ -451,6 +491,26 @@ describe("updateOrderStatus", () => {
 			id: order._id.toString(),
 		});
 		expect(unchanged!.deliveryStartedAt).toBeUndefined();
+	});
+
+	it("prevents pickup completion without QR/PIN handover", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.COMPLETED,
+			}),
+		).rejects.toThrow();
 	});
 
 	it("rejects an illegal transition", async () => {
@@ -500,7 +560,7 @@ describe("handover confirmation", () => {
 			vendorId,
 			buyerId,
 			campusId,
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			fulfillmentType: FulfillmentType.PICKUP,
 		});
 		await addSuccessfulPayment(order);

@@ -3,6 +3,7 @@ export interface INotificationCreateInput {
 	title: string;
 	body: string;
 	type: string;
+	dedupeKey?: string;
 	data?: Record<string, unknown>;
 	isRead?: boolean;
 }
@@ -14,6 +15,7 @@ export interface INotification {
 	title: string;
 	body: string;
 	type: string;
+	dedupeKey?: string;
 	data?: Record<string, unknown>;
 	isRead: boolean;
 	createdAt: Date;

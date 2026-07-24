@@ -58,6 +58,7 @@ export async function notifyOrderConfirmed({
 		title: "Order confirmed",
 		body: `Your order ${orderNumber} from ${vendorName} is confirmed. We'll let you know when it's ready.`,
 		type: "ORDER_CONFIRMED",
+		dedupeKey: `order:${orderNumber}:buyer:confirmed`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 	// Fire-and-forget: the in-app notification is the source of truth.
@@ -97,6 +98,7 @@ export async function notifyOrderReady({
 			? `Order ${orderNumber} is ready for collection at ${vendorName}.`
 			: `Order ${orderNumber} is ready for collection.`,
 		type: "ORDER_READY",
+		dedupeKey: `order:${orderNumber}:buyer:ready`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 	void trySms(
@@ -120,6 +122,7 @@ export async function notifyOrderInTransit({
 		title: "Order on the way",
 		body: "Your order is on the way.",
 		type: "ORDER_IN_TRANSIT",
+		dedupeKey: `order:${orderNumber}:buyer:in-transit`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 	void trySms(
@@ -149,6 +152,7 @@ export async function notifyOrderAccepted({
 		title: "Order accepted",
 		body: `${vendorName} accepted your order and started cooking.`,
 		type: "ORDER_ACCEPTED",
+		dedupeKey: `order:${orderNumber}:buyer:accepted`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }
@@ -169,6 +173,7 @@ export async function notifyOrderRefundPending({
 		title: "Refund started",
 		body: `Order ${orderNumber} could not be fulfilled. ${reason}`,
 		type: "ORDER_REFUND_PENDING",
+		dedupeKey: `order:${orderNumber}:buyer:refund-pending`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }
@@ -198,6 +203,7 @@ export async function notifyVendorAcceptanceReminder({
 			minutesElapsed === 5
 				? "ORDER_ACCEPTANCE_REMINDER"
 				: "ORDER_ACCEPTANCE_FINAL_WARNING",
+		dedupeKey: `order:${orderNumber}:vendor:acceptance-${minutesElapsed}`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }
@@ -216,6 +222,7 @@ export async function notifyVendorOrderExpired({
 		title: "Order expired",
 		body: `Order ${orderNumber} expired because it was not accepted in time.`,
 		type: "ORDER_VENDOR_NO_RESPONSE",
+		dedupeKey: `order:${orderNumber}:vendor:expired-no-response`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }
@@ -241,6 +248,7 @@ export async function notifyPickupNoShowReminder({
 				: `Order ${orderNumber} has been ready for pickup for 90 minutes. The vendor may report it uncollected after 120 minutes.`,
 		type:
 			minutesElapsed === 60 ? "PICKUP_REMINDER_60" : "PICKUP_WARNING_90",
+		dedupeKey: `order:${orderNumber}:buyer:pickup-${minutesElapsed}`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }
@@ -261,6 +269,7 @@ export async function notifyPickupNoShowResponseRequired({
 		title: "Pickup response needed",
 		body: `The vendor reported order ${orderNumber} was not collected. Please confirm collection or report a problem within 15 minutes.`,
 		type: "PICKUP_NO_SHOW_RESPONSE_REQUIRED",
+		dedupeKey: `order:${orderNumber}:buyer:pickup-no-show-response`,
 		data: {
 			orderNumber,
 			responseDeadline: responseDeadline.toISOString(),
@@ -285,6 +294,7 @@ export async function notifyBuyerUnreachableUrgent({
 		title: "Urgent: delivery contact needed",
 		body: `The vendor cannot reach you for order ${orderNumber}. Please contact them immediately. They can mark delivery failed after 15 minutes.`,
 		type: "DELIVERY_BUYER_UNREACHABLE",
+		dedupeKey: `order:${orderNumber}:buyer:delivery-unreachable`,
 		data: {
 			orderNumber,
 			responseDeadline: responseDeadline.toISOString(),

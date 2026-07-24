@@ -44,6 +44,20 @@ const VENDOR_TYPES = [
 	{ value: "RESTAURANT", label: "Restaurant" },
 	{ value: "BAKERY", label: "Bakery" },
 ];
+const SELLING_POLICY_LINKS = [
+	{ href: "/how-selling-works", label: "How Selling Works" },
+	{
+		href: "/policies/payments-and-settlement",
+		label: "Payments and Settlement",
+	},
+	{
+		href: "/policies/cancellation-and-refunds",
+		label: "Cancellation and Refunds",
+	},
+	{ href: "/policies/pickup-and-delivery", label: "Pickup and Delivery" },
+	{ href: "/policies/buyer-no-show", label: "Buyer No-show" },
+	{ href: "/policies/disputes", label: "Disputes" },
+];
 const CATEGORIES = MENU_CATEGORIES;
 type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
 
@@ -168,6 +182,11 @@ const AccountLink = styled(Link)`
 	color: var(--pc-color-primary);
 	font-weight: 700;
 	font-size: 14px;
+`;
+const PolicyLinkGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 8px;
 `;
 
 function errMsg(e: unknown): string {
@@ -846,6 +865,33 @@ export default function VendorSettingsWrapper() {
 								Open Help / FAQs <span aria-hidden>→</span>
 							</AccountLink>
 						</Row>
+					</Stack>
+				</Card>
+
+				<Card>
+					<Stack $gap={12}>
+						<SectionHeader
+							title="Selling help & policies"
+							icon="!"
+						/>
+						<Text $muted $size={13}>
+							Quick links for selling rules, payments, delivery,
+							no-show handling and disputes.
+						</Text>
+						<PolicyLinkGrid>
+							{SELLING_POLICY_LINKS.map((link) => (
+								<Button
+									key={link.href}
+									as={Link}
+									href={link.href}
+									$variant="secondary"
+									$size="sm"
+									aria-label={`Open ${link.label}`}
+								>
+									{link.label}
+								</Button>
+							))}
+						</PolicyLinkGrid>
 					</Stack>
 				</Card>
 

@@ -23,6 +23,8 @@ const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.COOKING,
 	OrderStatus.PREPARING,
 	OrderStatus.READY,
+	OrderStatus.READY_FOR_PICKUP,
+	OrderStatus.READY_FOR_DELIVERY,
 	OrderStatus.IN_TRANSIT,
 	OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
 	OrderStatus.BUYER_UNREACHABLE_REPORTED,
@@ -465,6 +467,8 @@ export async function aggregateBuyerOrderStatsDB({
 			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.READY_FOR_PICKUP,
+			OrderStatus.READY_FOR_DELIVERY,
 			OrderStatus.IN_TRANSIT,
 			OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
 			OrderStatus.COMPLETED_BUYER_NO_SHOW,
@@ -536,6 +540,8 @@ export async function listBuyerOrdersByVendorAndDailyOrderDB({
 								OrderStatus.COOKING,
 								OrderStatus.PREPARING,
 								OrderStatus.READY,
+								OrderStatus.READY_FOR_PICKUP,
+								OrderStatus.READY_FOR_DELIVERY,
 								OrderStatus.IN_TRANSIT,
 								OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
 								OrderStatus.COMPLETED_BUYER_NO_SHOW,
@@ -693,7 +699,9 @@ export async function markPickupReminderSentDB({
 		const res = await BuyerOrder.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
-				status: OrderStatus.READY,
+				status: {
+					$in: [OrderStatus.READY, OrderStatus.READY_FOR_PICKUP],
+				},
 				[field]: { $exists: false },
 			},
 			{
@@ -732,7 +740,9 @@ export async function reportPickupNoShowDB({
 		const res = await BuyerOrder.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
-				status: OrderStatus.READY,
+				status: {
+					$in: [OrderStatus.READY, OrderStatus.READY_FOR_PICKUP],
+				},
 			},
 			{
 				$set: {
@@ -977,7 +987,7 @@ export async function findReadyPickupOrdersForNoShowTimersDB({
 		const since90 = new Date(now.getTime() - 90 * 60 * 1000);
 		const since120 = new Date(now.getTime() - 120 * 60 * 1000);
 		return await BuyerOrder.find({
-			status: OrderStatus.READY,
+			status: { $in: [OrderStatus.READY, OrderStatus.READY_FOR_PICKUP] },
 			fulfillmentType: FulfillmentType.PICKUP,
 			$or: [
 				{
@@ -1012,7 +1022,9 @@ export async function markPickupNoShowReportableDB({
 		const res = await BuyerOrder.findOneAndUpdate(
 			{
 				_id: new mongoose.Types.ObjectId(id),
-				status: OrderStatus.READY,
+				status: {
+					$in: [OrderStatus.READY, OrderStatus.READY_FOR_PICKUP],
+				},
 				pickupNoShowReportableAt: { $exists: false },
 			},
 			{

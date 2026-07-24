@@ -1,6 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { type ComponentType, useEffect, useState } from "react";
+import {
+	FiCamera,
+	FiCheckCircle,
+	FiClock,
+	FiHash,
+	FiMapPin,
+	FiPackage,
+	FiPlayCircle,
+	FiTruck,
+	FiXCircle,
+} from "react-icons/fi";
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
@@ -20,6 +31,11 @@ import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo, statusLabel } from "@/constants/formatters";
+import {
+	canonicalOrderStatus,
+	isBuyerHandoverEligible,
+	nextVendorOrderAction,
+} from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
 import type { DailyOrder, OrderStatus } from "@/types";
 
@@ -33,6 +49,14 @@ interface PipelineOrder {
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryFullAddress?: string;
+	customerMessage?: string;
+	acceptanceDeadline?: string | null;
+	createdAt?: string;
+	updatedAt?: string;
+	confirmedAt?: string | null;
+	pickedUpAt?: string | null;
+	deliveredAt?: string | null;
+	handoverCredentialUsedAt?: string | null;
 	items: Array<{
 		snapshotName: string;
 		quantity: number;
@@ -40,59 +64,101 @@ interface PipelineOrder {
 	}>;
 }
 
-// Next action per current status (matches server VALID_TRANSITIONS).
-const BASE_NEXT: Partial<
-	Record<OrderStatus, { to: OrderStatus; label: string }>
-> = {
-	AWAITING_VENDOR_ACCEPTANCE: {
-		to: "ACCEPTED",
-		label: "Accept & Start Cooking",
-	},
-	PAID: { to: "CONFIRMED", label: "Confirm" },
-	CONFIRMED: { to: "PREPARING", label: "Start preparing" },
-	COOKING: { to: "READY", label: "Mark ready" },
-	PREPARING: { to: "READY", label: "Mark ready" },
-	READY: { to: "COMPLETED", label: "Complete" },
-	IN_TRANSIT: { to: "COMPLETED", label: "Mark delivered" },
-};
+type CompletedFilter = "today" | "7d" | "all";
 
-// Live columns shown top-to-bottom (mobile-first board).
-const COLUMNS: { status: OrderStatus; label: string; icon: string }[] = [
-	{ status: "PAID", label: "New", icon: "🔔" },
-	{ status: "CONFIRMED", label: "Confirmed", icon: "✅" },
-	{ status: "PREPARING", label: "Preparing", icon: "🍳" },
-	{ status: "READY", label: "Ready", icon: "🥡" },
+type LaneKey =
+	| "AWAITING_VENDOR_ACCEPTANCE"
+	| "ACCEPTED"
+	| "COOKING"
+	| "READY_FOR_PICKUP"
+	| "READY_FOR_DELIVERY"
+	| "IN_TRANSIT";
+
+interface BoardColumn {
+	key: LaneKey;
+	status: OrderStatus;
+	label: string;
+	empty: string;
+	icon: ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
+	fulfillmentType?: PipelineOrder["fulfillmentType"];
+}
+
+const COLUMNS: BoardColumn[] = [
+	{
+		key: "AWAITING_VENDOR_ACCEPTANCE",
+		status: "AWAITING_VENDOR_ACCEPTANCE",
+		label: "Awaiting acceptance",
+		empty: "No orders waiting for acceptance",
+		icon: FiClock,
+	},
+	{
+		key: "ACCEPTED",
+		status: "ACCEPTED",
+		label: "Accepted",
+		empty: "No accepted orders waiting to cook",
+		icon: FiCheckCircle,
+	},
+	{
+		key: "COOKING",
+		status: "COOKING",
+		label: "Cooking",
+		empty: "No orders cooking right now",
+		icon: FiPlayCircle,
+	},
+	{
+		key: "READY_FOR_PICKUP",
+		status: "READY_FOR_PICKUP",
+		label: "Ready for pickup",
+		empty: "No pickup orders ready",
+		icon: FiPackage,
+		fulfillmentType: "PICKUP",
+	},
+	{
+		key: "READY_FOR_DELIVERY",
+		status: "READY_FOR_DELIVERY",
+		label: "Ready for delivery",
+		empty: "No delivery orders ready",
+		icon: FiPackage,
+		fulfillmentType: "DELIVERY",
+	},
+	{
+		key: "IN_TRANSIT",
+		status: "IN_TRANSIT",
+		label: "On the way",
+		empty: "No delivery orders on the way",
+		icon: FiTruck,
+		fulfillmentType: "DELIVERY",
+	},
 ];
 
-COLUMNS.push({ status: "IN_TRANSIT", label: "On the way", icon: "->" });
-COLUMNS.unshift({
-	status: "AWAITING_VENDOR_ACCEPTANCE",
-	label: "New",
-	icon: "!",
-});
-COLUMNS.push({ status: "COOKING", label: "Cooking", icon: "..." });
-COLUMNS.splice(
-	0,
-	COLUMNS.length,
-	{
-		status: "AWAITING_VENDOR_ACCEPTANCE",
-		label: "New",
-		icon: "!",
-	},
-	{ status: "COOKING", label: "Cooking", icon: "..." },
-	{ status: "READY", label: "Ready", icon: "OK" },
-	{ status: "IN_TRANSIT", label: "On the way", icon: "->" },
-);
-
-// Presentational lane accent per column (kitchen-board colour coding).
-const LANE_ACCENT: Record<string, string> = {
+const LANE_ACCENT: Record<OrderStatus, string> = {
+	PENDING_PAYMENT: "var(--pc-color-gold)",
+	AWAITING_EXTERNAL_PAYMENT: "var(--pc-color-gold)",
 	PAID: "var(--pc-color-gold)",
 	AWAITING_VENDOR_ACCEPTANCE: "var(--pc-color-gold)",
+	ACCEPTED: "var(--pc-color-accent)",
 	CONFIRMED: "var(--pc-color-accent)",
-	COOKING: "var(--pc-color-primary)",
 	PREPARING: "var(--pc-color-primary)",
+	COOKING: "var(--pc-color-primary)",
 	READY: "var(--pc-color-accent)",
+	READY_FOR_PICKUP: "var(--pc-color-accent)",
+	READY_FOR_DELIVERY: "var(--pc-color-accent)",
 	IN_TRANSIT: "var(--pc-color-gold)",
+	DELIVERED: "var(--pc-color-accent)",
+	PICKED_UP: "var(--pc-color-accent)",
+	COMPLETED: "var(--pc-color-success)",
+	CANCELLED: "var(--pc-color-danger)",
+	VENDOR_REJECTED: "var(--pc-color-danger)",
+	EXPIRED_VENDOR_NO_RESPONSE: "var(--pc-color-danger)",
+	REFUND_PENDING: "var(--pc-color-gold)",
+	REFUND_PROCESSING: "var(--pc-color-gold)",
+	REFUNDED: "var(--pc-color-danger)",
+	REFUND_FAILED: "var(--pc-color-danger)",
+	AWAITING_BUYER_NO_SHOW_RESPONSE: "var(--pc-color-gold)",
+	COMPLETED_BUYER_NO_SHOW: "var(--pc-color-danger)",
+	PICKUP_PROBLEM_REPORTED: "var(--pc-color-danger)",
+	BUYER_UNREACHABLE_REPORTED: "var(--pc-color-danger)",
+	DELIVERY_FAILED: "var(--pc-color-danger)",
 };
 
 const PipelineShell = styled.div`
@@ -102,59 +168,16 @@ const PipelineShell = styled.div`
 	overflow-x: clip;
 `;
 
-function statusTone(
-	s: OrderStatus,
-): "primary" | "success" | "warning" | "danger" | "muted" {
-	switch (s) {
-		case "PAID":
-		case "AWAITING_VENDOR_ACCEPTANCE":
-		case "REFUND_PENDING":
-		case "REFUND_PROCESSING":
-			return "warning";
-		case "READY":
-		case "IN_TRANSIT":
-		case "PICKED_UP":
-		case "DELIVERED":
-		case "COMPLETED":
-			return "success";
-		case "CANCELLED":
-		case "REFUNDED":
-		case "VENDOR_REJECTED":
-		case "EXPIRED_VENDOR_NO_RESPONSE":
-		case "REFUND_FAILED":
-			return "danger";
-		default:
-			return "primary";
-	}
-}
-
-function nextAction(
-	order: PipelineOrder,
-): { to: OrderStatus; label: string } | undefined {
-	if (order.status === "READY" && order.fulfillmentType === "DELIVERY") {
-		return { to: "IN_TRANSIT", label: "Start delivery" };
-	}
-	if (order.status === "READY" || order.status === "IN_TRANSIT") {
-		return undefined;
-	}
-	return BASE_NEXT[order.status];
-}
-
 const Board = styled.div`
 	display: grid;
-	grid-template-columns: 1fr;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 	gap: var(--pc-space-4);
 	align-items: start;
 	width: 100%;
 	max-width: 100%;
 	box-sizing: border-box;
-	@media (min-width: 720px) {
-		grid-template-columns: repeat(2, 1fr);
-	}
-	@media (min-width: 1080px) {
-		grid-template-columns: repeat(5, 1fr);
-	}
 `;
+
 const Lane = styled.div<{ $accent: string }>`
 	display: flex;
 	flex-direction: column;
@@ -167,6 +190,7 @@ const Lane = styled.div<{ $accent: string }>`
 	padding: var(--pc-space-3);
 	border-top: 3px solid ${(p) => p.$accent};
 `;
+
 const LaneHead = styled.div`
 	display: flex;
 	align-items: center;
@@ -174,6 +198,7 @@ const LaneHead = styled.div`
 	gap: var(--pc-space-2);
 	padding: 2px var(--pc-space-1);
 `;
+
 const LaneTitle = styled.span`
 	display: inline-flex;
 	align-items: center;
@@ -183,16 +208,39 @@ const LaneTitle = styled.span`
 	font-size: 15px;
 	color: var(--pc-text);
 `;
+
+const LaneIcon = styled.span`
+	display: inline-flex;
+	color: var(--pc-color-primary);
+`;
+
 const OrderCard = styled(Card)`
 	padding: var(--pc-space-4);
 	&:hover {
 		box-shadow: var(--pc-shadow);
 	}
 `;
+
+const OrderNumber = styled(Text)`
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	line-height: 1.15;
+`;
+
+const Countdown = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--pc-color-gold);
+`;
+
 const Divider = styled.div`
 	height: 1px;
 	background: var(--pc-border);
 `;
+
 const AddrLine = styled.div`
 	display: flex;
 	gap: 6px;
@@ -202,16 +250,20 @@ const AddrLine = styled.div`
 	padding: 8px 10px;
 	border-radius: var(--pc-radius-sm);
 `;
-const CancelBtn = styled.button`
-	all: unset;
-	cursor: pointer;
+
+const BuyerNoteBox = styled.div`
+	display: grid;
+	gap: 4px;
 	font-size: 13px;
-	font-weight: 600;
-	color: var(--pc-color-danger);
-	&:hover {
-		text-decoration: underline;
-	}
+	color: var(--pc-text);
+	background: var(--pc-surface-2);
+	padding: 9px 10px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 `;
+
 const LaneEmpty = styled.div`
 	text-align: center;
 	font-size: 13px;
@@ -220,11 +272,165 @@ const LaneEmpty = styled.div`
 	border: 1.5px dashed var(--pc-border);
 	border-radius: var(--pc-radius-sm);
 `;
+const HistoryPanel = styled(Card)`
+	padding: var(--pc-space-4);
+`;
+const FilterRow = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+`;
+const FilterButton = styled.button<{ $active: boolean }>`
+	border: 1px solid
+		${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
+	background: ${(p) =>
+		p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface-2)"};
+	color: ${(p) =>
+		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+	border-radius: 999px;
+	padding: 7px 12px;
+	font-size: 13px;
+	font-weight: 800;
+	cursor: pointer;
+`;
+const HistoryList = styled.div`
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: var(--pc-space-3);
+`;
+
+function statusTone(
+	status: OrderStatus,
+): "primary" | "success" | "warning" | "danger" | "muted" {
+	switch (status) {
+		case "PAID":
+		case "AWAITING_VENDOR_ACCEPTANCE":
+		case "REFUND_PENDING":
+		case "REFUND_PROCESSING":
+		case "AWAITING_BUYER_NO_SHOW_RESPONSE":
+			return "warning";
+		case "ACCEPTED":
+		case "COOKING":
+		case "READY":
+		case "READY_FOR_PICKUP":
+		case "READY_FOR_DELIVERY":
+		case "IN_TRANSIT":
+		case "PICKED_UP":
+		case "DELIVERED":
+		case "COMPLETED":
+			return "success";
+		case "CANCELLED":
+		case "REFUNDED":
+		case "VENDOR_REJECTED":
+		case "EXPIRED_VENDOR_NO_RESPONSE":
+		case "REFUND_FAILED":
+		case "COMPLETED_BUYER_NO_SHOW":
+		case "DELIVERY_FAILED":
+			return "danger";
+		default:
+			return "primary";
+	}
+}
 
 function errMsg(e: unknown): string {
-	const m = (e as { response?: { data?: { message?: string } } })?.response
-		?.data?.message;
-	return m ?? "Something went wrong. Please try again.";
+	const message = (e as { response?: { data?: { message?: string } } })
+		?.response?.data?.message;
+	return message ?? "Something went wrong. Please try again.";
+}
+
+function orderBelongsInColumn(order: PipelineOrder, column: BoardColumn) {
+	if (
+		canonicalOrderStatus(order.status, order.fulfillmentType) !==
+		column.status
+	)
+		return false;
+	if (
+		column.fulfillmentType &&
+		order.fulfillmentType !== column.fulfillmentType
+	) {
+		return false;
+	}
+	return true;
+}
+
+function actionForOrder(
+	order: PipelineOrder,
+): { to: OrderStatus; label: string } | undefined {
+	return (
+		nextVendorOrderAction(order.status, order.fulfillmentType) ?? undefined
+	);
+}
+
+function acceptanceCountdown(deadline?: string | null, now = Date.now()) {
+	if (!deadline) return null;
+	const ms = new Date(deadline).getTime() - now;
+	if (!Number.isFinite(ms)) return null;
+	if (ms <= 0) return "Acceptance overdue";
+	const minutes = Math.floor(ms / 60_000);
+	const seconds = Math.floor((ms % 60_000) / 1000);
+	return `${minutes}:${String(seconds).padStart(2, "0")} left`;
+}
+
+function actionIcon(status: OrderStatus) {
+	switch (status) {
+		case "ACCEPTED":
+		case "COMPLETED":
+			return FiCheckCircle;
+		case "COOKING":
+			return FiPlayCircle;
+		case "READY":
+		case "READY_FOR_PICKUP":
+		case "READY_FOR_DELIVERY":
+			return FiPackage;
+		case "IN_TRANSIT":
+			return FiTruck;
+		case "DELIVERED":
+			return FiMapPin;
+		default:
+			return FiClock;
+	}
+}
+
+function deliveryAddress(order: PipelineOrder) {
+	return (
+		order.deliveryFullAddress ||
+		[
+			order.deliveryHostelName,
+			order.deliveryRoomNumber,
+			order.deliveryAdditionalInfo,
+		]
+			.filter(Boolean)
+			.join(", ") ||
+		"No address"
+	);
+}
+
+function completedAt(order: PipelineOrder) {
+	return (
+		order.confirmedAt ??
+		order.deliveredAt ??
+		order.pickedUpAt ??
+		order.updatedAt ??
+		order.createdAt
+	);
+}
+
+function completedOrderMatchesFilter(
+	order: PipelineOrder,
+	filter: CompletedFilter,
+	now = Date.now(),
+) {
+	if (filter === "all") return true;
+	const value = completedAt(order);
+	if (!value) return true;
+	const time = new Date(value).getTime();
+	if (!Number.isFinite(time)) return true;
+	const start = new Date(now);
+	if (filter === "today") {
+		start.setHours(0, 0, 0, 0);
+		return time >= start.getTime();
+	}
+	return time >= now - 7 * 24 * 60 * 60 * 1000;
 }
 
 export default function PipelineWrapper() {
@@ -235,6 +441,14 @@ export default function PipelineWrapper() {
 	);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [busyId, setBusyId] = useState<string | null>(null);
+	const [now, setNow] = useState(() => Date.now());
+	const [completedFilter, setCompletedFilter] =
+		useState<CompletedFilter>("today");
+
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
 
 	const active = dailyOrders ?? [];
 	const currentId = selectedId ?? active[0]?.id ?? null;
@@ -246,9 +460,78 @@ export default function PipelineWrapper() {
 	} = useSWR<PipelineOrder[]>(
 		currentId ? `/vendor/daily-orders/${currentId}/orders` : null,
 		fetcher,
-		// Keep the kitchen board live as buyers pay/place orders (#17).
 		{ refreshInterval: 15_000 },
 	);
+
+	async function advance(order: PipelineOrder) {
+		const next = actionForOrder(order);
+		if (!next) return;
+		setBusyId(order.id);
+		try {
+			await api.patch(`/vendor/orders/${order.id}/status`, {
+				status: next.to,
+			});
+			toast(
+				`Order ${order.orderNumber} -> ${statusLabel(next.to)}`,
+				"success",
+			);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function reject(order: PipelineOrder) {
+		setBusyId(order.id);
+		try {
+			await api.patch(`/vendor/orders/${order.id}/status`, {
+				status: "VENDOR_REJECTED",
+			});
+			toast("Order rejected. Refund started.", "success");
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function confirmHandover(order: PipelineOrder, method: "QR" | "PIN") {
+		const label = method === "QR" ? "buyer QR code" : "buyer PIN";
+		const code = window.prompt(
+			method === "QR"
+				? `Scan or paste the ${label} for ${order.orderNumber}:`
+				: `Enter the ${label} for ${order.orderNumber}:`,
+		);
+		if (!code?.trim()) return;
+		setBusyId(order.id);
+		try {
+			await api.post(`/vendor/orders/${order.id}/confirm-handover`, {
+				method,
+				code: code.trim(),
+			});
+			toast("Handover confirmed.", "success");
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
 
 	if (isLoading) return <PageLoader />;
 
@@ -263,7 +546,7 @@ export default function PipelineWrapper() {
 							subtitle="Move orders across the board as you cook and hand off."
 						/>
 						<EmptyState
-							icon="🍳"
+							icon={<FiPackage size={28} aria-hidden />}
 							title="No active daily orders"
 							description="Post a daily order to start receiving and cooking orders."
 						/>
@@ -273,102 +556,20 @@ export default function PipelineWrapper() {
 		);
 	}
 
-	async function advance(o: PipelineOrder) {
-		const next = nextAction(o);
-		if (!next) return;
-		setBusyId(o.id);
-		try {
-			await api.patch(`/vendor/orders/${o.id}/status`, {
-				status: next.to,
-			});
-			toast(
-				`Order ${o.orderNumber} → ${statusLabel(next.to)}`,
-				"success",
-			);
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
-	async function reject(o: PipelineOrder) {
-		setBusyId(o.id);
-		try {
-			await api.patch(`/vendor/orders/${o.id}/status`, {
-				status: "VENDOR_REJECTED",
-			});
-			toast("Order rejected. Refund started.", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
-	async function confirmHandover(o: PipelineOrder) {
-		const code = window.prompt(
-			`Scan QR or enter the 6-digit PIN for ${o.orderNumber}:`,
-		);
-		if (!code?.trim()) return;
-		const trimmed = code.trim();
-		setBusyId(o.id);
-		try {
-			await api.post(`/vendor/orders/${o.id}/confirm-handover`, {
-				method: /^\d{6}$/.test(trimmed) ? "PIN" : "QR",
-				code: trimmed,
-			});
-			toast("Handover confirmed.", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
-	async function cancel(o: PipelineOrder) {
-		const reason = window.prompt(`Cancel order ${o.orderNumber}? Reason:`);
-		if (!reason?.trim()) return;
-		setBusyId(o.id);
-		try {
-			await api.post(`/vendor/orders/${o.id}/cancel`, {
-				reason: reason.trim(),
-			});
-			toast("Order cancelled", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
 	const list = orders ?? [];
-	const liveCount = list.filter((o) =>
-		[
-			"AWAITING_VENDOR_ACCEPTANCE",
-			"PAID",
-			"CONFIRMED",
-			"COOKING",
-			"PREPARING",
-			"READY",
-			"IN_TRANSIT",
-		].includes(o.status),
+	const completedOrders = list.filter(
+		(order) => order.status === "COMPLETED",
+	);
+	const filteredCompletedOrders = completedOrders
+		.filter((order) =>
+			completedOrderMatchesFilter(order, completedFilter, now),
+		)
+		.slice(0, completedFilter === "all" ? 24 : 6);
+	const boardCount = list.filter((order) =>
+		COLUMNS.some((column) => orderBelongsInColumn(order, column)),
+	).length;
+	const liveCount = list.filter((order) =>
+		COLUMNS.some((column) => orderBelongsInColumn(order, column)),
 	).length;
 
 	return (
@@ -382,7 +583,8 @@ export default function PipelineWrapper() {
 						actions={
 							liveCount > 0 ? (
 								<Badge $tone="primary">
-									🔴 {liveCount} live
+									<FiClock size={14} aria-hidden />{" "}
+									{liveCount} live
 								</Badge>
 							) : undefined
 						}
@@ -390,27 +592,33 @@ export default function PipelineWrapper() {
 
 					<Select
 						value={currentId ?? ""}
-						onChange={(e) => setSelectedId(e.target.value)}
+						onChange={(event) => setSelectedId(event.target.value)}
 					>
-						{active.map((d) => (
-							<option key={d.id} value={d.id}>
-								{d.title} · {d.totalOrdersCount} order
-								{d.totalOrdersCount === 1 ? "" : "s"}
+						{active.map((dailyOrder) => (
+							<option key={dailyOrder.id} value={dailyOrder.id}>
+								{dailyOrder.title} -{" "}
+								{dailyOrder.totalOrdersCount} order
+								{dailyOrder.totalOrdersCount === 1 ? "" : "s"}
 							</option>
 						))}
 					</Select>
 
 					{ordersLoading ? (
 						<Board>
-							{COLUMNS.map((col) => (
+							{COLUMNS.map((column) => (
 								<Lane
-									key={col.status}
-									$accent={LANE_ACCENT[col.status]}
+									key={column.key}
+									$accent={LANE_ACCENT[column.status]}
 								>
 									<LaneHead>
 										<LaneTitle>
-											<span aria-hidden>{col.icon}</span>
-											{col.label}
+											<LaneIcon>
+												<column.icon
+													size={16}
+													aria-hidden
+												/>
+											</LaneIcon>
+											{column.label}
 										</LaneTitle>
 									</LaneHead>
 									<OrderCard>
@@ -423,73 +631,130 @@ export default function PipelineWrapper() {
 								</Lane>
 							))}
 						</Board>
-					) : liveCount === 0 ? (
+					) : boardCount === 0 ? (
 						<EmptyState
-							icon="🧾"
+							icon={<FiClock size={28} aria-hidden />}
 							title="No orders to cook yet"
 							description="Paid orders will appear here as buyers order."
 						/>
 					) : (
 						<Board>
-							{COLUMNS.map((col) => {
-								const colOrders = list.filter(
-									(o) => o.status === col.status,
+							{COLUMNS.map((column) => {
+								const columnOrders = list.filter((order) =>
+									orderBelongsInColumn(order, column),
 								);
 								return (
 									<Lane
-										key={col.status}
-										$accent={LANE_ACCENT[col.status]}
+										key={column.key}
+										$accent={LANE_ACCENT[column.status]}
 									>
 										<LaneHead>
 											<LaneTitle>
-												<span aria-hidden>
-													{col.icon}
-												</span>
-												{col.label}
+												<LaneIcon>
+													<column.icon
+														size={16}
+														aria-hidden
+													/>
+												</LaneIcon>
+												{column.label}
 											</LaneTitle>
 											<Badge
-												$tone={statusTone(col.status)}
+												$tone={statusTone(
+													column.status,
+												)}
 											>
-												{colOrders.length}
+												{columnOrders.length}
 											</Badge>
 										</LaneHead>
-										{colOrders.length === 0 ? (
-											<LaneEmpty>Nothing here</LaneEmpty>
+
+										{columnOrders.length === 0 ? (
+											<LaneEmpty>
+												{column.empty}
+											</LaneEmpty>
 										) : (
-											colOrders.map((o) => {
-												const next = nextAction(o);
+											columnOrders.map((order) => {
+												const next =
+													actionForOrder(order);
+												const NextIcon = next
+													? actionIcon(next.to)
+													: null;
+												const handoverEligible =
+													isBuyerHandoverEligible(
+														order.status,
+														order.fulfillmentType,
+														order.handoverCredentialUsedAt,
+													);
+												const countdown =
+													acceptanceCountdown(
+														order.acceptanceDeadline,
+														now,
+													);
+
 												return (
-													<OrderCard key={o.id}>
+													<OrderCard key={order.id}>
 														<Stack $gap={10}>
 															<Row
 																$justify="space-between"
 																$align="flex-start"
-																$gap={8}
+																$gap={10}
 															>
 																<Stack $gap={4}>
-																	<Text
+																	<OrderNumber
 																		$weight={
 																			700
 																		}
 																	>
 																		#
 																		{
-																			o.orderNumber
+																			order.orderNumber
 																		}
-																	</Text>
+																	</OrderNumber>
 																	<Badge
 																		$tone={
-																			o.fulfillmentType ===
+																			order.fulfillmentType ===
 																			"DELIVERY"
 																				? "primary"
 																				: "muted"
 																		}
 																	>
-																		{o.fulfillmentType ===
-																		"DELIVERY"
-																			? "🛵 Delivery"
-																			: "🥡 Pickup"}
+																		{order.fulfillmentType ===
+																		"DELIVERY" ? (
+																			<>
+																				<FiTruck
+																					size={
+																						14
+																					}
+																					aria-hidden
+																				/>{" "}
+																				Delivery
+																			</>
+																		) : (
+																			<>
+																				<FiPackage
+																					size={
+																						14
+																					}
+																					aria-hidden
+																				/>{" "}
+																				Pickup
+																			</>
+																		)}
 																	</Badge>
+																	{order.status ===
+																		"AWAITING_VENDOR_ACCEPTANCE" &&
+																		countdown && (
+																			<Countdown>
+																				<FiClock
+																					size={
+																						13
+																					}
+																					aria-hidden
+																				/>
+																				{
+																					countdown
+																				}
+																			</Countdown>
+																		)}
 																</Stack>
 																<Text
 																	$weight={
@@ -497,7 +762,7 @@ export default function PipelineWrapper() {
 																	}
 																>
 																	{formatKobo(
-																		o.totalKobo,
+																		order.totalKobo,
 																	)}
 																</Text>
 															</Row>
@@ -505,14 +770,14 @@ export default function PipelineWrapper() {
 															<Divider />
 
 															<Stack $gap={3}>
-																{o.items.map(
+																{order.items.map(
 																	(
-																		it,
-																		idx,
+																		item,
+																		index,
 																	) => (
 																		<Row
 																			key={
-																				idx
+																				index
 																			}
 																			$gap={
 																				8
@@ -528,9 +793,9 @@ export default function PipelineWrapper() {
 																				}
 																			>
 																				{
-																					it.quantity
+																					item.quantity
 																				}
-																				×
+																				x
 																			</Text>
 																			<Text
 																				$size={
@@ -538,7 +803,7 @@ export default function PipelineWrapper() {
 																				}
 																			>
 																				{
-																					it.snapshotName
+																					item.snapshotName
 																				}
 																			</Text>
 																		</Row>
@@ -546,107 +811,175 @@ export default function PipelineWrapper() {
 																)}
 															</Stack>
 
-															{o.fulfillmentType ===
+															{order.fulfillmentType ===
 																"DELIVERY" && (
 																<AddrLine>
-																	<span
+																	<FiMapPin
+																		size={
+																			14
+																		}
 																		aria-hidden
-																	>
-																		📍
-																	</span>
+																	/>
 																	<span>
-																		{o.deliveryFullAddress ??
-																			[
-																				o.deliveryHostelName,
-																				o.deliveryRoomNumber,
-																				o.deliveryAdditionalInfo,
-																			]
-																				.filter(
-																					Boolean,
-																				)
-																				.join(
-																					", ",
-																				) ??
-																			"No address"}
+																		{deliveryAddress(
+																			order,
+																		)}
 																	</span>
 																</AddrLine>
 															)}
 
+															{order.customerMessage && (
+																<BuyerNoteBox>
+																	<Text
+																		$size={
+																			12
+																		}
+																		$weight={
+																			800
+																		}
+																	>
+																		Buyer
+																		note
+																	</Text>
+																	<Text
+																		$size={
+																			13
+																		}
+																	>
+																		{
+																			order.customerMessage
+																		}
+																	</Text>
+																</BuyerNoteBox>
+															)}
+
 															<Row
 																$gap={10}
-																$justify="space-between"
+																$justify="flex-end"
 																$align="center"
 															>
-																<CancelBtn
-																	onClick={() =>
-																		cancel(
-																			o,
-																		)
-																	}
-																>
-																	Cancel
-																</CancelBtn>
-																{next && (
+																{order.status ===
+																"AWAITING_VENDOR_ACCEPTANCE" ? (
+																	<>
+																		<Button
+																			$size="sm"
+																			$loading={
+																				busyId ===
+																				order.id
+																			}
+																			onClick={() =>
+																				advance(
+																					order,
+																				)
+																			}
+																		>
+																			<FiCheckCircle
+																				size={
+																					14
+																				}
+																				aria-hidden
+																			/>{" "}
+																			Accept
+																			order
+																		</Button>
+																		<Button
+																			$size="sm"
+																			$variant="danger"
+																			$loading={
+																				busyId ===
+																				order.id
+																			}
+																			onClick={() =>
+																				reject(
+																					order,
+																				)
+																			}
+																		>
+																			<FiXCircle
+																				size={
+																					14
+																				}
+																				aria-hidden
+																			/>{" "}
+																			Reject
+																			order
+																		</Button>
+																	</>
+																) : handoverEligible ? (
+																	<>
+																		<Button
+																			$size="sm"
+																			$loading={
+																				busyId ===
+																				order.id
+																			}
+																			onClick={() =>
+																				confirmHandover(
+																					order,
+																					"QR",
+																				)
+																			}
+																		>
+																			<FiCamera
+																				size={
+																					14
+																				}
+																				aria-hidden
+																			/>{" "}
+																			Scan
+																			buyer
+																			QR
+																		</Button>
+																		<Button
+																			$size="sm"
+																			$variant="secondary"
+																			$loading={
+																				busyId ===
+																				order.id
+																			}
+																			onClick={() =>
+																				confirmHandover(
+																					order,
+																					"PIN",
+																				)
+																			}
+																		>
+																			<FiHash
+																				size={
+																					14
+																				}
+																				aria-hidden
+																			/>{" "}
+																			Enter
+																			buyer
+																			PIN
+																		</Button>
+																	</>
+																) : next &&
+																	NextIcon ? (
 																	<Button
 																		$size="sm"
 																		$loading={
 																			busyId ===
-																			o.id
+																			order.id
 																		}
 																		onClick={() =>
 																			advance(
-																				o,
+																				order,
 																			)
 																		}
 																	>
+																		<NextIcon
+																			size={
+																				14
+																			}
+																			aria-hidden
+																		/>{" "}
 																		{
 																			next.label
 																		}
 																	</Button>
-																)}
-																{o.status ===
-																	"AWAITING_VENDOR_ACCEPTANCE" && (
-																	<Button
-																		$size="sm"
-																		$variant="danger"
-																		$loading={
-																			busyId ===
-																			o.id
-																		}
-																		onClick={() =>
-																			reject(
-																				o,
-																			)
-																		}
-																	>
-																		Reject
-																		Order
-																	</Button>
-																)}
-																{((o.fulfillmentType ===
-																	"PICKUP" &&
-																	o.status ===
-																		"READY") ||
-																	(o.fulfillmentType ===
-																		"DELIVERY" &&
-																		o.status ===
-																			"IN_TRANSIT")) && (
-																	<Button
-																		$size="sm"
-																		$loading={
-																			busyId ===
-																			o.id
-																		}
-																		onClick={() =>
-																			confirmHandover(
-																				o,
-																			)
-																		}
-																	>
-																		Confirm
-																		handover
-																	</Button>
-																)}
+																) : null}
 															</Row>
 														</Stack>
 													</OrderCard>
@@ -657,6 +990,123 @@ export default function PipelineWrapper() {
 								);
 							})}
 						</Board>
+					)}
+
+					{completedOrders.length > 0 && (
+						<HistoryPanel>
+							<Stack $gap={14}>
+								<Row
+									$justify="space-between"
+									$align="center"
+									$gap={12}
+								>
+									<Stack $gap={2}>
+										<Text $weight={800}>
+											Completed orders
+										</Text>
+										<Text $muted $size={13}>
+											Recent fulfilled orders are kept out
+											of the live board.
+										</Text>
+									</Stack>
+									<FilterRow>
+										<FilterButton
+											type="button"
+											$active={
+												completedFilter === "today"
+											}
+											onClick={() =>
+												setCompletedFilter("today")
+											}
+										>
+											Today
+										</FilterButton>
+										<FilterButton
+											type="button"
+											$active={completedFilter === "7d"}
+											onClick={() =>
+												setCompletedFilter("7d")
+											}
+										>
+											Last 7 days
+										</FilterButton>
+										<FilterButton
+											type="button"
+											$active={completedFilter === "all"}
+											onClick={() =>
+												setCompletedFilter("all")
+											}
+										>
+											All
+										</FilterButton>
+									</FilterRow>
+								</Row>
+								{filteredCompletedOrders.length === 0 ? (
+									<LaneEmpty>
+										No completed orders in this filter
+									</LaneEmpty>
+								) : (
+									<HistoryList>
+										{filteredCompletedOrders.map(
+											(order) => (
+												<OrderCard key={order.id}>
+													<Stack $gap={8}>
+														<Row
+															$justify="space-between"
+															$align="flex-start"
+															$gap={10}
+														>
+															<OrderNumber
+																$weight={700}
+															>
+																#
+																{
+																	order.orderNumber
+																}
+															</OrderNumber>
+															<Text $weight={800}>
+																{formatKobo(
+																	order.totalKobo,
+																)}
+															</Text>
+														</Row>
+														<Badge $tone="success">
+															<FiCheckCircle
+																size={14}
+																aria-hidden
+															/>{" "}
+															Completed
+														</Badge>
+														<Text $muted $size={13}>
+															{order.items
+																.map(
+																	(item) =>
+																		`${item.quantity}x ${item.snapshotName}`,
+																)
+																.join(", ")}
+														</Text>
+													</Stack>
+												</OrderCard>
+											),
+										)}
+									</HistoryList>
+								)}
+								{completedFilter !== "all" &&
+									completedOrders.length > 6 && (
+										<Row $justify="flex-end">
+											<Button
+												$size="sm"
+												$variant="secondary"
+												onClick={() =>
+													setCompletedFilter("all")
+												}
+											>
+												View all completed orders
+											</Button>
+										</Row>
+									)}
+							</Stack>
+						</HistoryPanel>
 					)}
 				</Stack>
 			</PipelineShell>

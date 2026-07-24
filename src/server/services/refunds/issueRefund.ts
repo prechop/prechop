@@ -44,6 +44,30 @@ function refundFailureMessage(error: unknown) {
 	return "Paystack refund failed.";
 }
 
+async function recordRefundFailure({
+	orderId,
+	failureReason,
+}: {
+	orderId: string;
+	failureReason: string;
+}): Promise<void> {
+	await markBuyerOrderRefundFailedDB({
+		id: orderId,
+		failedAt: new Date(),
+		failureReason,
+	});
+	await openOrderDisputeForReview({
+		orderId,
+		reason: "REFUND_FAILURE",
+		vendorNotes: [failureReason],
+	}).catch((reviewError) =>
+		console.error(
+			`[refunds] failed to open refund-failure admin review for ${orderId}:`,
+			reviewError,
+		),
+	);
+}
+
 /**
  * The single place money leaves Prechop.
  *
@@ -86,7 +110,11 @@ export async function issueRefund({
 	}
 
 	const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
-	if (!payment) throw notFound("Payment for this order");
+	if (!payment) {
+		const failureReason = "Payment for this order not found.";
+		await recordRefundFailure({ orderId, failureReason });
+		throw notFound("Payment for this order");
+	}
 
 	const reference = paystackRef ?? payment.paystackRef;
 	if (!reference) {
@@ -140,21 +168,7 @@ export async function issueRefund({
 	} catch (error) {
 		const failureReason = refundFailureMessage(error);
 		await markRefundFailedDB({ id: refundId, failureReason });
-		await markBuyerOrderRefundFailedDB({
-			id: orderId,
-			failedAt: new Date(),
-			failureReason,
-		});
-		await openOrderDisputeForReview({
-			orderId,
-			reason: "REFUND_FAILURE",
-			vendorNotes: [failureReason],
-		}).catch((reviewError) =>
-			console.error(
-				`[refunds] failed to open refund-failure admin review for ${orderId}:`,
-				reviewError,
-			),
-		);
+		await recordRefundFailure({ orderId, failureReason });
 		console.error(
 			`[refunds] PAYSTACK REFUND FAILED order=${orderId} refund=${refundId} amountKobo=${amountKobo} — row left unprocessed for reconciliation:`,
 			error,

@@ -77,8 +77,7 @@ export async function bumpPermVersion(): Promise<number> {
  * policy attached to their groups plus their directly-attached policies.
  * Cached in Redis under the current permVersion.
  */
-export async function resolvePermissions(
-	userId: string,
+export async function resolvePermissions(userId: string,
 ): Promise<ResolvedPermissions> {
 	const version = await getPermVersion();
 	const cacheKey = `iam:perms:${userId}:${version}`;

@@ -22,6 +22,7 @@ const schema = new mongoose.Schema<any>(
 		title: { type: String, required: true },
 		body: { type: String, required: true },
 		type: { type: String, required: true },
+		dedupeKey: { type: String, required: false },
 		data: { type: mongoose.Schema.Types.Mixed, required: false },
 		isRead: { type: Boolean, default: false },
 	},
@@ -29,6 +30,7 @@ const schema = new mongoose.Schema<any>(
 );
 
 schema.index({ userId: 1, isRead: 1 });
+schema.index({ userId: 1, dedupeKey: 1 }, { unique: true, sparse: true });
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
@@ -50,11 +52,44 @@ export async function createNotificationDB({
 }): Promise<INotification | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		if (payload.dedupeKey) {
+			const doc = await Notification.findOneAndUpdate(
+				{
+					userId: new mongoose.Types.ObjectId(payload.userId),
+					dedupeKey: payload.dedupeKey,
+				},
+				{
+					$setOnInsert: {
+						userId: payload.userId,
+						title: payload.title,
+						body: payload.body,
+						type: payload.type,
+						dedupeKey: payload.dedupeKey,
+						data: payload.data,
+						isRead: payload.isRead ?? false,
+					},
+				},
+				{
+					new: true,
+					upsert: true,
+					session,
+					setDefaultsOnInsert: true,
+				},
+			);
+			timer({
+				operation: IOperationType.Create,
+				collection: collectionName,
+				method: "createNotificationDB",
+				success: "true",
+			});
+			return doc?.toObject() as unknown as INotification;
+		}
 		const doc = await new Notification({
 			userId: payload.userId,
 			title: payload.title,
 			body: payload.body,
 			type: payload.type,
+			dedupeKey: payload.dedupeKey,
 			data: payload.data,
 			isRead: payload.isRead ?? false,
 		}).save({ session });
@@ -65,13 +100,42 @@ export async function createNotificationDB({
 			success: "true",
 		});
 		return doc.toObject() as unknown as INotification;
-	} catch {
+	} catch (error) {
+		if (
+			payload.dedupeKey &&
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			(error as { code?: number }).code === 11000
+		) {
+			const existing = await Notification.findOne(
+				{
+					userId: new mongoose.Types.ObjectId(payload.userId),
+					dedupeKey: payload.dedupeKey,
+				},
+				null,
+				{ session },
+			);
+			if (existing) {
+				timer({
+					operation: IOperationType.Read,
+					collection: collectionName,
+					method: "createNotificationDB",
+					success: "true",
+				});
+				return existing.toObject() as unknown as INotification;
+			}
+		}
 		timer({
 			operation: IOperationType.Create,
 			collection: collectionName,
 			method: "createNotificationDB",
 			success: "false",
 		});
+		console.error(
+			`[notifications] create failed userId=${payload.userId} type=${payload.type} dedupeKey=${payload.dedupeKey ?? "none"}:`,
+			error,
+		);
 		return null;
 	}
 }

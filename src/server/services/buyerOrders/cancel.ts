@@ -9,12 +9,14 @@ import {
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
 	getUserByIdWithPhoneDB,
+	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	markBuyerOrderCancelledDB,
 	markPaymentCancelledDB,
 	OrderStatus,
 } from "../../models";
 import { sendchampProvider } from "../../providers";
+import { createUserNotification } from "../notifications";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
 import { releaseSlots } from "./slots";
 
@@ -59,6 +61,7 @@ export async function cancelOrderAsBuyer({
 		await returnCapacity(order);
 		await refundOrder(order);
 	}
+	await notifyVendorBuyerCancelled(order, reason);
 
 	return {
 		message:
@@ -116,6 +119,39 @@ export async function cancelOrderAsVendor({
 	}
 
 	return { message: "Order cancelled and buyer notified." };
+}
+
+async function notifyVendorBuyerCancelled(
+	order: {
+		_id: string;
+		orderNumber: string;
+		vendorId: { toString(): string };
+	},
+	reason: string,
+): Promise<void> {
+	try {
+		const vendor = await getVendorProfileByIdDB({
+			id: order.vendorId.toString(),
+		});
+		if (!vendor?.userId) return;
+		await createUserNotification({
+			userId: vendor.userId.toString(),
+			title: "Order cancelled by buyer",
+			body: `Order ${order.orderNumber} was cancelled by the buyer.`,
+			type: "ORDER_BUYER_CANCELLED",
+			dedupeKey: `order:${order.orderNumber}:vendor:buyer-cancelled`,
+			data: {
+				orderId: order._id.toString(),
+				orderNumber: order.orderNumber,
+				reason: reason.trim() || undefined,
+			},
+		});
+	} catch (error) {
+		console.error(
+			`[orders] vendor buyer-cancelled notification failed order=${order._id.toString()} vendorProfileId=${order.vendorId.toString()}:`,
+			error,
+		);
+	}
 }
 
 async function refundOrder(order: {

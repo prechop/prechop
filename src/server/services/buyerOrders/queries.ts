@@ -1,6 +1,8 @@
 import { ErrForbidden, ErrOrderNotFound } from "../../constants";
 import {
 	getBuyerOrderByIdDB,
+	getPaymentByOrderIdDB,
+	getRefundByPaymentIdDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	listBuyerOrdersByBuyerDB,
@@ -43,12 +45,27 @@ export async function getOrderById({
 	if (!order) throw ErrOrderNotFound;
 
 	const orderWithPickupLocation = async () => {
-		const vendor = await getVendorProfileByIdDB({
-			id: order.vendorId.toString(),
-		});
+		const [vendor, payment] = await Promise.all([
+			getVendorProfileByIdDB({
+				id: order.vendorId.toString(),
+			}),
+			getPaymentByOrderIdDB({ buyerOrderId: order._id.toString() }),
+		]);
+		const refund = payment
+			? await getRefundByPaymentIdDB({
+					paymentId: payment._id.toString(),
+				})
+			: null;
 		return {
 			...order,
 			vendorPickupLocation: pickupLocation(vendor),
+			refundAmountKobo: refund?.amountKobo ?? null,
+			refundReference: refund?.paystackRefundId ?? null,
+			refundStatus: refund?.processedAt
+				? "SENT_TO_PROVIDER"
+				: refund
+					? "INITIATED"
+					: null,
 		};
 	};
 

@@ -31,6 +31,7 @@ import {
 	PaymentStatus,
 } from "@/server/models";
 import { paystackProvider } from "@/server/providers";
+import { sendchampProvider } from "@/server/providers/sendchamp";
 import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
@@ -60,7 +61,7 @@ function sign(rawBody: string): string {
 
 /** A PENDING_PAYMENT order with an unverified payment behind it. */
 async function seedPendingOrder(amountKobo = 155000) {
-	const { vendorId, campusId } = await makeVendor();
+	const { userId: vendorUserId, vendorId, campusId } = await makeVendor();
 	const buyerId = oid();
 	const itemId = oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
@@ -102,10 +103,72 @@ async function seedPendingOrder(amountKobo = 155000) {
 			idempotencyKey: hash(ref),
 		},
 	});
-	return { order: order!, ref, amountKobo, vendorId, buyerId };
+	return { order: order!, ref, amountKobo, vendorId, vendorUserId, buyerId };
 }
 
 describe("handlePaystackWebhook — late settlement on a cancelled order", () => {
+	it("creates the new paid order alert for the vendor account user", async () => {
+		const { order, ref, amountKobo, vendorId, vendorUserId, buyerId } =
+			await seedPendingOrder();
+		const smsSpy = vi
+			.spyOn(sendchampProvider, "sendVendorNewOrder")
+			.mockResolvedValue();
+
+		const body = JSON.stringify({
+			event: "charge.success",
+			data: {
+				reference: ref,
+				amount: amountKobo,
+				channel: "card",
+				status: "success",
+			},
+		});
+
+		const res = await handlePaystackWebhook({
+			rawBody: body,
+			signature: sign(body),
+		});
+
+		expect(res).toEqual({ received: true, orderNumber: order.orderNumber });
+
+		const vendorNotifications = await listNotificationsDB({
+			userId: vendorUserId,
+		});
+		expect(vendorNotifications).toHaveLength(1);
+		expect(vendorNotifications[0]).toMatchObject({
+			title: "New paid order",
+			type: "ORDER_PAID",
+			dedupeKey: `order:${order.orderNumber}:vendor:paid`,
+		});
+		expect(vendorNotifications[0].userId.toString()).toBe(vendorUserId);
+
+		const profileNotifications = await listNotificationsDB({
+			userId: vendorId,
+		});
+		expect(profileNotifications).toHaveLength(0);
+
+		const buyerNotifications = await listNotificationsDB({
+			userId: buyerId,
+		});
+		expect(
+			buyerNotifications.some(
+				(n) => n.type === "ORDER_PAID_AWAITING_VENDOR",
+			),
+		).toBe(true);
+
+		await handlePaystackWebhook({
+			rawBody: body,
+			signature: sign(body),
+		});
+		expect(
+			await listNotificationsDB({
+				userId: vendorUserId,
+			}),
+		).toHaveLength(1);
+
+		smsSpy.mockRestore();
+	});
+
 	it("refunds in full, commits no capacity, and sends no confirmation", async () => {
 		const amountKobo = 155000;
 		const { order, ref, vendorId, buyerId } =

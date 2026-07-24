@@ -63,7 +63,10 @@ export async function reportPickupNoShow({
 			"Only pickup orders can be reported uncollected.",
 		);
 	}
-	if (order.status !== OrderStatus.READY) {
+	if (
+		order.status !== OrderStatus.READY &&
+		order.status !== OrderStatus.READY_FOR_PICKUP
+	) {
 		throw invalidOrderState("Only ready pickup orders can be reported.");
 	}
 	const start = pickupClockStart(order);

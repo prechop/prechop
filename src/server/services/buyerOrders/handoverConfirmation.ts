@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import QRCode from "qrcode";
 import {
+	handoverUnavailableMessage,
+	isBuyerHandoverEligible,
+} from "@/constants/orderLifecycle";
+import {
 	ENCRYPTION_KEY,
 	ErrForbidden,
 	ErrOrderNotFound,
@@ -62,15 +66,6 @@ function deriveCredential(order: {
 	};
 }
 
-function expectedStatusForCredential(order: {
-	fulfillmentType: FulfillmentType;
-	status: OrderStatus;
-}): OrderStatus {
-	return order.fulfillmentType === FulfillmentType.DELIVERY
-		? OrderStatus.IN_TRANSIT
-		: OrderStatus.READY;
-}
-
 function assertCredentialVisible(order: {
 	fulfillmentType: FulfillmentType;
 	status: OrderStatus;
@@ -81,10 +76,15 @@ function assertCredentialVisible(order: {
 			"This confirmation credential has already been used.",
 		);
 	}
-	const expected = expectedStatusForCredential(order);
-	if (order.status !== expected) {
+	if (
+		!isBuyerHandoverEligible(
+			order.status,
+			order.fulfillmentType,
+			order.handoverCredentialUsedAt,
+		)
+	) {
 		throw invalidOrderState(
-			"Confirmation is not available for this order status.",
+			handoverUnavailableMessage(order.fulfillmentType),
 		);
 	}
 }
@@ -197,7 +197,9 @@ export async function confirmOrderHandover({
 	const fromStatus =
 		order.fulfillmentType === FulfillmentType.DELIVERY
 			? OrderStatus.IN_TRANSIT
-			: OrderStatus.READY;
+			: order.status === OrderStatus.READY
+				? OrderStatus.READY
+				: OrderStatus.READY_FOR_PICKUP;
 	const intermediateStatus =
 		order.fulfillmentType === FulfillmentType.DELIVERY
 			? OrderStatus.DELIVERED

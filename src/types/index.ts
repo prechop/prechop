@@ -306,6 +306,8 @@ export type OrderStatus =
 	| "COOKING"
 	| "PREPARING"
 	| "READY"
+	| "READY_FOR_PICKUP"
+	| "READY_FOR_DELIVERY"
 	| "IN_TRANSIT"
 	| "AWAITING_BUYER_NO_SHOW_RESPONSE"
 	| "COMPLETED_BUYER_NO_SHOW"
@@ -367,6 +369,10 @@ export interface BuyerOrder {
 	confirmedAt?: string | null;
 	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | null;
 	handoverCredentialUsedAt?: string | null;
+	vendorNoResponseExpiredAt?: string | null;
+	refundAmountKobo?: number | null;
+	refundReference?: string | null;
+	refundStatus?: "INITIATED" | "SENT_TO_PROVIDER" | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
 }

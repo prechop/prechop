@@ -5,7 +5,10 @@ import {
 } from "@/constants/fees";
 import { generateShareableToken } from "@/server/constants/orderNumber";
 import { Redis } from "@/server/databases/redis";
-import { getBuyerOrderByIdDB } from "@/server/models/buyerOrders";
+import {
+	getBuyerOrderByIdDB,
+	setBuyerOrderStatusDB,
+} from "@/server/models/buyerOrders";
 import {
 	createDailyOrderDB,
 	setDailyOrderStatusDB,
@@ -23,6 +26,7 @@ import {
 } from "@/server/models/vendorProfiles";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
+import { getVendorOrdersForDailyOrder } from "@/server/services/buyerOrders/queries";
 import { initializeBuyerPayment } from "@/server/services/payments";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
@@ -66,7 +70,9 @@ async function activeListing({
 			email: `v-${Math.random().toString(36).slice(2)}@prechop.test`,
 		},
 	});
-	const vendorId = vendor!._id.toString();
+	if (!vendor) throw new Error("Failed to create vendor profile");
+	const vendorId = vendor._id.toString();
+	const vendorUserId = vendor.userId.toString();
 	await updateVendorProfileDB({
 		id: vendorId,
 		payload: {
@@ -98,21 +104,24 @@ async function activeListing({
 			],
 		},
 	});
+	if (!listing) throw new Error("Failed to create daily order");
 	await setDailyOrderStatusDB({
-		id: listing!._id.toString(),
+		id: listing._id.toString(),
 		vendorId,
 		status: DailyOrderStatus.ACTIVE,
 	});
-	const itemId = listing!.items[0]._id!.toString();
+	const itemId = listing.items[0]._id!.toString();
 	slotKeys.add(`slot:reserved:${itemId}`);
-	return { listing: listing!, vendorId, itemId };
+	return { listing, vendorId, vendorUserId, itemId };
 }
 
 describe("placeOrder service", () => {
 	it("places a pickup order end to end (order + payment persisted)", async () => {
 		const campusId = oid();
 		const buyerId = oid();
-		const { listing, itemId } = await activeListing({ campusId });
+		const { listing, vendorUserId, itemId } = await activeListing({
+			campusId,
+		});
 
 		const result = await placeOrder({
 			buyerId,
@@ -120,7 +129,8 @@ describe("placeOrder service", () => {
 			input: {
 				dailyOrderId: listing._id.toString(),
 				fulfillmentType: FulfillmentType.PICKUP,
-				customerMessage: "  I dont like much pepper thanks  ",
+				customerMessage:
+					"  Please add extra stew.\nRing me when it is ready.  ",
 				items: [{ dailyOrderItemId: itemId, quantity: 2 }],
 			},
 		});
@@ -139,7 +149,22 @@ describe("placeOrder service", () => {
 		expect(order!.paymentProcessingFeeKobo).toBe(processingFee);
 		expect(order!.prechopCommissionKobo).toBe(commission);
 		expect(order!.vendorSettlementKobo).toBe(vendorSettlement);
-		expect(order!.customerMessage).toBe("I dont like much pepper thanks");
+		expect(order!.customerMessage).toBe(
+			"Please add extra stew.\nRing me when it is ready.",
+		);
+
+		await setBuyerOrderStatusDB({
+			id: result.buyerOrderId,
+			status: OrderStatus.PAID,
+		});
+		const vendorOrders = await getVendorOrdersForDailyOrder({
+			vendorUserId,
+			dailyOrderId: listing._id.toString(),
+		});
+		expect(vendorOrders).toHaveLength(1);
+		expect(vendorOrders[0].customerMessage).toBe(
+			"Please add extra stew.\nRing me when it is ready.",
+		);
 
 		const payment = await getPaymentByOrderIdDB({
 			buyerOrderId: result.buyerOrderId,

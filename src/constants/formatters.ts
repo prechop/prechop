@@ -43,6 +43,8 @@ export function statusLabel(status: string): string {
 	if (status === "AWAITING_VENDOR_ACCEPTANCE")
 		return "Awaiting vendor acceptance";
 	if (status === "COOKING") return "Cooking";
+	if (status === "READY_FOR_PICKUP") return "Ready for pickup";
+	if (status === "READY_FOR_DELIVERY") return "Ready for delivery";
 	if (status === "IN_TRANSIT") return "On the way";
 	if (status === "AWAITING_BUYER_NO_SHOW_RESPONSE")
 		return "Awaiting buyer response";

@@ -229,6 +229,30 @@ const Main = styled.main`
 		padding-bottom: var(--pc-space-8);
 	}
 `;
+const VendorFooter = styled.footer`
+	margin-top: var(--pc-space-8);
+	padding-top: var(--pc-space-4);
+	border-top: 1px solid var(--pc-border);
+	display: flex;
+	justify-content: center;
+`;
+const FooterLink = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 0 14px;
+	border-radius: var(--pc-radius-pill);
+	color: var(--pc-text-muted);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	font-size: 13px;
+	font-weight: 800;
+
+	&:hover {
+		color: var(--pc-color-primary);
+	}
+`;
 const BottomNav = styled.nav`
 	position: fixed;
 	left: 0;
@@ -387,7 +411,16 @@ export default function AppShell({
 				</BarInner>
 			</Bar>
 			<Main>
-				<Container>{children}</Container>
+				<Container>
+					{children}
+					{isAuthenticated && isVendor && (
+						<VendorFooter>
+							<FooterLink href="/how-selling-works">
+								Help & policies
+							</FooterLink>
+						</VendorFooter>
+					)}
+				</Container>
 			</Main>
 			<BottomNav>
 				{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (

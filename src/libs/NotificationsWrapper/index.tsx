@@ -21,28 +21,28 @@ import { enablePushNotifications } from "@/libs/AccountWrapper/push";
 import type { AppNotification } from "@/types";
 
 const Section = styled(Card)`
-	padding: var(--pc-space-5);
+  padding: var(--pc-space-5);
 `;
 const NotifList = styled.div`
-	display: flex;
-	flex-direction: column;
+  display: flex;
+  flex-direction: column;
 `;
 const NotifItem = styled.div<{ $unread: boolean }>`
-	display: flex;
-	gap: 12px;
-	padding: 14px 0;
-	border-bottom: 1px solid var(--pc-border);
-	&:last-child {
-		border-bottom: none;
-	}
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--pc-border);
+  &:last-child {
+    border-bottom: none;
+  }
 `;
 const Dot = styled.span<{ $unread: boolean }>`
-	flex: 0 0 auto;
-	width: 9px;
-	height: 9px;
-	margin-top: 6px;
-	border-radius: 50%;
-	background: ${(p) =>
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: ${(p) =>
 		p.$unread ? "var(--pc-color-primary)" : "var(--pc-border)"};
 `;
 
@@ -72,7 +72,7 @@ export default function NotificationsWrapper() {
 
 	async function markAllRead() {
 		try {
-			await api.post("/notifications/read-all");
+			await api.patch("/notifications/read-all");
 			await mutate();
 		} catch {
 			toast("Could not mark notifications as read.", "error");
@@ -119,7 +119,7 @@ export default function NotificationsWrapper() {
 
 						{notifications.length === 0 ? (
 							<EmptyState
-								icon="ðŸ””"
+								icon="🔔"
 								title="No notifications yet"
 								description="Order updates and campus news will show up here."
 							/>

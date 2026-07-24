@@ -38,6 +38,8 @@ export async function closeDailyOrder({
 			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.READY_FOR_PICKUP,
+			OrderStatus.READY_FOR_DELIVERY,
 			OrderStatus.IN_TRANSIT,
 			OrderStatus.PICKED_UP,
 			OrderStatus.DELIVERED,

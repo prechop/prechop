@@ -7,7 +7,9 @@ import type { AuthResult } from "../../lib";
 import {
 	addSupportMessageDB,
 	createSupportRequestDB,
+	getBuyerOrderByNumberDB,
 	getSupportRequestByIdDB,
+	getVendorProfileByIdDB,
 	type ISupportRequestCreateInput,
 	listSupportRequestsByUserDB,
 	listSupportRequestsDB,
@@ -51,7 +53,47 @@ export async function createSupportRequest({
 		},
 	});
 	if (!request) throw ErrInvalidAction;
+	await notifyVendorOfOrderSupportRequest(request);
 	return request;
+}
+
+async function notifyVendorOfOrderSupportRequest(request: {
+	_id: string;
+	userId: { toString(): string };
+	senderRole: SupportAudience;
+	relatedOrderRef?: string;
+	subject: string;
+}) {
+	if (request.senderRole !== "BUYER" || !request.relatedOrderRef) return;
+	try {
+		const order = await getBuyerOrderByNumberDB({
+			orderNumber: request.relatedOrderRef,
+		});
+		if (!order || order.buyerId.toString() !== request.userId.toString()) {
+			return;
+		}
+		const vendor = await getVendorProfileByIdDB({
+			id: order.vendorId.toString(),
+		});
+		if (!vendor?.userId) return;
+		await createUserNotification({
+			userId: vendor.userId.toString(),
+			title: "Buyer reported an order problem",
+			body: `A buyer submitted a support request for order ${order.orderNumber}.`,
+			type: "ORDER_SUPPORT_REQUEST",
+			dedupeKey: `support:${request._id.toString()}:vendor`,
+			data: {
+				supportRequestId: request._id.toString(),
+				orderId: order._id.toString(),
+				orderNumber: order.orderNumber,
+			},
+		});
+	} catch (error) {
+		console.error(
+			`[support] vendor order-problem notification failed supportRequest=${request._id.toString()} orderRef=${request.relatedOrderRef}:`,
+			error,
+		);
+	}
 }
 
 export async function addUserSupportMessage({

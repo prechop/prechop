@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
@@ -172,6 +173,20 @@ const CatGrid = styled.div`
   @media (max-width: 340px) {
     grid-template-columns: 1fr;
   }
+`;
+const GuideLink = styled(Link)`
+	display: inline-flex;
+	align-items: center;
+	align-self: flex-start;
+	gap: 6px;
+	min-height: 40px;
+	padding: 0 14px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-pill);
+	background: var(--pc-surface);
+	color: var(--pc-color-primary);
+	font-size: 13px;
+	font-weight: 800;
 `;
 const CatChip = styled.button<{ $on: boolean }>`
   all: unset;
@@ -557,18 +572,17 @@ export default function VendorOnboardingWrapper({
 
 				<Card>
 					<Stack $gap={8}>
-						<SectionHeader
-							title="Vendor-managed delivery"
-							icon="🛵"
-						/>
+						<SectionHeader title="Selling essentials" icon="!" />
 						<Text $muted $size={13}>
-							Prechop does not currently provide riders or
-							delivery vehicles. If you enable delivery after
-							approval, you are responsible for arranging the
-							rider or delivery method, setting the fee and
-							coverage area, giving a realistic delivery estimate,
-							and making sure the order reaches the buyer.
+							Buyers pay before cooking. Accept paid orders
+							promptly. Earnings follow Paystack's settlement
+							schedule. Always confirm handover using QR or PIN.
+							If you enable delivery, you arrange the rider, fee,
+							coverage and buyer handoff.
 						</Text>
+						<GuideLink href="/how-selling-works">
+							Read How Selling Works <span aria-hidden>→</span>
+						</GuideLink>
 					</Stack>
 				</Card>
 

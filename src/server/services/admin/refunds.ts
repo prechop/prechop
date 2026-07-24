@@ -1,6 +1,11 @@
 import { ErrOrderNotFound, invalidOrderState } from "../../constants";
-import { getBuyerOrderByIdDB, OrderStatus } from "../../models";
+import {
+	getBuyerOrderByIdDB,
+	getVendorProfileByIdDB,
+	OrderStatus,
+} from "../../models";
 import { recordAudit } from "../audit";
+import { createUserNotification } from "../notifications";
 import { issueRefund } from "../refunds";
 import type { AdminActor } from "./vendors";
 
@@ -118,6 +123,8 @@ export async function refundOrderAsAdmin({
 		userAgent: actor.userAgent,
 	});
 
+	await notifyVendorOfAdminRefund(order, result.outcome);
+
 	return {
 		orderId,
 		orderNumber: order.orderNumber,
@@ -134,4 +141,37 @@ export async function refundOrderAsAdmin({
 						? "A previous refund attempt failed and needs admin review."
 						: "Refund confirmed.",
 	};
+}
+
+async function notifyVendorOfAdminRefund(
+	order: {
+		_id: string;
+		orderNumber: string;
+		vendorId: { toString(): string };
+	},
+	outcome: AdminRefundResult["outcome"],
+): Promise<void> {
+	try {
+		const vendor = await getVendorProfileByIdDB({
+			id: order.vendorId.toString(),
+		});
+		if (!vendor?.userId) return;
+		await createUserNotification({
+			userId: vendor.userId.toString(),
+			title: "Order refund update",
+			body: `Refund status changed for order ${order.orderNumber}.`,
+			type: "ORDER_REFUND_UPDATE",
+			dedupeKey: `order:${order.orderNumber}:vendor:refund:${outcome}`,
+			data: {
+				orderId: order._id.toString(),
+				orderNumber: order.orderNumber,
+				outcome,
+			},
+		});
+	} catch (error) {
+		console.error(
+			`[admin.refunds] vendor refund notification failed order=${order._id.toString()} vendorProfileId=${order.vendorId.toString()}:`,
+			error,
+		);
+	}
 }

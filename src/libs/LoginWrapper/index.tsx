@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import styled from "styled-components";
 import {
-  Button,
-  Card,
-  Container,
-  FadeIn,
-  Input,
-  Stack,
-  Text,
+	Button,
+	Card,
+	Container,
+	FadeIn,
+	Input,
+	Stack,
+	Text,
 } from "@/components";
 import { api } from "@/constants/api";
 import { useToast } from "@/hooks/useToast";
@@ -51,6 +51,18 @@ const Title = styled.h1`
   font-weight: 800;
   letter-spacing: 0;
   color: var(--pc-text);
+
+  @media (prefers-color-scheme: dark) {
+    font-size: clamp(24px, 4vw, 34px);
+  }
+`;
+const TitleH = styled.h1`
+  font-family: var(--pc-font-display);
+  font-size: clamp(28px, 6vw, 36px);
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--pc-text);
+
 `;
 const AuthCard = styled(Card)`
   padding: var(--pc-space-6);
@@ -84,144 +96,153 @@ const Foot = styled(Text)`
 `;
 
 export default function LoginWrapper() {
-  const params = useSearchParams();
-  const { toast } = useToast();
-  const [email, setEmail] = useState("");
-  const [emailOpen, setEmailOpen] = useState(false);
-  const [sellOpen, setSellOpen] = useState(params.get("intent") === "sell");
-  const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
-  const next = useMemo(() => cleanNext(params.get("next")), [params]);
-  const authNext = next;
+	const params = useSearchParams();
+	const { toast } = useToast();
+	const [email, setEmail] = useState("");
+	const [emailOpen, setEmailOpen] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [sent, setSent] = useState(false);
+	const next = useMemo(() => cleanNext(params.get("next")), [params]);
+	const authNext = next;
 
-  async function continueWithEmail() {
-    if (!emailOpen) {
-      setEmailOpen(true);
-      setSellOpen(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await api.post("/auth/email/request", {
-        email,
-        next: authNext,
-      });
-      const devLink = res.data?.data?.devLink;
-      setSent(true);
-      toast("Check your email for a secure sign-in link.", "success");
-      if (devLink) {
-        console.info("Prechop dev sign-in link:", devLink);
-      }
-    } catch (error) {
-      toast(errMsg(error), "error");
-    } finally {
-      setLoading(false);
-    }
-  }
+	async function continueWithEmail() {
+		if (!emailOpen) {
+			setEmailOpen(true);
+			return;
+		}
+		setLoading(true);
+		try {
+			const res = await api.post("/auth/email/request", {
+				email,
+				next: authNext,
+			});
+			const devLink = res.data?.data?.devLink;
+			setSent(true);
+			toast("Check your email for a secure sign-in link.", "success");
+			if (devLink) {
+				console.info("Prechop dev sign-in link:", devLink);
+			}
+		} catch (error) {
+			toast(errMsg(error), "error");
+		} finally {
+			setLoading(false);
+		}
+	}
 
-  function continueWithGoogle() {
-    const query = new URLSearchParams({ next: authNext });
-    window.location.href = `/api/auth/google/start?${query.toString()}`;
-  }
+	function continueWithGoogle() {
+		const query = new URLSearchParams({ next: authNext });
+		window.location.href = `/api/auth/google?${query.toString()}`;
+	}
 
-  const router = useRouter(); // swap for your router's navigation hook
+	const router = useRouter(); // swap for your router's navigation hook
 
-  return (
-    <Screen>
-      <Wrap>
-        <FadeIn>
-          <Brand>
-            <Mark aria-hidden>🍲</Mark>
-            <Stack $gap={2}>
-              <Title>Prechop</Title>
-              <Text $muted>Order before they cook.</Text>
-            </Stack>
-          </Brand>
+	return (
+		<Screen>
+			<Wrap>
+				<FadeIn>
+					<Brand>
+						<Mark aria-hidden>🍲</Mark>
+						<Stack $gap={2}>
+							<TitleH>Prechop</TitleH>
+							<Text $muted>Order before they cook.</Text>
+						</Stack>
+					</Brand>
 
-          <AuthCard>
-            <Stack $gap={14}>
-              <Stack $gap={4}>
-                <Title>Continue to Prechop</Title>
-                <Text $muted>Sign in to continue your order.</Text>
-              </Stack>
+					<AuthCard>
+						<Stack $gap={14}>
+							<Stack $gap={4}>
+								<Title>Continue to Prechop</Title>
+								<Text $muted>
+									Sign in to continue your order.
+								</Text>
+							</Stack>
 
-              <Button $full $size="lg" onClick={continueWithGoogle}>
-                Continue with Google
-              </Button>
+							<Button
+								$full
+								$size="lg"
+								onClick={continueWithGoogle}
+							>
+								Continue with Google
+							</Button>
 
-              <Divider>OR</Divider>
+							<Divider>OR</Divider>
 
-              <Button
-                $full
-                $size="lg"
-                $variant="secondary"
-                onClick={continueWithEmail}
-                $loading={loading}>
-                Continue with Email
-              </Button>
+							<Button
+								$full
+								$size="lg"
+								$variant="secondary"
+								onClick={continueWithEmail}
+								$loading={loading}
+							>
+								Continue with Email
+							</Button>
 
-              {emailOpen && (
-                <Panel>
-                  <Stack $gap={12}>
-                    <Input
-                      label="Email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        setSent(false);
-                      }}
-                      placeholder="you@example.com"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") continueWithEmail();
-                      }}
-                    />
-                    {sent && (
-                      <Text $muted $size={13}>
-                        Open the link in your email to finish signing in. It
-                        works for new and returning accounts.
-                      </Text>
-                    )}
-                  </Stack>
-                </Panel>
-              )}
-            </Stack>
-          </AuthCard>
+							{emailOpen && (
+								<Panel>
+									<Stack $gap={12}>
+										<Input
+											label="Email"
+											type="email"
+											value={email}
+											onChange={(e) => {
+												setEmail(e.target.value);
+												setSent(false);
+											}}
+											placeholder="you@example.com"
+											onKeyDown={(e) => {
+												if (e.key === "Enter")
+													continueWithEmail();
+											}}
+										/>
+										{sent && (
+											<Text $muted $size={13}>
+												Open the link in your email to
+												finish signing in. It works for
+												new and returning accounts.
+											</Text>
+										)}
+									</Stack>
+								</Panel>
+							)}
+						</Stack>
+					</AuthCard>
 
-          <Foot $size={15}>
-            <Text as="span" $muted>
-              Want to sell?{" "}
-            </Text>
-            <Link
-              href="/sell"
-              onClick={(e) => {
-                e.preventDefault();
-                router.push("/sell");
-              }}
-              style={{
-                color: "var(--pc-color-primary)",
-                fontWeight: 700,
-              }}>
-              Sell on Prechop
-            </Link>
-          </Foot>
+					<Foot $size={15}>
+						<Text as="span" $muted>
+							Want to sell?{" "}
+						</Text>
+						<Link
+							href="/sell"
+							onClick={(e) => {
+								e.preventDefault();
+								router.push("/sell");
+							}}
+							style={{
+								color: "var(--pc-color-primary)",
+								fontWeight: 700,
+							}}
+						>
+							Sell on Prechop
+						</Link>
+					</Foot>
 
-          <Foot $muted $size={13}>
-            You can still browse{" "}
-            <Link
-              href="/marketplace"
-              style={{
-                color: "var(--pc-color-primary)",
-                fontWeight: 700,
-              }}>
-              vendors and meals
-            </Link>{" "}
-            before signing in.
-          </Foot>
-        </FadeIn>
-      </Wrap>
-    </Screen>
-  );
+					<Foot $muted $size={13}>
+						You can still browse{" "}
+						<Link
+							href="/marketplace"
+							style={{
+								color: "var(--pc-color-primary)",
+								fontWeight: 700,
+							}}
+						>
+							vendors and meals
+						</Link>{" "}
+						before signing in.
+					</Foot>
+				</FadeIn>
+			</Wrap>
+		</Screen>
+	);
 }
 
 // 	return (
@@ -348,13 +369,13 @@ export default function LoginWrapper() {
 // }
 
 function errMsg(e: unknown): string {
-  const err = e as { response?: { data?: { message?: string } } };
-  return err?.response?.data?.message ?? "Something went wrong. Try again.";
+	const err = e as { response?: { data?: { message?: string } } };
+	return err?.response?.data?.message ?? "Something went wrong. Try again.";
 }
 
 function cleanNext(value: string | null): string {
-  if (!value?.startsWith("/") || value.startsWith("//")) {
-    return "/marketplace";
-  }
-  return value;
+	if (!value?.startsWith("/") || value.startsWith("//")) {
+		return "/marketplace";
+	}
+	return value;
 }

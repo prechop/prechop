@@ -4,7 +4,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import styled from "styled-components";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
 	Badge,
 	Button,
@@ -12,14 +12,17 @@ import {
 	EmptyState,
 	FadeIn,
 	Grid,
+	Input,
 	PageHeader,
 	Row,
 	SectionHeader,
 	Stack,
 	StatCard,
 	Text,
+	Textarea,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
+import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import {
 	formatDate,
@@ -28,6 +31,10 @@ import {
 	statusLabel,
 	timeUntil,
 } from "@/constants/formatters";
+import {
+	isBuyerHandoverEligible,
+	nextVendorOrderAction,
+} from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
 import type { DailyOrder, OrderStatus } from "@/types";
 
@@ -44,6 +51,8 @@ interface IncomingOrder {
 	deliveryPhone?: string;
 	customerMessage?: string;
 	createdAt?: string;
+	acceptanceDeadline?: string | null;
+	handoverCredentialUsedAt?: string | null;
 	items: Array<{ snapshotName: string; quantity: number }>;
 }
 
@@ -94,14 +103,55 @@ const ProgressFill = styled.div<{ $pct: number }>`
 	border-radius: 999px;
 `;
 const IncomingItem = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 10px;
-	padding: 11px 0;
+	padding: 14px 0;
 	border-bottom: 1px solid var(--pc-border);
 	&:last-child {
 		border-bottom: none;
+	}
+	@media (max-width: 680px) {
+		grid-template-columns: 1fr;
+	}
+`;
+const IncomingMeta = styled.div`
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 2px;
+	@media (max-width: 680px) {
+		align-items: flex-start;
+	}
+`;
+const ActionPanel = styled.div`
+	grid-column: 1 / -1;
+	padding: 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const BuyerNoteBox = styled.div`
+	display: grid;
+	gap: 4px;
+	padding: 10px 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+`;
+const ActionGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+	gap: 8px;
+`;
+const HandoverGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	@media (max-width: 520px) {
+		grid-template-columns: 1fr;
 	}
 `;
 const LinkBox = styled.div`
@@ -222,6 +272,16 @@ export default function VendorDailyOrderDetailWrapper({
 	const { toast } = useToast();
 	const [copied, setCopied] = useState(false);
 	const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+	const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+	const [handoverMethodByOrder, setHandoverMethodByOrder] = useState<
+		Record<string, "QR" | "PIN">
+	>({});
+	const [handoverCodeByOrder, setHandoverCodeByOrder] = useState<
+		Record<string, string>
+	>({});
+	const [unreachableByOrder, setUnreachableByOrder] = useState<
+		Record<string, { contactAttempts: string; note: string }>
+	>({});
 
 	const {
 		data: order,
@@ -233,7 +293,12 @@ export default function VendorDailyOrderDetailWrapper({
 
 	// Buyer orders placed against this listing. The dashboard uses a separate
 	// vendor-wide attention queue so completed history can remain visible here.
-	const { data: incoming } = useSWR<IncomingOrder[]>(
+	const {
+		data: incoming,
+		isLoading: incomingLoading,
+		error: incomingError,
+		mutate: mutateIncoming,
+	} = useSWR<IncomingOrder[]>(
 		order ? `/vendor/daily-orders/${orderId}/orders` : null,
 		fetcher,
 		{ refreshInterval: 15_000 },
@@ -330,6 +395,117 @@ export default function VendorDailyOrderDetailWrapper({
 			setTimeout(() => setCopied(false), 2000);
 		} catch {
 			toast("Couldn't copy — long-press the link to copy it", "error");
+		}
+	}
+
+	async function transitionBuyerOrder(
+		buyerOrder: IncomingOrder,
+		status: OrderStatus,
+		label: string,
+	) {
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.patch(`/vendor/orders/${buyerOrder.id}/status`, {
+				status,
+			});
+			toast(label, "success");
+			await Promise.all([
+				mutateIncoming(),
+				globalMutate(`/orders/${buyerOrder.id}`),
+			]);
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function confirmHandover(buyerOrder: IncomingOrder) {
+		const method = handoverMethodByOrder[buyerOrder.id] ?? "QR";
+		const code = handoverCodeByOrder[buyerOrder.id]?.trim();
+		if (!code) {
+			toast("Enter the QR code value or PIN.", "error");
+			return;
+		}
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.post(`/vendor/orders/${buyerOrder.id}/confirm-handover`, {
+				method,
+				code,
+			});
+			setHandoverCodeByOrder((current) => ({
+				...current,
+				[buyerOrder.id]: "",
+			}));
+			toast("Handover confirmed.", "success");
+			await Promise.all([
+				mutateIncoming(),
+				globalMutate(`/orders/${buyerOrder.id}`),
+			]);
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function reportNoShow(buyerOrder: IncomingOrder) {
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.post(
+				`/vendor/orders/${buyerOrder.id}/pickup-no-show`,
+				{},
+			);
+			toast("No-show report sent.", "success");
+			await mutateIncoming();
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function reportBuyerUnreachable(buyerOrder: IncomingOrder) {
+		const form = unreachableByOrder[buyerOrder.id] ?? {
+			contactAttempts: "1",
+			note: "",
+		};
+		if (!form.note.trim()) {
+			toast("Add a short note before reporting.", "error");
+			return;
+		}
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.post(
+				`/vendor/orders/${buyerOrder.id}/buyer-unreachable`,
+				{
+					arrivalTime: new Date().toISOString(),
+					contactAttempts: Number(form.contactAttempts || 1),
+					note: form.note.trim(),
+				},
+			);
+			toast("Buyer-unreachable report sent.", "success");
+			await mutateIncoming();
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function markDeliveryFailed(buyerOrder: IncomingOrder) {
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.post(
+				`/vendor/orders/${buyerOrder.id}/delivery-failed`,
+				{},
+			);
+			toast("Delivery failed report sent for review.", "success");
+			await mutateIncoming();
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
 		}
 	}
 
@@ -545,7 +721,22 @@ export default function VendorDailyOrderDetailWrapper({
 								</Text>
 							}
 						/>
-						{(incoming?.length ?? 0) === 0 ? (
+						{incomingLoading ? (
+							<Card>
+								<Text $muted>Loading buyer orders...</Text>
+							</Card>
+						) : incomingError ? (
+							<EmptyState
+								icon="!"
+								title="Could not load buyer orders"
+								description={actionErr(incomingError)}
+								action={
+									<Button onClick={() => mutateIncoming()}>
+										Try again
+									</Button>
+								}
+							/>
+						) : (incoming?.length ?? 0) === 0 ? (
 							<EmptyState
 								icon="🕓"
 								title="No orders yet"
@@ -557,80 +748,379 @@ export default function VendorDailyOrderDetailWrapper({
 							/>
 						) : (
 							<div>
-								{(incoming ?? []).map((o) => (
-									<IncomingItem key={o.id}>
-										<Stack $gap={3}>
-											<Row $gap={8} $align="center">
-												<Text $weight={700} $size={14}>
-													#{o.orderNumber}
-												</Text>
-												<Badge
-													$tone={orderTone(o.status)}
-												>
-													{statusLabel(o.status)}
-												</Badge>
-											</Row>
-											<Text $muted $size={12}>
-												{o.fulfillmentType ===
-												"DELIVERY"
-													? "🛵 Delivery"
-													: "🥡 Pickup"}{" "}
-												·{" "}
-												{o.items.reduce(
-													(n, it) => n + it.quantity,
-													0,
-												)}{" "}
-												item(s)
-											</Text>
-											{o.subtotalKobo != null && (
+								{(incoming ?? []).map((o) => {
+									const next = nextAction(o);
+									const nextStatus = next.status;
+									const handoverEligible =
+										isBuyerHandoverEligible(
+											o.status,
+											o.fulfillmentType,
+											o.handoverCredentialUsedAt,
+										);
+									const busy = busyOrderId === o.id;
+									return (
+										<IncomingItem key={o.id}>
+											<Stack $gap={3}>
+												<Row $gap={8} $align="center">
+													<Text
+														$weight={700}
+														$size={14}
+													>
+														#{o.orderNumber}
+													</Text>
+													<Badge
+														$tone={orderTone(
+															o.status,
+														)}
+													>
+														{statusLabel(o.status)}
+													</Badge>
+												</Row>
 												<Text $muted $size={12}>
-													Food{" "}
-													{formatKobo(o.subtotalKobo)}{" "}
-													· Commission{" "}
-													{formatKobo(
-														o.prechopCommissionKobo ??
-															0,
+													{o.fulfillmentType ===
+													"DELIVERY"
+														? "🛵 Delivery"
+														: "🥡 Pickup"}{" "}
+													·{" "}
+													{o.items.reduce(
+														(n, it) =>
+															n + it.quantity,
+														0,
 													)}{" "}
-													· Delivery{" "}
-													{formatKobo(
-														o.deliveryFeeKobo ?? 0,
-													)}
+													item(s)
 												</Text>
-											)}
-											{o.customerMessage && (
-												<Text $size={12}>
-													Buyer note:{" "}
-													{o.customerMessage}
-												</Text>
-											)}
-											{o.fulfillmentType === "DELIVERY" &&
-												o.deliveryPhone && (
-													<Text $size={12}>
-														Buyer phone:{" "}
-														<a
-															href={`tel:${o.deliveryPhone}`}
-														>
-															{o.deliveryPhone}
-														</a>
+												{o.subtotalKobo != null && (
+													<Text $muted $size={12}>
+														Food{" "}
+														{formatKobo(
+															o.subtotalKobo,
+														)}{" "}
+														· Commission{" "}
+														{formatKobo(
+															o.prechopCommissionKobo ??
+																0,
+														)}{" "}
+														· Delivery{" "}
+														{formatKobo(
+															o.deliveryFeeKobo ??
+																0,
+														)}
 													</Text>
 												)}
-										</Stack>
-										<Stack
-											$gap={2}
-											style={{ alignItems: "flex-end" }}
-										>
-											<Text $weight={800} $size={14}>
-												{formatKobo(
-													o.vendorSettlementKobo ??
-														o.totalKobo,
+												{o.customerMessage && (
+													<BuyerNoteBox>
+														<Text
+															$size={12}
+															$weight={800}
+														>
+															Buyer note
+														</Text>
+														<Text $size={13}>
+															{o.customerMessage}
+														</Text>
+													</BuyerNoteBox>
 												)}
-											</Text>
-											<Text $muted $size={11}>
-												Vendor settlement
-											</Text>
-										</Stack>
-									</IncomingItem>
-								))}
+												{o.fulfillmentType ===
+													"DELIVERY" &&
+													o.deliveryPhone && (
+														<Text $size={12}>
+															Buyer phone:{" "}
+															<a
+																href={`tel:${o.deliveryPhone}`}
+															>
+																{
+																	o.deliveryPhone
+																}
+															</a>
+														</Text>
+													)}
+												{next.countdown && (
+													<Text $muted $size={12}>
+														Acceptance countdown:{" "}
+														{next.countdown}
+													</Text>
+												)}
+												<Text $muted $size={12}>
+													Next action: {next.label}
+												</Text>
+											</Stack>
+											<IncomingMeta>
+												<Text $weight={800} $size={14}>
+													{formatKobo(
+														o.vendorSettlementKobo ??
+															o.totalKobo,
+													)}
+												</Text>
+												<Text $muted $size={11}>
+													Vendor settlement
+												</Text>
+											</IncomingMeta>
+											<ActionPanel>
+												<Stack $gap={10}>
+													<ActionGrid>
+														{nextStatus && (
+															<Button
+																$size="sm"
+																$loading={busy}
+																onClick={() =>
+																	transitionBuyerOrder(
+																		o,
+																		nextStatus,
+																		next.toast,
+																	)
+																}
+																aria-label={`${next.label} for order ${o.orderNumber}`}
+															>
+																{next.label}
+															</Button>
+														)}
+														{o.status ===
+															"AWAITING_VENDOR_ACCEPTANCE" && (
+															<Button
+																$size="sm"
+																$variant="danger"
+																$loading={busy}
+																onClick={() =>
+																	transitionBuyerOrder(
+																		o,
+																		"VENDOR_REJECTED",
+																		"Order rejected. Refund timing can depend on Paystack and the buyer's bank.",
+																	)
+																}
+																aria-label={`Reject order ${o.orderNumber}`}
+															>
+																Reject order
+															</Button>
+														)}
+														{o.fulfillmentType ===
+															"PICKUP" &&
+															o.status ===
+																"READY" && (
+																<Button
+																	$size="sm"
+																	$variant="secondary"
+																	$loading={
+																		busy
+																	}
+																	onClick={() =>
+																		reportNoShow(
+																			o,
+																		)
+																	}
+																	aria-label={`Report buyer no-show for order ${o.orderNumber}`}
+																>
+																	Buyer
+																	no-show
+																</Button>
+															)}
+														{o.status ===
+															"BUYER_UNREACHABLE_REPORTED" && (
+															<Button
+																$size="sm"
+																$variant="danger"
+																$loading={busy}
+																onClick={() =>
+																	markDeliveryFailed(
+																		o,
+																	)
+																}
+																aria-label={`Mark delivery failed for order ${o.orderNumber}`}
+															>
+																Delivery failed
+															</Button>
+														)}
+													</ActionGrid>
+													{handoverEligible && (
+														<Stack $gap={8}>
+															<Text
+																$weight={700}
+																$size={13}
+															>
+																Scan QR or enter
+																PIN
+															</Text>
+															<HandoverGrid>
+																<select
+																	value={
+																		handoverMethodByOrder[
+																			o.id
+																		] ??
+																		"QR"
+																	}
+																	onChange={(
+																		event,
+																	) =>
+																		setHandoverMethodByOrder(
+																			(
+																				current,
+																			) => ({
+																				...current,
+																				[o.id]: event
+																					.target
+																					.value as
+																					| "QR"
+																					| "PIN",
+																			}),
+																		)
+																	}
+																	aria-label={`Confirmation method for order ${o.orderNumber}`}
+																>
+																	<option value="QR">
+																		QR scan
+																	</option>
+																	<option value="PIN">
+																		PIN
+																	</option>
+																</select>
+																<Input
+																	label="Code"
+																	value={
+																		handoverCodeByOrder[
+																			o.id
+																		] ?? ""
+																	}
+																	onChange={(
+																		event,
+																	) =>
+																		setHandoverCodeByOrder(
+																			(
+																				current,
+																			) => ({
+																				...current,
+																				[o.id]: event
+																					.target
+																					.value,
+																			}),
+																		)
+																	}
+																	placeholder="Scan QR value or enter PIN"
+																	aria-label={`QR or PIN for order ${o.orderNumber}`}
+																/>
+															</HandoverGrid>
+															<Button
+																$size="sm"
+																$loading={busy}
+																onClick={() =>
+																	confirmHandover(
+																		o,
+																	)
+																}
+															>
+																Confirm handover
+															</Button>
+														</Stack>
+													)}
+													{o.fulfillmentType ===
+														"DELIVERY" &&
+														o.status ===
+															"IN_TRANSIT" && (
+															<Stack $gap={8}>
+																<Text
+																	$weight={
+																		700
+																	}
+																	$size={13}
+																>
+																	Buyer
+																	unreachable
+																</Text>
+																<HandoverGrid>
+																	<Input
+																		label="Contact attempts"
+																		type="number"
+																		min={1}
+																		max={20}
+																		value={
+																			unreachableByOrder[
+																				o
+																					.id
+																			]
+																				?.contactAttempts ??
+																			"1"
+																		}
+																		onChange={(
+																			event,
+																		) =>
+																			setUnreachableByOrder(
+																				(
+																					current,
+																				) => ({
+																					...current,
+																					[o.id]: {
+																						contactAttempts:
+																							event
+																								.target
+																								.value,
+																						note:
+																							current[
+																								o
+																									.id
+																							]
+																								?.note ??
+																							"",
+																					},
+																				}),
+																			)
+																		}
+																	/>
+																	<Textarea
+																		label="Note"
+																		value={
+																			unreachableByOrder[
+																				o
+																					.id
+																			]
+																				?.note ??
+																			""
+																		}
+																		onChange={(
+																			event,
+																		) =>
+																			setUnreachableByOrder(
+																				(
+																					current,
+																				) => ({
+																					...current,
+																					[o.id]: {
+																						contactAttempts:
+																							current[
+																								o
+																									.id
+																							]
+																								?.contactAttempts ??
+																							"1",
+																						note: event
+																							.target
+																							.value,
+																					},
+																				}),
+																			)
+																		}
+																		placeholder="Example: called twice at the hostel gate."
+																	/>
+																</HandoverGrid>
+																<Button
+																	$size="sm"
+																	$variant="secondary"
+																	$loading={
+																		busy
+																	}
+																	onClick={() =>
+																		reportBuyerUnreachable(
+																			o,
+																		)
+																	}
+																>
+																	Report
+																	unreachable
+																</Button>
+															</Stack>
+														)}
+												</Stack>
+											</ActionPanel>
+										</IncomingItem>
+									);
+								})}
 							</div>
 						)}
 					</Stack>
@@ -691,5 +1181,79 @@ export default function VendorDailyOrderDetailWrapper({
 				</Card>
 			</Stack>
 		</FadeIn>
+	);
+}
+
+function nextAction(order: IncomingOrder): {
+	label: string;
+	status?: OrderStatus;
+	toast: string;
+	countdown?: string;
+} {
+	if (order.status === "AWAITING_VENDOR_ACCEPTANCE") {
+		const next = nextVendorOrderAction(order.status, order.fulfillmentType);
+		return {
+			label: next?.label ?? "Accept order",
+			status: next?.to,
+			toast: "Order accepted.",
+			countdown: order.acceptanceDeadline
+				? timeUntil(order.acceptanceDeadline)
+				: "respond promptly",
+		};
+	}
+	if (order.status === "PAID")
+		return {
+			label: "Confirm order",
+			status: "CONFIRMED",
+			toast: "Order confirmed.",
+		};
+	if (order.status === "CONFIRMED")
+		return {
+			label: "Start preparing",
+			status: "PREPARING",
+			toast: "Order moved to preparing.",
+		};
+	const next = nextVendorOrderAction(order.status, order.fulfillmentType);
+	if (next)
+		return {
+			label: next.label,
+			status: next.to,
+			toast:
+				next.to === "COOKING"
+					? "Order moved to cooking."
+					: next.to === "IN_TRANSIT"
+						? "Order marked in transit."
+						: "Buyer notified that the order is ready.",
+		};
+	if (
+		((order.status === "READY_FOR_PICKUP" ||
+			(order.status === "READY" && order.fulfillmentType === "PICKUP")) &&
+			order.fulfillmentType === "PICKUP") ||
+		order.status === "IN_TRANSIT"
+	)
+		return {
+			label: "Confirm with QR/PIN",
+			toast: "Use the QR/PIN form below.",
+		};
+	if (order.status === "BUYER_UNREACHABLE_REPORTED")
+		return {
+			label: "Wait for buyer response",
+			toast: "Buyer response window is open.",
+		};
+	return {
+		label: "No vendor action available",
+		toast: "No action is available for this status.",
+	};
+}
+
+function actionErr(e: unknown): string {
+	const err = e as {
+		response?: { data?: { message?: string } };
+		message?: string;
+	};
+	return (
+		err?.response?.data?.message ??
+		err?.message ??
+		"Something went wrong. Try again."
 	);
 }

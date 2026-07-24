@@ -3,21 +3,29 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import {
+	FiCheckCircle,
+	FiClock,
+	FiPackage,
+	FiPlayCircle,
+	FiTruck,
+} from "react-icons/fi";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
 	Badge,
 	Button,
 	Card,
+	EmptyState,
 	FadeIn,
 	Row,
+	Skeleton,
 	Stack,
 	StatCard,
 	Text,
 	Textarea,
 	Title,
 } from "@/components";
-import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import {
@@ -25,18 +33,24 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import {
+	canonicalOrderStatus,
+	handoverUnavailableMessage,
+	isBuyerHandoverEligible,
+	orderTimelineSteps,
+} from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
 import { ReceiptCard, RefundNote } from "@/libs/ReceiptCard";
 import { OrderAgainButton } from "@/libs/ReorderSheet";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
-// Happy-path progression shown as a timeline (terminal states handled apart).
-const BASE_FLOW: OrderStatus[] = [
-	"AWAITING_VENDOR_ACCEPTANCE",
-	"COOKING",
-	"READY",
-	"COMPLETED",
-];
+type BuyerOrderDetail = BuyerOrder & {
+	refundAmountKobo?: number | null;
+	refundReference?: string | null;
+	refundStatus?: "INITIATED" | "SENT_TO_PROVIDER" | null;
+	vendorNoResponseExpiredAt?: string | null;
+};
+
 const CANCELLABLE: OrderStatus[] = [
 	"PENDING_PAYMENT",
 	"AWAITING_EXTERNAL_PAYMENT",
@@ -96,6 +110,8 @@ const statusTone: Record<
 	COOKING: "warning",
 	PREPARING: "warning",
 	READY: "success",
+	READY_FOR_PICKUP: "success",
+	READY_FOR_DELIVERY: "success",
 	IN_TRANSIT: "success",
 	AWAITING_BUYER_NO_SHOW_RESPONSE: "warning",
 	COMPLETED_BUYER_NO_SHOW: "success",
@@ -220,6 +236,15 @@ const Conn = styled.div<{ $done: boolean }>`
 const StepBody = styled.div`
 	padding-bottom: var(--pc-space-4);
 `;
+const StepTitle = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+`;
+const StepIcon = styled.span`
+	display: inline-flex;
+	color: var(--pc-color-primary);
+`;
 const Line = styled(Row)`
 	justify-content: space-between;
 	font-size: 14px;
@@ -231,6 +256,34 @@ const Divider = styled.div`
 const FulfillmentCard = styled(Card)`
 	margin-top: 12px;
 	padding: var(--pc-space-4);
+`;
+const InstructionGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+
+	@media (max-width: 620px) {
+		grid-template-columns: 1fr;
+	}
+`;
+const InstructionPanel = styled.div`
+	min-width: 0;
+	padding: 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const StatusNote = styled.div`
+	padding: 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface);
+`;
+const HandoverRow = styled(Row)`
+	@media (max-width: 520px) {
+		align-items: flex-start;
+		flex-direction: column;
+	}
 `;
 const Stars = styled.div`
 	display: flex;
@@ -249,9 +302,25 @@ const Star = styled.button<{ $on: boolean }>`
 	&:hover { transform: scale(1.15); }
 `;
 
+function timelineIcon(icon: string) {
+	switch (icon) {
+		case "check":
+		case "done":
+			return <FiCheckCircle size={18} aria-hidden />;
+		case "cook":
+			return <FiPlayCircle size={18} aria-hidden />;
+		case "package":
+			return <FiPackage size={18} aria-hidden />;
+		case "truck":
+			return <FiTruck size={18} aria-hidden />;
+		default:
+			return <FiClock size={18} aria-hidden />;
+	}
+}
+
 export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const { toast } = useToast();
-	const { data, isLoading, mutate } = useSWR<BuyerOrder>(
+	const { data, isLoading, error, mutate } = useSWR<BuyerOrderDetail>(
 		`/orders/${orderId}`,
 		fetcher,
 		{ refreshInterval: 20_000 },
@@ -260,11 +329,13 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 		id: string;
 		rating: number;
 	} | null>(`/orders/${orderId}/review`, fetcher);
-	const canViewHandover =
-		data?.handoverCredentialUsedAt == null &&
-		((data?.fulfillmentType === "PICKUP" && data.status === "READY") ||
-			(data?.fulfillmentType === "DELIVERY" &&
-				data.status === "IN_TRANSIT"));
+	const canViewHandover = data
+		? isBuyerHandoverEligible(
+				data.status,
+				data.fulfillmentType,
+				data.handoverCredentialUsedAt,
+			)
+		: false;
 	const { data: handover } = useSWR<{
 		qrDataUrl: string;
 		pin: string;
@@ -277,37 +348,62 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const [comment, setComment] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 
-	if (isLoading) return <PageLoader />;
-	if (!data) {
+	if (isLoading) {
+		return (
+			<Wrap $gap={16} aria-busy="true" aria-live="polite">
+				<Card>
+					<Stack $gap={12}>
+						<Skeleton $w="160px" $h={24} />
+						<Skeleton $w="100%" $h={16} />
+						<Skeleton $w="72%" $h={16} />
+					</Stack>
+				</Card>
+				<Card>
+					<Stack $gap={10}>
+						<Skeleton $w="120px" $h={18} />
+						<Skeleton $w="100%" $h={44} />
+						<Skeleton $w="100%" $h={44} />
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
+	if (error || !data) {
 		return (
 			<Wrap>
-				<Card>
-					<Text $muted>Order not found.</Text>
-				</Card>
+				<EmptyState
+					icon="!"
+					title={error ? "Could not load order" : "Order not found"}
+					description={
+						error
+							? errMsg(error)
+							: "This order may have been removed or you may not have access to it."
+					}
+					action={
+						<Button as={Link} href="/my-orders" $pill>
+							Back to orders
+						</Button>
+					}
+				/>
 			</Wrap>
 		);
 	}
 
 	const isTerminalBad =
 		data.status === "CANCELLED" || data.status === "REFUNDED";
-	const flow =
-		data.fulfillmentType === "DELIVERY"
-			? BASE_FLOW.flatMap((status) =>
-					status === "COMPLETED"
-						? ([
-								"IN_TRANSIT",
-								"DELIVERED",
-								"COMPLETED",
-							] as OrderStatus[])
-						: [status],
-				)
-			: BASE_FLOW.flatMap((status) =>
-					status === "COMPLETED"
-						? (["PICKED_UP", "COMPLETED"] as OrderStatus[])
-						: [status],
-				);
-	const currentIdx = flow.indexOf(data.status);
+	const isVendorNoResponseRefund =
+		data.status === "REFUNDED" && !!data.vendorNoResponseExpiredAt;
+	const timeline = orderTimelineSteps(data.fulfillmentType);
+	const currentStatus = canonicalOrderStatus(
+		data.status,
+		data.fulfillmentType,
+	);
+	const currentIdx = timeline.findIndex(
+		(step) => step.status === currentStatus,
+	);
 	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
+	const statusCopy = currentStatusCopy(data.status, data.fulfillmentType);
+	const refundCopy = getRefundCopy(data);
 
 	async function cancel() {
 		if (!reason.trim()) {
@@ -360,6 +456,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 							<Text $muted $size={13}>
 								{formatDateTime(data.createdAt)}
 							</Text>
+							<Text $size={14}>{statusCopy}</Text>
 						</Stack>
 						<Badge $tone={statusTone[data.status]}>
 							{statusLabel(data.status)}
@@ -392,47 +489,44 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						tone="var(--pc-color-gold)"
 					/>
 				</SummaryGrid>
-				{data.fulfillmentType === "PICKUP" && (
-					<FulfillmentCard>
-						<Row $gap={12} $align="flex-start">
-							<Stack $gap={4}>
-								<Text $weight={800}>Pickup location</Text>
-								<Text $muted $size={14}>
-									{data.vendorPickupLocation ??
-										"Kitchen has not added a pickup spot yet."}
-								</Text>
-							</Stack>
-						</Row>
-					</FulfillmentCard>
-				)}
-				{data.fulfillmentType === "DELIVERY" && (
-					<FulfillmentCard>
-						<Stack $gap={10}>
-							<Stack $gap={4}>
-								<Text $weight={800}>
-									Delivery fulfilled by the vendor
-								</Text>
-								<Text $muted $size={14}>
-									Prechop manages payment and order status,
-									but this kitchen is responsible for
-									arranging and completing delivery. Delivery
-									complaints are reviewed with the vendor by
-									support.
-								</Text>
-							</Stack>
-							<Row $justify="flex-start">
-								<Button
-									as={Link}
-									href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
-									$variant="secondary"
-									$size="sm"
-								>
-									Report delivery issue
-								</Button>
-							</Row>
-						</Stack>
-					</FulfillmentCard>
-				)}
+				<FulfillmentCard>
+					<Stack $gap={12}>
+						<Text $weight={800}>
+							{data.fulfillmentType === "DELIVERY"
+								? "Delivery instructions"
+								: "Pickup instructions"}
+						</Text>
+						<InstructionGrid>
+							<InstructionPanel>
+								<Stack $gap={4}>
+									<Text $weight={700} $size={14}>
+										Where this happens
+									</Text>
+									<Text $muted $size={13}>
+										{data.fulfillmentType === "DELIVERY"
+											? "The vendor arranges delivery using the details you entered at checkout."
+											: (data.vendorPickupLocation ??
+												"Kitchen has not added a pickup spot yet.")}
+									</Text>
+								</Stack>
+							</InstructionPanel>
+							<InstructionPanel>
+								<Stack $gap={4}>
+									<Text $weight={700} $size={14}>
+										Handover
+									</Text>
+									<Text $muted $size={13}>
+										{data.fulfillmentType === "DELIVERY"
+											? "Show the QR or PIN only when the rider reaches you."
+											: "Show the QR or PIN only when you collect the order."}{" "}
+										It helps confirm handover, but support
+										may still review problems.
+									</Text>
+								</Stack>
+							</InstructionPanel>
+						</InstructionGrid>
+					</Stack>
+				</FulfillmentCard>
 			</FadeIn>
 
 			{!isTerminalBad && data.status !== "PENDING_PAYMENT" && (
@@ -441,13 +535,12 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 						<Stack $gap={14}>
 							<Text $weight={800}>Order progress</Text>
 							<Track>
-								{flow.map((s, i) => {
+								{timeline.map((step, i) => {
 									const done = currentIdx > i;
 									const current = currentIdx === i;
-									const meta = STEP_META[s];
 									return (
 										<Step
-											key={s}
+											key={step.status}
 											$done={done}
 											$current={current}
 										>
@@ -458,7 +551,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 												>
 													{done ? "✓" : i + 1}
 												</Dot>
-												{i < flow.length - 1 && (
+												{i < timeline.length - 1 && (
 													<Conn $done={done} />
 												)}
 											</DotCol>
@@ -468,11 +561,17 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 														current ? 800 : 600
 													}
 												>
-													{meta?.icon}{" "}
-													{statusLabel(s)}
+													<StepTitle>
+														<StepIcon>
+															{timelineIcon(
+																step.icon,
+															)}
+														</StepIcon>
+														{step.label}
+													</StepTitle>
 												</Text>
 												<Text $muted $size={13}>
-													{meta?.hint}
+													{step.hint}
 												</Text>
 											</StepBody>
 										</Step>
@@ -488,7 +587,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				<Card $accent>
 					<Stack $gap={12}>
 						<Text $weight={800}>Handover confirmation</Text>
-						<Row $gap={14} $align="center">
+						<HandoverRow $gap={14} $align="center">
 							<Image
 								src={handover.qrDataUrl}
 								alt="Order confirmation QR code"
@@ -508,9 +607,17 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 									Use the PIN only if scanning does not work.
 								</Text>
 							</Stack>
-						</Row>
+						</HandoverRow>
 					</Stack>
 				</Card>
+			)}
+
+			{!canViewHandover && data.handoverCredentialUsedAt == null && (
+				<StatusNote>
+					<Text $muted $size={13}>
+						{handoverUnavailableMessage(data.fulfillmentType)}
+					</Text>
+				</StatusNote>
 			)}
 
 			{data.status === "PENDING_PAYMENT" && (
@@ -524,6 +631,20 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Row>
 				</Card>
 			)}
+
+			<Card>
+				<Stack $gap={10}>
+					<Text $weight={800}>Refund status</Text>
+					<Text $muted $size={14}>
+						{refundCopy}
+					</Text>
+					{data.refundAmountKobo != null && (
+						<Text $size={13}>
+							Amount: {formatKobo(data.refundAmountKobo)}
+						</Text>
+					)}
+				</Stack>
+			</Card>
 
 			<Card>
 				<Stack $gap={10}>
@@ -593,7 +714,62 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					receiptStatus={data.receiptStatus}
 				/>
 			)}
-			{isTerminalBad && (
+			{isVendorNoResponseRefund && (
+				<Card $accent>
+					<Stack $gap={10}>
+						<Text $weight={800} $size={15}>
+							Order cancelled and refunded.
+						</Text>
+						<Text $muted $size={14}>
+							The kitchen did not accept your order within the
+							required time, so the order was cancelled
+							automatically. Your refund has been sent back to the
+							account you paid from. Your bank may take a few
+							working days to reflect it.
+						</Text>
+						<Stack $gap={6}>
+							<Line>
+								<Text $muted>Status</Text>
+								<Text $weight={700}>Refunded</Text>
+							</Line>
+							<Line>
+								<Text $muted>Cancellation reason</Text>
+								<Text $weight={700}>
+									Vendor did not accept in time
+								</Text>
+							</Line>
+							{data.refundAmountKobo != null && (
+								<Line>
+									<Text $muted>Refund amount</Text>
+									<Text $weight={700}>
+										{formatKobo(data.refundAmountKobo)}
+									</Text>
+								</Line>
+							)}
+							{data.refundReference && (
+								<Line>
+									<Text $muted>Refund reference</Text>
+									<Text $weight={700}>
+										{data.refundReference}
+									</Text>
+								</Line>
+							)}
+							{data.refundStatus && (
+								<Line>
+									<Text $muted>Refund status</Text>
+									<Text $weight={700}>
+										{data.refundStatus ===
+										"SENT_TO_PROVIDER"
+											? "Sent to payment provider"
+											: "Initiated"}
+									</Text>
+								</Line>
+							)}
+						</Stack>
+					</Stack>
+				</Card>
+			)}
+			{isTerminalBad && !isVendorNoResponseRefund && (
 				<RefundNote refunded={data.status === "REFUNDED"} />
 			)}
 
@@ -678,6 +854,16 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Button>
 				))}
 
+			<Button
+				as={Link}
+				href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
+				$full
+				$variant="secondary"
+				aria-label={`Report a problem with order ${data.orderNumber}`}
+			>
+				Report a problem
+			</Button>
+
 			{/* Primary, so it doesn't read as a twin of the secondary
 			    "Back to orders" directly beneath it. */}
 			{data.status === "COMPLETED" && (
@@ -694,6 +880,36 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 			</Button>
 		</Wrap>
 	);
+}
+
+function currentStatusCopy(
+	status: OrderStatus,
+	fulfillmentType: "PICKUP" | "DELIVERY",
+): string {
+	if (status === "READY" && fulfillmentType === "PICKUP")
+		return "Your order is ready. Go to the pickup point and show your QR or PIN at handover.";
+	if (status === "IN_TRANSIT")
+		return "Your order is on the way. Show your QR or PIN only when it arrives.";
+	if (status === "REFUND_PENDING" || status === "REFUND_PROCESSING")
+		return "A refund is being handled through the payment provider.";
+	if (status === "REFUNDED") return "This order has been marked refunded.";
+	if (status === "CANCELLED") return "This order was cancelled.";
+	return STEP_META[status]?.hint ?? statusLabel(status);
+}
+
+function getRefundCopy(order: BuyerOrderDetail): string {
+	if (order.refundStatus === "SENT_TO_PROVIDER")
+		return "Refund has been sent to the payment provider. Bank timing can vary.";
+	if (order.refundStatus === "INITIATED")
+		return "Refund has been started and is being processed.";
+	if (
+		order.status === "REFUND_PENDING" ||
+		order.status === "REFUND_PROCESSING" ||
+		order.status === "REFUND_FAILED" ||
+		order.status === "REFUNDED"
+	)
+		return statusLabel(order.status);
+	return "No refund is active for this order.";
 }
 
 function errMsg(e: unknown): string {

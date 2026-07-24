@@ -3,11 +3,13 @@ import {
 	createOrderDisputeDB,
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
+	getVendorProfileByIdDB,
 	type IBuyerOrder,
 	type IOrderDispute,
 	type IPayment,
 	type OrderDisputeReason,
 } from "../models";
+import { createUserNotification } from "./notifications";
 
 function asSnapshot(value: unknown): Record<string, unknown> | undefined {
 	if (!value) return undefined;
@@ -121,5 +123,41 @@ export async function openOrderDisputeForReview({
 	if (!dispute) {
 		throw validationError("Could not create the admin review record.");
 	}
+	await notifyVendorOfOrderDispute({ order, dispute, reason });
 	return dispute;
+}
+
+async function notifyVendorOfOrderDispute({
+	order,
+	dispute,
+	reason,
+}: {
+	order: IBuyerOrder;
+	dispute: IOrderDispute;
+	reason: OrderDisputeReason;
+}): Promise<void> {
+	try {
+		const vendor = await getVendorProfileByIdDB({
+			id: order.vendorId.toString(),
+		});
+		if (!vendor?.userId) return;
+		await createUserNotification({
+			userId: vendor.userId.toString(),
+			title: "Order problem reported",
+			body: `An order problem was submitted for order ${order.orderNumber}.`,
+			type: "ORDER_PROBLEM_REPORTED",
+			dedupeKey: `dispute:${dispute._id.toString()}:vendor`,
+			data: {
+				disputeId: dispute._id.toString(),
+				orderId: order._id.toString(),
+				orderNumber: order.orderNumber,
+				reason,
+			},
+		});
+	} catch (error) {
+		console.error(
+			`[order-disputes] vendor notification failed order=${order._id.toString()} vendorProfileId=${order.vendorId.toString()}:`,
+			error,
+		);
+	}
 }

@@ -51,8 +51,9 @@ export const updateOrderStatusBodySchema = zod
 			OrderStatus.COOKING,
 			OrderStatus.PREPARING,
 			OrderStatus.READY,
+			OrderStatus.READY_FOR_PICKUP,
+			OrderStatus.READY_FOR_DELIVERY,
 			OrderStatus.IN_TRANSIT,
-			OrderStatus.COMPLETED,
 		]),
 	})
 	.strict();

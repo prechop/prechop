@@ -17,19 +17,37 @@ export async function createUserNotification({
 	body,
 	type,
 	data,
+	dedupeKey,
 }: {
 	userId: string;
 	title: string;
 	body: string;
 	type: string;
 	data?: Record<string, unknown>;
+	dedupeKey?: string;
 }): Promise<void> {
 	try {
-		await createNotificationDB({
-			payload: { userId, title, body, type, data, isRead: false },
+		const created = await createNotificationDB({
+			payload: {
+				userId,
+				title,
+				body,
+				type,
+				dedupeKey,
+				data,
+				isRead: false,
+			},
 		});
+		if (!created) {
+			console.error(
+				`[notifications] failed to persist notification userId=${userId} type=${type} dedupeKey=${dedupeKey ?? "none"}`,
+			);
+		}
 	} catch (error) {
-		console.error("[notifications] failed to persist notification:", error);
+		console.error(
+			`[notifications] failed to persist notification userId=${userId} type=${type} dedupeKey=${dedupeKey ?? "none"}:`,
+			error,
+		);
 	}
 
 	// Fire-and-forget push fan-out.

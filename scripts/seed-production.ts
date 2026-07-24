@@ -49,7 +49,7 @@ import {
 } from "../src/server/services/iam";
 
 const SEED_ADMIN_PHONE =
-  process.env.SEED_ADMIN_PHONE?.trim() || "08000000000";
+  process.env.SEED_ADMIN_PHONE?.trim() || "08130135756";
 
 const NORMALIZED_ADMIN_EMAIL =
   SEED_ADMIN_EMAIL?.trim().toLowerCase() ?? "";

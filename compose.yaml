@@ -43,7 +43,7 @@ services:
         # to be right at build time and cannot be fixed by the runtime env below.
         # A public origin, never a secret. Must not be localhost/127.0.0.1 or the
         # production boot guard refuses to start.
-        NEXT_PUBLIC_APP_URL: "https://prechop.ng"
+        NEXT_PUBLIC_APP_URL: "https://prechop.com.ng"
     image: prechop:local
     ports:
       - "3000:3000"

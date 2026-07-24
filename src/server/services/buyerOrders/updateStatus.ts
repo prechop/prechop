@@ -1,3 +1,4 @@
+import { isVendorStatusTransitionAllowed } from "@/constants/orderLifecycle";
 import {
 	ErrForbidden,
 	ErrOrderNotFound,
@@ -20,19 +21,6 @@ import {
 import { issueRefund } from "../refunds";
 import { generateReceiptInBackground } from "./receiptPdf";
 
-const VALID_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-	[OrderStatus.AWAITING_VENDOR_ACCEPTANCE]: [
-		OrderStatus.ACCEPTED,
-		OrderStatus.VENDOR_REJECTED,
-	],
-	[OrderStatus.ACCEPTED]: [OrderStatus.COOKING],
-	[OrderStatus.PAID]: [OrderStatus.CONFIRMED],
-	[OrderStatus.CONFIRMED]: [OrderStatus.PREPARING],
-	[OrderStatus.COOKING]: [OrderStatus.READY],
-	[OrderStatus.PREPARING]: [OrderStatus.READY],
-	[OrderStatus.READY]: [OrderStatus.IN_TRANSIT],
-};
-
 export async function updateOrderStatus({
 	vendorUserId,
 	orderId,
@@ -49,8 +37,13 @@ export async function updateOrderStatus({
 	if (!order) throw ErrOrderNotFound;
 	if (order.vendorId.toString() !== vendor._id.toString()) throw ErrForbidden;
 
-	const allowed = VALID_TRANSITIONS[order.status as OrderStatus] ?? [];
-	if (!allowed.includes(status)) {
+	if (
+		!isVendorStatusTransitionAllowed(
+			order.status as OrderStatus,
+			status,
+			order.fulfillmentType,
+		)
+	) {
 		throw invalidOrderState(
 			`Cannot transition from ${order.status} to ${status}.`,
 		);
@@ -74,12 +67,47 @@ export async function updateOrderStatus({
 		throw invalidOrderState("Only awaiting orders can be rejected.");
 	}
 	if (
-		order.status === OrderStatus.READY &&
+		status === OrderStatus.READY_FOR_PICKUP &&
+		order.fulfillmentType !== FulfillmentType.PICKUP
+	) {
+		throw invalidOrderState(
+			"Only pickup orders can be marked ready for pickup.",
+		);
+	}
+	if (
+		status === OrderStatus.READY_FOR_DELIVERY &&
+		order.fulfillmentType !== FulfillmentType.DELIVERY
+	) {
+		throw invalidOrderState(
+			"Only delivery orders can be marked ready for delivery.",
+		);
+	}
+	if (
+		(order.status === OrderStatus.READY ||
+			order.status === OrderStatus.READY_FOR_DELIVERY) &&
 		status === OrderStatus.COMPLETED &&
 		order.fulfillmentType === FulfillmentType.DELIVERY
 	) {
 		throw invalidOrderState(
 			"Delivery orders must be marked in transit before completion.",
+		);
+	}
+	if (
+		(order.status === OrderStatus.READY ||
+			order.status === OrderStatus.READY_FOR_PICKUP ||
+			order.status === OrderStatus.READY_FOR_DELIVERY) &&
+		status === OrderStatus.IN_TRANSIT &&
+		order.fulfillmentType !== FulfillmentType.DELIVERY
+	) {
+		throw invalidOrderState("Only delivery orders can move in transit.");
+	}
+	if (
+		status === OrderStatus.IN_TRANSIT &&
+		order.status !== OrderStatus.READY_FOR_DELIVERY &&
+		order.status !== OrderStatus.READY
+	) {
+		throw invalidOrderState(
+			"Delivery can start only after the order is ready for delivery.",
 		);
 	}
 
@@ -95,14 +123,6 @@ export async function updateOrderStatus({
 		if (!accepted)
 			throw invalidOrderState("Order status changed â€” please retry.");
 
-		const cooking = await setBuyerOrderStatusDB({
-			id: orderId,
-			status: OrderStatus.COOKING,
-			fromStatuses: [OrderStatus.ACCEPTED],
-		});
-		if (!cooking)
-			throw invalidOrderState("Order status changed â€” please retry.");
-
 		void notifyOrderAccepted({
 			buyerId: order.buyerId.toString(),
 			orderNumber: order.orderNumber,
@@ -113,7 +133,7 @@ export async function updateOrderStatus({
 				error,
 			),
 		);
-		return cooking;
+		return accepted;
 	}
 
 	if (status === OrderStatus.VENDOR_REJECTED) {
@@ -160,7 +180,12 @@ export async function updateOrderStatus({
 		id: orderId,
 		status,
 		fromStatuses: [order.status as OrderStatus],
-		readyAt: status === OrderStatus.READY ? new Date() : undefined,
+		readyAt:
+			status === OrderStatus.READY ||
+			status === OrderStatus.READY_FOR_PICKUP ||
+			status === OrderStatus.READY_FOR_DELIVERY
+				? new Date()
+				: undefined,
 		deliveryStartedAt:
 			status === OrderStatus.IN_TRANSIT ? new Date() : undefined,
 	});
@@ -180,7 +205,11 @@ export async function updateOrderStatus({
 	// would retry into an `invalidOrderState`. Both helpers already swallow their
 	// own delivery errors; this guard means a future change inside them still
 	// cannot fail the transition.
-	if (status === OrderStatus.READY) {
+	if (
+		status === OrderStatus.READY ||
+		status === OrderStatus.READY_FOR_PICKUP ||
+		status === OrderStatus.READY_FOR_DELIVERY
+	) {
 		void notifyOrderReady({
 			buyerId: order.buyerId.toString(),
 			orderNumber: order.orderNumber,

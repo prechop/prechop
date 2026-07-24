@@ -132,8 +132,9 @@ export async function handlePaystackWebhook({
 		})),
 	);
 
-	// 8. Notify vendor + buyer (fire-and-forget).
-	void notifyParties(order);
+	// 8. Notify vendor + buyer. The helper swallows/logs delivery failures, but
+	// the durable in-app writes must complete before the webhook request returns.
+	await notifyParties(order);
 
 	return { received: true, orderNumber: order.orderNumber };
 }
@@ -155,11 +156,12 @@ async function notifyParties(order: {
 		});
 		vendorName = vendor?.businessName ?? "";
 		if (vendor?.userId) {
-			createUserNotification({
+			await createUserNotification({
 				userId: vendor.userId.toString(),
 				title: "New paid order",
 				body: `Order ${order.orderNumber} • ₦${koboToNaira(order.totalKobo).toLocaleString()}`,
 				type: "ORDER_PAID",
+				dedupeKey: `order:${order.orderNumber}:vendor:paid`,
 				data: { orderNumber: order.orderNumber },
 			});
 			const vendorUser = await getUserByIdWithPhoneDB({
@@ -177,7 +179,10 @@ async function notifyParties(order: {
 			}
 		}
 	} catch (error) {
-		console.error("[webhook] notify vendor failed:", error);
+		console.error(
+			`[webhook] notify vendor failed order=${order.orderNumber} vendorProfileId=${order.vendorId.toString()}:`,
+			error,
+		);
 	}
 
 	// Buyer confirmation: in-app + SMS (PRD marks this one SMS). The buyer may
@@ -195,6 +200,7 @@ async function notifyParties(order: {
 			title: "Payment received",
 			body: `Payment for order ${order.orderNumber} is confirmed. ${vendorName || "Your vendor"} has 10 minutes to accept it.`,
 			type: "ORDER_PAID_AWAITING_VENDOR",
+			dedupeKey: `order:${order.orderNumber}:buyer:paid-awaiting-vendor`,
 			data: { orderNumber: order.orderNumber },
 		});
 	} catch (error) {

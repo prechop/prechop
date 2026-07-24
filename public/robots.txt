@@ -1,14 +1,9 @@
+# *
 User-agent: *
 Allow: /
 
-Disallow: /api/
-Disallow: /admin/
-Disallow: /vendor/
-Disallow: /account/
-Disallow: /dashboard/
-Disallow: /earnings/
-Disallow: /orders/
-Disallow: /settings/
-Disallow: /login
+# Host
+Host: https://prechop.com.ng
 
+# Sitemaps
 Sitemap: https://prechop.com.ng/sitemap.xml
