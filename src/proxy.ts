@@ -78,26 +78,58 @@ function buildLoginRedirect(request: NextRequest, pathname: string): URL {
 	return url;
 }
 
+// export async function proxy(request: NextRequest) {
+// 	const { pathname } = request.nextUrl;
+// 	const state = await resolveAuthState(request);
+// 	const isAuthenticated = state !== "anonymous";
+
+// 	// Already signed in and visiting /login → send home; the home page routes
+// 	// the user to their role dashboard.
+// 	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
+// 		const next = request.nextUrl.searchParams.get("next");
+// 		if (next?.startsWith("/") && !next.startsWith("//")) {
+// 			return NextResponse.redirect(new URL(next, request.url));
+// 		}
+// 		return NextResponse.redirect(new URL("/", request.url));
+// 	}
+
+// 	if (!isAuthenticated && isProtectedRoute(pathname)) {
+// 		return NextResponse.redirect(buildLoginRedirect(request, pathname));
+// 	}
+
+// 	return NextResponse.next();
+// }
+
+
+
 export async function proxy(request: NextRequest) {
-	const { pathname } = request.nextUrl;
-	const state = await resolveAuthState(request);
-	const isAuthenticated = state !== "anonymous";
+  const { pathname } = request.nextUrl;
+  const state = await resolveAuthState(request);
 
-	// Already signed in and visiting /login → send home; the home page routes
-	// the user to their role dashboard.
-	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
-		const next = request.nextUrl.searchParams.get("next");
-		if (next?.startsWith("/") && !next.startsWith("//")) {
-			return NextResponse.redirect(new URL(next, request.url));
-		}
-		return NextResponse.redirect(new URL("/", request.url));
-	}
+  // Only a verified access token counts as authenticated.
+  const isAuthenticated = state === "authenticated";
 
-	if (!isAuthenticated && isProtectedRoute(pathname)) {
-		return NextResponse.redirect(buildLoginRedirect(request, pathname));
-	}
+  // Redirect away from login only when the access token is valid.
+  // A refresh cookie alone must not cause /login → /admin.
+  if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
+    const next = request.nextUrl.searchParams.get("next");
 
-	return NextResponse.next();
+    if (next?.startsWith("/") && !next.startsWith("//")) {
+      return NextResponse.redirect(new URL(next, request.url));
+    }
+
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // Both anonymous users and users with only an unverified refresh cookie
+  // should go through the login/refresh flow.
+  if (!isAuthenticated && isProtectedRoute(pathname)) {
+    return NextResponse.redirect(
+      buildLoginRedirect(request, pathname),
+    );
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
