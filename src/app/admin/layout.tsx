@@ -5,40 +5,20 @@ import { assertAdministrator, verifyAuthToken } from "@/server/lib";
 
 export const runtime = "nodejs";
 
-
-import { headers } from "next/headers";
-
-
 export default async function AdminLayout({
-  children,
+	children,
 }: {
-  children: ReactNode;
+	children: ReactNode;
 }) {
-  const requestHeaders = await headers();
+	try {
+		const auth = await verifyAuthToken(new Request("http://localhost"));
+		assertAdministrator(auth);
+	} catch (error) {
+		if (error === ErrUnauthorized) {
+			redirect("/login?next=/admin");
+		}
+		throw error;
+	}
 
-  const request = new Request(
-    `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin`,
-    {
-      headers: requestHeaders,
-    },
-  );
-
-  try {
-    const auth = await verifyAuthToken(request);
-    assertAdministrator(auth);
-  } catch (error) {
-    if (
-      error === ErrUnauthorized
-    ) {
-      redirect("/login?next=/admin");
-    }
-    throw error;
-  }
-
-  return children;
+	return children;
 }
-
-
-
-
-
