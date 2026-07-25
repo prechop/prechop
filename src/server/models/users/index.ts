@@ -85,8 +85,12 @@ const schema = new mongoose.Schema<any>(
 
 schema.index({ "refreshTokens.deadline": 1 });
 
+const notDeletedFilter = {
+	$or: [{ deleted: { $ne: true } }, { deleted: { $exists: false } }],
+};
+
 schema.pre("aggregate", function () {
-	this.pipeline().unshift({ $match: { deleted: false } });
+	this.pipeline().unshift({ $match: notDeletedFilter });
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
 	this.pipeline().push({
 		$project: {
@@ -423,7 +427,7 @@ export async function getUserByEmailDB({
 		const normalizedEmail = normalizeEmail(email);
 		if (!normalizedEmail) return null;
 		const result = await User.findOne(
-			{ email: normalizedEmail, deleted: false },
+			{ email: normalizedEmail, ...notDeletedFilter },
 			null,
 			{ session },
 		).lean<IUser>();
@@ -573,7 +577,7 @@ export async function countUsersInGroupDB({
 }): Promise<number> {
 	if (!mongoose.Types.ObjectId.isValid(groupId)) return 0;
 	return User.countDocuments(
-		{ groupIds: new mongoose.Types.ObjectId(groupId), deleted: false },
+		{ groupIds: new mongoose.Types.ObjectId(groupId), ...notDeletedFilter },
 		{ session },
 	);
 }
@@ -594,17 +598,19 @@ export async function listUsersDB({
 	limit?: number;
 	session?: ClientSession;
 } = {}): Promise<{ users: IUser[]; total: number }> {
-	const match: Record<string, unknown> = { deleted: false };
+	const match: Record<string, unknown> = { $and: [notDeletedFilter] };
 	if (groupId && mongoose.Types.ObjectId.isValid(groupId))
 		match.groupIds = new mongoose.Types.ObjectId(groupId);
 	if (campusId && mongoose.Types.ObjectId.isValid(campusId))
 		match.campusId = new mongoose.Types.ObjectId(campusId);
 	if (search) {
 		const safe = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		match.$or = [
-			{ firstName: { $regex: safe, $options: "i" } },
-			{ lastName: { $regex: safe, $options: "i" } },
-		];
+		(match.$and as Record<string, unknown>[]).push({
+			$or: [
+				{ firstName: { $regex: safe, $options: "i" } },
+				{ lastName: { $regex: safe, $options: "i" } },
+			],
+		});
 	}
 
 	const [users, total] = await Promise.all([
@@ -676,7 +682,7 @@ export async function reLoginUserWithRefreshTokenDB({
 		const now = new Date();
 		const filter = {
 			_id: new mongoose.Types.ObjectId(id),
-			deleted: false,
+			...notDeletedFilter,
 			refreshTokens: {
 				$elemMatch: { refreshToken, deadline: { $gt: now } },
 			},
@@ -757,7 +763,7 @@ export async function getUserByIdWithPhoneDB({
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return null;
 		const res = await User.findOne(
-			{ _id: new mongoose.Types.ObjectId(id), deleted: false },
+			{ _id: new mongoose.Types.ObjectId(id), ...notDeletedFilter },
 			null,
 			{
 				session,
@@ -777,7 +783,10 @@ export async function countUsersDB({
 	filter?: Record<string, unknown>;
 } = {}): Promise<number> {
 	try {
-		return await User.countDocuments({ deleted: false, ...(filter ?? {}) });
+		return await User.countDocuments({
+			...notDeletedFilter,
+			...(filter ?? {}),
+		});
 	} catch {
 		return 0;
 	}
