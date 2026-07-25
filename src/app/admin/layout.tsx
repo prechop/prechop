@@ -1,28 +1,17 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { ErrForbidden, ErrUnauthorized } from "@/server/constants";
 import {
-	decodeJwtToken,
-	ErrForbidden,
-	ErrUnauthorized,
-} from "@/server/constants";
-import {
-	ACCESS_COOKIE,
 	assertAdministrator,
 	getCookieValue,
 	REFRESH_COOKIE,
-	verifyAuthToken,
+	verifyAccessTokenOnly,
 } from "@/server/lib";
 
 export const runtime = "nodejs";
 
 const ADMIN_NEXT = "/admin";
-
-async function hasValidAccessToken(): Promise<boolean> {
-	const accessToken = await getCookieValue(ACCESS_COOKIE);
-	if (!accessToken) return false;
-	return !!(await decodeJwtToken({ accessToken }).catch(() => null));
-}
 
 async function redirectToFreshSession(): Promise<never> {
 	if (await getCookieValue(REFRESH_COOKIE)) {
@@ -36,10 +25,6 @@ export default async function AdminLayout({
 }: {
 	children: ReactNode;
 }) {
-	if (!(await hasValidAccessToken())) {
-		await redirectToFreshSession();
-	}
-
 	const requestHeaders = await headers();
 	const request = new Request(
 		`${process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}${ADMIN_NEXT}`,
@@ -47,7 +32,7 @@ export default async function AdminLayout({
 	);
 
 	try {
-		const auth = await verifyAuthToken(request);
+		const auth = await verifyAccessTokenOnly(request);
 		assertAdministrator(auth);
 	} catch (error) {
 		if (error === ErrUnauthorized) {

@@ -3,28 +3,28 @@ import "server-only";
 import type { NextRequest } from "next/server";
 
 import {
-  ADMINISTRATORS_GROUP,
-  decodeJwtToken,
-  ErrForbidden,
-  ErrUnauthorized,
-  ErrVendorNotActive,
+	ADMINISTRATORS_GROUP,
+	decodeJwtToken,
+	ErrForbidden,
+	ErrUnauthorized,
+	ErrVendorNotActive,
 } from "../constants";
 
 import {
-  getUserByIdDB,
-  getVendorProfileByUserIdDB,
-  listGroupsDB,
-  type IPolicyStatement,
-  type IVendorProfile,
-  VendorStatus,
+	getUserByIdDB,
+	getVendorProfileByUserIdDB,
+	type IPolicyStatement,
+	type IVendorProfile,
+	listGroupsDB,
+	VendorStatus,
 } from "../models";
 
 import reLoginUserWithRefreshToken from "../services/auth/reLoginUserWithRefreshToken";
 
 import {
-  can,
-  type PermissionContext,
-  resolvePermissions,
+	can,
+	type PermissionContext,
+	resolvePermissions,
 } from "../services/iam";
 
 import type { IJwtPayload } from "../types";
@@ -32,11 +32,11 @@ import type { IJwtPayload } from "../types";
 import { getClientIp } from "./clientIp";
 
 import {
-  ACCESS_COOKIE,
-  clearAuthCookies,
-  getCookieValue,
-  REFRESH_COOKIE,
-  setAuthCookies,
+	ACCESS_COOKIE,
+	clearAuthCookies,
+	getCookieValue,
+	REFRESH_COOKIE,
+	setAuthCookies,
 } from "./cookies";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,29 +44,29 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AuthResult {
-  userId: string;
-  token: IJwtPayload;
+	userId: string;
+	token: IJwtPayload;
 
-  /** True when the access token was refreshed during this request. */
-  refreshed: boolean;
+	/** True when the access token was refreshed during this request. */
+	refreshed: boolean;
 
-  campusId: string;
-  isActive: boolean;
+	campusId: string;
+	isActive: boolean;
 
-  /** Names of the IAM groups the user belongs to. */
-  groups: string[];
+	/** Names of the IAM groups the user belongs to. */
+	groups: string[];
 
-  /** Concrete allowed action strings. */
-  permissions: string[];
+	/** Concrete allowed action strings. */
+	permissions: string[];
 
-  /** Resolved policy statements used by `requirePermission`. */
-  statements: IPolicyStatement[];
+	/** Resolved policy statements used by `requirePermission`. */
+	statements: IPolicyStatement[];
 }
 
 export type AuthUserLike = {
-  userId?: string;
-  id?: string;
-  groups?: Array<string | null | undefined>;
+	userId?: string;
+	id?: string;
+	groups?: Array<string | null | undefined>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,29 +74,29 @@ export type AuthUserLike = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function describeError(error: unknown): {
-  name: string;
-  message: string;
-  code?: string;
+	name: string;
+	message: string;
+	code?: string;
 } {
-  let code: string | undefined;
+	let code: string | undefined;
 
-  if (typeof error === "object" && error !== null && "code" in error) {
-    code = String(error.code);
-  }
+	if (typeof error === "object" && error !== null && "code" in error) {
+		code = String(error.code);
+	}
 
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      code,
-    };
-  }
+	if (error instanceof Error) {
+		return {
+			name: error.name,
+			message: error.message,
+			code,
+		};
+	}
 
-  return {
-    name: typeof error,
-    message: String(error),
-    code,
-  };
+	return {
+		name: typeof error,
+		message: String(error),
+		code,
+	};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,51 +110,51 @@ function describeError(error: unknown): {
  * constructed using the incoming request headers.
  */
 function readCookieFromRequest(
-  req: Request | NextRequest,
-  cookieName: string,
+	req: Request | NextRequest,
+	cookieName: string,
 ): string | null {
-  const cookieHeader = req.headers.get("cookie");
+	const cookieHeader = req.headers.get("cookie");
 
-  if (!cookieHeader) {
-    return null;
-  }
+	if (!cookieHeader) {
+		return null;
+	}
 
-  for (const rawCookie of cookieHeader.split(";")) {
-    const [name, ...valueParts] = rawCookie.trim().split("=");
+	for (const rawCookie of cookieHeader.split(";")) {
+		const [name, ...valueParts] = rawCookie.trim().split("=");
 
-    if (name !== cookieName) {
-      continue;
-    }
+		if (name !== cookieName) {
+			continue;
+		}
 
-    const rawValue = valueParts.join("=");
+		const rawValue = valueParts.join("=");
 
-    if (!rawValue) {
-      return null;
-    }
+		if (!rawValue) {
+			return null;
+		}
 
-    try {
-      return decodeURIComponent(rawValue);
-    } catch {
-      return rawValue;
-    }
-  }
+		try {
+			return decodeURIComponent(rawValue);
+		} catch {
+			return rawValue;
+		}
+	}
 
-  return null;
+	return null;
 }
 
 /**
  * Read a Bearer access token from the Authorization header.
  */
 function readBearerToken(req: Request | NextRequest): string | null {
-  const authorization = req.headers.get("authorization");
+	const authorization = req.headers.get("authorization");
 
-  if (!authorization) {
-    return null;
-  }
+	if (!authorization) {
+		return null;
+	}
 
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
+	const match = authorization.match(/^Bearer\s+(.+)$/i);
 
-  return match?.[1]?.trim() || null;
+	return match?.[1]?.trim() || null;
 }
 
 /**
@@ -164,16 +164,16 @@ function readBearerToken(req: Request | NextRequest): string | null {
  * extraction is preferred when a Request was explicitly supplied.
  */
 async function readContextCookie(cookieName: string): Promise<string | null> {
-  try {
-    return await getCookieValue(cookieName);
-  } catch (error) {
-    console.warn("[auth] context cookie read failed", {
-      cookieName,
-      ...describeError(error),
-    });
+	try {
+		return await getCookieValue(cookieName);
+	} catch (error) {
+		console.warn("[auth] context cookie read failed", {
+			cookieName,
+			...describeError(error),
+		});
 
-    return null;
-  }
+		return null;
+	}
 }
 
 /**
@@ -184,40 +184,40 @@ async function readContextCookie(cookieName: string): Promise<string | null> {
  * 3. Authorization Bearer header
  */
 async function readAccessToken(req: Request | NextRequest): Promise<{
-  token: string | null;
-  source: "request-cookie" | "context-cookie" | "bearer" | "none";
+	token: string | null;
+	source: "request-cookie" | "context-cookie" | "bearer" | "none";
 }> {
-  const requestCookie = readCookieFromRequest(req, ACCESS_COOKIE);
+	const requestCookie = readCookieFromRequest(req, ACCESS_COOKIE);
 
-  if (requestCookie) {
-    return {
-      token: requestCookie,
-      source: "request-cookie",
-    };
-  }
+	if (requestCookie) {
+		return {
+			token: requestCookie,
+			source: "request-cookie",
+		};
+	}
 
-  const contextCookie = await readContextCookie(ACCESS_COOKIE);
+	const contextCookie = await readContextCookie(ACCESS_COOKIE);
 
-  if (contextCookie) {
-    return {
-      token: contextCookie,
-      source: "context-cookie",
-    };
-  }
+	if (contextCookie) {
+		return {
+			token: contextCookie,
+			source: "context-cookie",
+		};
+	}
 
-  const bearerToken = readBearerToken(req);
+	const bearerToken = readBearerToken(req);
 
-  if (bearerToken) {
-    return {
-      token: bearerToken,
-      source: "bearer",
-    };
-  }
+	if (bearerToken) {
+		return {
+			token: bearerToken,
+			source: "bearer",
+		};
+	}
 
-  return {
-    token: null,
-    source: "none",
-  };
+	return {
+		token: null,
+		source: "none",
+	};
 }
 
 /**
@@ -225,31 +225,31 @@ async function readAccessToken(req: Request | NextRequest): Promise<{
  * Next.js's current request cookie context.
  */
 async function readRefreshToken(req: Request | NextRequest): Promise<{
-  token: string | null;
-  source: "request-cookie" | "context-cookie" | "none";
+	token: string | null;
+	source: "request-cookie" | "context-cookie" | "none";
 }> {
-  const requestCookie = readCookieFromRequest(req, REFRESH_COOKIE);
+	const requestCookie = readCookieFromRequest(req, REFRESH_COOKIE);
 
-  if (requestCookie) {
-    return {
-      token: requestCookie,
-      source: "request-cookie",
-    };
-  }
+	if (requestCookie) {
+		return {
+			token: requestCookie,
+			source: "request-cookie",
+		};
+	}
 
-  const contextCookie = await readContextCookie(REFRESH_COOKIE);
+	const contextCookie = await readContextCookie(REFRESH_COOKIE);
 
-  if (contextCookie) {
-    return {
-      token: contextCookie,
-      source: "context-cookie",
-    };
-  }
+	if (contextCookie) {
+		return {
+			token: contextCookie,
+			source: "context-cookie",
+		};
+	}
 
-  return {
-    token: null,
-    source: "none",
-  };
+	return {
+		token: null,
+		source: "none",
+	};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,118 +257,118 @@ async function readRefreshToken(req: Request | NextRequest): Promise<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function resolveUserGroupNamesFromUser(user: {
-  groupIds?: unknown[];
+	groupIds?: unknown[];
 }): Promise<string[]> {
-  const groupIds = (user.groupIds ?? [])
-    .map((groupId) => String(groupId))
-    .filter(Boolean);
+	const groupIds = (user.groupIds ?? [])
+		.map((groupId) => String(groupId))
+		.filter(Boolean);
 
-  console.info("[auth] resolving group names", {
-    groupIdCount: groupIds.length,
-  });
+	console.info("[auth] resolving group names", {
+		groupIdCount: groupIds.length,
+	});
 
-  if (groupIds.length === 0) {
-    return [];
-  }
+	if (groupIds.length === 0) {
+		return [];
+	}
 
-  const groups = await listGroupsDB({
-    ids: groupIds,
-  });
+	const groups = await listGroupsDB({
+		ids: groupIds,
+	});
 
-  const groupNames = groups.map((group) => group.name);
+	const groupNames = groups.map((group) => group.name);
 
-  console.info("[auth] group names resolved", {
-    requestedGroupCount: groupIds.length,
-    resolvedGroupCount: groupNames.length,
-    groupNames,
-  });
+	console.info("[auth] group names resolved", {
+		requestedGroupCount: groupIds.length,
+		resolvedGroupCount: groupNames.length,
+		groupNames,
+	});
 
-  return groupNames;
+	return groupNames;
 }
 
 export async function resolveUserGroupNames(userId: string): Promise<string[]> {
-  console.info("[auth] loading user groups", {
-    userId,
-  });
+	console.info("[auth] loading user groups", {
+		userId,
+	});
 
-  const user = await getUserByIdDB({
-    id: userId,
-  });
+	const user = await getUserByIdDB({
+		id: userId,
+	});
 
-  if (!user) {
-    console.warn("[auth] user not found while resolving groups", {
-      userId,
-    });
+	if (!user) {
+		console.warn("[auth] user not found while resolving groups", {
+			userId,
+		});
 
-    return [];
-  }
+		return [];
+	}
 
-  return resolveUserGroupNamesFromUser(user);
+	return resolveUserGroupNamesFromUser(user);
 }
 
 async function resolveScope(userId: string): Promise<{
-  campusId: string;
-  isActive: boolean;
-  groups: string[];
-  permissions: string[];
-  statements: IPolicyStatement[];
+	campusId: string;
+	isActive: boolean;
+	groups: string[];
+	permissions: string[];
+	statements: IPolicyStatement[];
 }> {
-  console.info("[auth] resolving scope", {
-    userId,
-  });
+	console.info("[auth] resolving scope", {
+		userId,
+	});
 
-  const user = await getUserByIdDB({
-    id: userId,
-  });
+	const user = await getUserByIdDB({
+		id: userId,
+	});
 
-  if (!user) {
-    console.warn("[auth] scope rejected: user not found", {
-      userId,
-    });
+	if (!user) {
+		console.warn("[auth] scope rejected: user not found", {
+			userId,
+		});
 
-    throw ErrUnauthorized;
-  }
+		throw ErrUnauthorized;
+	}
 
-  if (!user.isActive) {
-    console.warn("[auth] scope rejected: user inactive", {
-      userId,
-    });
+	if (!user.isActive) {
+		console.warn("[auth] scope rejected: user inactive", {
+			userId,
+		});
 
-    throw ErrUnauthorized;
-  }
+		throw ErrUnauthorized;
+	}
 
-  try {
-    const [resolved, groups] = await Promise.all([
-      resolvePermissions(userId),
-      resolveUserGroupNamesFromUser(user),
-    ]);
+	try {
+		const [resolved, groups] = await Promise.all([
+			resolvePermissions(userId),
+			resolveUserGroupNamesFromUser(user),
+		]);
 
-    const scope = {
-      campusId: user.campusId?.toString() ?? "",
-      isActive: user.isActive,
-      groups,
-      permissions: resolved.actions,
-      statements: resolved.statements,
-    };
+		const scope = {
+			campusId: user.campusId?.toString() ?? "",
+			isActive: user.isActive,
+			groups,
+			permissions: resolved.actions,
+			statements: resolved.statements,
+		};
 
-    console.info("[auth] scope resolved", {
-      userId,
-      campusIdPresent: Boolean(scope.campusId),
-      isActive: scope.isActive,
-      groups: scope.groups,
-      permissionCount: scope.permissions.length,
-      statementCount: scope.statements.length,
-    });
+		console.info("[auth] scope resolved", {
+			userId,
+			campusIdPresent: Boolean(scope.campusId),
+			isActive: scope.isActive,
+			groups: scope.groups,
+			permissionCount: scope.permissions.length,
+			statementCount: scope.statements.length,
+		});
 
-    return scope;
-  } catch (error) {
-    console.error("[auth] scope resolution failed", {
-      userId,
-      ...describeError(error),
-    });
+		return scope;
+	} catch (error) {
+		console.error("[auth] scope resolution failed", {
+			userId,
+			...describeError(error),
+		});
 
-    throw error;
-  }
+		throw error;
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,156 +385,192 @@ async function resolveScope(userId: string): Promise<{
  * `setAuthCookies` from a Route Handler or other cookie-writing context.
  */
 export async function verifyAuthToken(
-  req: Request | NextRequest,
+	req: Request | NextRequest,
 ): Promise<AuthResult> {
-  console.info("[verifyAuthToken] started", {
-    method: req.method,
-    hasCookieHeader: Boolean(req.headers.get("cookie")),
-    hasAuthorizationHeader: Boolean(req.headers.get("authorization")),
-  });
+	console.info("[verifyAuthToken] started", {
+		method: req.method,
+		hasCookieHeader: Boolean(req.headers.get("cookie")),
+		hasAuthorizationHeader: Boolean(req.headers.get("authorization")),
+	});
 
-  // ── Access token ──────────────────────────────────────────────────────────
+	// ── Access token ──────────────────────────────────────────────────────────
 
-  const access = await readAccessToken(req);
+	const access = await readAccessToken(req);
 
-  console.info("[verifyAuthToken] access token located", {
-    present: Boolean(access.token),
-    source: access.source,
-    length: access.token?.length ?? 0,
-  });
+	console.info("[verifyAuthToken] access token located", {
+		present: Boolean(access.token),
+		source: access.source,
+		length: access.token?.length ?? 0,
+	});
 
-  if (access.token) {
-    try {
-      const decodedAccess = await decodeJwtToken({
-        accessToken: access.token,
-      });
+	if (access.token) {
+		try {
+			const decodedAccess = await decodeJwtToken({
+				accessToken: access.token,
+			});
 
-      if (!decodedAccess) {
-        console.warn("[verifyAuthToken] access token decoded to null", {
-          source: access.source,
-        });
-      } else {
-        console.info("[verifyAuthToken] access token decoded", {
-          userId: decodedAccess.userId,
-          tokenKeys: Object.keys(decodedAccess),
-        });
+			if (!decodedAccess) {
+				console.warn("[verifyAuthToken] access token decoded to null", {
+					source: access.source,
+				});
+			} else {
+				console.info("[verifyAuthToken] access token decoded", {
+					userId: decodedAccess.userId,
+					tokenKeys: Object.keys(decodedAccess),
+				});
 
-        const scope = await resolveScope(decodedAccess.userId);
+				const scope = await resolveScope(decodedAccess.userId);
 
-        console.info("[verifyAuthToken] access authentication succeeded", {
-          userId: decodedAccess.userId,
-          groups: scope.groups,
-        });
+				console.info(
+					"[verifyAuthToken] access authentication succeeded",
+					{
+						userId: decodedAccess.userId,
+						groups: scope.groups,
+					},
+				);
 
-        return {
-          userId: decodedAccess.userId,
-          token: decodedAccess,
-          refreshed: false,
-          ...scope,
-        };
-      }
-    } catch (error) {
-      console.warn("[verifyAuthToken] access token rejected", {
-        source: access.source,
-        ...describeError(error),
-      });
-    }
-  }
+				return {
+					userId: decodedAccess.userId,
+					token: decodedAccess,
+					refreshed: false,
+					...scope,
+				};
+			}
+		} catch (error) {
+			console.warn("[verifyAuthToken] access token rejected", {
+				source: access.source,
+				...describeError(error),
+			});
+		}
+	}
 
-  // ── Refresh-token fallback ────────────────────────────────────────────────
+	// ── Refresh-token fallback ────────────────────────────────────────────────
 
-  console.info("[verifyAuthToken] attempting refresh fallback");
+	console.info("[verifyAuthToken] attempting refresh fallback");
 
-  const refresh = await readRefreshToken(req);
+	const refresh = await readRefreshToken(req);
 
-  console.info("[verifyAuthToken] refresh token located", {
-    present: Boolean(refresh.token),
-    source: refresh.source,
-    length: refresh.token?.length ?? 0,
-  });
+	console.info("[verifyAuthToken] refresh token located", {
+		present: Boolean(refresh.token),
+		source: refresh.source,
+		length: refresh.token?.length ?? 0,
+	});
 
-  if (!refresh.token) {
-    console.warn("[verifyAuthToken] authentication rejected", {
-      reason: "refresh-token-missing",
-    });
+	if (!refresh.token) {
+		console.warn("[verifyAuthToken] authentication rejected", {
+			reason: "refresh-token-missing",
+		});
 
-    throw ErrUnauthorized;
-  }
+		throw ErrUnauthorized;
+	}
 
-  let decodedRefresh: IJwtPayload;
+	let decodedRefresh: IJwtPayload;
 
-  try {
-    const decoded = await decodeJwtToken({
-      refreshToken: refresh.token,
-    });
+	try {
+		const decoded = await decodeJwtToken({
+			refreshToken: refresh.token,
+		});
 
-    if (!decoded) {
-      console.warn("[verifyAuthToken] refresh token decoded to null", {
-        source: refresh.source,
-      });
+		if (!decoded) {
+			console.warn("[verifyAuthToken] refresh token decoded to null", {
+				source: refresh.source,
+			});
 
-      throw ErrUnauthorized;
-    }
+			throw ErrUnauthorized;
+		}
 
-    decodedRefresh = decoded;
+		decodedRefresh = decoded;
 
-    console.info("[verifyAuthToken] refresh token decoded", {
-      userId: decodedRefresh.userId,
-      hasIpClaim: Boolean(decodedRefresh.ip),
-      tokenKeys: Object.keys(decodedRefresh),
-    });
-  } catch (error) {
-    console.warn("[verifyAuthToken] refresh token rejected", {
-      source: refresh.source,
-      ...describeError(error),
-    });
+		console.info("[verifyAuthToken] refresh token decoded", {
+			userId: decodedRefresh.userId,
+			hasIpClaim: Boolean(decodedRefresh.ip),
+			tokenKeys: Object.keys(decodedRefresh),
+		});
+	} catch (error) {
+		console.warn("[verifyAuthToken] refresh token rejected", {
+			source: refresh.source,
+			...describeError(error),
+		});
 
-    throw ErrUnauthorized;
-  }
+		throw ErrUnauthorized;
+	}
 
-  let next: IJwtPayload | null;
+	let next: IJwtPayload | null;
 
-  try {
-    next = await reLoginUserWithRefreshToken({
-      id: decodedRefresh.userId,
-      refreshToken: refresh.token,
-      ip: decodedRefresh.ip || getClientIp(req),
-    });
-  } catch (error) {
-    console.error("[verifyAuthToken] refresh login threw", {
-      userId: decodedRefresh.userId,
-      ...describeError(error),
-    });
+	try {
+		next = await reLoginUserWithRefreshToken({
+			id: decodedRefresh.userId,
+			refreshToken: refresh.token,
+			ip: decodedRefresh.ip || getClientIp(req),
+		});
+	} catch (error) {
+		console.error("[verifyAuthToken] refresh login threw", {
+			userId: decodedRefresh.userId,
+			...describeError(error),
+		});
 
-    throw error;
-  }
+		throw error;
+	}
 
-  if (!next) {
-    console.warn("[verifyAuthToken] refresh session rejected", {
-      userId: decodedRefresh.userId,
-      reason: "refresh-service-returned-null",
-    });
+	if (!next) {
+		console.warn("[verifyAuthToken] refresh session rejected", {
+			userId: decodedRefresh.userId,
+			reason: "refresh-service-returned-null",
+		});
 
-    throw ErrUnauthorized;
-  }
+		throw ErrUnauthorized;
+	}
 
-  console.info("[verifyAuthToken] refresh login succeeded", {
-    userId: decodedRefresh.userId,
-  });
+	console.info("[verifyAuthToken] refresh login succeeded", {
+		userId: decodedRefresh.userId,
+	});
 
-  const scope = await resolveScope(decodedRefresh.userId);
+	const scope = await resolveScope(decodedRefresh.userId);
 
-  console.info("[verifyAuthToken] refreshed authentication succeeded", {
-    userId: decodedRefresh.userId,
-    groups: scope.groups,
-  });
+	console.info("[verifyAuthToken] refreshed authentication succeeded", {
+		userId: decodedRefresh.userId,
+		groups: scope.groups,
+	});
 
-  return {
-    userId: decodedRefresh.userId,
-    token: next,
-    refreshed: true,
-    ...scope,
-  };
+	return {
+		userId: decodedRefresh.userId,
+		token: next,
+		refreshed: true,
+		...scope,
+	};
+}
+
+/**
+ * Verify only the current access token.
+ *
+ * Server-rendered page gates must use this instead of `verifyAuthToken` because
+ * they cannot safely persist a rotated refresh token back to the browser.
+ */
+export async function verifyAccessTokenOnly(
+	req: Request | NextRequest,
+): Promise<AuthResult> {
+	const access = await readAccessToken(req);
+
+	if (!access.token) {
+		throw ErrUnauthorized;
+	}
+
+	const decodedAccess = await decodeJwtToken({
+		accessToken: access.token,
+	}).catch(() => null);
+
+	if (!decodedAccess) {
+		throw ErrUnauthorized;
+	}
+
+	const scope = await resolveScope(decodedAccess.userId);
+
+	return {
+		userId: decodedAccess.userId,
+		token: decodedAccess,
+		refreshed: false,
+		...scope,
+	};
 }
 
 /**
@@ -544,36 +580,36 @@ export async function verifyAuthToken(
  * refresh token because this function cannot safely persist rotated cookies.
  */
 export async function optionalUserId(
-  req: Request | NextRequest,
+	req: Request | NextRequest,
 ): Promise<string | undefined> {
-  const access = await readAccessToken(req);
+	const access = await readAccessToken(req);
 
-  if (!access.token) {
-    return undefined;
-  }
+	if (!access.token) {
+		return undefined;
+	}
 
-  try {
-    const decoded = await decodeJwtToken({
-      accessToken: access.token,
-    });
+	try {
+		const decoded = await decodeJwtToken({
+			accessToken: access.token,
+		});
 
-    if (!decoded) {
-      console.info("[optionalUserId] access token decoded to null", {
-        source: access.source,
-      });
+		if (!decoded) {
+			console.info("[optionalUserId] access token decoded to null", {
+				source: access.source,
+			});
 
-      return undefined;
-    }
+			return undefined;
+		}
 
-    return decoded.userId;
-  } catch (error) {
-    console.info("[optionalUserId] access token ignored", {
-      source: access.source,
-      ...describeError(error),
-    });
+		return decoded.userId;
+	} catch (error) {
+		console.info("[optionalUserId] access token ignored", {
+			source: access.source,
+			...describeError(error),
+		});
 
-    return undefined;
-  }
+		return undefined;
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -584,56 +620,56 @@ export async function optionalUserId(
  * Throw `ErrForbidden` unless the caller's policies permit `action`.
  */
 export function requirePermission(
-  auth: AuthResult,
-  action: string,
-  ctx: PermissionContext = {},
+	auth: AuthResult,
+	action: string,
+	ctx: PermissionContext = {},
 ): void {
-  const context: PermissionContext = {
-    ...ctx,
-    user: {
-      campusId: auth.campusId,
-      ...(ctx.user ?? {}),
-    },
-  };
+	const context: PermissionContext = {
+		...ctx,
+		user: {
+			campusId: auth.campusId,
+			...(ctx.user ?? {}),
+		},
+	};
 
-  const allowed = can(auth.statements, action, context);
+	const allowed = can(auth.statements, action, context);
 
-  console.info("[requirePermission]", {
-    userId: auth.userId,
-    action,
-    allowed,
-    statementCount: auth.statements.length,
-  });
+	console.info("[requirePermission]", {
+		userId: auth.userId,
+		action,
+		allowed,
+		statementCount: auth.statements.length,
+	});
 
-  if (!allowed) {
-    throw ErrForbidden;
-  }
+	if (!allowed) {
+		throw ErrForbidden;
+	}
 }
 
 /**
  * Non-throwing permission check.
  */
 export function hasPermission(
-  auth: AuthResult,
-  action: string,
-  ctx: PermissionContext = {},
+	auth: AuthResult,
+	action: string,
+	ctx: PermissionContext = {},
 ): boolean {
-  const context: PermissionContext = {
-    ...ctx,
-    user: {
-      campusId: auth.campusId,
-      ...(ctx.user ?? {}),
-    },
-  };
+	const context: PermissionContext = {
+		...ctx,
+		user: {
+			campusId: auth.campusId,
+			...(ctx.user ?? {}),
+		},
+	};
 
-  return can(auth.statements, action, context);
+	return can(auth.statements, action, context);
 }
 
 /**
  * Membership check against an exact IAM group name.
  */
 export function isInGroup(auth: AuthResult, groupName: string): boolean {
-  return auth.groups.includes(groupName);
+	return auth.groups.includes(groupName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -641,65 +677,65 @@ export function isInGroup(auth: AuthResult, groupName: string): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function assertVendor(auth: AuthResult): void {
-  requirePermission(auth, "vendorApp:manage");
+	requirePermission(auth, "vendorApp:manage");
 }
 
 /**
  * Assert that the caller is an approved and active vendor.
  */
 export async function assertActiveVendor(
-  auth: AuthResult,
+	auth: AuthResult,
 ): Promise<IVendorProfile> {
-  assertVendor(auth);
+	assertVendor(auth);
 
-  const vendor = await getVendorProfileByUserIdDB({
-    userId: auth.userId,
-  });
+	const vendor = await getVendorProfileByUserIdDB({
+		userId: auth.userId,
+	});
 
-  if (!vendor) {
-    console.warn("[assertActiveVendor] vendor profile missing", {
-      userId: auth.userId,
-    });
+	if (!vendor) {
+		console.warn("[assertActiveVendor] vendor profile missing", {
+			userId: auth.userId,
+		});
 
-    throw ErrForbidden;
-  }
+		throw ErrForbidden;
+	}
 
-  if (vendor.status !== VendorStatus.ACTIVE) {
-    console.warn("[assertActiveVendor] vendor not active", {
-      userId: auth.userId,
-      status: vendor.status,
-    });
+	if (vendor.status !== VendorStatus.ACTIVE) {
+		console.warn("[assertActiveVendor] vendor not active", {
+			userId: auth.userId,
+			status: vendor.status,
+		});
 
-    throw ErrVendorNotActive;
-  }
+		throw ErrVendorNotActive;
+	}
 
-  return vendor;
+	return vendor;
 }
 
 export function assertBuyer(auth: AuthResult): void {
-  requirePermission(auth, "buyer:order:read");
+	requirePermission(auth, "buyer:order:read");
 }
 
 export function assertAdministrator(auth: AuthResult): void {
-  const allowed = isInGroup(auth, ADMINISTRATORS_GROUP);
+	const allowed = isInGroup(auth, ADMINISTRATORS_GROUP);
 
-  console.info("[assertAdministrator]", {
-    userId: auth.userId,
-    requiredGroup: ADMINISTRATORS_GROUP,
-    resolvedGroups: auth.groups,
-    allowed,
-  });
+	console.info("[assertAdministrator]", {
+		userId: auth.userId,
+		requiredGroup: ADMINISTRATORS_GROUP,
+		resolvedGroups: auth.groups,
+		allowed,
+	});
 
-  if (!allowed) {
-    throw ErrForbidden;
-  }
+	if (!allowed) {
+		throw ErrForbidden;
+	}
 }
 
 /**
  * Audit label derived from group memberships.
  */
 export function auditRoleLabel(auth: AuthResult): string {
-  return auth.groups.join(",");
+	return auth.groups.join(",");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -707,71 +743,74 @@ export function auditRoleLabel(auth: AuthResult): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AuthedHandler<TCtx = unknown> = (args: {
-  req: NextRequest;
-  auth: AuthResult;
-  context: TCtx;
+	req: NextRequest;
+	auth: AuthResult;
+	context: TCtx;
 }) => Promise<Response> | Response;
 
 export function withAuth<TCtx = unknown>(
-  handler: AuthedHandler<TCtx>,
+	handler: AuthedHandler<TCtx>,
 ): (args: { req: NextRequest; context: TCtx }) => Promise<Response> {
-  return async ({ req, context }) => {
-    let auth: AuthResult;
+	return async ({ req, context }) => {
+		let auth: AuthResult;
 
-    try {
-      auth = await verifyAuthToken(req);
-    } catch (error) {
-      console.warn("[withAuth] authentication failed", {
-        ...describeError(error),
-      });
+		try {
+			auth = await verifyAuthToken(req);
+		} catch (error) {
+			console.warn("[withAuth] authentication failed", {
+				...describeError(error),
+			});
 
-      await clearAuthCookies();
+			await clearAuthCookies();
 
-      const { handleError } = await import("./response");
+			const { handleError } = await import("./response");
 
-      return handleError(error);
-    }
+			return handleError(error);
+		}
 
-    let response: Response;
+		let response: Response;
 
-    try {
-      response = await handler({
-        req,
-        auth,
-        context,
-      });
-    } catch (error) {
-      console.error("[withAuth] authenticated handler failed", {
-        userId: auth.userId,
-        ...describeError(error),
-      });
+		try {
+			response = await handler({
+				req,
+				auth,
+				context,
+			});
+		} catch (error) {
+			console.error("[withAuth] authenticated handler failed", {
+				userId: auth.userId,
+				...describeError(error),
+			});
 
-      throw error;
-    }
+			throw error;
+		}
 
-    if (auth.refreshed) {
-      console.info("[withAuth] persisting refreshed cookies", {
-        userId: auth.userId,
-      });
+		if (auth.refreshed) {
+			console.info("[withAuth] persisting refreshed cookies", {
+				userId: auth.userId,
+			});
 
-      try {
-        await setAuthCookies(auth.token);
+			try {
+				await setAuthCookies(auth.token);
 
-        console.info("[withAuth] refreshed cookies persisted", {
-          userId: auth.userId,
-        });
-      } catch (error) {
-        console.error("[withAuth] refreshed cookie persistence failed", {
-          userId: auth.userId,
-          ...describeError(error),
-        });
+				console.info("[withAuth] refreshed cookies persisted", {
+					userId: auth.userId,
+				});
+			} catch (error) {
+				console.error(
+					"[withAuth] refreshed cookie persistence failed",
+					{
+						userId: auth.userId,
+						...describeError(error),
+					},
+				);
 
-        throw error;
-      }
-    }
+				throw error;
+			}
+		}
 
-    return response;
-  };
+		return response;
+	};
 }
 
 // import "server-only";
