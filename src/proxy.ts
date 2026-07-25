@@ -2,15 +2,7 @@ import { jwtVerify } from "jose";
 import { type NextRequest, NextResponse } from "next/server";
 
 // Page-shell gate (Next 16 `proxy`, formerly `middleware`). Runs on every
-// non-API request. It exists to suppress empty authenticated shells and to
-// keep auth-only routes out of search indexes — the real data gate lives at
-// the API layer in `withAuth`.
-//
-// Prechop identity is passwordless email/Google; the auth entry page is /login.
-// The JWT carries just the userId (role/campus are resolved server-side), so
-// this gate cannot route by role — it only distinguishes authenticated from
-// anonymous. Post-login role routing happens in the client boot path.
-
+// non-API request. The API layer remains the real authorization boundary.
 const PROTECTED_ROUTES = [
 	"/checkout",
 	"/my-orders",
@@ -26,8 +18,8 @@ const PROTECTED_ROUTES = [
 
 const AUTH_ROUTES = ["/login"];
 
-// Cookie names mirror src/server/lib/cookies.ts — kept in lockstep because
-// the proxy runs at the edge and cannot import server-only modules.
+// Cookie names mirror src/server/lib/cookies.ts because the proxy runs at the
+// edge and cannot import server-only modules.
 const IS_PROD = process.env.NODE_ENV === "production";
 const ACCESS_COOKIE = IS_PROD ? "__Host-accessToken" : "accessToken";
 const REFRESH_COOKIE = IS_PROD ? "__Host-refreshToken" : "refreshToken";
@@ -78,58 +70,29 @@ function buildLoginRedirect(request: NextRequest, pathname: string): URL {
 	return url;
 }
 
-// export async function proxy(request: NextRequest) {
-// 	const { pathname } = request.nextUrl;
-// 	const state = await resolveAuthState(request);
-// 	const isAuthenticated = state !== "anonymous";
-
-// 	// Already signed in and visiting /login → send home; the home page routes
-// 	// the user to their role dashboard.
-// 	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
-// 		const next = request.nextUrl.searchParams.get("next");
-// 		if (next?.startsWith("/") && !next.startsWith("//")) {
-// 			return NextResponse.redirect(new URL(next, request.url));
-// 		}
-// 		return NextResponse.redirect(new URL("/", request.url));
-// 	}
-
-// 	if (!isAuthenticated && isProtectedRoute(pathname)) {
-// 		return NextResponse.redirect(buildLoginRedirect(request, pathname));
-// 	}
-
-// 	return NextResponse.next();
-// }
-
-
-
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const state = await resolveAuthState(request);
+	const { pathname } = request.nextUrl;
+	const state = await resolveAuthState(request);
 
-  // Only a verified access token counts as authenticated.
-  const isAuthenticated = state === "authenticated";
+	// Only a verified access token counts as authenticated here. A refresh
+	// cookie alone can be stale, so it must not bounce /login back to /admin.
+	const isAuthenticated = state === "authenticated";
 
-  // Redirect away from login only when the access token is valid.
-  // A refresh cookie alone must not cause /login → /admin.
-  if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
-    const next = request.nextUrl.searchParams.get("next");
+	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
+		const next = request.nextUrl.searchParams.get("next");
 
-    if (next?.startsWith("/") && !next.startsWith("//")) {
-      return NextResponse.redirect(new URL(next, request.url));
-    }
+		if (next?.startsWith("/") && !next.startsWith("//")) {
+			return NextResponse.redirect(new URL(next, request.url));
+		}
 
-    return NextResponse.redirect(new URL("/", request.url));
-  }
+		return NextResponse.redirect(new URL("/", request.url));
+	}
 
-  // Both anonymous users and users with only an unverified refresh cookie
-  // should go through the login/refresh flow.
-  if (!isAuthenticated && isProtectedRoute(pathname)) {
-    return NextResponse.redirect(
-      buildLoginRedirect(request, pathname),
-    );
-  }
+	if (!isAuthenticated && isProtectedRoute(pathname)) {
+		return NextResponse.redirect(buildLoginRedirect(request, pathname));
+	}
 
-  return NextResponse.next();
+	return NextResponse.next();
 }
 
 export const config = {
