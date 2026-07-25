@@ -129,9 +129,9 @@ Validated at boot in **every** environment.
 
 ### Seed
 
-| Variable           | Required | Description                                                           |
-| ------------------ | -------- | --------------------------------------------------------------------- |
-| `SEED_ADMIN_EMAIL` | no       | phone for the seeded super-admin (default `aramidejkolawole@gmail.com |
+| Variable           | Required | Description                                                          |
+| ------------------ | -------- | -------------------------------------------------------------------- |
+| `SEED_ADMIN_EMAIL` | no       | phone for the seeded super-admin (default `prechopofficial@gmail.com |
 | `)                 |
 
 ---

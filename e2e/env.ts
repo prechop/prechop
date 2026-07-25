@@ -16,6 +16,6 @@ export const E2E_APP_ENV: Record<string, string> = {
   TRUSTED_PROXY: "1",
   DISABLE_RATE_LIMIT: "1",
 
-  SEED_ADMIN_EMAIL: "aramidejkolawole@gmail.com",
+  SEED_ADMIN_EMAIL: "prechopofficial@gmail.com",
   SEED_ADMIN_PHONE: "08130135756",
 };

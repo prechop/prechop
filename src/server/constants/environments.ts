@@ -103,4 +103,4 @@ export const TRUSTED_PROXY = process.env.TRUSTED_PROXY === "1";
 
 // Seed
 export const SEED_ADMIN_EMAIL =
-  process.env.SEED_ADMIN_EMAIL ?? "aramidejkolawole@gmail.com";
+  process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";

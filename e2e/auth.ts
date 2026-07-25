@@ -8,7 +8,7 @@ import { getUserByEmailDB, loginUserDB } from "../src/server/models/users";
 import { BASE_URL, ORIGIN } from "./urls";
 
 export const ADMIN_EMAIL =
-  process.env.SEED_ADMIN_EMAIL ?? "aramidejkolawole@gmail.com";
+  process.env.SEED_ADMIN_EMAIL ?? "prechopofficial@gmail.com";
 export const BUYER_EMAIL = "ada.obi.buyers@seed.prechop.local";
 export const VENDOR_EMAIL = "tunde.bakare.vendors@seed.prechop.local";
 export const BOLA_VENDOR_EMAIL = "bola.adeyemi.vendors@seed.prechop.local";
