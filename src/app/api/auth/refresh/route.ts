@@ -5,7 +5,9 @@ import {
 	ErrUnauthorized,
 } from "@/server/constants";
 import {
+	ACCESS_COOKIE,
 	clearAuthCookies,
+	getAuthCookieOptions,
 	getClientIp,
 	getCookieValue,
 	handleError,
@@ -15,8 +17,12 @@ import {
 	withApiHandler,
 } from "@/server/lib";
 import reLoginUserWithRefreshToken from "@/server/services/auth/reLoginUserWithRefreshToken";
+import type { IJwtPayload } from "@/server/types";
 
 export const runtime = "nodejs";
+
+const LEGACY_ACCESS_COOKIE = "accessToken";
+const LEGACY_REFRESH_COOKIE = "refreshToken";
 
 function cleanNext(value: string | null): string {
 	if (!value?.startsWith("/") || value.startsWith("//"))
@@ -37,6 +43,36 @@ async function refreshSession(req: Request) {
 	if (!token) throw ErrUnauthorized;
 	await setAuthCookies(token);
 	return token;
+}
+
+function setAuthCookiesOnResponse(
+	response: NextResponse,
+	token: IJwtPayload,
+): void {
+	response.cookies.set(ACCESS_COOKIE, token.accessToken, {
+		...getAuthCookieOptions({ expires: new Date(token.expiresIn) }),
+	});
+	response.cookies.set(REFRESH_COOKIE, token.refreshToken, {
+		...getAuthCookieOptions({
+			expires: new Date(token.refreshTokenExpiresIn),
+		}),
+	});
+}
+
+function clearAuthCookiesOnResponse(response: NextResponse): void {
+	const opts = getAuthCookieOptions();
+	response.cookies.set(ACCESS_COOKIE, "", { ...opts, maxAge: 0 });
+	response.cookies.set(REFRESH_COOKIE, "", { ...opts, maxAge: 0 });
+	if (process.env.NODE_ENV === "production") {
+		response.cookies.set(LEGACY_ACCESS_COOKIE, "", {
+			...opts,
+			maxAge: 0,
+		});
+		response.cookies.set(LEGACY_REFRESH_COOKIE, "", {
+			...opts,
+			maxAge: 0,
+		});
+	}
 }
 
 export const POST = withApiHandler(
@@ -61,15 +97,19 @@ export const GET = withApiHandler(
 		const url = new URL(req.url);
 		const next = cleanNext(url.searchParams.get("next"));
 		try {
-			await refreshSession(req);
-			return NextResponse.redirect(new URL(next, req.url));
+			const token = await refreshSession(req);
+			const response = NextResponse.redirect(new URL(next, req.url));
+			setAuthCookiesOnResponse(response, token);
+			return response;
 		} catch (error) {
 			if (error === ErrTokenCompromised || error === ErrUnauthorized) {
 				await clearAuthCookies();
 			}
 			const login = new URL("/login", req.url);
 			login.searchParams.set("next", next);
-			return NextResponse.redirect(login);
+			const response = NextResponse.redirect(login);
+			clearAuthCookiesOnResponse(response);
+			return response;
 		}
 	},
 );
