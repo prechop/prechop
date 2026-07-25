@@ -7,27 +7,31 @@ import { assertAdministrator, verifyAuthToken } from "@/server/lib";
 export const runtime = "nodejs";
 
 export default async function AdminLayout({
-  children,
+	children,
 }: {
-  children: ReactNode;
+	children: ReactNode;
 }) {
   const requestHeaders = await headers();
 
-  try {
-    const auth = await verifyAuthToken(
-      new Request("https://prechop.com.ng/admin", {
-        headers: requestHeaders,
-      }),
-    );
+  const request = new Request(
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin`,
+    {
+      headers: requestHeaders,
+    },
+  );
 
+  try {
+    const auth = await verifyAuthToken(request);
     assertAdministrator(auth);
   } catch (error) {
-    if (error === ErrUnauthorized) {
+    if (
+      error === ErrUnauthorized
+    ) {
       redirect("/login?next=/admin");
     }
 
-    throw error;
+    redirect("/marketplace");
   }
 
-  return children;
+	return children;
 }
