@@ -29,8 +29,7 @@ export default async function AdminLayout({
     ) {
       redirect("/login?next=/admin");
     }
-
-    redirect("/marketplace");
+    throw error;
   }
 
 	return children;
