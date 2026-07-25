@@ -1,14 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import {
-  ErrForbidden,
-  ErrUnauthorized,
-} from "@/server/constants";
-import {
-  assertAdministrator,
-  verifyAuthToken,
-} from "@/server/lib";
+import { ErrUnauthorized } from "@/server/constants";
+import { assertAdministrator, verifyAuthToken } from "@/server/lib";
 
 export const runtime = "nodejs";
 
@@ -19,29 +13,32 @@ export default async function AdminLayout({
 }) {
   const requestHeaders = await headers();
 
+  let auth;
+
   try {
-    const auth = await verifyAuthToken(
+    auth = await verifyAuthToken(
       new Request("https://prechop.com.ng/admin", {
         headers: requestHeaders,
       }),
     );
-
-    assertAdministrator(auth);
   } catch (error) {
+    // Only an actual authentication failure should return to login.
     if (error === ErrUnauthorized) {
       redirect("/login?next=/admin");
-    }
-
-    if (error === ErrForbidden) {
-      redirect("/unauthorized");
     }
 
     throw error;
   }
 
+  /*
+   * Keep this outside the authentication catch.
+   * If the administrator check fails, it must not redirect back to login,
+   * because that causes the /admin ↔ /login loop.
+   */
+  assertAdministrator(auth);
+
   return children;
 }
-
 
 // import { headers } from "next/headers";
 // import { redirect } from "next/navigation";
