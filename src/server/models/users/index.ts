@@ -365,7 +365,36 @@ export async function getUserByIdDB({
 					{ session },
 				)
 			).at(0) ?? null;
-		if (!result) throw ErrUserNotFound;
+		if (!result) {
+			const fallback = await User.findOne(
+				{ _id: new mongoose.Types.ObjectId(id), ...notDeletedFilter },
+				null,
+				{ session },
+			).lean<IUser>();
+			if (fallback) {
+				console.warn("[users.getUserByIdDB] aggregate missed user", {
+					id,
+					dbName: User.db.name,
+					collectionName: User.collection.name,
+				});
+				timer({
+					operation: IOperationType.Read,
+					collection: collectionName,
+					method: "getUserByIdDB",
+					success: "true",
+				});
+				return {
+					...fallback,
+					id: fallback._id.toString(),
+				} as IUser;
+			}
+			console.warn("[users.getUserByIdDB] user not found", {
+				id,
+				dbName: User.db.name,
+				collectionName: User.collection.name,
+			});
+			throw ErrUserNotFound;
+		}
 		timer({
 			operation: IOperationType.Read,
 			collection: collectionName,

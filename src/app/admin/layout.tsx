@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { ErrForbidden, ErrUnauthorized } from "@/server/constants";
+import { connectMongoDB } from "@/server/databases";
 import {
 	assertAdministrator,
 	getCookieValue,
@@ -32,6 +33,7 @@ export default async function AdminLayout({
 	);
 
 	try {
+		await connectMongoDB();
 		const auth = await verifyAccessTokenOnly(request);
 		assertAdministrator(auth);
 	} catch (error) {
