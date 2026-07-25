@@ -1,95 +1,63 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { ErrUnauthorized } from "@/server/constants";
-import { assertAdministrator, verifyAuthToken } from "@/server/lib";
+import {
+	decodeJwtToken,
+	ErrForbidden,
+	ErrUnauthorized,
+} from "@/server/constants";
+import {
+	ACCESS_COOKIE,
+	assertAdministrator,
+	getCookieValue,
+	REFRESH_COOKIE,
+	verifyAuthToken,
+} from "@/server/lib";
 
 export const runtime = "nodejs";
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const requestHeaders = await headers();
+const ADMIN_NEXT = "/admin";
 
-  console.log("[admin-layout] started", {
-    host: requestHeaders.get("host"),
-    hasCookieHeader: Boolean(requestHeaders.get("cookie")),
-  });
-
-  let auth;
-
-  try {
-    auth = await verifyAuthToken(
-      new Request("https://prechop.com.ng/admin", {
-        headers: requestHeaders,
-      }),
-    );
-
-    console.log("[admin-layout] token verified", {
-      userId: auth?.userId,
-    });
-  } catch (error) {
-    console.error("[admin-layout] token verification failed", {
-      unauthorized: error === ErrUnauthorized,
-      message:
-        error instanceof Error ? error.message : String(error),
-    });
-
-    if (error === ErrUnauthorized) {
-      redirect("/login?next=/admin");
-    }
-
-    throw error;
-  }
-
-  console.log("[admin-layout] checking administrator", {
-    userId: auth?.userId,
-  });
-
-  assertAdministrator(auth);
-
-  console.log("[admin-layout] administrator allowed", {
-    userId: auth?.userId,
-  });
-
-  return children;
+async function hasValidAccessToken(): Promise<boolean> {
+	const accessToken = await getCookieValue(ACCESS_COOKIE);
+	if (!accessToken) return false;
+	return !!(await decodeJwtToken({ accessToken }).catch(() => null));
 }
 
-// import { headers } from "next/headers";
-// import { redirect } from "next/navigation";
-// import type { ReactNode } from "react";
-// import { ErrUnauthorized } from "@/server/constants";
-// import { assertAdministrator, verifyAuthToken } from "@/server/lib";
+async function redirectToFreshSession(): Promise<never> {
+	if (await getCookieValue(REFRESH_COOKIE)) {
+		redirect(`/api/auth/refresh?next=${encodeURIComponent(ADMIN_NEXT)}`);
+	}
+	redirect(`/login?next=${encodeURIComponent(ADMIN_NEXT)}`);
+}
 
-// export const runtime = "nodejs";
+export default async function AdminLayout({
+	children,
+}: {
+	children: ReactNode;
+}) {
+	if (!(await hasValidAccessToken())) {
+		await redirectToFreshSession();
+	}
 
-// export default async function AdminLayout({
-// 	children,
-// }: {
-// 	children: ReactNode;
-// }) {
-//   const requestHeaders = await headers();
+	const requestHeaders = await headers();
+	const request = new Request(
+		`${process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}${ADMIN_NEXT}`,
+		{ headers: requestHeaders },
+	);
 
-//   const request = new Request(
-//     `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/admin`,
-//     {
-//       headers: requestHeaders,
-//     },
-//   );
+	try {
+		const auth = await verifyAuthToken(request);
+		assertAdministrator(auth);
+	} catch (error) {
+		if (error === ErrUnauthorized) {
+			await redirectToFreshSession();
+		}
+		if (error === ErrForbidden) {
+			redirect("/");
+		}
+		throw error;
+	}
 
-//   try {
-//     const auth = await verifyAuthToken(request);
-//     assertAdministrator(auth);
-//   } catch (error) {
-//     if (
-//       error === ErrUnauthorized
-//     ) {
-//       redirect("/login?next=/admin");
-//     }
-//     throw error;
-//   }
-
-// 	return children;
-// }
+	return children;
+}
