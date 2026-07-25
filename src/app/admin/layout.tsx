@@ -13,6 +13,11 @@ export default async function AdminLayout({
 }) {
   const requestHeaders = await headers();
 
+  console.log("[admin-layout] started", {
+    host: requestHeaders.get("host"),
+    hasCookieHeader: Boolean(requestHeaders.get("cookie")),
+  });
+
   let auth;
 
   try {
@@ -21,8 +26,17 @@ export default async function AdminLayout({
         headers: requestHeaders,
       }),
     );
+
+    console.log("[admin-layout] token verified", {
+      userId: auth?.userId,
+    });
   } catch (error) {
-    // Only an actual authentication failure should return to login.
+    console.error("[admin-layout] token verification failed", {
+      unauthorized: error === ErrUnauthorized,
+      message:
+        error instanceof Error ? error.message : String(error),
+    });
+
     if (error === ErrUnauthorized) {
       redirect("/login?next=/admin");
     }
@@ -30,12 +44,15 @@ export default async function AdminLayout({
     throw error;
   }
 
-  /*
-   * Keep this outside the authentication catch.
-   * If the administrator check fails, it must not redirect back to login,
-   * because that causes the /admin ↔ /login loop.
-   */
+  console.log("[admin-layout] checking administrator", {
+    userId: auth?.userId,
+  });
+
   assertAdministrator(auth);
+
+  console.log("[admin-layout] administrator allowed", {
+    userId: auth?.userId,
+  });
 
   return children;
 }
