@@ -225,9 +225,26 @@ export function assertBuyer(auth: AuthResult): void {
   requirePermission(auth, "buyer:order:read");
 }
 
+// export function assertAdministrator(auth: AuthResult): void {
+//   if (!isInGroup(auth, ADMINISTRATORS_GROUP)) throw ErrForbidden;
+//   // requirePermission(auth, "admin:manage");
+  
+// }
 export function assertAdministrator(auth: AuthResult): void {
-  if (!isInGroup(auth, ADMINISTRATORS_GROUP)) throw ErrForbidden;
+  const allowed = isInGroup(auth, ADMINISTRATORS_GROUP);
+
+  console.log("[assertAdministrator]", {
+    userId: auth.userId,
+    requiredGroup: ADMINISTRATORS_GROUP,
+    authKeys: Object.keys(auth),
+    allowed,
+  });
+
+  if (!allowed) {
+    throw ErrForbidden;
+  }
 }
+
 
 /** Audit label for an actor derived from their group memberships. */
 export function auditRoleLabel(auth: AuthResult): string {
