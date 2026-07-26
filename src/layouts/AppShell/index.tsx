@@ -301,11 +301,14 @@ export default function AppShell({
 	const { user, isLoading, isAuthenticated, logout } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
+	const isVendorOnboarding = pathname === "/vendor/onboarding";
 	const isVendor =
 		shellRole === "VENDOR" ||
 		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
 	const { data: vendor } = useSWR<VendorMe>(
-		isAuthenticated && isVendor ? "/vendors/me" : null,
+		isAuthenticated && isVendor && !isVendorOnboarding
+			? "/vendors/me"
+			: null,
 		fetcher,
 		{ shouldRetryOnError: false },
 	);

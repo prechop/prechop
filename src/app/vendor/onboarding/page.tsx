@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as mutateGlobal } from "swr";
 import { Button, Card, Stack, Text, Title } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
@@ -37,6 +37,7 @@ function VendorOnboardingContent() {
 			if (vendorInitialized) return;
 			try {
 				await api.post("/users/me/become-vendor", {});
+				await mutateGlobal("/vendors/me");
 				setVendorInitialized(true);
 				setInitError("");
 			} catch (err) {
