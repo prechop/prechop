@@ -22,7 +22,6 @@ export interface IBuyerOrderItemSelectedOption {
 	groupName: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
-	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
 }
@@ -32,6 +31,7 @@ export interface IBuyerOrderItem {
 	menuItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
 	selectedOptions: IBuyerOrderItemSelectedOption[];
