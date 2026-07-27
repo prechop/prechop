@@ -1,5 +1,6 @@
 import { ErrForbidden, ErrOrderNotFound } from "../../constants";
 import {
+	FulfillmentType,
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
 	getRefundByPaymentIdDB,
@@ -20,6 +21,27 @@ function pickupLocation(
 			.filter(Boolean)
 			.join(" · ") || null
 	);
+}
+
+function plainOrder<T>(order: T): T {
+	const maybeDocument = order as T & { toObject?: () => T };
+	return maybeDocument.toObject ? maybeDocument.toObject() : { ...order };
+}
+
+function redactVendorDeliveryContact<T extends { fulfillmentType?: unknown }>(
+	order: T,
+): T {
+	if (order.fulfillmentType !== FulfillmentType.DELIVERY) {
+		return order;
+	}
+	const copy = plainOrder(order) as T & Record<string, unknown>;
+	delete copy.deliveryHostelName;
+	delete copy.deliveryRoomNumber;
+	delete copy.deliveryAdditionalInfo;
+	delete copy.deliveryFullAddress;
+	delete copy.deliveryPhone;
+	delete copy.customerMessage;
+	return copy;
 }
 
 export function getMyOrders({
@@ -75,7 +97,7 @@ export async function getOrderById({
 	// Otherwise only the owning vendor may view it.
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (vendor && order.vendorId.toString() === vendor._id.toString()) {
-		return orderWithPickupLocation();
+		return redactVendorDeliveryContact(await orderWithPickupLocation());
 	}
 	throw ErrForbidden;
 }
@@ -89,10 +111,11 @@ export async function getVendorOrdersForDailyOrder({
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
-	return listBuyerOrdersByVendorAndDailyOrderDB({
+	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
 		vendorId: vendor._id.toString(),
 		dailyOrderId,
 	});
+	return orders.map((order) => redactVendorDeliveryContact(order));
 }
 
 export async function getIncomingVendorOrders({
@@ -104,8 +127,9 @@ export async function getIncomingVendorOrders({
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
-	return listIncomingBuyerOrdersByVendorDB({
+	const orders = await listIncomingBuyerOrdersByVendorDB({
 		vendorId: vendor._id.toString(),
 		limit,
 	});
+	return orders.map((order) => redactVendorDeliveryContact(order));
 }

@@ -59,4 +59,41 @@ describe("campuses model", () => {
 		const active = await listCampusesDB({ activeOnly: true });
 		expect(active.every((c) => c.isActive)).toBe(true);
 	});
+
+	it("lists only active public campuses for public-facing directories", async () => {
+		const publicCampus = await createCampusDB({
+			payload: {
+				name: "Public Campus",
+				shortCode: "public",
+				state: "Lagos",
+				isPublic: true,
+			},
+		});
+		const fixtureCampus = await createCampusDB({
+			payload: {
+				name: "Fixture Campus",
+				shortCode: "fixture",
+				state: "Lagos",
+			},
+		});
+		const inactivePublicCampus = await createCampusDB({
+			payload: {
+				name: "Inactive Public Campus",
+				shortCode: "inactive-public",
+				state: "Lagos",
+				isActive: false,
+				isPublic: true,
+			},
+		});
+
+		const publicActive = await listCampusesDB({
+			activeOnly: true,
+			publicOnly: true,
+		});
+		const ids = publicActive.map((campus) => campus._id.toString());
+
+		expect(ids).toContain(publicCampus!._id.toString());
+		expect(ids).not.toContain(fixtureCampus!._id.toString());
+		expect(ids).not.toContain(inactivePublicCampus!._id.toString());
+	});
 });

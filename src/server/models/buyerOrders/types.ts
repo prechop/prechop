@@ -22,6 +22,7 @@ export interface IBuyerOrderItemSelectedOption {
 	groupName: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
 }
@@ -101,6 +102,17 @@ export interface IBuyerOrder {
 	paidAt?: Date;
 	acceptedAt?: Date;
 	acceptanceDeadline?: Date;
+	expectedReadyAt?: Date;
+	expectedPrepMin?: number;
+	actualPrepMin?: number;
+	lateMarkedAt?: Date;
+	lateBuyerNotifiedAt?: Date;
+	lateVendorNotifiedAt?: Date;
+	revisedReadyAt?: Date;
+	revisedPrepMin?: number;
+	readyExtensionCount?: number;
+	lastReadyExtensionAt?: Date;
+	lateEscalatedAt?: Date;
 	vendorAcceptanceReminder5SentAt?: Date;
 	vendorAcceptanceWarning8SentAt?: Date;
 	vendorRejectedAt?: Date;

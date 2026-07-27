@@ -84,6 +84,11 @@ export interface VendorProfile {
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
 	paystackSubaccountCode?: string;
+	bankCode?: string;
+	accountName?: string;
+	securityOnboardingDismissedAt?: string;
+	securityOnboardingCompletedAt?: string;
+	securityPinSet?: boolean;
 	notifyNewOrders?: boolean;
 	notifyPayouts?: boolean;
 	notifyReviews?: boolean;
@@ -236,6 +241,9 @@ export interface AdminUserDetail {
 		totalReviews: number;
 		totalOrders: number;
 		completionRate: number;
+		lateOrderCount: number;
+		unfulfilledOrderCount: number;
+		avgPrepDelayMin: number;
 		isOpenForOrders: boolean;
 		reviewsReceived: { avg: number; count: number };
 	};
@@ -286,6 +294,7 @@ export interface BuyerOrderItem {
 	dailyOrderItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
 	selectedOptions: Array<{
@@ -363,6 +372,19 @@ export interface BuyerOrder {
 	receiptStatus?: ReceiptStatus | null;
 	acceptedAt?: string | null;
 	acceptanceDeadline?: string | null;
+	expectedReadyAt?: string | null;
+	expectedPrepMin?: number | null;
+	actualPrepMin?: number | null;
+	lateMarkedAt?: string | null;
+	lateBuyerNotifiedAt?: string | null;
+	lateVendorNotifiedAt?: string | null;
+	revisedReadyAt?: string | null;
+	revisedPrepMin?: number | null;
+	readyExtensionCount?: number | null;
+	lastReadyExtensionAt?: string | null;
+	lateEscalatedAt?: string | null;
+	adminReviewRequiredAt?: string | null;
+	adminReviewReason?: string | null;
 	deliveryStartedAt?: string | null;
 	pickedUpAt?: string | null;
 	deliveredAt?: string | null;

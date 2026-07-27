@@ -21,7 +21,7 @@ import {
 	Title,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
-import { api } from "@/constants/api";
+import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import {
 	formatDate,
@@ -257,6 +257,44 @@ const Toggle = styled.button<{ $on: boolean }>`
       background var(--pc-dur) var(--pc-ease);
   }
 `;
+const ModalBackdrop = styled.div`
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	display: grid;
+	place-items: center;
+	padding: 18px;
+	background: rgba(17, 24, 39, 0.58);
+	backdrop-filter: blur(6px);
+`;
+const SecurityModal = styled.div`
+	width: min(100%, 460px);
+	max-height: calc(100vh - 36px);
+	overflow: auto;
+	border-radius: var(--pc-radius);
+	background: var(--pc-surface);
+	border: 1px solid var(--pc-border);
+	box-shadow: var(--pc-shadow-lg);
+	padding: 22px;
+`;
+const SecurityMark = styled.div`
+	width: 46px;
+	height: 46px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-color-primary-50);
+	color: var(--pc-color-primary-ink);
+	font-size: 23px;
+	font-weight: 900;
+`;
+const SecurityList = styled.ul`
+	margin: 0;
+	padding-left: 18px;
+	color: var(--pc-text-muted);
+	font-size: 14px;
+	line-height: 1.55;
+`;
 
 const FilterChips = styled.div`
   display: flex;
@@ -299,6 +337,9 @@ const STATUS_FILTERS: Array<{
 	{ label: "Closed", value: "CLOSED" },
 	{ label: "Cancelled", value: "CANCELLED" },
 ];
+
+const SECURITY_ONBOARDING_STORAGE_PREFIX =
+	"prechop:vendor-security-onboarding:";
 
 function statusTone(
 	s: DailyOrder["status"],
@@ -421,6 +462,43 @@ export default function VendorDashboardWrapper() {
 	);
 
 	const [toggling, setToggling] = useState(false);
+	const [securityBusy, setSecurityBusy] = useState<
+		"dismiss" | "complete" | null
+	>(null);
+	const [securityOnboardingResolved, setSecurityOnboardingResolved] =
+		useState(false);
+	const [securityStep, setSecurityStep] = useState<"welcome" | "pin">(
+		"welcome",
+	);
+	const [securityPin, setSecurityPin] = useState("");
+	const [securityPinConfirm, setSecurityPinConfirm] = useState("");
+
+	useEffect(() => {
+		if (!vendor?.id) {
+			setSecurityOnboardingResolved(false);
+			return;
+		}
+		const serverResolved =
+			!!vendor.securityOnboardingDismissedAt ||
+			!!vendor.securityOnboardingCompletedAt;
+		if (serverResolved) {
+			setSecurityOnboardingResolved(true);
+			return;
+		}
+		try {
+			setSecurityOnboardingResolved(
+				window.localStorage.getItem(
+					`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+				) === "resolved",
+			);
+		} catch {
+			setSecurityOnboardingResolved(false);
+		}
+	}, [
+		vendor?.id,
+		vendor?.securityOnboardingDismissedAt,
+		vendor?.securityOnboardingCompletedAt,
+	]);
 
 	function clearFilters() {
 		setStatusFilter("");
@@ -453,6 +531,65 @@ export default function VendorDashboardWrapper() {
 			toast(errMsg(e), "error");
 		} finally {
 			setToggling(false);
+		}
+	}
+
+	async function updateSecurityOnboarding(action: "DISMISS" | "COMPLETE") {
+		if (!vendor) return;
+		if (action === "COMPLETE") {
+			if (!/^\d{4,6}$/.test(securityPin.trim())) {
+				toast("Enter a 4-6 digit security PIN", "error");
+				return;
+			}
+			if (securityPin.trim() !== securityPinConfirm.trim()) {
+				toast("Security PINs do not match", "error");
+				return;
+			}
+		}
+		setSecurityBusy(action === "COMPLETE" ? "complete" : "dismiss");
+		const now = new Date().toISOString();
+		if (action === "DISMISS") {
+			setSecurityOnboardingResolved(true);
+			try {
+				window.localStorage.setItem(
+					`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+					"resolved",
+				);
+			} catch {}
+			await mutateVendor(
+				{ ...vendor, securityOnboardingDismissedAt: now },
+				false,
+			);
+		}
+		try {
+			const updated = await apiData<VendorMe>(
+				api.patch("/vendors/me", {
+					action,
+					...(action === "COMPLETE"
+						? { pin: securityPin.trim() }
+						: {}),
+				}),
+			);
+			if (action === "COMPLETE") {
+				setSecurityOnboardingResolved(true);
+				try {
+					window.localStorage.setItem(
+						`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+						"resolved",
+					);
+				} catch {}
+			}
+			await mutateVendor(updated, false);
+			toast(
+				action === "COMPLETE"
+					? "Security verification completed"
+					: "Security setup saved for later",
+				"success",
+			);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setSecurityBusy(null);
 		}
 	}
 
@@ -489,9 +626,146 @@ export default function VendorDashboardWrapper() {
 	);
 	const list = hasFilters ? (filtered ?? []) : statList;
 	const listLoading = hasFilters ? filteredLoading : ordersLoading;
+	const showSecurityModal =
+		vendor.status === "ACTIVE" &&
+		!securityOnboardingResolved &&
+		!vendor.securityOnboardingDismissedAt &&
+		!vendor.securityOnboardingCompletedAt;
 
 	return (
 		<FadeIn>
+			{showSecurityModal && (
+				<ModalBackdrop role="presentation">
+					<SecurityModal
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="vendor-security-title"
+					>
+						<Stack $gap={16}>
+							<SecurityMark aria-hidden>!</SecurityMark>
+							{securityStep === "welcome" ? (
+								<>
+									<Stack $gap={8}>
+										<Title
+											id="vendor-security-title"
+											$size={23}
+										>
+											Welcome to Selling on Prechop
+										</Title>
+										<Text $muted>
+											Before you handle paid orders, set
+											up vendor security verification. It
+											protects your orders, earnings,
+											customer information, and payout
+											settings.
+										</Text>
+									</Stack>
+									<SecurityList>
+										<li>
+											Protect payout changes and bank
+											details.
+										</li>
+										<li>
+											Keep customer and order information
+											safer.
+										</li>
+										<li>
+											Reduce the risk of unauthorized
+											account changes.
+										</li>
+									</SecurityList>
+									<Row $gap={10} $wrap>
+										<Button
+											disabled={!!securityBusy}
+											onClick={() =>
+												setSecurityStep("pin")
+											}
+										>
+											Secure my account
+										</Button>
+										<Button
+											$variant="secondary"
+											$loading={
+												securityBusy === "dismiss"
+											}
+											disabled={!!securityBusy}
+											onClick={() =>
+												updateSecurityOnboarding(
+													"DISMISS",
+												)
+											}
+										>
+											Do this later
+										</Button>
+									</Row>
+								</>
+							) : (
+								<>
+									<Stack $gap={8}>
+										<Title
+											id="vendor-security-title"
+											$size={23}
+										>
+											Create your security PIN
+										</Title>
+										<Text $muted>
+											Use a 4-6 digit PIN. You will need
+											this before sensitive vendor actions
+											such as changing payout details.
+										</Text>
+									</Stack>
+									<Input
+										label="Security PIN"
+										type="password"
+										inputMode="numeric"
+										value={securityPin}
+										onChange={(e) =>
+											setSecurityPin(e.target.value)
+										}
+										placeholder="4-6 digits"
+									/>
+									<Input
+										label="Confirm PIN"
+										type="password"
+										inputMode="numeric"
+										value={securityPinConfirm}
+										onChange={(e) =>
+											setSecurityPinConfirm(
+												e.target.value,
+											)
+										}
+										placeholder="Re-enter PIN"
+									/>
+									<Row $gap={10} $wrap>
+										<Button
+											$loading={
+												securityBusy === "complete"
+											}
+											disabled={!!securityBusy}
+											onClick={() =>
+												updateSecurityOnboarding(
+													"COMPLETE",
+												)
+											}
+										>
+											Save security PIN
+										</Button>
+										<Button
+											$variant="secondary"
+											disabled={!!securityBusy}
+											onClick={() =>
+												setSecurityStep("welcome")
+											}
+										>
+											Back
+										</Button>
+									</Row>
+								</>
+							)}
+						</Stack>
+					</SecurityModal>
+				</ModalBackdrop>
+			)}
 			<Stack $gap={20}>
 				<PageHeader
 					eyebrow="Vendor dashboard"

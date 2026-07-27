@@ -1,4 +1,3 @@
-import { ErrInvalidFields } from "@/server/constants";
 import {
 	assertActiveVendor,
 	handleError,
@@ -7,7 +6,10 @@ import {
 	withAuth,
 } from "@/server/lib";
 import { presignMenuItemImage } from "@/server/services/menu";
-import { imagePresignSchema } from "@/server/validators/menu/validate";
+import {
+	imagePresignSchema,
+	menuValidationError,
+} from "@/server/validators/menu/validate";
 
 export const runtime = "nodejs";
 
@@ -20,7 +22,7 @@ export const POST = withApiHandler(
 				context as { params: Promise<{ itemId: string }> }
 			).params;
 			const parsed = imagePresignSchema.safeParse(await req.json());
-			if (!parsed.success) throw ErrInvalidFields;
+			if (!parsed.success) throw menuValidationError(parsed.error);
 			const result = await presignMenuItemImage({
 				userId: auth.userId,
 				itemId,

@@ -16,6 +16,7 @@ import { Redis } from "@/server/databases/redis";
 import {
 	claimPaymentWebhookDB,
 	createPaymentDB,
+	listAuditLogsDB,
 	PaymentStatus,
 } from "@/server/models";
 import {
@@ -37,7 +38,9 @@ import {
 } from "@/server/services/buyerOrders/exceptions";
 import {
 	confirmOrderHandover,
+	getAdminHandoverVerificationDetails,
 	getBuyerHandoverCredential,
+	revealAdminHandoverPin,
 } from "@/server/services/buyerOrders/handoverConfirmation";
 import {
 	getMyOrders,
@@ -430,7 +433,7 @@ describe("updateOrderStatus", () => {
 				notifications.some(
 					(n) =>
 						n.type === "ORDER_IN_TRANSIT" &&
-						n.body === "Your order is on the way.",
+						n.body === "Your order is In transit.",
 				)
 			) {
 				break;
@@ -442,7 +445,7 @@ describe("updateOrderStatus", () => {
 			notifications.some(
 				(n) =>
 					n.type === "ORDER_IN_TRANSIT" &&
-					n.body === "Your order is on the way.",
+					n.body === "Your order is In transit.",
 			),
 		).toBe(true);
 
@@ -552,6 +555,59 @@ describe("updateOrderStatus", () => {
 });
 
 describe("handover confirmation", () => {
+	it("lets admin inspect handover details and audit an intentional PIN reveal", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		await addSuccessfulPayment(order);
+
+		const before = await getAdminHandoverVerificationDetails({
+			orderId: order._id.toString(),
+		});
+		expect(before.qrGenerated).toBe(false);
+		expect(before.pinGenerated).toBe(false);
+		expect(before.handoverEligible).toBe(true);
+
+		const adminUserId = oid();
+		const revealed = await revealAdminHandoverPin({
+			orderId: order._id.toString(),
+			actor: {
+				userId: adminUserId,
+				role: "Administrators",
+				ip: "127.0.0.1",
+				userAgent: "vitest",
+			},
+		});
+		expect(revealed.pin).toMatch(/^\d{6}$/);
+
+		const after = await getAdminHandoverVerificationDetails({
+			orderId: order._id.toString(),
+		});
+		expect(after.qrGenerated).toBe(true);
+		expect(after.pinGenerated).toBe(true);
+
+		const audit = await listAuditLogsDB({
+			filter: {
+				action: "ORDER_HANDOVER_PIN_REVEAL",
+				resourceType: "buyerOrders",
+				resourceId: order._id.toString(),
+			},
+		});
+		expect(audit).toHaveLength(1);
+		const [entry] = audit;
+		expect(entry).toBeDefined();
+		if (!entry) throw new Error("Expected handover audit entry");
+		expect(entry.userId?.toString()).toBe(adminUserId);
+		expect(JSON.stringify(entry.newState)).not.toContain(revealed.pin);
+	});
+
 	it("confirms pickup with the correct PIN", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();

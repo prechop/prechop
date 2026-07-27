@@ -14,6 +14,7 @@ export async function createCampus(payload: {
 	name: string;
 	shortCode: string;
 	state: string;
+	isPublic?: boolean;
 }) {
 	const existing = await getCampusByShortCodeDB({
 		shortCode: payload.shortCode,
@@ -35,6 +36,7 @@ export async function updateCampus(
 		shortCode?: string;
 		state?: string;
 		isActive?: boolean;
+		isPublic?: boolean;
 	},
 ) {
 	const updated = await updateCampusDB({ id, payload });

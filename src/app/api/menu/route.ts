@@ -1,4 +1,3 @@
-import { ErrInvalidFields } from "@/server/constants";
 import {
 	assertActiveVendor,
 	assertVendor,
@@ -9,7 +8,10 @@ import {
 	withAuth,
 } from "@/server/lib";
 import { createMenuItem, listMenu } from "@/server/services/menu";
-import { createMenuItemSchema } from "@/server/validators/menu/validate";
+import {
+	createMenuItemSchema,
+	menuValidationError,
+} from "@/server/validators/menu/validate";
 
 export const runtime = "nodejs";
 
@@ -32,7 +34,7 @@ export const POST = withApiHandler(
 		try {
 			await assertActiveVendor(auth);
 			const parsed = createMenuItemSchema.safeParse(await req.json());
-			if (!parsed.success) throw ErrInvalidFields;
+			if (!parsed.success) throw menuValidationError(parsed.error);
 			const item = await createMenuItem({
 				userId: auth.userId,
 				...parsed.data,

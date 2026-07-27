@@ -55,11 +55,15 @@ const LinkGrid = styled.div`
 
 const POLICY_LINKS = [
 	["How Selling Works", "/how-selling-works"],
+	["Buyer Policy", "/policies/buyer-policy"],
 	["Payments and Settlement", "/policies/payments-and-settlement"],
 	["Cancellation and Refunds", "/policies/cancellation-and-refunds"],
 	["Pickup and Delivery", "/policies/pickup-and-delivery"],
 	["Buyer No-show", "/policies/buyer-no-show"],
 	["Disputes", "/policies/disputes"],
+	["Vendor Policy", "/policies/vendor-policy"],
+	["Privacy", "/privacy"],
+	["Terms", "/terms"],
 ];
 
 export default function PolicyPageContent({

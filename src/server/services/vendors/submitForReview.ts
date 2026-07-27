@@ -7,6 +7,7 @@ import {
 } from "@/server/models";
 import { resendProvider } from "@/server/providers";
 import { recordAudit } from "@/server/services/audit";
+import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
 
 const ErrNotSubmittable = new AppError(
@@ -38,6 +39,7 @@ export async function submitVendorForReview({
 }): Promise<{ status: VendorStatus; profileCompleteness: number }> {
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor) throw ErrVendorNotFound;
+	const wasResubmission = vendor.status === VendorStatus.CHANGES_REQUESTED;
 
 	if (
 		vendor.status !== VendorStatus.INCOMPLETE &&
@@ -89,6 +91,19 @@ export async function submitVendorForReview({
 		vendor.email,
 		vendor.businessName ?? "there",
 	);
+	await notifyAdminAttention({
+		kind: wasResubmission
+			? "VENDOR_APPLICATION_RESUBMISSION"
+			: "VENDOR_APPLICATION",
+		title: wasResubmission
+			? "Vendor application resubmitted"
+			: "New vendor application",
+		whatHappened: `${vendor.businessName ?? "A vendor"} submitted an application for admin review.`,
+		submittedBy: `${vendor.businessName ?? "Vendor"} (${vendor.email}; user ${userId})`,
+		recordId: vendorId,
+		adminPath: `/admin/onboarding?vendorId=${encodeURIComponent(vendorId)}`,
+		dedupeKey: `vendor-application:${vendorId}:${wasResubmission ? "resubmission" : "new"}:${new Date().toISOString().slice(0, 10)}`,
+	});
 
 	return { status: VendorStatus.PENDING_REVIEW, profileCompleteness };
 }

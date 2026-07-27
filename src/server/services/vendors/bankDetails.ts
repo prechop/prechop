@@ -1,7 +1,9 @@
 import { updateVendorProfileDB } from "@/server/models";
 import { paystackProvider } from "@/server/providers";
+import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
+import { assertVendorSecurityVerifiedForSensitiveAction } from "./securityOnboarding";
 
 export async function setBankDetails({
 	userId,
@@ -16,6 +18,8 @@ export async function setBankDetails({
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
+	assertVendorSecurityVerifiedForSensitiveAction(vendor);
+	const hadExistingBank = !!vendor.paystackSubaccountCode;
 
 	const resolved = await paystackProvider.resolveAccountNumber(
 		accountNumber,
@@ -48,5 +52,16 @@ export async function setBankDetails({
 	});
 
 	await recomputeVendorCompleteness({ vendorId, userId });
+	if (hadExistingBank) {
+		await notifyAdminAttention({
+			kind: "VENDOR_BANK_CHANGE",
+			title: "Vendor bank account changed",
+			whatHappened: `${vendor.businessName ?? "A vendor"} changed payout bank details.`,
+			submittedBy: `${vendor.businessName ?? "Vendor"} (user ${userId})`,
+			recordId: vendorId,
+			adminPath: `/admin/vendors?vendorId=${encodeURIComponent(vendorId)}`,
+			dedupeKey: `vendor-bank:${vendorId}:${new Date().toISOString().slice(0, 10)}`,
+		});
+	}
 	return updated;
 }

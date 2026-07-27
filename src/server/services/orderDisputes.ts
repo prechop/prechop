@@ -9,7 +9,7 @@ import {
 	type IPayment,
 	type OrderDisputeReason,
 } from "../models";
-import { createUserNotification } from "./notifications";
+import { createUserNotification, notifyAdminAttention } from "./notifications";
 
 function asSnapshot(value: unknown): Record<string, unknown> | undefined {
 	if (!value) return undefined;
@@ -124,6 +124,16 @@ export async function openOrderDisputeForReview({
 		throw validationError("Could not create the admin review record.");
 	}
 	await notifyVendorOfOrderDispute({ order, dispute, reason });
+	await notifyAdminAttention({
+		kind: "DISPUTE",
+		title: "Order dispute opened",
+		whatHappened: `Order ${order.orderNumber} needs review for ${reason}.`,
+		submittedBy: `Buyer ${order.buyerId.toString()} / Vendor ${order.vendorId.toString()}`,
+		recordId: dispute._id.toString(),
+		adminPath: `/admin/orders?orderId=${encodeURIComponent(order._id.toString())}&disputeId=${encodeURIComponent(dispute._id.toString())}`,
+		dedupeKey: `order-dispute:${dispute._id.toString()}`,
+		occurredAt: dispute.createdAt,
+	});
 	return dispute;
 }
 

@@ -12,6 +12,25 @@ interface SendReceiptEmailInput {
 	receiptPdfBuffer: Buffer;
 }
 
+interface SendAdminAttentionEmailInput {
+	to: string[];
+	title: string;
+	whatHappened: string;
+	submittedBy: string;
+	occurredAt: Date;
+	recordId: string;
+	adminUrl: string;
+}
+
+function escapeHtml(value: string): string {
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;");
+}
+
 async function safeSend(fn: () => Promise<unknown>): Promise<void> {
 	// Email must never break a request path. In dev we skip real sends.
 	if (NODE_ENV !== "production") return;
@@ -113,6 +132,31 @@ class ResendProvider {
 				to,
 				subject: "Action needed on your PreChop vendor application",
 				html: `<p>Hi ${businessName},</p><p>We reviewed your application and need a few changes before we can approve it.</p><p><strong>What to fix:</strong> ${reason}</p><p>Update your profile and resubmit — we'll take another look right away.</p><p>— The PreChop Team</p>`,
+			}),
+		);
+	}
+
+	async sendAdminAttentionEmail(
+		input: SendAdminAttentionEmailInput,
+	): Promise<void> {
+		if (input.to.length === 0) return;
+		const rows = [
+			["What happened", input.whatHappened],
+			["Submitted by", input.submittedBy],
+			["When", input.occurredAt.toISOString()],
+			["Reference", input.recordId],
+		]
+			.map(
+				([label, value]) =>
+					`<tr><td style="padding:8px 12px;color:#6b5b4b;font-weight:700">${escapeHtml(label)}</td><td style="padding:8px 12px">${escapeHtml(value)}</td></tr>`,
+			)
+			.join("");
+		await safeSend(() =>
+			resend.emails.send({
+				from: RESEND_FROM_EMAIL,
+				to: input.to,
+				subject: `Admin attention needed: ${input.title}`,
+				html: `<p>An item needs admin review in PreChop.</p><table style="border-collapse:collapse;border:1px solid #eadfd4">${rows}</table><p><a href="${escapeHtml(input.adminUrl)}">Open this item in admin</a></p><p>Only action-worthy admin events are sent here to keep this inbox useful.</p>`,
 			}),
 		);
 	}

@@ -67,6 +67,9 @@ const schema = new mongoose.Schema<any>(
 		totalReviews: { type: Number, default: 0 },
 		totalOrders: { type: Number, default: 0 },
 		completionRate: { type: Number, default: 0 },
+		lateOrderCount: { type: Number, default: 0 },
+		unfulfilledOrderCount: { type: Number, default: 0 },
+		avgPrepDelayMin: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
 		// Notification preferences (default opted-in).
@@ -90,6 +93,9 @@ const schema = new mongoose.Schema<any>(
 		reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
 		rejectionReason: { type: String },
 		reviewNotes: { type: String },
+		securityOnboardingDismissedAt: { type: Date },
+		securityOnboardingCompletedAt: { type: Date },
+		securityPinHash: { type: String, select: false },
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
@@ -101,9 +107,21 @@ schema.index({ campusIds: 1, status: 1, isOpenForOrders: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
-	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
 	this.pipeline().push({
-		$project: { accountNumber: 0, deleted: 0, __v: 0 },
+		$addFields: {
+			id: { $toString: "$_id" },
+			securityPinSet: {
+				$gt: [{ $strLenCP: { $ifNull: ["$securityPinHash", ""] } }, 0],
+			},
+		},
+	});
+	this.pipeline().push({
+		$project: {
+			accountNumber: 0,
+			securityPinHash: 0,
+			deleted: 0,
+			__v: 0,
+		},
 	});
 });
 
@@ -225,6 +243,49 @@ export async function updateVendorProfileDB({
 			method: "updateVendorProfileDB",
 			success: "false",
 		});
+		return null;
+	}
+}
+
+export async function updateVendorSecurityOnboardingDB({
+	id,
+	completed,
+	securityPinHash,
+	session,
+}: {
+	id: string;
+	completed: boolean;
+	securityPinHash?: string;
+	session?: ClientSession;
+}): Promise<IVendorProfile | null> {
+	try {
+		const now = new Date();
+		const res = await VendorProfile.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				$set: completed
+					? {
+							securityOnboardingCompletedAt: now,
+							securityOnboardingDismissedAt: now,
+							...(securityPinHash ? { securityPinHash } : {}),
+						}
+					: { securityOnboardingDismissedAt: now },
+			},
+			{ session, returnDocument: "after" },
+		);
+		if (!res) return null;
+		const vendor = normalizeVendorCategories(
+			res.toObject() as unknown as IVendorProfile,
+		);
+		return {
+			...vendor,
+			securityPinSet:
+				completed && typeof securityPinHash === "string"
+					? true
+					: !!vendor.securityPinHash,
+			securityPinHash: undefined,
+		};
+	} catch {
 		return null;
 	}
 }
@@ -412,7 +473,13 @@ export async function bulkUpdateVendorCompletionRatesDB({
 	rates,
 	session,
 }: {
-	rates: { vendorId: string; completionRate: number }[];
+	rates: {
+		vendorId: string;
+		completionRate: number;
+		lateOrderCount?: number;
+		unfulfilledOrderCount?: number;
+		avgPrepDelayMin?: number;
+	}[];
 	session?: ClientSession;
 }): Promise<number> {
 	try {
@@ -421,7 +488,23 @@ export async function bulkUpdateVendorCompletionRatesDB({
 			.map((r) => ({
 				updateOne: {
 					filter: { _id: new mongoose.Types.ObjectId(r.vendorId) },
-					update: { $set: { completionRate: r.completionRate } },
+					update: {
+						$set: {
+							completionRate: r.completionRate,
+							...(r.lateOrderCount != null
+								? { lateOrderCount: r.lateOrderCount }
+								: {}),
+							...(r.unfulfilledOrderCount != null
+								? {
+										unfulfilledOrderCount:
+											r.unfulfilledOrderCount,
+									}
+								: {}),
+							...(r.avgPrepDelayMin != null
+								? { avgPrepDelayMin: r.avgPrepDelayMin }
+								: {}),
+						},
+					},
 				},
 			}));
 		if (ops.length === 0) return 0;

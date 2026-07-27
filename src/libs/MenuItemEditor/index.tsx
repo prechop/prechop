@@ -32,6 +32,11 @@ import OptionGroupsManager from "@/libs/OptionGroupsManager";
 import type { MenuItem, MenuOptionGroup } from "@/types";
 
 const CATEGORIES = MENU_CATEGORIES;
+const SUPPORTED_IMAGE_TYPES = new Set([
+	"image/jpeg",
+	"image/png",
+	"image/webp",
+]);
 
 interface Draft {
 	name: string;
@@ -156,7 +161,39 @@ const SuggestionName = styled.span`
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
 		?.data?.message;
-	return m ?? "Something went wrong. Please try again.";
+	return (
+		m ??
+		(e instanceof Error ? e.message : undefined) ??
+		"Something went wrong. Please try again."
+	);
+}
+
+async function cacheSavedMenuItem(item: MenuItem) {
+	await globalMutate<MenuItem[]>(
+		"/menu",
+		(current) => {
+			const id = menuItemId(item);
+			const normalizedItem = id ? { ...item, id } : item;
+			if (!current) return [normalizedItem];
+			const exists = current.some(
+				(candidate) => menuItemId(candidate) === id,
+			);
+			if (!exists) return [...current, normalizedItem];
+			return current.map((candidate) =>
+				menuItemId(candidate) === id ? normalizedItem : candidate,
+			);
+		},
+		{ revalidate: false },
+	);
+}
+
+function menuItemId(item: MenuItem): string | undefined {
+	return (
+		item.id ??
+		(
+			item as unknown as { _id?: { toString(): string } | string }
+		)._id?.toString()
+	);
 }
 
 /**
@@ -193,6 +230,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 	// A newly picked image file + its object-URL preview (null = keep existing).
 	const [imageFile, setImageFile] = useState<File | null>(null);
 	const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+	const [createdItemId, setCreatedItemId] = useState<string | undefined>();
 	const [existingImageUrl, setExistingImageUrl] = useState<
 		string | undefined
 	>(undefined);
@@ -225,6 +263,10 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 	}, [previewUrl]);
 
 	function pickImage(file: File) {
+		if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
+			toast("The uploaded image format is not supported.", "error");
+			return;
+		}
 		if (previewUrl) URL.revokeObjectURL(previewUrl);
 		setImageFile(file);
 		setPreviewUrl(URL.createObjectURL(file));
@@ -242,10 +284,13 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 			body: file,
 			headers: { "Content-Type": file.type },
 		});
-		if (!put.ok) throw new Error("Upload failed");
-		await api.post(`/menu/${id}/image/confirm`, {
-			key: presign.key,
-		});
+		if (!put.ok)
+			throw new Error("The menu image upload failed. Please try again.");
+		return apiData<MenuItem>(
+			api.post(`/menu/${id}/image/confirm`, {
+				key: presign.key,
+			}),
+		);
 	}
 
 	function suggestionBody(suggestion: OptionGroupSuggestion) {
@@ -321,47 +366,33 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 			if (Number(draft.estimatedPrepMin) > 0)
 				body.estimatedPrepMin = Number(draft.estimatedPrepMin);
 
-			let id = itemId;
-			if (isEdit && id) {
-				await api.patch(`/menu/${id}`, body);
+			let id = itemId ?? createdItemId;
+			let savedItem: MenuItem | undefined;
+			if (id) {
+				savedItem = await apiData<MenuItem>(
+					api.patch(`/menu/${id}`, body),
+				);
 			} else {
 				// Append new items to the end of the current order.
 				body.displayOrder = items?.length ?? 0;
 				const created = await apiData<MenuItem>(
 					api.post("/menu", body),
 				);
-				id = created.id;
+				id = menuItemId(created);
+				savedItem = created;
+				setCreatedItemId(id);
 			}
 
-			// The item is now saved. The image is best-effort: uploading it is a
-			// separate call that needs the (now-known) id, and a failure here must
-			// NOT strand the user on the create page — retrying would POST a second
-			// item. So on image failure we warn but still return to the list; the
-			// item is persisted and its photo can be added by editing it.
-			let imageFailed = false;
 			if (imageFile && id) {
-				try {
-					await uploadImage(id, imageFile);
-				} catch {
-					imageFailed = true;
-				}
+				const updated = await uploadImage(id, imageFile);
+				savedItem = updated;
+				setExistingImageUrl(updated.imageUrl);
 			}
 
-			// Refresh the list's cache before navigating back so the new/edited
-			// item shows immediately (a separate page can't mutate the list's
-			// own SWR hook the way the old inline modal did).
-			await globalMutate("/menu");
-			if (imageFailed) {
-				toast(
-					"Item saved, but the photo couldn't upload. Edit the item to try again.",
-					"error",
-				);
-			} else {
-				toast(
-					isEdit ? "Menu item updated" : "Menu item added",
-					"success",
-				);
-			}
+			// Cache the final API response (including imageUrl after confirm)
+			// before returning to the list, so the thumbnail never flashes stale.
+			if (savedItem) await cacheSavedMenuItem(savedItem);
+			toast(isEdit ? "Menu item updated" : "Menu item added", "success");
 			router.push("/menu");
 		} catch (e) {
 			toast(errMsg(e), "error");

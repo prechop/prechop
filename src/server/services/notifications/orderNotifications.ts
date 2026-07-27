@@ -119,8 +119,8 @@ export async function notifyOrderInTransit({
 }): Promise<void> {
 	await createUserNotification({
 		userId: buyerId,
-		title: "Order on the way",
-		body: "Your order is on the way.",
+		title: "Order In transit",
+		body: "Your order is In transit.",
 		type: "ORDER_IN_TRANSIT",
 		dedupeKey: `order:${orderNumber}:buyer:in-transit`,
 		data: { orderNumber, ...(data ?? {}) },
@@ -130,7 +130,7 @@ export async function notifyOrderInTransit({
 		(phone) =>
 			sendchampProvider.sendCustom(
 				phone,
-				`PreChop: Your order ${orderNumber} is on the way.`,
+				`PreChop: Your order ${orderNumber} is In transit.`,
 			),
 		"order-in-transit",
 	);
@@ -153,6 +153,102 @@ export async function notifyOrderAccepted({
 		body: `${vendorName} accepted your order and started cooking.`,
 		type: "ORDER_ACCEPTED",
 		dedupeKey: `order:${orderNumber}:buyer:accepted`,
+		data: { orderNumber, ...(data ?? {}) },
+	});
+}
+
+export async function notifyOrderRunningLate({
+	buyerId,
+	orderNumber,
+	vendorName,
+	expectedReadyAt,
+	data,
+}: {
+	buyerId: string;
+	orderNumber: string;
+	vendorName: string;
+	expectedReadyAt?: Date;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	await createUserNotification({
+		userId: buyerId,
+		title: "Order running late",
+		body: `${vendorName} is running late on order ${orderNumber}. You can wait, contact support, or cancel for a refund from your order page.`,
+		type: "ORDER_RUNNING_LATE",
+		dedupeKey: `order:${orderNumber}:buyer:running-late`,
+		data: {
+			orderNumber,
+			...(expectedReadyAt
+				? { expectedReadyAt: expectedReadyAt.toISOString() }
+				: {}),
+			...(data ?? {}),
+		},
+	});
+}
+
+export async function notifyVendorOrderRunningLate({
+	vendorUserId,
+	orderNumber,
+	maxExtensions,
+	data,
+}: {
+	vendorUserId: string;
+	orderNumber: string;
+	maxExtensions: number;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	await createUserNotification({
+		userId: vendorUserId,
+		title: "Order deadline missed",
+		body: `Order ${orderNumber} is late. Send a revised ready time now. You can revise up to ${maxExtensions} times before admin review.`,
+		type: "ORDER_RUNNING_LATE_VENDOR",
+		dedupeKey: `order:${orderNumber}:vendor:running-late`,
+		data: { orderNumber, ...(data ?? {}) },
+	});
+}
+
+export async function notifyOrderReadyEstimateRevised({
+	buyerId,
+	orderNumber,
+	vendorName,
+	revisedReadyAt,
+	data,
+}: {
+	buyerId: string;
+	orderNumber: string;
+	vendorName: string;
+	revisedReadyAt: Date;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	await createUserNotification({
+		userId: buyerId,
+		title: "Ready time updated",
+		body: `${vendorName} updated order ${orderNumber}. New estimated ready time: ${revisedReadyAt.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" })}.`,
+		type: "ORDER_READY_ESTIMATE_REVISED",
+		dedupeKey: `order:${orderNumber}:buyer:ready-estimate-${revisedReadyAt.getTime()}`,
+		data: {
+			orderNumber,
+			revisedReadyAt: revisedReadyAt.toISOString(),
+			...(data ?? {}),
+		},
+	});
+}
+
+export async function notifyOrderLateEscalated({
+	buyerId,
+	orderNumber,
+	data,
+}: {
+	buyerId: string;
+	orderNumber: string;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	await createUserNotification({
+		userId: buyerId,
+		title: "Support is reviewing your order",
+		body: `Order ${orderNumber} is significantly delayed. Support has been alerted, and you can cancel for a refund from the order page.`,
+		type: "ORDER_LATE_ESCALATED",
+		dedupeKey: `order:${orderNumber}:buyer:late-escalated`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
 }

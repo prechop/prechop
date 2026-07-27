@@ -5,24 +5,20 @@ import {
 	ErrUnauthorized,
 } from "@/server/constants";
 import {
-	ACCESS_COOKIE,
 	clearAuthCookies,
-	getAuthCookieOptions,
+	clearAuthCookiesOnResponse,
 	getClientIp,
 	getCookieValue,
 	handleError,
 	ok,
 	REFRESH_COOKIE,
 	setAuthCookies,
+	setAuthCookiesOnResponse,
 	withApiHandler,
 } from "@/server/lib";
 import reLoginUserWithRefreshToken from "@/server/services/auth/reLoginUserWithRefreshToken";
-import type { IJwtPayload } from "@/server/types";
 
 export const runtime = "nodejs";
-
-const LEGACY_ACCESS_COOKIE = "accessToken";
-const LEGACY_REFRESH_COOKIE = "refreshToken";
 
 function cleanNext(value: string | null): string {
 	if (!value?.startsWith("/") || value.startsWith("//"))
@@ -45,42 +41,14 @@ async function refreshSession(req: Request) {
 	return token;
 }
 
-function setAuthCookiesOnResponse(
-	response: NextResponse,
-	token: IJwtPayload,
-): void {
-	response.cookies.set(ACCESS_COOKIE, token.accessToken, {
-		...getAuthCookieOptions({ expires: new Date(token.expiresIn) }),
-	});
-	response.cookies.set(REFRESH_COOKIE, token.refreshToken, {
-		...getAuthCookieOptions({
-			expires: new Date(token.refreshTokenExpiresIn),
-		}),
-	});
-}
-
-function clearAuthCookiesOnResponse(response: NextResponse): void {
-	const opts = getAuthCookieOptions();
-	response.cookies.set(ACCESS_COOKIE, "", { ...opts, maxAge: 0 });
-	response.cookies.set(REFRESH_COOKIE, "", { ...opts, maxAge: 0 });
-	if (process.env.NODE_ENV === "production") {
-		response.cookies.set(LEGACY_ACCESS_COOKIE, "", {
-			...opts,
-			maxAge: 0,
-		});
-		response.cookies.set(LEGACY_REFRESH_COOKIE, "", {
-			...opts,
-			maxAge: 0,
-		});
-	}
-}
-
 export const POST = withApiHandler(
 	{ route: "/api/auth/refresh" },
 	async ({ req }) => {
 		try {
 			const token = await refreshSession(req);
-			return ok({ accessToken: token.accessToken });
+			const response = ok({ accessToken: token.accessToken });
+			setAuthCookiesOnResponse(response, token);
+			return response;
 		} catch (error) {
 			if (error === ErrTokenCompromised || error === ErrUnauthorized) {
 				await clearAuthCookies();
@@ -92,7 +60,7 @@ export const POST = withApiHandler(
 );
 
 export const GET = withApiHandler(
-	{ route: "/api/auth/refresh" },
+	{ route: "/api/auth/refresh", rateLimit: false },
 	async ({ req }) => {
 		const url = new URL(req.url);
 		const next = cleanNext(url.searchParams.get("next"));

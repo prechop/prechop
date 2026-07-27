@@ -299,6 +299,18 @@ export default function AdminUserDetailWrapper({ userId }: { userId: string }) {
 								label="Completion rate"
 								value={`${vendor.completionRate}%`}
 							/>
+							<Field
+								label="Late orders"
+								value={vendor.lateOrderCount}
+							/>
+							<Field
+								label="Unfulfilled orders"
+								value={vendor.unfulfilledOrderCount}
+							/>
+							<Field
+								label="Avg prep delay"
+								value={`${vendor.avgPrepDelayMin} min`}
+							/>
 						</Stack>
 					</Card>
 				)}

@@ -45,6 +45,7 @@ const VENDOR_TYPES = [
 	{ value: "BAKERY", label: "Bakery" },
 ];
 const SELLING_POLICY_LINKS = [
+	{ href: "/help?audience=vendor", label: "Help / FAQs" },
 	{ href: "/how-selling-works", label: "How Selling Works" },
 	{
 		href: "/policies/payments-and-settlement",
@@ -57,6 +58,9 @@ const SELLING_POLICY_LINKS = [
 	{ href: "/policies/pickup-and-delivery", label: "Pickup and Delivery" },
 	{ href: "/policies/buyer-no-show", label: "Buyer No-show" },
 	{ href: "/policies/disputes", label: "Disputes" },
+	{ href: "/policies/vendor-policy", label: "Vendor Policy" },
+	{ href: "/privacy", label: "Privacy" },
+	{ href: "/terms", label: "Terms" },
 ];
 const CATEGORIES = MENU_CATEGORIES;
 type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
@@ -274,6 +278,8 @@ export default function VendorSettingsWrapper() {
 	const [notifyNewOrders, setNotifyNewOrders] = useState(true);
 	const [notifyPayouts, setNotifyPayouts] = useState(true);
 	const [notifyReviews, setNotifyReviews] = useState(true);
+	const [securityPin, setSecurityPin] = useState("");
+	const [securityPinConfirm, setSecurityPinConfirm] = useState("");
 
 	const [busy, setBusy] = useState<string | null>(null);
 	const [startAttempted, setStartAttempted] = useState(false);
@@ -551,6 +557,30 @@ export default function VendorSettingsWrapper() {
 			toast("Notification preferences saved", "success");
 		});
 	}
+
+	async function completeSecurityOnboarding() {
+		if (!/^\d{4,6}$/.test(securityPin.trim())) {
+			toast("Enter a 4-6 digit security PIN", "error");
+			return;
+		}
+		if (securityPin.trim() !== securityPinConfirm.trim()) {
+			toast("Security PINs do not match", "error");
+			return;
+		}
+		await run("security-onboarding", async () => {
+			await api.patch("/vendors/me", {
+				action: "COMPLETE",
+				pin: securityPin.trim(),
+			});
+			setSecurityPin("");
+			setSecurityPinConfirm("");
+			toast("Security verification completed", "success");
+		});
+	}
+
+	const securityVerified =
+		vendor.status !== "ACTIVE" ||
+		(!!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet);
 
 	return (
 		<FadeIn>
@@ -854,29 +884,10 @@ export default function VendorSettingsWrapper() {
 
 				<Card>
 					<Stack $gap={12}>
-						<SectionHeader title="Help / FAQs" icon="?" />
+						<SectionHeader title="Help & policies" icon="?" />
 						<Text $muted $size={13}>
-							Open vendor help for menu creation, daily order
-							windows, incoming orders, cooking statuses,
-							completion, settlements, refunds and support.
-						</Text>
-						<Row $justify="flex-start">
-							<AccountLink href="/help?audience=vendor">
-								Open Help / FAQs <span aria-hidden>→</span>
-							</AccountLink>
-						</Row>
-					</Stack>
-				</Card>
-
-				<Card>
-					<Stack $gap={12}>
-						<SectionHeader
-							title="Selling help & policies"
-							icon="!"
-						/>
-						<Text $muted $size={13}>
-							Quick links for selling rules, payments, delivery,
-							no-show handling and disputes.
+							Quick links for vendor help, selling rules,
+							payments, delivery, no-show handling and disputes.
 						</Text>
 						<PolicyLinkGrid>
 							{SELLING_POLICY_LINKS.map((link) => (
@@ -895,6 +906,61 @@ export default function VendorSettingsWrapper() {
 					</Stack>
 				</Card>
 
+				{vendor.status === "ACTIVE" && (
+					<Card>
+						<Stack $gap={14}>
+							<SectionHeader title="Vendor security" icon="!" />
+							{securityVerified ? (
+								<Text $muted $size={13}>
+									Security verification is complete for
+									sensitive vendor actions.
+								</Text>
+							) : (
+								<>
+									<Text $muted $size={13}>
+										Create a 4-6 digit security PIN before
+										changing payout details or other
+										sensitive vendor settings.
+									</Text>
+									<Input
+										label="Security PIN"
+										type="password"
+										inputMode="numeric"
+										value={securityPin}
+										onChange={(e) =>
+											setSecurityPin(e.target.value)
+										}
+										placeholder="4-6 digits"
+									/>
+									<Input
+										label="Confirm PIN"
+										type="password"
+										inputMode="numeric"
+										value={securityPinConfirm}
+										onChange={(e) =>
+											setSecurityPinConfirm(
+												e.target.value,
+											)
+										}
+										placeholder="Re-enter PIN"
+									/>
+									<Button
+										$loading={
+											busy === "security-onboarding"
+										}
+										disabled={
+											busy === "security-onboarding"
+										}
+										onClick={completeSecurityOnboarding}
+									>
+										Save security PIN
+									</Button>
+								</>
+							)}
+						</Stack>
+					</Card>
+				)}
+
 				{/* Bank */}
 				<Card>
 					<Stack $gap={14}>
@@ -904,6 +970,13 @@ export default function VendorSettingsWrapper() {
 							initialAccountName={vendor.accountName}
 							saveLabel="Update bank details"
 							onSaved={() => mutate()}
+							securityVerified={securityVerified}
+							onSecureAccount={() => {
+								toast(
+									"Use the Vendor security section to create your PIN.",
+									"info",
+								);
+							}}
 						/>
 					</Stack>
 				</Card>

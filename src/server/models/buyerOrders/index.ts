@@ -51,6 +51,7 @@ const itemSchema = new mongoose.Schema(
 		menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "menuItems" },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true },
+		snapshotPrepMin: { type: Number },
 		quantity: { type: Number, required: true, min: 1 },
 		subtotalKobo: { type: Number, required: true },
 		selectedOptions: { type: [selectedOptionSchema], default: [] },
@@ -136,6 +137,17 @@ const schema = new mongoose.Schema<any>(
 		paidAt: { type: Date },
 		acceptedAt: { type: Date },
 		acceptanceDeadline: { type: Date, index: true },
+		expectedReadyAt: { type: Date, index: true },
+		expectedPrepMin: { type: Number },
+		actualPrepMin: { type: Number },
+		lateMarkedAt: { type: Date },
+		lateBuyerNotifiedAt: { type: Date },
+		lateVendorNotifiedAt: { type: Date },
+		revisedReadyAt: { type: Date },
+		revisedPrepMin: { type: Number },
+		readyExtensionCount: { type: Number, default: 0 },
+		lastReadyExtensionAt: { type: Date },
+		lateEscalatedAt: { type: Date },
 		vendorAcceptanceReminder5SentAt: { type: Date },
 		vendorAcceptanceWarning8SentAt: { type: Date },
 		vendorRejectedAt: { type: Date },
@@ -206,6 +218,7 @@ schema.index({ vendorId: 1, dailyOrderId: 1 });
 schema.index({ vendorId: 1, status: 1, createdAt: 1 });
 schema.index({ buyerId: 1, createdAt: -1 });
 schema.index({ receiptUrl: 1 }, { sparse: true });
+schema.index({ status: 1, expectedReadyAt: 1 });
 // NOTE: the stale-PAID-past-cutoff sweep (findStalePaidOrdersPastCutoffDB) is
 // served by the existing `status_1` index above. A compound
 // {status:1, dailyOrderId:1} was tried and measured: the planner rejects it
@@ -258,6 +271,7 @@ function mapItems(items: IBuyerOrderCreateInput["items"]) {
 			: undefined,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
+		snapshotPrepMin: it.snapshotPrepMin,
 		quantity: it.quantity,
 		subtotalKobo: it.subtotalKobo,
 		selectedOptions: (it.selectedOptions ?? []).map((a) => ({
@@ -598,6 +612,9 @@ export async function setBuyerOrderStatusDB({
 	fromStatuses,
 	acceptedAt,
 	acceptanceDeadline,
+	expectedReadyAt,
+	expectedPrepMin,
+	actualPrepMin,
 	refundPendingAt,
 	vendorRejectedAt,
 	vendorNoResponseExpiredAt,
@@ -612,6 +629,9 @@ export async function setBuyerOrderStatusDB({
 	fromStatuses?: OrderStatus[];
 	acceptedAt?: Date;
 	acceptanceDeadline?: Date;
+	expectedReadyAt?: Date;
+	expectedPrepMin?: number;
+	actualPrepMin?: number;
 	refundPendingAt?: Date;
 	vendorRejectedAt?: Date;
 	vendorNoResponseExpiredAt?: Date;
@@ -633,6 +653,9 @@ export async function setBuyerOrderStatusDB({
 					status,
 					...(acceptedAt ? { acceptedAt } : {}),
 					...(acceptanceDeadline ? { acceptanceDeadline } : {}),
+					...(expectedReadyAt ? { expectedReadyAt } : {}),
+					...(expectedPrepMin != null ? { expectedPrepMin } : {}),
+					...(actualPrepMin != null ? { actualPrepMin } : {}),
 					...(refundPendingAt ? { refundPendingAt } : {}),
 					...(vendorRejectedAt ? { vendorRejectedAt } : {}),
 					...(vendorNoResponseExpiredAt
@@ -645,6 +668,171 @@ export async function setBuyerOrderStatusDB({
 				},
 			},
 			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+const PRE_READY_ORDER_STATUSES = [
+	OrderStatus.ACCEPTED,
+	OrderStatus.CONFIRMED,
+	OrderStatus.COOKING,
+	OrderStatus.PREPARING,
+];
+
+export async function listReadyDeadlineDueOrdersDB({
+	now,
+	limit = 200,
+}: {
+	now: Date;
+	limit?: number;
+}): Promise<IBuyerOrder[]> {
+	try {
+		const rows = await BuyerOrder.find({
+			status: { $in: PRE_READY_ORDER_STATUSES },
+			expectedReadyAt: { $lte: now },
+			readyAt: { $exists: false },
+			lateMarkedAt: { $exists: false },
+		})
+			.sort({ expectedReadyAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+		return rows as unknown as IBuyerOrder[];
+	} catch {
+		return [];
+	}
+}
+
+export async function markBuyerOrderLateDB({
+	id,
+	now,
+}: {
+	id: string;
+	now: Date;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $in: PRE_READY_ORDER_STATUSES },
+				readyAt: { $exists: false },
+				lateMarkedAt: { $exists: false },
+			},
+			{
+				$set: {
+					lateMarkedAt: now,
+					lateBuyerNotifiedAt: now,
+					lateVendorNotifiedAt: now,
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function listLateOrdersForEscalationDB({
+	now,
+	delayMs,
+	limit = 100,
+}: {
+	now: Date;
+	delayMs: number;
+	limit?: number;
+}): Promise<IBuyerOrder[]> {
+	const cutoff = new Date(now.getTime() - delayMs);
+	try {
+		const rows = await BuyerOrder.find({
+			status: { $in: PRE_READY_ORDER_STATUSES },
+			expectedReadyAt: { $lte: cutoff },
+			readyAt: { $exists: false },
+			lateMarkedAt: { $exists: true },
+			lateEscalatedAt: { $exists: false },
+		})
+			.sort({ expectedReadyAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+		return rows as unknown as IBuyerOrder[];
+	} catch {
+		return [];
+	}
+}
+
+export async function markBuyerOrderLateEscalatedDB({
+	id,
+	now,
+	reason,
+}: {
+	id: string;
+	now: Date;
+	reason: string;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $in: PRE_READY_ORDER_STATUSES },
+				readyAt: { $exists: false },
+				lateMarkedAt: { $exists: true },
+				lateEscalatedAt: { $exists: false },
+			},
+			{
+				$set: {
+					lateEscalatedAt: now,
+					adminReviewRequiredAt: now,
+					adminReviewReason: reason,
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function reviseBuyerOrderReadyEstimateDB({
+	id,
+	vendorId,
+	now,
+	revisedPrepMin,
+	revisedReadyAt,
+	maxExtensions,
+}: {
+	id: string;
+	vendorId: string;
+	now: Date;
+	revisedPrepMin: number;
+	revisedReadyAt: Date;
+	maxExtensions: number;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				vendorId: new mongoose.Types.ObjectId(vendorId),
+				status: { $in: PRE_READY_ORDER_STATUSES },
+				readyAt: { $exists: false },
+				lateMarkedAt: { $exists: true },
+				$or: [
+					{ readyExtensionCount: { $exists: false } },
+					{ readyExtensionCount: { $lt: maxExtensions } },
+				],
+			},
+			{
+				$set: {
+					expectedReadyAt: revisedReadyAt,
+					revisedReadyAt,
+					revisedPrepMin,
+					lastReadyExtensionAt: now,
+				},
+				$inc: { readyExtensionCount: 1 },
+			},
+			{ returnDocument: "after" },
 		);
 		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
 	} catch {
@@ -1703,6 +1891,9 @@ export interface IVendorLifetimeStat {
 	/** Orders that reached at least PAID and were not cancelled/refunded. */
 	settledOrders: number;
 	completedOrders: number;
+	lateOrderCount: number;
+	unfulfilledOrderCount: number;
+	avgPrepDelayMin: number;
 	/** completedOrders / settledOrders as a percentage, 0–100, 2dp. */
 	completionRate: number;
 }
@@ -1720,20 +1911,97 @@ export async function aggregateVendorLifetimeStatsDB(): Promise<
 	IVendorLifetimeStat[]
 > {
 	try {
+		const unfulfilledStatuses = [
+			OrderStatus.CANCELLED,
+			OrderStatus.REFUNDED,
+			OrderStatus.VENDOR_REJECTED,
+			OrderStatus.EXPIRED_VENDOR_NO_RESPONSE,
+			OrderStatus.DELIVERY_FAILED,
+		];
+		const trackedStatuses = Array.from(
+			new Set([...SETTLED_ORDER_STATUSES, ...unfulfilledStatuses]),
+		);
 		const rows = await BuyerOrder.aggregate<{
 			_id: mongoose.Types.ObjectId;
 			settledOrders: number;
 			completedOrders: number;
+			lateOrderCount: number;
+			unfulfilledOrderCount: number;
+			totalPrepDelayMin: number;
+			prepDelaySamples: number;
 		}>([
-			{ $match: { status: { $in: SETTLED_ORDER_STATUSES } } },
+			{ $match: { status: { $in: trackedStatuses } } },
 			{
 				$group: {
 					_id: "$vendorId",
-					settledOrders: { $sum: 1 },
+					settledOrders: {
+						$sum: {
+							$cond: [
+								{ $in: ["$status", SETTLED_ORDER_STATUSES] },
+								1,
+								0,
+							],
+						},
+					},
 					completedOrders: {
 						$sum: {
 							$cond: [
 								{ $eq: ["$status", OrderStatus.COMPLETED] },
+								1,
+								0,
+							],
+						},
+					},
+					lateOrderCount: {
+						$sum: {
+							$cond: [
+								{ $ifNull: ["$lateMarkedAt", false] },
+								1,
+								0,
+							],
+						},
+					},
+					unfulfilledOrderCount: {
+						$sum: {
+							$cond: [
+								{ $in: ["$status", unfulfilledStatuses] },
+								1,
+								0,
+							],
+						},
+					},
+					totalPrepDelayMin: {
+						$sum: {
+							$max: [
+								{
+									$subtract: [
+										{
+											$ifNull: [
+												"$actualPrepMin",
+												"$expectedPrepMin",
+											],
+										},
+										{ $ifNull: ["$expectedPrepMin", 0] },
+									],
+								},
+								0,
+							],
+						},
+					},
+					prepDelaySamples: {
+						$sum: {
+							$cond: [
+								{
+									$and: [
+										{
+											$ifNull: [
+												"$expectedPrepMin",
+												false,
+											],
+										},
+										{ $ifNull: ["$actualPrepMin", false] },
+									],
+								},
 								1,
 								0,
 							],
@@ -1746,6 +2014,14 @@ export async function aggregateVendorLifetimeStatsDB(): Promise<
 			vendorId: r._id.toString(),
 			settledOrders: r.settledOrders,
 			completedOrders: r.completedOrders,
+			lateOrderCount: r.lateOrderCount,
+			unfulfilledOrderCount: r.unfulfilledOrderCount,
+			avgPrepDelayMin:
+				r.prepDelaySamples > 0
+					? Math.round(
+							(r.totalPrepDelayMin / r.prepDelaySamples) * 100,
+						) / 100
+					: 0,
 			completionRate:
 				r.settledOrders > 0
 					? Math.round(

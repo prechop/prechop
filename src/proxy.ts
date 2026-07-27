@@ -70,13 +70,24 @@ function buildLoginRedirect(request: NextRequest, pathname: string): URL {
 	return url;
 }
 
+function buildRefreshRedirect(request: NextRequest, fallbackNext: string): URL {
+	const url = new URL("/api/auth/refresh", request.url);
+	const next = request.nextUrl.searchParams.get("next") ?? fallbackNext;
+	if (next?.startsWith("/") && !next.startsWith("//")) {
+		url.searchParams.set("next", next);
+	}
+	return url;
+}
+
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 	const state = await resolveAuthState(request);
 
 	// Only a verified access token counts as authenticated here. A refresh
-	// cookie alone can be stale, so it must not bounce /login back to /admin.
+	// cookie alone can be stale, so /api/auth/refresh verifies it before the
+	// user is allowed through or sent back to /login.
 	const isAuthenticated = state === "authenticated";
+	const canAttemptRefresh = state === "may-refresh";
 
 	if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
 		const next = request.nextUrl.searchParams.get("next");
@@ -88,7 +99,17 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.redirect(new URL("/", request.url));
 	}
 
+	if (canAttemptRefresh && AUTH_ROUTES.includes(pathname)) {
+		return NextResponse.redirect(buildRefreshRedirect(request, "/"));
+	}
+
 	if (!isAuthenticated && isProtectedRoute(pathname)) {
+		if (canAttemptRefresh) {
+			const original = `${pathname}${request.nextUrl.search}`;
+			return NextResponse.redirect(
+				buildRefreshRedirect(request, original),
+			);
+		}
 		return NextResponse.redirect(buildLoginRedirect(request, pathname));
 	}
 

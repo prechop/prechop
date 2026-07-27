@@ -98,6 +98,9 @@ export async function refreshVendorCompletionRates(): Promise<number> {
 		rates: lifetime.map((l) => ({
 			vendorId: l.vendorId,
 			completionRate: l.completionRate,
+			lateOrderCount: l.lateOrderCount,
+			unfulfilledOrderCount: l.unfulfilledOrderCount,
+			avgPrepDelayMin: l.avgPrepDelayMin,
 		})),
 	});
 }

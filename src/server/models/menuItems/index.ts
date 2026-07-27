@@ -78,9 +78,12 @@ export const MenuItem: MenuItemModel =
 	(mongoose.models[collectionName] as MenuItemModel | undefined) ??
 	mongoose.model<any>(collectionName, schema);
 
-function normalizeMenuItemCategory<T extends { category: string }>(item: T): T {
+function normalizeMenuItemCategory<
+	T extends { _id?: unknown; category: string },
+>(item: T): T & { id?: string } {
 	return {
 		...item,
+		id: typeof item._id === "string" ? item._id : item._id?.toString(),
 		category: normalizeMenuCategory(item.category),
 	};
 }

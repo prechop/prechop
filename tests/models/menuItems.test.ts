@@ -33,20 +33,22 @@ describe("menuItems model", () => {
 			},
 		});
 		expect(item).not.toBeNull();
-		expect(item!.isAvailable).toBe(true);
-		expect(item!.estimatedPrepMin).toBe(20);
+		if (!item) throw new Error("Expected menu item to be created");
+		expect(item.id).toBe(item._id.toString());
+		expect(item.isAvailable).toBe(true);
+		expect(item.estimatedPrepMin).toBe(20);
 
-		const id = item!._id.toString();
+		const id = item._id.toString();
 		const byId = await getMenuItemByIdDB({ id });
-		expect(byId!.name).toBe("Jollof Rice");
+		expect(byId?.name).toBe("Jollof Rice");
 
 		const updated = await updateMenuItemDB({
 			id,
 			vendorId,
 			payload: { priceKobo: 200000, isSoldOut: true },
 		});
-		expect(updated!.priceKobo).toBe(200000);
-		expect(updated!.isSoldOut).toBe(true);
+		expect(updated?.priceKobo).toBe(200000);
+		expect(updated?.isSoldOut).toBe(true);
 
 		// wrong vendor cannot update
 		const wrong = await updateMenuItemDB({
@@ -118,8 +120,9 @@ describe("menuItems model", () => {
 				priceKobo: 2000,
 			},
 		});
+		if (!a || !b) throw new Error("Expected menu items to be created");
 		const many = await getMenuItemsByIdsDB({
-			ids: [a!._id.toString(), b!._id.toString(), "invalid"],
+			ids: [a._id.toString(), b._id.toString(), "invalid"],
 		});
 		expect(many.length).toBe(2);
 	});

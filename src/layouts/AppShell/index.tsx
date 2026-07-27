@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import { Avatar, Container, ThemeToggle } from "@/components";
@@ -29,6 +29,27 @@ const vendorSetupNav = [
 	{ href: "/vendor/onboarding", label: "Setup", icon: "✅" },
 	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
+const footerLinks = {
+	buyer: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/buyer-policy", label: "Buyer Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
+	vendor: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/vendor-policy", label: "Vendor Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
+	public: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/buyer-policy", label: "Buyer Policy" },
+		{ href: "/policies/vendor-policy", label: "Vendor Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
+} as const;
 
 interface VendorMe {
 	profileImageUrl?: string;
@@ -229,29 +250,40 @@ const Main = styled.main`
 		padding-bottom: var(--pc-space-8);
 	}
 `;
+const MainInner = styled(Container)`
+	min-height: inherit;
+	display: flex;
+	flex-direction: column;
+`;
 const VendorFooter = styled.footer`
-	margin-top: var(--pc-space-8);
-	padding-top: var(--pc-space-4);
+	margin-top: auto;
+	padding-top: var(--pc-space-3);
 	border-top: 1px solid var(--pc-border);
 	display: flex;
-	justify-content: center;
-`;
-const FooterLink = styled(Link)`
-	display: inline-flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	min-height: 40px;
-	padding: 0 14px;
-	border-radius: var(--pc-radius-pill);
+	gap: 6px;
 	color: var(--pc-text-muted);
-	background: var(--pc-surface-2);
-	border: 1px solid var(--pc-border);
-	font-size: 13px;
+	font-size: 12px;
+`;
+const FooterLink = styled(Link)`
+	color: var(--pc-text-muted);
+	font-size: 12px;
 	font-weight: 800;
 
 	&:hover {
 		color: var(--pc-color-primary);
 	}
+`;
+const FooterLinks = styled.nav`
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 6px;
+`;
+const FooterDot = styled.span`
+	color: var(--pc-text-subtle);
 `;
 const BottomNav = styled.nav`
 	position: fixed;
@@ -336,6 +368,11 @@ export default function AppShell({
 	const fullName = user
 		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
 		: undefined;
+	const footerAudience = !isAuthenticated
+		? "public"
+		: isVendor
+			? "vendor"
+			: "buyer";
 
 	return (
 		<>
@@ -414,16 +451,26 @@ export default function AppShell({
 				</BarInner>
 			</Bar>
 			<Main>
-				<Container>
+				<MainInner>
 					{children}
-					{isAuthenticated && isVendor && (
-						<VendorFooter>
-							<FooterLink href="/how-selling-works">
-								Help & policies
-							</FooterLink>
-						</VendorFooter>
-					)}
-				</Container>
+					<VendorFooter>
+						<FooterLinks aria-label="Footer links">
+							{footerLinks[footerAudience].map(
+								(link, index, links) => (
+									<Fragment key={link.href}>
+										<FooterLink href={link.href}>
+											{link.label}
+										</FooterLink>
+										{index < links.length - 1 && (
+											<FooterDot aria-hidden>·</FooterDot>
+										)}
+									</Fragment>
+								),
+							)}
+						</FooterLinks>
+						<span>© 2026 Prechop</span>
+					</VendorFooter>
+				</MainInner>
 			</Main>
 			<BottomNav>
 				{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (

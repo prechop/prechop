@@ -8,6 +8,7 @@ import {
 	FiHash,
 	FiMapPin,
 	FiPackage,
+	FiPhone,
 	FiPlayCircle,
 	FiTruck,
 	FiXCircle,
@@ -46,6 +47,7 @@ interface PipelineOrder {
 	fulfillmentType: "PICKUP" | "DELIVERY";
 	totalKobo: number;
 	deliveryHostelName?: string;
+	deliveryPhone?: string;
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryFullAddress?: string;
@@ -65,6 +67,14 @@ interface PipelineOrder {
 }
 
 type CompletedFilter = "today" | "7d" | "all";
+
+interface ContactReveal {
+	phone?: string;
+	telUrl?: string;
+	whatsappUrl?: string;
+	address?: string;
+	instructions?: string[];
+}
 
 type LaneKey =
 	| "AWAITING_VENDOR_ACCEPTANCE"
@@ -264,6 +274,18 @@ const BuyerNoteBox = styled.div`
 	overflow-wrap: anywhere;
 `;
 
+const ContactBox = styled.div`
+	display: grid;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--pc-text);
+	background: var(--pc-surface-2);
+	padding: 10px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	overflow-wrap: anywhere;
+`;
+
 const LaneEmpty = styled.div`
 	text-align: center;
 	font-size: 13px;
@@ -391,20 +413,6 @@ function actionIcon(status: OrderStatus) {
 	}
 }
 
-function deliveryAddress(order: PipelineOrder) {
-	return (
-		order.deliveryFullAddress ||
-		[
-			order.deliveryHostelName,
-			order.deliveryRoomNumber,
-			order.deliveryAdditionalInfo,
-		]
-			.filter(Boolean)
-			.join(", ") ||
-		"No address"
-	);
-}
-
 function completedAt(order: PipelineOrder) {
 	return (
 		order.confirmedAt ??
@@ -433,6 +441,22 @@ function completedOrderMatchesFilter(
 	return time >= now - 7 * 24 * 60 * 60 * 1000;
 }
 
+function canRevealBuyerContact(order: PipelineOrder) {
+	return (
+		order.fulfillmentType === "DELIVERY" &&
+		[
+			"ACCEPTED",
+			"CONFIRMED",
+			"COOKING",
+			"PREPARING",
+			"READY",
+			"READY_FOR_DELIVERY",
+			"IN_TRANSIT",
+			"BUYER_UNREACHABLE_REPORTED",
+		].includes(order.status)
+	);
+}
+
 export default function PipelineWrapper() {
 	const { toast } = useToast();
 	const { data: dailyOrders, isLoading } = useSWR<DailyOrder[]>(
@@ -444,6 +468,10 @@ export default function PipelineWrapper() {
 	const [now, setNow] = useState(() => Date.now());
 	const [completedFilter, setCompletedFilter] =
 		useState<CompletedFilter>("today");
+	const [contactBusyId, setContactBusyId] = useState<string | null>(null);
+	const [buyerContacts, setBuyerContacts] = useState<
+		Record<string, ContactReveal>
+	>({});
 
 	useEffect(() => {
 		const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -530,6 +558,45 @@ export default function PipelineWrapper() {
 			toast(errMsg(e), "error");
 		} finally {
 			setBusyId(null);
+		}
+	}
+
+	function openContactUrl(url?: string) {
+		if (!url || typeof window === "undefined") return false;
+		window.location.href = url;
+		return true;
+	}
+
+	async function revealBuyerContact(
+		order: PipelineOrder,
+		intent: "call" | "whatsapp" | "reveal" = "call",
+	) {
+		setContactBusyId(order.id);
+		try {
+			const res = await api.get<{
+				data: ContactReveal;
+			}>(`/vendor/orders/${order.id}/contact/buyer`);
+			const contact = res.data.data;
+			setBuyerContacts((current) => ({
+				...current,
+				[order.id]: contact,
+			}));
+			const opened =
+				intent === "whatsapp"
+					? openContactUrl(contact.whatsappUrl)
+					: intent === "call"
+						? openContactUrl(contact.telUrl)
+						: false;
+			if (!opened) {
+				toast(
+					"Buyer contact unlocked for this active order.",
+					"success",
+				);
+			}
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setContactBusyId(null);
 		}
 	}
 
@@ -689,6 +756,8 @@ export default function PipelineWrapper() {
 														order.acceptanceDeadline,
 														now,
 													);
+												const buyerContact =
+													buyerContacts[order.id];
 
 												return (
 													<OrderCard key={order.id}>
@@ -812,46 +881,142 @@ export default function PipelineWrapper() {
 															</Stack>
 
 															{order.fulfillmentType ===
-																"DELIVERY" && (
-																<AddrLine>
-																	<FiMapPin
-																		size={
-																			14
-																		}
-																		aria-hidden
-																	/>
-																	<span>
-																		{deliveryAddress(
-																			order,
+																"DELIVERY" &&
+																canRevealBuyerContact(
+																	order,
+																) &&
+																(buyerContact ? (
+																	<ContactBox>
+																		<Text
+																			$size={
+																				12
+																			}
+																			$weight={
+																				800
+																			}
+																		>
+																			Buyer
+																			contact
+																		</Text>
+																		{buyerContact.address && (
+																			<AddrLine>
+																				<FiMapPin
+																					size={
+																						14
+																					}
+																					aria-hidden
+																				/>
+																				<span>
+																					{
+																						buyerContact.address
+																					}
+																				</span>
+																			</AddrLine>
 																		)}
-																	</span>
-																</AddrLine>
-															)}
+																		{buyerContact.phone && (
+																			<Row
+																				$gap={
+																					8
+																				}
+																				$align="center"
+																			>
+																				<FiPhone
+																					size={
+																						14
+																					}
+																					aria-hidden
+																				/>
+																				<a
+																					href={
+																						buyerContact.telUrl
+																					}
+																				>
+																					Call
+																					buyer
+																				</a>
+																				{buyerContact.whatsappUrl && (
+																					<a
+																						href={
+																							buyerContact.whatsappUrl
+																						}
+																						target="_blank"
+																						rel="noreferrer"
+																					>
+																						WhatsApp
+																					</a>
+																				)}
+																			</Row>
+																		)}
+																		{buyerContact.instructions?.map(
+																			(
+																				instruction,
+																			) => (
+																				<Text
+																					key={
+																						instruction
+																					}
+																					$size={
+																						13
+																					}
+																				>
+																					{
+																						instruction
+																					}
+																				</Text>
+																			),
+																		)}
+																	</ContactBox>
+																) : (
+																	<Button
+																		$size="sm"
+																		$variant="secondary"
+																		$loading={
+																			contactBusyId ===
+																			order.id
+																		}
+																		onClick={() =>
+																			revealBuyerContact(
+																				order,
+																			)
+																		}
+																	>
+																		<FiPhone
+																			size={
+																				14
+																			}
+																			aria-hidden
+																		/>{" "}
+																		Call
+																		buyer
+																	</Button>
+																))}
 
-															{order.customerMessage && (
-																<BuyerNoteBox>
-																	<Text
-																		$size={
-																			12
-																		}
-																		$weight={
-																			800
-																		}
-																	>
-																		Buyer
-																		note
-																	</Text>
-																	<Text
-																		$size={
-																			13
-																		}
-																	>
-																		{
-																			order.customerMessage
-																		}
-																	</Text>
-																</BuyerNoteBox>
-															)}
+															{order.fulfillmentType !==
+																"DELIVERY" &&
+																order.customerMessage && (
+																	<BuyerNoteBox>
+																		<Text
+																			$size={
+																				12
+																			}
+																			$weight={
+																				800
+																			}
+																		>
+																			Buyer
+																			note
+																		</Text>
+																		<Text
+																			$size={
+																				13
+																			}
+																		>
+																			{
+																				order.customerMessage
+																			}
+																		</Text>
+																	</BuyerNoteBox>
+																)}
 
 															<Row
 																$gap={10}

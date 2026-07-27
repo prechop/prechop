@@ -1,5 +1,5 @@
-import { ErrMenuItemNotFound, nairaToKobo } from "@/server/constants";
 import { normalizeMenuCategory } from "@/constants/menuCategories";
+import { ErrMenuItemNotFound, nairaToKobo } from "@/server/constants";
 import {
 	type IMenuItem,
 	type MenuCategory,
@@ -15,6 +15,7 @@ export async function updateMenuItem({
 	category,
 	priceNaira,
 	description,
+	imageUrl,
 	estimatedPrepMin,
 	displayOrder,
 	optionGroupIds,
@@ -25,6 +26,7 @@ export async function updateMenuItem({
 	category?: MenuCategory;
 	priceNaira?: number;
 	description?: string;
+	imageUrl?: string;
 	estimatedPrepMin?: number;
 	displayOrder?: number;
 	optionGroupIds?: string[];
@@ -38,6 +40,7 @@ export async function updateMenuItem({
 		payload.category = normalizeMenuCategory(category) as MenuCategory;
 	if (priceNaira !== undefined) payload.priceKobo = nairaToKobo(priceNaira);
 	if (description !== undefined) payload.description = description;
+	if (imageUrl !== undefined) payload.imageUrl = imageUrl;
 	if (estimatedPrepMin !== undefined)
 		payload.estimatedPrepMin = estimatedPrepMin;
 	if (displayOrder !== undefined) payload.displayOrder = displayOrder;

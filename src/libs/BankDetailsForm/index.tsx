@@ -41,6 +41,15 @@ const Tick = styled.span`
 	font-weight: 800;
 	font-size: 14px;
 `;
+const GuardNotice = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 12px 14px;
+	border-radius: var(--pc-radius-sm);
+	border: 1px solid var(--pc-color-gold);
+	background: var(--pc-color-gold-50);
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -61,12 +70,16 @@ export default function BankDetailsForm({
 	onSaved,
 	saveLabel = "Save bank details",
 	readOnly = false,
+	securityVerified = true,
+	onSecureAccount,
 }: {
 	initialBankCode?: string;
 	initialAccountName?: string;
 	onSaved?: (vendor: VendorProfile) => void;
 	saveLabel?: string;
 	readOnly?: boolean;
+	securityVerified?: boolean;
+	onSecureAccount?: () => void;
 }) {
 	const { toast } = useToast();
 	const { data: banks } = useSWR<Bank[]>("/vendors/banks", fetcher);
@@ -76,6 +89,7 @@ export default function BankDetailsForm({
 	const [resolved, setResolved] = useState<Resolved | null>(null);
 	const [verifying, setVerifying] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const locked = readOnly || !securityVerified;
 
 	// A verification is only valid for the exact bank + account it was made for.
 	const isVerified =
@@ -133,6 +147,26 @@ export default function BankDetailsForm({
 
 	return (
 		<Stack $gap={12}>
+			{!securityVerified && (
+				<GuardNotice>
+					<Text $weight={700}>Security verification required</Text>
+					<Text $muted $size={13}>
+						Complete vendor security verification before changing
+						payout details.
+					</Text>
+					{onSecureAccount && (
+						<Button
+							$variant="secondary"
+							$size="sm"
+							onClick={onSecureAccount}
+							style={{ alignSelf: "flex-start" }}
+						>
+							Secure my account
+						</Button>
+					)}
+				</GuardNotice>
+			)}
+
 			{initialAccountName && !resolved && (
 				<Text $muted $size={13}>
 					Current payout account:{" "}
@@ -145,7 +179,7 @@ export default function BankDetailsForm({
 			<Select
 				label="Bank"
 				value={bankCode}
-				disabled={readOnly}
+				disabled={locked}
 				onChange={(e) => {
 					setBankCode(e.target.value);
 					resetVerification();
@@ -165,7 +199,7 @@ export default function BankDetailsForm({
 				label="Account number"
 				inputMode="numeric"
 				value={accountNumber}
-				disabled={readOnly}
+				disabled={locked}
 				onChange={(e) => {
 					setAccountNumber(e.target.value);
 					resetVerification();
@@ -189,7 +223,7 @@ export default function BankDetailsForm({
 					$full
 					$loading={verifying}
 					disabled={
-						readOnly ||
+						locked ||
 						verifying ||
 						!bankCode ||
 						!accountNumber.trim()
@@ -203,7 +237,7 @@ export default function BankDetailsForm({
 			<Button
 				$full
 				$loading={saving}
-				disabled={readOnly || saving || !isVerified}
+				disabled={locked || saving || !isVerified}
 				onClick={save}
 			>
 				{isVerified ? saveLabel : "Verify to continue"}

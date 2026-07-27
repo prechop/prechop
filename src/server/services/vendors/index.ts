@@ -13,4 +13,5 @@ export * from "./resolveBank";
 export * from "./resolveVendor";
 export * from "./reviews";
 export * from "./schools";
+export * from "./securityOnboarding";
 export * from "./submitForReview";

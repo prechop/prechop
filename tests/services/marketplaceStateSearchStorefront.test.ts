@@ -102,10 +102,49 @@ async function activeListing({
 }
 
 describe("getMarketplace — same-state scope", () => {
+	it("excludes active listings from non-public fixture campuses", async () => {
+		const publicCampus = await makeCampus({
+			isPublic: true,
+			state: "Lagos",
+		});
+		const privateCampus = await makeCampus({ state: "Lagos" });
+		const publicCampusId = publicCampus!._id.toString();
+		const privateCampusId = privateCampus!._id.toString();
+
+		const publicVendor = await activeVendorOnCampus(
+			publicCampusId,
+			"Approved Kitchen",
+		);
+		const privateVendor = await activeVendorOnCampus(
+			privateCampusId,
+			"Fixture Kitchen",
+		);
+		const publicListing = await activeListing({
+			vendorId: publicVendor.vendorId,
+			campusId: publicCampusId,
+			title: "Approved lunch",
+			itemName: "Rice",
+		});
+		const privateListing = await activeListing({
+			vendorId: privateVendor.vendorId,
+			campusId: privateCampusId,
+			title: "Fixture lunch",
+			itemName: "Beans",
+		});
+
+		const rows = await getMarketplace({});
+		const ids = rows.flatMap((row) =>
+			row.listings.map((listing) => listing._id.toString()),
+		);
+
+		expect(ids).toContain(publicListing._id.toString());
+		expect(ids).not.toContain(privateListing._id.toString());
+	});
+
 	it("includes listings from another campus in the same state, excludes other states", async () => {
-		const lagosA = await makeCampus({ state: "Lagos" });
-		const lagosB = await makeCampus({ state: "Lagos" });
-		const oyo = await makeCampus({ state: "Oyo" });
+		const lagosA = await makeCampus({ isPublic: true, state: "Lagos" });
+		const lagosB = await makeCampus({ isPublic: true, state: "Lagos" });
+		const oyo = await makeCampus({ isPublic: true, state: "Oyo" });
 		const campusA = lagosA!._id.toString();
 		const campusB = lagosB!._id.toString();
 		const campusOyo = oyo!._id.toString();
@@ -146,7 +185,7 @@ describe("getMarketplace — same-state scope", () => {
 	});
 
 	it("hydrates missing listing item photos from the posted menu item", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		if (!campus) throw new Error("Expected campus");
 		const campusId = campus._id.toString();
 		const vendor = await activeVendorOnCampus(campusId, "Photo Kitchen");
@@ -181,7 +220,7 @@ describe("getMarketplace — same-state scope", () => {
 
 describe("searchMarketplace — comprehensive lookup", () => {
 	it("matches by shop name, menu item, and listing, scoped to the state", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		const campusId = campus!._id.toString();
 		const vendor = await activeVendorOnCampus(
 			campusId,
@@ -230,7 +269,7 @@ describe("searchMarketplace — comprehensive lookup", () => {
 
 describe("getVendorStorefront", () => {
 	it("returns the vendor, active listings and full menu; rejects inactive vendors", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		const campusId = campus!._id.toString();
 		const vendor = await activeVendorOnCampus(campusId, "Storefront Shop");
 		await createMenuItemDB({
@@ -269,7 +308,7 @@ describe("getVendorStorefront", () => {
 	});
 
 	it("hydrates missing storefront listing photos from the posted menu item", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		if (!campus) throw new Error("Expected campus");
 		const campusId = campus._id.toString();
 		const vendor = await activeVendorOnCampus(
@@ -304,7 +343,7 @@ describe("getVendorStorefront", () => {
 
 describe("updateDailyOrder — close date can be today or future", () => {
 	it("accepts a cutoff after the menu date and still accepts a same-day one", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		const campusId = campus!._id.toString();
 		const vendor = await activeVendorOnCampus(campusId, "Edit Kitchen");
 		const menuDay = new Date(Date.now() + 2 * 86_400_000); // 2 days out
@@ -366,7 +405,7 @@ describe("updateDailyOrder — close date can be today or future", () => {
 
 describe("getUserAdminDetail", () => {
 	it("composes identity, order analytics and written reviews", async () => {
-		const campus = await makeCampus({ state: "Lagos" });
+		const campus = await makeCampus({ isPublic: true, state: "Lagos" });
 		const campusId = campus!._id.toString();
 		const buyer = await makeUser({ campusId });
 		const buyerId = buyer!._id.toString();
@@ -424,7 +463,7 @@ describe("getUserAdminDetail", () => {
 		expect(detail.user.campusName).toBeTruthy();
 		expect(detail.orders.total).toBe(1);
 		expect(detail.orders.totalSpentKobo).toBe(155000);
-		expect(detail.orders.byStatus.PAID).toBe(1);
+		expect(detail.orders.byStatus.AWAITING_VENDOR_ACCEPTANCE).toBe(1);
 		expect(detail.reviewsWritten.count).toBe(1);
 		expect(detail.reviewsWritten.recent[0].rating).toBe(5);
 	});

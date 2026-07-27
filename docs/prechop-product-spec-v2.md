@@ -1,4 +1,5 @@
 # PreChop — Product Specification
+
 ### Campus Food Pre-Order Platform · v2.0
 
 > **"Order before they cook. Never miss your vendor's best meal."**
@@ -37,9 +38,10 @@
 
 Campus food vendors in Nigerian universities — students selling jollof rice, drinks, snacks, yoghurt, cakes, small chops — currently manage pre-orders entirely through WhatsApp Status. They post something like:
 
-> *"Cooking fried rice tomorrow 🍛 Place your order now, DM me 📲"*
+> _"Cooking fried rice tomorrow 🍛 Place your order now, DM me 📲"_
 
 What follows is chaos:
+
 - Orders arrive as DMs scattered across 30 conversations
 - Vendors track quantities in notebooks or their head
 - Customers ghost — they ordered, never showed up
@@ -51,6 +53,7 @@ What follows is chaos:
 ### The Solution
 
 A mobile-first web app where:
+
 - Vendors choose a category and create a meal listing in under 2 minutes
 - For cooked meals, vendors set a base price and list optional extras with individual prices
 - A shareable link is generated — they post it on WhatsApp Status instead of text
@@ -65,7 +68,7 @@ A mobile-first web app where:
 
 **Feels like WhatsApp, performs like Paystack.**
 
-- No jargon. No "dashboard" or "merchant portal" language. Use words like *your orders*, *your meals*, *who's coming*.
+- No jargon. No "dashboard" or "merchant portal" language. Use words like _your orders_, _your meals_, _who's coming_.
 - Naija-native copy. "How many plates?" not "Enter quantity."
 - Mobile-first, data-light. Every page under 200kb initial load.
 - Zero friction for customers. No app download. No account creation. Phone number is identity.
@@ -76,22 +79,24 @@ A mobile-first web app where:
 ## 2. Brand Identity
 
 ### Name
-**PreChop** — from Nigerian Pidgin: *"chop"* means to eat. *"Pre"* signals the pre-order mechanic. Direct, fun, accurate.
+
+**PreChop** — from Nigerian Pidgin: _"chop"_ means to eat. _"Pre"_ signals the pre-order mechanic. Direct, fun, accurate.
 
 ### Tagline
-*"Order before they cook."*
+
+_"Order before they cook."_
 
 ### Voice & Tone
 
-| Context | Tone | Example |
-|---|---|---|
-| Vendor onboarding | Warm, encouraging | "You're almost set! Add your bank details so we can send your money." |
-| Order page | Appetizing, urgent | "15 plates left. Order now before it sells out." |
-| Confirmation | Celebratory, clear | "You're in! Your Jollof Rice is confirmed. Show code **4821** when you arrive." |
-| Cutoff reached | Honest, soft | "Sorry, orders for this meal are closed. Follow this vendor to catch the next one." |
-| Error states | Direct, helpful | "That didn't work. Try again or use a different card." |
-| Empty states | Playful | "No orders yet. Share your link on Status and watch them roll in." |
-| Delivery confirmed | Warm, clear | "On the way! Amaka is bringing your order. She'll call when she's close." |
+| Context            | Tone               | Example                                                                             |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------------- |
+| Vendor onboarding  | Warm, encouraging  | "You're almost set! Add your bank details so we can send your money."               |
+| Order page         | Appetizing, urgent | "15 plates left. Order now before it sells out."                                    |
+| Confirmation       | Celebratory, clear | "You're in! Your Jollof Rice is confirmed. Show code **4821** when you arrive."     |
+| Cutoff reached     | Honest, soft       | "Sorry, orders for this meal are closed. Follow this vendor to catch the next one." |
+| Error states       | Direct, helpful    | "That didn't work. Try again or use a different card."                              |
+| Empty states       | Playful            | "No orders yet. Share your link on Status and watch them roll in."                  |
+| Delivery confirmed | Warm, clear        | "In transit! Amaka is bringing your order. She'll call when she's close."           |
 
 ### Color Palette
 
@@ -115,6 +120,7 @@ Monospace           — JetBrains Mono — pickup codes, amounts
 ```
 
 ### Logo Concept
+
 A bowl of jollof rice with a clock hand — food + time = pre-order. Simple enough to work as a WhatsApp profile icon at 40×40px.
 
 ---
@@ -124,6 +130,7 @@ A bowl of jollof rice with a clock hand — food + time = pre-order. Simple enou
 ### 3.1 Vendor
 
 A student or campus-based seller who makes food and sells to other students. They:
+
 - Sign up once with their name, phone, campus, and bank account
 - Choose a category every time they create a new meal listing
 - Set their own cutoff time and fulfillment method per listing
@@ -139,6 +146,7 @@ A student or campus-based seller who makes food and sells to other students. The
 ### 3.2 Customer
 
 A student or campus community member who orders food. They:
+
 - Click a link shared by a vendor
 - See the meal, price, category, slots remaining, and fulfillment options
 - For cooked meals — select optional extras they want added to their order
@@ -153,6 +161,7 @@ A student or campus community member who orders food. They:
 ### 3.3 Platform Admin (Internal)
 
 The PreChop team. Can:
+
 - View all vendors, meals, and orders across the platform
 - Handle disputes and refund requests
 - Monitor Paystack webhook health
@@ -257,6 +266,7 @@ A vendor has two status flags: **verified** (has the team confirmed this is a le
 A meal is a single listing a vendor creates for one batch of food on one date. Every meal belongs to a vendor.
 
 Key fields:
+
 - **Title and description** — what the food is
 - **Category** — one of three: Cooked Meal, Drink & Yoghurt, or Snack & Pastry. This controls what the customer sees on the order page.
 - **Base price** — the price of the standard item with nothing added
@@ -277,6 +287,7 @@ Key fields:
 ### Meal Extra
 
 Only applies to Cooked Meal listings. A vendor can attach up to 6 extras to a meal. Each extra has:
+
 - **Name** — what it is (e.g. Fish, Plantain, Salad)
 - **Price** — how much it adds to the order total
 - **Available** — a toggle the vendor can switch off if they run out mid-day without cancelling the whole listing
@@ -298,6 +309,7 @@ Customers do not have passwords or accounts. Their phone number is their identit
 An order is created the moment a customer taps the pay button — before payment is confirmed. It starts with a status of **Pending Payment**.
 
 Key fields:
+
 - **Meal** — which listing this order belongs to
 - **Customer** — who placed the order
 - **Quantity** — how many units ordered
@@ -321,6 +333,7 @@ When a customer selects extras, each selection is stored individually. This reco
 ### Payment
 
 Every order has at most one payment record. The payment stores:
+
 - The Paystack transaction reference — a unique identifier used to match webhook events back to the right order
 - The total amount charged to the customer
 - The platform fee (₦75)
@@ -380,7 +393,7 @@ Campus / School     (dropdown of Nigerian universities + "Other")
 ```
 
 If phone already exists in the system → redirect to login with message:
-*"You already have an account. Log in instead."*
+_"You already have an account. Log in instead."_
 
 #### Step 3: OTP Verification
 
@@ -398,6 +411,7 @@ Account name        (auto-filled by Paystack account lookup on blur)
 ```
 
 On submission:
+
 1. Account is validated against Paystack's bank resolve API
 2. A Paystack subaccount is created for the vendor
 3. The subaccount code is stored on the vendor record
@@ -421,6 +435,7 @@ The vendor sees three tabs at the top of the form. They pick one before filling 
 ```
 
 The category is stored on the meal record. It controls:
+
 - Whether the extras section appears (Cooked Meals only)
 - How the order page renders for customers
 
@@ -481,6 +496,7 @@ Below the main form fields, a section appears:
 ```
 
 Rules:
+
 - Maximum 6 extras per listing
 - Each extra requires a name and a price
 - Extras are optional — vendor does not have to add any
@@ -651,6 +667,7 @@ From the meal detail page, before cutoff, the vendor can mark individual extras 
 ```
 
 When an extra is marked unavailable:
+
 - It is hidden from the customer order page immediately
 - Any customer currently viewing the page will see it grayed out and unselectable on their next interaction
 - Existing orders that already include that extra are not affected
@@ -659,14 +676,14 @@ When an extra is marked unavailable:
 
 ### 6.6 Vendor Notifications
 
-| Event | Message |
-|---|---|
-| New pickup order | *"PreChop: New order! Chidinma — 2x Jollof Rice + Fish, Plantain (₦5,600). Total: 22 orders."* |
-| New delivery order | *"PreChop: Delivery order! Kemi Adebayo — 1x Zobo (₦1,500). Deliver to: Sabo Junction."* |
-| Listing hits 80% | *"PreChop: Almost full! 24/30 slots taken. Only 6 left."* |
-| Sold out | *"PreChop: Sold out! All 30 slots are taken."* |
-| Cutoff reached | *"PreChop: Orders closed for Jollof Rice Friday. 22 paid orders. View cooking list: prechop.ng/meals/[id]"* |
-| Cutoff changed after orders exist | *"PreChop: Cutoff updated. All existing customers have been notified of the change."* |
+| Event                             | Message                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| New pickup order                  | _"PreChop: New order! Chidinma — 2x Jollof Rice + Fish, Plantain (₦5,600). Total: 22 orders."_              |
+| New delivery order                | _"PreChop: Delivery order! Kemi Adebayo — 1x Zobo (₦1,500). Deliver to: Sabo Junction."_                    |
+| Listing hits 80%                  | _"PreChop: Almost full! 24/30 slots taken. Only 6 left."_                                                   |
+| Sold out                          | _"PreChop: Sold out! All 30 slots are taken."_                                                              |
+| Cutoff reached                    | _"PreChop: Orders closed for Jollof Rice Friday. 22 paid orders. View cooking list: prechop.ng/meals/[id]"_ |
+| Cutoff changed after orders exist | _"PreChop: Cutoff updated. All existing customers have been notified of the change."_                       |
 
 ---
 
@@ -745,6 +762,7 @@ Customer sees the vendor's WhatsApp Status post with the PreChop link. Taps it. 
 ```
 
 **Extras behaviour:**
+
 - Extras are optional — customer can ignore this section entirely and pay base price
 - Checking an extra adds its price to the running total immediately
 - If vendor has marked an extra as unavailable, it appears grayed out and cannot be selected
@@ -830,7 +848,7 @@ If the customer closes the Paystack popup without paying, their slot is held for
 │   🛵 Delivering to:                  │
 │   Room 14, Moremi Hall               │
 │                                      │
-│   Amaka will call when on the way.   │
+│   Amaka will call when In transit.   │
 │   📞 Vendor: 08012345678             │
 │                                      │
 │  [💾 Save Receipt as Image]          │
@@ -864,6 +882,7 @@ Customer can send this directly to the vendor as proof of payment or share it an
 ### 7.6 Closed / Sold Out States
 
 **Sold out:**
+
 ```
 😔 Sold out
 All plates of Jollof Rice Friday are taken.
@@ -872,6 +891,7 @@ Follow Amaka to catch her next meal:
 ```
 
 **Past cutoff:**
+
 ```
 ⏰ Orders are closed
 Ordering closed at 10pm Thursday.
@@ -890,6 +910,7 @@ PreChop uses Paystack's subaccount model. Every vendor has a Paystack subaccount
 Vendors never see PreChop's fee deducted as a separate transaction — it is taken before they receive anything, cleanly and invisibly.
 
 **Example — ₦2,000 base + Fish (₦600) + Plantain (₦200) = ₦2,800 order:**
+
 ```
 Customer pays:         ₦2,800
 PreChop fee:          −₦75
@@ -898,6 +919,7 @@ Vendor receives:       ₦2,683
 ```
 
 **Example — ₦2,800 order + ₦200 delivery = ₦3,000:**
+
 ```
 Customer pays:         ₦3,000
 PreChop fee:          −₦75
@@ -920,6 +942,7 @@ The vendor is notified via SMS when their first payout is held and when it is re
 ### 8.4 Refund Flow
 
 When a vendor cancels a listing after orders have been placed:
+
 1. The vendor sees a warning stating how many paid orders exist and that this cannot be undone
 2. On confirmation, every paid order is marked as refunded
 3. A Paystack refund is initiated for each order individually
@@ -935,9 +958,10 @@ When a vendor cancels a listing after orders have been placed:
 
 Every meal listing has a cutoff time set by the vendor when creating the listing. The platform does not impose any system-wide cutoff — vendors know their own cooking schedules and set their own deadlines.
 
-The form shows a smart suggestion: *"Most vendors set cutoff 2–3 hours before they start cooking."*
+The form shows a smart suggestion: _"Most vendors set cutoff 2–3 hours before they start cooking."_
 
 **Validation rules:**
+
 - Cutoff cannot be set in the past
 - Cutoff cannot be set after the available date
 - If a vendor tries to change the cutoff after orders have already been placed, the system allows it but immediately sends an SMS to every customer who has already paid, informing them of the updated time
@@ -971,6 +995,7 @@ All sent notifications are logged in the database with delivery status so disput
 ### 10.2 Notification Templates
 
 **Customer — Order Confirmed (Pickup, Cooked Meal with extras)**
+
 ```
 Your PreChop order is confirmed!
 
@@ -987,6 +1012,7 @@ Receipt: prechop.ng/order/[slug]/receipt/[orderId]
 ```
 
 **Customer — Order Confirmed (Delivery)**
+
 ```
 Your PreChop order is confirmed!
 
@@ -994,13 +1020,14 @@ Jollof Rice Friday — 1 plate + Salad
 Total paid: ₦2,500 (incl. ₦200 delivery)
 
 🛵 Delivering to: Room 14, Moremi Hall
-Amaka will call when she's on the way.
+Amaka will call when she's In transit.
 
 Questions? Call: 08012345678
 Receipt: prechop.ng/order/[slug]/receipt/[orderId]
 ```
 
 **Customer — Cutoff Time Changed**
+
 ```
 PreChop Update:
 
@@ -1011,6 +1038,7 @@ Your order is still confirmed. Pickup code: 4821
 ```
 
 **Customer — Refund Initiated**
+
 ```
 PreChop Refund Notice:
 
@@ -1022,6 +1050,7 @@ Sorry for the inconvenience.
 ```
 
 **Vendor — New Pickup Order (Cooked Meal)**
+
 ```
 PreChop: New order!
 
@@ -1034,6 +1063,7 @@ Slots left: 8
 ```
 
 **Vendor — New Delivery Order**
+
 ```
 PreChop: Delivery order!
 
@@ -1044,6 +1074,7 @@ Phone: 08098765432
 ```
 
 **Vendor — Cutoff Reached**
+
 ```
 PreChop: Orders closed!
 
@@ -1065,6 +1096,7 @@ View cooking list: prechop.ng/meals/[id]
 ### 11.1 Receipt Page
 
 A permanent, publicly accessible receipt page exists at `/order/[slug]/receipt/[orderId]`. This page is linked from:
+
 - The success page after payment
 - The confirmation SMS sent to the customer
 - The WhatsApp share message
@@ -1091,11 +1123,11 @@ If the vendor cancels the listing and a refund is initiated, the receipt page up
 
 All three meal categories support Pickup, Delivery, or Both. The vendor sets this per listing, not per account. This means the same vendor can offer delivery for their rice on a day they have time to run deliveries, but offer pickup only for their snacks on a busier day.
 
-| Fulfillment | Vendor provides | Customer provides |
-|---|---|---|
-| Pickup | Collection point (text) | Shows up with pickup code |
-| Delivery | Delivery fee + coverage area | Delivery address |
-| Both | Both above | Chooses at order time |
+| Fulfillment | Vendor provides              | Customer provides         |
+| ----------- | ---------------------------- | ------------------------- |
+| Pickup      | Collection point (text)      | Shows up with pickup code |
+| Delivery    | Delivery fee + coverage area | Delivery address          |
+| Both        | Both above                   | Chooses at order time     |
 
 ### 12.2 Pickup Verification
 
@@ -1104,7 +1136,8 @@ After cutoff, the vendor's dashboard shows a code entry box. The vendor asks the
 ### 12.3 Delivery Management
 
 Delivery orders appear in a separate tab on the vendor's meal detail page. Each row shows the customer's name, quantity, extras, address, and phone number. The vendor has two status actions:
-- **Mark Out for Delivery** — vendor has dispatched the order and is on the way
+
+- **Mark Out for Delivery** — vendor has dispatched the order and is In transit
 - **Mark Delivered** — order has been handed over to the customer
 
 The vendor can tap a customer's name to dial them directly from the dashboard without having to copy the number.
@@ -1127,44 +1160,44 @@ The vendor can tap a customer's name to dial them directly from the dashboard wi
 
 These routes are accessible by anyone — they power the customer-facing order pages.
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/api/meals/[slug]` | Fetch meal details, extras, and slot availability for the order page |
-| POST | `/api/orders` | Create a new pending order with extras, fulfillment type, and customer message |
-| GET | `/api/orders/[id]/status` | Poll order payment status (used by success page while awaiting webhook) |
-| GET | `/api/orders/[id]/receipt` | Fetch full receipt data for the receipt page |
-| POST | `/api/webhooks/paystack` | Receive and process Paystack payment events |
+| Method | Route                      | Purpose                                                                        |
+| ------ | -------------------------- | ------------------------------------------------------------------------------ |
+| GET    | `/api/meals/[slug]`        | Fetch meal details, extras, and slot availability for the order page           |
+| POST   | `/api/orders`              | Create a new pending order with extras, fulfillment type, and customer message |
+| GET    | `/api/orders/[id]/status`  | Poll order payment status (used by success page while awaiting webhook)        |
+| GET    | `/api/orders/[id]/receipt` | Fetch full receipt data for the receipt page                                   |
+| POST   | `/api/webhooks/paystack`   | Receive and process Paystack payment events                                    |
 
 ### Vendor Routes (Authenticated — Vendor Session Required)
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/api/auth/request-otp` | Send OTP to vendor phone number |
-| POST | `/api/auth/verify-otp` | Verify OTP and create vendor session |
-| POST | `/api/vendors` | Create vendor account on signup |
-| GET | `/api/vendors/me` | Get current vendor's profile |
-| PATCH | `/api/vendors/me` | Update vendor profile |
-| GET | `/api/meals` | List all meals belonging to the vendor |
-| POST | `/api/meals` | Create a new meal listing with category, extras, and fulfillment |
-| GET | `/api/meals/[id]` | Get meal detail including all orders and extras summary |
-| PATCH | `/api/meals/[id]` | Update meal details — if cutoff changes, notify existing customers |
-| DELETE | `/api/meals/[id]` | Cancel meal and trigger refunds for all paid orders |
-| POST | `/api/meals/[id]/fulfill` | Mark a pickup order as fulfilled using a pickup code |
-| PATCH | `/api/orders/[id]/deliver` | Update a delivery order status (out for delivery / delivered) |
-| PATCH | `/api/meals/[id]/extras/[extraId]` | Toggle an extra's availability on or off |
-| GET | `/api/vendors/me/earnings` | Earnings summary for the vendor |
-| POST | `/api/disputes` | Raise a dispute against an order |
+| Method | Route                              | Purpose                                                            |
+| ------ | ---------------------------------- | ------------------------------------------------------------------ |
+| POST   | `/api/auth/request-otp`            | Send OTP to vendor phone number                                    |
+| POST   | `/api/auth/verify-otp`             | Verify OTP and create vendor session                               |
+| POST   | `/api/vendors`                     | Create vendor account on signup                                    |
+| GET    | `/api/vendors/me`                  | Get current vendor's profile                                       |
+| PATCH  | `/api/vendors/me`                  | Update vendor profile                                              |
+| GET    | `/api/meals`                       | List all meals belonging to the vendor                             |
+| POST   | `/api/meals`                       | Create a new meal listing with category, extras, and fulfillment   |
+| GET    | `/api/meals/[id]`                  | Get meal detail including all orders and extras summary            |
+| PATCH  | `/api/meals/[id]`                  | Update meal details — if cutoff changes, notify existing customers |
+| DELETE | `/api/meals/[id]`                  | Cancel meal and trigger refunds for all paid orders                |
+| POST   | `/api/meals/[id]/fulfill`          | Mark a pickup order as fulfilled using a pickup code               |
+| PATCH  | `/api/orders/[id]/deliver`         | Update a delivery order status (out for delivery / delivered)      |
+| PATCH  | `/api/meals/[id]/extras/[extraId]` | Toggle an extra's availability on or off                           |
+| GET    | `/api/vendors/me/earnings`         | Earnings summary for the vendor                                    |
+| POST   | `/api/disputes`                    | Raise a dispute against an order                                   |
 
 ### Admin Routes (Authenticated — Staff Access Only)
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/api/admin/vendors` | List all vendors with verification status |
-| PATCH | `/api/admin/vendors/[id]` | Verify a vendor or suspend their account |
-| GET | `/api/admin/orders` | List all orders across the platform |
-| GET | `/api/admin/payouts` | View payout log |
-| GET | `/api/admin/disputes` | List all disputes |
-| PATCH | `/api/admin/disputes/[id]` | Resolve a dispute with a resolution note |
+| Method | Route                      | Purpose                                   |
+| ------ | -------------------------- | ----------------------------------------- |
+| GET    | `/api/admin/vendors`       | List all vendors with verification status |
+| PATCH  | `/api/admin/vendors/[id]`  | Verify a vendor or suspend their account  |
+| GET    | `/api/admin/orders`        | List all orders across the platform       |
+| GET    | `/api/admin/payouts`       | View payout log                           |
+| GET    | `/api/admin/disputes`      | List all disputes                         |
+| PATCH  | `/api/admin/disputes/[id]` | Resolve a dispute with a resolution note  |
 
 ---
 
@@ -1172,7 +1205,7 @@ These routes are accessible by anyone — they power the customer-facing order p
 
 ### Race Condition — Last Slot
 
-When two customers attempt to order the last available slot at exactly the same moment, the database must guarantee only one succeeds. The system locks the meal record for the duration of the slot check and order creation. The transaction that wins creates the order and increments the slot count. The transaction that loses receives an error and the customer sees a friendly message: *"Sorry, those plates just sold out. Only X remaining."*
+When two customers attempt to order the last available slot at exactly the same moment, the database must guarantee only one succeeds. The system locks the meal record for the duration of the slot check and order creation. The transaction that wins creates the order and increments the slot count. The transaction that loses receives an error and the customer sees a friendly message: _"Sorry, those plates just sold out. Only X remaining."_
 
 ### Extras Pricing Lock
 
@@ -1188,7 +1221,7 @@ Paystack may occasionally deliver the same payment confirmation event more than 
 
 ### Webhook Delivery Failure
 
-If the PreChop server is temporarily unavailable when Paystack fires a payment confirmation, Paystack will retry the webhook up to 15 times over 24 hours. During this window, the customer's success page shows a message: *"Your payment was received. Your confirmation is on the way."* Once the webhook delivers successfully, the SMS fires as normal. A background check also periodically looks for orders that have been in Pending Payment status for more than 30 minutes and verifies their Paystack transaction status directly — catching any permanently missed webhooks.
+If the PreChop server is temporarily unavailable when Paystack fires a payment confirmation, Paystack will retry the webhook up to 15 times over 24 hours. During this window, the customer's success page shows a message: _"Your payment was received. Your confirmation is In transit."_ Once the webhook delivers successfully, the SMS fires as normal. A background check also periodically looks for orders that have been in Pending Payment status for more than 30 minutes and verifies their Paystack transaction status directly — catching any permanently missed webhooks.
 
 ### Vendor Cancels After Orders Placed
 
@@ -1205,6 +1238,7 @@ The optional message field is capped at 150 characters on both the client (chara
 ### 15.1 When Disputes Are Raised
 
 Common dispute scenarios:
+
 - Customer paid but vendor claims the order does not exist
 - Customer did not show up — vendor wants to close the order
 - Delivery was never received — customer wants a refund
@@ -1230,19 +1264,20 @@ The admin dispute panel shows three columns — Open, Investigating, and Resolve
 PreChop charges ₦75 on every successfully paid order. This is deducted automatically at the payment level — vendors never handle it and customers never see it as a separate line item.
 
 **Why flat fee:**
-- Simple to explain to vendors: *"We take ₦75 per order, nothing else"*
+
+- Simple to explain to vendors: _"We take ₦75 per order, nothing else"_
 - Predictable for both parties
 - Scales well at low and mid order values
 - Delivery fees go entirely to the vendor — PreChop only charges on the food order itself
 
 ### Revenue Projections
 
-| Stage | Vendors | Avg orders/day | Monthly Revenue |
-|---|---|---|---|
-| 1 campus launch | 20 | 15 | ₦675,000 |
-| 3 campuses | 100 | 20 | ₦4,500,000 |
-| 10 campuses | 500 | 25 | ₦28,125,000 |
-| 50 campuses | 3,000 | 20 | ₦135,000,000 |
+| Stage           | Vendors | Avg orders/day | Monthly Revenue |
+| --------------- | ------- | -------------- | --------------- |
+| 1 campus launch | 20      | 15             | ₦675,000        |
+| 3 campuses      | 100     | 20             | ₦4,500,000      |
+| 10 campuses     | 500     | 25             | ₦28,125,000     |
+| 50 campuses     | 3,000   | 20             | ₦135,000,000    |
 
 ### Future Pricing Levers
 
@@ -1256,29 +1291,29 @@ PreChop charges ₦75 on every successfully paid order. This is deducted automat
 
 ### Core
 
-| Layer | Choice | Reason |
-|---|---|---|
-| Framework | Next.js 14 (App Router) | File-based routing, Server Components, API routes in one place |
-| Language | TypeScript | Type safety on money, extras, and order logic is essential |
-| Styling | Tailwind CSS | Fast, consistent mobile-first UI |
-| Database | Supabase (PostgreSQL) | Free tier, built-in Realtime subscriptions, Auth |
-| ORM | Prisma | Schema-first, typed queries, clean migrations |
-| Payments | Paystack | Nigerian-native, subaccounts, excellent webhook tooling |
-| SMS | Termii | Nigerian SMS gateway, reliable local delivery |
-| File uploads | Cloudinary | Free tier, auto-resize, CDN |
-| Hosting | Vercel | Zero-config deploy, Cron Jobs built in |
-| Receipt images | html2canvas or Satori | Client-side receipt card export for save-to-gallery |
-| Unique slugs | nanoid | Tiny, URL-safe IDs |
+| Layer          | Choice                  | Reason                                                         |
+| -------------- | ----------------------- | -------------------------------------------------------------- |
+| Framework      | Next.js 14 (App Router) | File-based routing, Server Components, API routes in one place |
+| Language       | TypeScript              | Type safety on money, extras, and order logic is essential     |
+| Styling        | Tailwind CSS            | Fast, consistent mobile-first UI                               |
+| Database       | Supabase (PostgreSQL)   | Free tier, built-in Realtime subscriptions, Auth               |
+| ORM            | Prisma                  | Schema-first, typed queries, clean migrations                  |
+| Payments       | Paystack                | Nigerian-native, subaccounts, excellent webhook tooling        |
+| SMS            | Termii                  | Nigerian SMS gateway, reliable local delivery                  |
+| File uploads   | Cloudinary              | Free tier, auto-resize, CDN                                    |
+| Hosting        | Vercel                  | Zero-config deploy, Cron Jobs built in                         |
+| Receipt images | html2canvas or Satori   | Client-side receipt card export for save-to-gallery            |
+| Unique slugs   | nanoid                  | Tiny, URL-safe IDs                                             |
 
 ### Dev & Tooling
 
-| Tool | Purpose |
-|---|---|
-| Prisma Studio | Visual database explorer |
-| Supabase Dashboard | Auth management, Realtime monitor |
-| Paystack Dashboard | Transaction log, webhook event monitor |
-| Vercel Analytics | Page-level traffic data |
-| GitHub Actions | CI pipeline — lint and type-check on every push |
+| Tool               | Purpose                                         |
+| ------------------ | ----------------------------------------------- |
+| Prisma Studio      | Visual database explorer                        |
+| Supabase Dashboard | Auth management, Realtime monitor               |
+| Paystack Dashboard | Transaction log, webhook event monitor          |
+| Vercel Analytics   | Page-level traffic data                         |
+| GitHub Actions     | CI pipeline — lint and type-check on every push |
 
 ---
 
@@ -1446,6 +1481,6 @@ NODE_ENV="production"
 
 ---
 
-*PreChop Product Specification · Campus Food Pre-Order Platform*
-*Built for Nigerian campuses · Designed to scale across Africa*
-*v2.0 · June 2026*
+_PreChop Product Specification · Campus Food Pre-Order Platform_
+_Built for Nigerian campuses · Designed to scale across Africa_
+_v2.0 · June 2026_

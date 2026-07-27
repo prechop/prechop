@@ -3,6 +3,7 @@ export interface ICampusCreateInput {
 	shortCode: string;
 	state: string;
 	isActive?: boolean;
+	isPublic?: boolean;
 }
 
 export interface ICampus {
@@ -12,6 +13,7 @@ export interface ICampus {
 	shortCode: string;
 	state: string;
 	isActive: boolean;
+	isPublic: boolean;
 	createdAt: Date;
 	updatedAt: Date;
 }

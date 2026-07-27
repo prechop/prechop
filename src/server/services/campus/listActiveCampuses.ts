@@ -9,7 +9,10 @@ export interface PublicCampus {
 
 /** Public, active-only campus directory (id, name, shortCode, state). */
 export async function listActiveCampuses(): Promise<PublicCampus[]> {
-	const campuses = await listCampusesDB({ activeOnly: true });
+	const campuses = await listCampusesDB({
+		activeOnly: true,
+		publicOnly: true,
+	});
 	return campuses.map((c) => ({
 		id: (c.id ?? c._id)?.toString(),
 		name: c.name,

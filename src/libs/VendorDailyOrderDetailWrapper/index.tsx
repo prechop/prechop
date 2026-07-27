@@ -52,6 +52,14 @@ interface IncomingOrder {
 	customerMessage?: string;
 	createdAt?: string;
 	acceptanceDeadline?: string | null;
+	expectedReadyAt?: string | null;
+	expectedPrepMin?: number | null;
+	actualPrepMin?: number | null;
+	lateMarkedAt?: string | null;
+	revisedReadyAt?: string | null;
+	revisedPrepMin?: number | null;
+	readyExtensionCount?: number | null;
+	lateEscalatedAt?: string | null;
 	handoverCredentialUsedAt?: string | null;
 	items: Array<{ snapshotName: string; quantity: number }>;
 }
@@ -282,6 +290,9 @@ export default function VendorDailyOrderDetailWrapper({
 	const [unreachableByOrder, setUnreachableByOrder] = useState<
 		Record<string, { contactAttempts: string; note: string }>
 	>({});
+	const [estimateByOrder, setEstimateByOrder] = useState<
+		Record<string, string>
+	>({});
 
 	const {
 		data: order,
@@ -409,6 +420,33 @@ export default function VendorDailyOrderDetailWrapper({
 				status,
 			});
 			toast(label, "success");
+			await Promise.all([
+				mutateIncoming(),
+				globalMutate(`/orders/${buyerOrder.id}`),
+			]);
+		} catch (error) {
+			toast(actionErr(error), "error");
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function reviseEstimate(buyerOrder: IncomingOrder) {
+		const revisedPrepMin = Number(estimateByOrder[buyerOrder.id] ?? "");
+		if (!Number.isInteger(revisedPrepMin) || revisedPrepMin < 5) {
+			toast("Enter at least 5 minutes.", "error");
+			return;
+		}
+		setBusyOrderId(buyerOrder.id);
+		try {
+			await api.patch(`/vendor/orders/${buyerOrder.id}/ready-estimate`, {
+				revisedPrepMin,
+			});
+			toast("Ready time updated", "success");
+			setEstimateByOrder((current) => ({
+				...current,
+				[buyerOrder.id]: "",
+			}));
 			await Promise.all([
 				mutateIncoming(),
 				globalMutate(`/orders/${buyerOrder.id}`),
@@ -758,6 +796,10 @@ export default function VendorDailyOrderDetailWrapper({
 											o.handoverCredentialUsedAt,
 										);
 									const busy = busyOrderId === o.id;
+									const canReviseEstimate =
+										!!o.lateMarkedAt &&
+										!handoverEligible &&
+										(o.readyExtensionCount ?? 0) < 2;
 									return (
 										<IncomingItem key={o.id}>
 											<Stack $gap={3}>
@@ -807,32 +849,22 @@ export default function VendorDailyOrderDetailWrapper({
 														)}
 													</Text>
 												)}
-												{o.customerMessage && (
-													<BuyerNoteBox>
-														<Text
-															$size={12}
-															$weight={800}
-														>
-															Buyer note
-														</Text>
-														<Text $size={13}>
-															{o.customerMessage}
-														</Text>
-													</BuyerNoteBox>
-												)}
-												{o.fulfillmentType ===
+												{o.fulfillmentType !==
 													"DELIVERY" &&
-													o.deliveryPhone && (
-														<Text $size={12}>
-															Buyer phone:{" "}
-															<a
-																href={`tel:${o.deliveryPhone}`}
+													o.customerMessage && (
+														<BuyerNoteBox>
+															<Text
+																$size={12}
+																$weight={800}
 															>
+																Buyer note
+															</Text>
+															<Text $size={13}>
 																{
-																	o.deliveryPhone
+																	o.customerMessage
 																}
-															</a>
-														</Text>
+															</Text>
+														</BuyerNoteBox>
 													)}
 												{next.countdown && (
 													<Text $muted $size={12}>
@@ -843,6 +875,15 @@ export default function VendorDailyOrderDetailWrapper({
 												<Text $muted $size={12}>
 													Next action: {next.label}
 												</Text>
+												{o.expectedReadyAt && (
+													<Text $muted $size={12}>
+														Expected ready:{" "}
+														{formatDateTime(
+															o.revisedReadyAt ??
+																o.expectedReadyAt,
+														)}
+													</Text>
+												)}
 											</Stack>
 											<IncomingMeta>
 												<Text $weight={800} $size={14}>
@@ -857,6 +898,72 @@ export default function VendorDailyOrderDetailWrapper({
 											</IncomingMeta>
 											<ActionPanel>
 												<Stack $gap={10}>
+													{o.lateMarkedAt && (
+														<BuyerNoteBox>
+															<Text
+																$size={12}
+																$weight={800}
+															>
+																Running late
+															</Text>
+															<Text $size={13}>
+																Send the buyer a
+																revised ready
+																time. Revisions:{" "}
+																{o.readyExtensionCount ??
+																	0}
+																/2.
+															</Text>
+															{canReviseEstimate && (
+																<HandoverGrid>
+																	<Input
+																		label="Extra minutes"
+																		type="number"
+																		min={5}
+																		max={
+																			240
+																		}
+																		value={
+																			estimateByOrder[
+																				o
+																					.id
+																			] ??
+																			""
+																		}
+																		onChange={(
+																			event,
+																		) =>
+																			setEstimateByOrder(
+																				(
+																					current,
+																				) => ({
+																					...current,
+																					[o.id]: event
+																						.target
+																						.value,
+																				}),
+																			)
+																		}
+																	/>
+																	<Button
+																		$size="sm"
+																		$variant="secondary"
+																		$loading={
+																			busy
+																		}
+																		onClick={() =>
+																			reviseEstimate(
+																				o,
+																			)
+																		}
+																	>
+																		Update
+																		estimate
+																	</Button>
+																</HandoverGrid>
+															)}
+														</BuyerNoteBox>
+													)}
 													<ActionGrid>
 														{nextStatus && (
 															<Button

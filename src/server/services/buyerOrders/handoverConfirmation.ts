@@ -25,9 +25,17 @@ import {
 	SETTLED_ORDER_STATUSES,
 	setBuyerOrderHandoverCredentialDB,
 } from "../../models";
+import { recordAuditSync } from "../audit";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 type HandoverMethod = "QR" | "PIN";
+
+export interface AdminHandoverActor {
+	userId: string;
+	role?: string;
+	ip?: string;
+	userAgent?: string;
+}
 
 const MAX_PIN_ATTEMPTS = 5;
 const LOCK_MS = 5 * 60 * 1000;
@@ -132,6 +140,110 @@ export async function getBuyerHandoverCredential({
 			width: 220,
 			margin: 1,
 		}),
+		pin: credential.pin,
+	};
+}
+
+export async function getAdminHandoverVerificationDetails({
+	orderId,
+}: {
+	orderId: string;
+}) {
+	const order = await getBuyerOrderByIdDB({ id: orderId });
+	if (!order) throw ErrOrderNotFound;
+	const handoverEligible = isBuyerHandoverEligible(
+		order.status,
+		order.fulfillmentType,
+		order.handoverCredentialUsedAt,
+	);
+
+	return {
+		orderId: order._id.toString(),
+		orderNumber: order.orderNumber,
+		fulfillmentType: order.fulfillmentType,
+		status: order.status,
+		isPaid: SETTLED_ORDER_STATUSES.includes(order.status),
+		handoverEligible,
+		qrGenerated: !!order.handoverTokenHash,
+		pinGenerated: !!order.handoverPinHash,
+		credentialGeneratedAt: order.handoverCredentialCreatedAt ?? null,
+		credentialUsedAt: order.handoverCredentialUsedAt ?? null,
+		failedAttempts: order.handoverFailedAttempts ?? 0,
+		lockedUntil: order.handoverLockedUntil ?? null,
+		confirmedAt: order.confirmedAt ?? null,
+		confirmedBy: order.confirmedBy ?? null,
+		confirmationMethod: order.confirmationMethod ?? null,
+		confirmationVendorId: order.confirmationVendorId ?? null,
+		confirmationBuyerId: order.confirmationBuyerId ?? null,
+		confirmationOrderId: order.confirmationOrderId ?? null,
+		history: (order.timeline ?? [])
+			.filter((entry) =>
+				[
+					"HANDOVER_CREDENTIAL_CREATED",
+					"HANDOVER_FAILED_ATTEMPT",
+					"HANDOVER_CONFIRMED",
+					"STATUS_CHANGE",
+				].includes(entry.type),
+			)
+			.map((entry) => ({
+				at: entry.at,
+				type: entry.type,
+				actor: entry.actor,
+				actorId: entry.actorId,
+				note: entry.note,
+				data: entry.data,
+			})),
+	};
+}
+
+export async function revealAdminHandoverPin({
+	orderId,
+	actor,
+}: {
+	orderId: string;
+	actor: AdminHandoverActor;
+}): Promise<{ orderId: string; orderNumber: string; pin: string }> {
+	const order = await getBuyerOrderByIdDB({ id: orderId });
+	if (!order) throw ErrOrderNotFound;
+	if (!SETTLED_ORDER_STATUSES.includes(order.status)) {
+		throw invalidOrderState("This order has not been paid.");
+	}
+	await assertSuccessfulPayment(orderId);
+	assertCredentialVisible(order);
+
+	const credential = deriveCredential({
+		_id: order._id.toString(),
+		orderNumber: order.orderNumber,
+		buyerId: order.buyerId.toString(),
+		vendorId: order.vendorId.toString(),
+	});
+	const saved = await setBuyerOrderHandoverCredentialDB({
+		id: orderId,
+		tokenHash: credential.qrTokenHash,
+		pinHash: credential.pinHash,
+	});
+	if (!saved)
+		throw invalidOrderState("Confirmation credential is unavailable.");
+
+	await recordAuditSync({
+		userId: actor.userId,
+		role: actor.role,
+		action: "ORDER_HANDOVER_PIN_REVEAL",
+		resourceType: "buyerOrders",
+		resourceId: orderId,
+		newState: {
+			orderNumber: order.orderNumber,
+			fulfillmentType: order.fulfillmentType,
+			status: order.status,
+			credentialGeneratedBeforeReveal: !!order.handoverPinHash,
+		},
+		ipAddress: actor.ip,
+		userAgent: actor.userAgent,
+	});
+
+	return {
+		orderId,
+		orderNumber: order.orderNumber,
 		pin: credential.pin,
 	};
 }

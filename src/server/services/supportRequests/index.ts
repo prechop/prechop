@@ -17,7 +17,7 @@ import {
 	type SupportStatus,
 	updateSupportRequestDB,
 } from "../../models";
-import { createUserNotification } from "../notifications";
+import { createUserNotification, notifyAdminAttention } from "../notifications";
 
 function roleFromAuth(auth: AuthResult): SupportAudience {
 	if (
@@ -54,6 +54,16 @@ export async function createSupportRequest({
 	});
 	if (!request) throw ErrInvalidAction;
 	await notifyVendorOfOrderSupportRequest(request);
+	await notifyAdminAttention({
+		kind: "SUPPORT_REQUEST",
+		title: "New support request",
+		whatHappened: `${payload.category} support request: ${payload.subject}`,
+		submittedBy: `${roleFromAuth(auth)} user ${auth.userId}`,
+		recordId: request._id.toString(),
+		adminPath: `/admin/support?requestId=${encodeURIComponent(request._id.toString())}`,
+		dedupeKey: `support-request:${request._id.toString()}`,
+		occurredAt: request.createdAt,
+	});
 	return request;
 }
 

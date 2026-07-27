@@ -28,6 +28,13 @@ const CANCELLABLE: OrderStatus[] = [
 	OrderStatus.CONFIRMED,
 ];
 
+const LATE_BUYER_CANCELLABLE: OrderStatus[] = [
+	OrderStatus.ACCEPTED,
+	OrderStatus.CONFIRMED,
+	OrderStatus.COOKING,
+	OrderStatus.PREPARING,
+];
+
 export async function cancelOrderAsBuyer({
 	buyerId,
 	orderId,
@@ -40,14 +47,15 @@ export async function cancelOrderAsBuyer({
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
 	if (order.buyerId.toString() !== buyerId) throw ErrForbidden;
-	if (!CANCELLABLE.includes(order.status as OrderStatus))
+	const fromStatuses = buyerCancellableStatuses(order);
+	if (!fromStatuses.includes(order.status as OrderStatus))
 		throw ErrOrderNotCancellable;
 
 	const cancelled = await markBuyerOrderCancelledDB({
 		id: orderId,
 		reason,
 		cancelledBy: "buyer",
-		fromStatuses: CANCELLABLE,
+		fromStatuses,
 	});
 	// Only the caller that actually flipped the status runs the side-effects, so
 	// a concurrent double-cancel can neither double-refund nor double-return
@@ -67,6 +75,19 @@ export async function cancelOrderAsBuyer({
 		message:
 			"Order cancelled. Refund will be processed within 5–10 business days.",
 	};
+}
+
+function buyerCancellableStatuses(order: {
+	status: string;
+	lateMarkedAt?: Date;
+}): OrderStatus[] {
+	if (
+		order.lateMarkedAt &&
+		LATE_BUYER_CANCELLABLE.includes(order.status as OrderStatus)
+	) {
+		return Array.from(new Set([...CANCELLABLE, ...LATE_BUYER_CANCELLABLE]));
+	}
+	return CANCELLABLE;
 }
 
 export async function cancelOrderAsVendor({

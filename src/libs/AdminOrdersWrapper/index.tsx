@@ -19,12 +19,40 @@ import {
 	Text,
 	Title,
 } from "@/components";
+import { api, apiData } from "@/constants/api";
 import {
 	formatDateTime,
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import { useAuth } from "@/hooks/Auth/useAuth";
+import { useToast } from "@/hooks/useToast";
 import type { BuyerOrder, OrderStatus } from "@/types";
+
+interface AdminHandoverDetails {
+	orderId: string;
+	orderNumber: string;
+	status: OrderStatus;
+	fulfillmentType: "PICKUP" | "DELIVERY";
+	isPaid: boolean;
+	handoverEligible: boolean;
+	qrGenerated: boolean;
+	pinGenerated: boolean;
+	credentialGeneratedAt?: string | null;
+	credentialUsedAt?: string | null;
+	failedAttempts: number;
+	lockedUntil?: string | null;
+	confirmedAt?: string | null;
+	confirmedBy?: string | null;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | null;
+	history: Array<{
+		at: string;
+		type: string;
+		actor?: string;
+		actorId?: string;
+		note?: string;
+	}>;
+}
 
 const STATUSES: OrderStatus[] = [
 	"PENDING_PAYMENT",
@@ -197,13 +225,20 @@ function LoadingTable() {
 }
 
 export default function AdminOrdersWrapper() {
+	const { can } = useAuth();
+	const { toast } = useToast();
 	const [status, setStatus] = useState<string>("");
 	const [detailId, setDetailId] = useState<string | null>(null);
+	const [revealedPin, setRevealedPin] = useState<string | null>(null);
+	const [revealBusy, setRevealBusy] = useState(false);
 
 	const key = `/admin/orders?limit=50${status ? `&status=${status}` : ""}`;
 	const { data, isLoading } = useSWR<BuyerOrder[]>(key);
 	const { data: detail } = useSWR<BuyerOrder>(
 		detailId ? `/admin/orders/${detailId}` : null,
+	);
+	const { data: handover } = useSWR<AdminHandoverDetails>(
+		detailId ? `/admin/orders/${detailId}/handover` : null,
 	);
 
 	const orders = data ?? [];
@@ -213,6 +248,34 @@ export default function AdminOrdersWrapper() {
 	const grossKobo = orders
 		.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED")
 		.reduce((s, o) => s + o.totalKobo, 0);
+
+	async function revealPin() {
+		if (!detailId) return;
+		setRevealBusy(true);
+		try {
+			const result = await apiData<{
+				orderId: string;
+				orderNumber: string;
+				pin: string;
+			}>(api.post(`/admin/orders/${detailId}/handover/reveal-pin`));
+			setRevealedPin(result.pin);
+			toast("PIN revealed and audit logged.", "success");
+		} catch {
+			toast("Could not reveal PIN.", "error");
+		} finally {
+			setRevealBusy(false);
+		}
+	}
+
+	function openDetail(id: string) {
+		setRevealedPin(null);
+		setDetailId(id);
+	}
+
+	function closeDetail() {
+		setRevealedPin(null);
+		setDetailId(null);
+	}
 
 	return (
 		<Stack $gap={20}>
@@ -320,7 +383,7 @@ export default function AdminOrdersWrapper() {
 													$variant="ghost"
 													$size="sm"
 													onClick={() =>
-														setDetailId(o.id)
+														openDetail(o.id)
 													}
 												>
 													View
@@ -336,7 +399,7 @@ export default function AdminOrdersWrapper() {
 			)}
 
 			{detailId && (
-				<Overlay onClick={() => setDetailId(null)}>
+				<Overlay onClick={closeDetail}>
 					<Modal onClick={(e) => e.stopPropagation()}>
 						<Stack $gap={16}>
 							<Row $justify="space-between" $align="center">
@@ -348,7 +411,7 @@ export default function AdminOrdersWrapper() {
 								<Button
 									$variant="ghost"
 									$size="sm"
-									onClick={() => setDetailId(null)}
+									onClick={closeDetail}
 								>
 									Close
 								</Button>
@@ -384,6 +447,85 @@ export default function AdminOrdersWrapper() {
 												)}
 											</Text>
 										</KV>
+										{detail.expectedReadyAt && (
+											<KV>
+												<Text $muted>
+													Expected ready
+												</Text>
+												<Text $weight={600}>
+													{formatDateTime(
+														detail.expectedReadyAt,
+													)}
+												</Text>
+											</KV>
+										)}
+										{detail.revisedReadyAt && (
+											<KV>
+												<Text $muted>
+													Revised ready
+												</Text>
+												<Text $weight={600}>
+													{formatDateTime(
+														detail.revisedReadyAt,
+													)}
+												</Text>
+											</KV>
+										)}
+										{detail.expectedPrepMin != null && (
+											<KV>
+												<Text $muted>
+													Prep estimate
+												</Text>
+												<Text $weight={600}>
+													{detail.expectedPrepMin} min
+												</Text>
+											</KV>
+										)}
+										{detail.actualPrepMin != null && (
+											<KV>
+												<Text $muted>Actual prep</Text>
+												<Text $weight={600}>
+													{detail.actualPrepMin} min
+												</Text>
+											</KV>
+										)}
+										{detail.lateMarkedAt && (
+											<KV>
+												<Text $muted>
+													Late handling
+												</Text>
+												<Row $gap={8} $align="center">
+													<Badge $tone="warning">
+														Running late
+													</Badge>
+													<Text $muted $size={12}>
+														{detail.readyExtensionCount ??
+															0}
+														/2 revisions
+													</Text>
+												</Row>
+											</KV>
+										)}
+										{detail.lateEscalatedAt && (
+											<KV>
+												<Text $muted>Escalated</Text>
+												<Text $weight={600}>
+													{formatDateTime(
+														detail.lateEscalatedAt,
+													)}
+												</Text>
+											</KV>
+										)}
+										{detail.adminReviewReason && (
+											<KV>
+												<Text $muted>
+													Review reason
+												</Text>
+												<Text $weight={600}>
+													{detail.adminReviewReason}
+												</Text>
+											</KV>
+										)}
 									</Stack>
 
 									<Stack $gap={8}>
@@ -472,6 +614,142 @@ export default function AdminOrdersWrapper() {
 											</Text>
 										</KV>
 									</Stack>
+
+									<Card>
+										<Stack $gap={12}>
+											<Row
+												$justify="space-between"
+												$align="center"
+												$gap={12}
+											>
+												<Text $weight={800}>
+													Handover verification
+												</Text>
+												{handover?.handoverEligible && (
+													<Badge $tone="primary">
+														Eligible
+													</Badge>
+												)}
+											</Row>
+											{!handover ? (
+												<Stack $gap={8}>
+													<Skeleton $h={16} />
+													<Skeleton $h={16} />
+												</Stack>
+											) : (
+												<Stack $gap={0}>
+													<KV>
+														<Text $muted>
+															QR generated
+														</Text>
+														<Text $weight={600}>
+															{handover.qrGenerated
+																? "Yes"
+																: "No"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
+															PIN generated
+														</Text>
+														<Text $weight={600}>
+															{handover.pinGenerated
+																? "Yes"
+																: "No"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
+															Credential created
+														</Text>
+														<Text $weight={600}>
+															{handover.credentialGeneratedAt
+																? formatDateTime(
+																		handover.credentialGeneratedAt,
+																	)
+																: "Not generated"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
+															Handover status
+														</Text>
+														<Text $weight={600}>
+															{handover.credentialUsedAt
+																? "Used"
+																: handover.handoverEligible
+																	? "Ready for verification"
+																	: "Not available"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
+															Confirmation method
+														</Text>
+														<Text $weight={600}>
+															{handover.confirmationMethod ??
+																"Not confirmed"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
+															Failed attempts
+														</Text>
+														<Text $weight={600}>
+															{
+																handover.failedAttempts
+															}
+														</Text>
+													</KV>
+													{handover.lockedUntil && (
+														<KV>
+															<Text $muted>
+																Locked until
+															</Text>
+															<Text $weight={600}>
+																{formatDateTime(
+																	handover.lockedUntil,
+																)}
+															</Text>
+														</KV>
+													)}
+												</Stack>
+											)}
+
+											{revealedPin ? (
+												<ItemsPanel>
+													<Row
+														$justify="space-between"
+														$align="center"
+													>
+														<Text $muted>
+															Revealed PIN
+														</Text>
+														<Text
+															$weight={800}
+															$size={18}
+														>
+															{revealedPin}
+														</Text>
+													</Row>
+												</ItemsPanel>
+											) : can("order:handover:reveal") ? (
+												<Button
+													$variant="secondary"
+													$size="sm"
+													$loading={revealBusy}
+													onClick={revealPin}
+												>
+													Reveal PIN
+												</Button>
+											) : (
+												<Text $muted $size={13}>
+													You do not have permission
+													to reveal the PIN.
+												</Text>
+											)}
+										</Stack>
+									</Card>
 								</Stack>
 							)}
 						</Stack>

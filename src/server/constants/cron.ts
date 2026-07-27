@@ -55,6 +55,9 @@ export default async function cron(): Promise<void> {
 	const { sweepPickupNoShowTimers } = await import(
 		"../services/buyerOrders/exceptions"
 	);
+	const { sweepLateBuyerOrders } = await import(
+		"../services/buyerOrders/lateOrders"
+	);
 	const { sendCutoffWarnings } = await import(
 		"../services/buyerOrders/cutoffWarning"
 	);
@@ -146,6 +149,18 @@ export default async function cron(): Promise<void> {
 			() => {
 				void runSingleInstance("pickup-noshow", 50, () =>
 					sweepPickupNoShowTimers(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		new CronJob(
+			"*/1 * * * *",
+			() => {
+				void runSingleInstance("late-orders", 50, () =>
+					sweepLateBuyerOrders(),
 				);
 			},
 			null,

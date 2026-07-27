@@ -60,6 +60,9 @@ export async function getUserAdminDetail(id: string) {
 		totalReviews: number;
 		totalOrders: number;
 		completionRate: number;
+		lateOrderCount: number;
+		unfulfilledOrderCount: number;
+		avgPrepDelayMin: number;
 		isOpenForOrders: boolean;
 		reviewsReceived: { avg: number; count: number };
 	} | null = null;
@@ -74,6 +77,9 @@ export async function getUserAdminDetail(id: string) {
 			totalReviews: vendor.totalReviews ?? 0,
 			totalOrders: vendor.totalOrders ?? 0,
 			completionRate: vendor.completionRate ?? 0,
+			lateOrderCount: vendor.lateOrderCount ?? 0,
+			unfulfilledOrderCount: vendor.unfulfilledOrderCount ?? 0,
+			avgPrepDelayMin: vendor.avgPrepDelayMin ?? 0,
 			isOpenForOrders: vendor.isOpenForOrders ?? false,
 			reviewsReceived: {
 				avg: received?.avg ?? 0,

@@ -12,6 +12,7 @@ export const createCampusSchema = zod
 		name: zod.string().trim().min(1).max(200),
 		shortCode: zod.string().trim().min(1).max(20),
 		state: zod.string().trim().min(1).max(120),
+		isPublic: zod.boolean().optional(),
 	})
 	.strict();
 
@@ -21,6 +22,7 @@ export const updateCampusSchema = zod
 		shortCode: zod.string().trim().min(1).max(20).optional(),
 		state: zod.string().trim().min(1).max(120).optional(),
 		isActive: zod.boolean().optional(),
+		isPublic: zod.boolean().optional(),
 	})
 	.strict();
 

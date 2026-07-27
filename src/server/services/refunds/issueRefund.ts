@@ -11,6 +11,7 @@ import {
 	markRefundProcessingDB,
 } from "../../models";
 import { paystackProvider } from "../../providers";
+import { notifyAdminAttention } from "../notifications";
 import { openOrderDisputeForReview } from "../orderDisputes";
 
 export type RefundOutcome =
@@ -113,6 +114,15 @@ export async function issueRefund({
 	if (!payment) {
 		const failureReason = "Payment for this order not found.";
 		await recordRefundFailure({ orderId, failureReason });
+		await notifyAdminAttention({
+			kind: "PAYMENT_ISSUE",
+			title: "Refund needs manual review",
+			whatHappened: failureReason,
+			submittedBy: "System refund workflow",
+			recordId: orderId,
+			adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}`,
+			dedupeKey: `refund-payment-missing:${orderId}`,
+		});
 		throw notFound("Payment for this order");
 	}
 
@@ -138,6 +148,16 @@ export async function issueRefund({
 	// null is a write failure, not "already refunded" — Paystack has not been
 	// called, so surfacing a retryable error is correct.
 	if (!refund) {
+		await notifyAdminAttention({
+			kind: "REFUND_REVIEW",
+			title: "Refund record could not be created",
+			whatHappened:
+				"A refund was requested, but the reconciliation row could not be created.",
+			submittedBy: "System refund workflow",
+			recordId: orderId,
+			adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}`,
+			dedupeKey: `refund-record-create-failed:${orderId}`,
+		});
 		throw validationError(
 			"Could not record the refund. Please try again in a moment.",
 		);
@@ -169,6 +189,15 @@ export async function issueRefund({
 		const failureReason = refundFailureMessage(error);
 		await markRefundFailedDB({ id: refundId, failureReason });
 		await recordRefundFailure({ orderId, failureReason });
+		await notifyAdminAttention({
+			kind: "REFUND_REVIEW",
+			title: "Paystack refund failed",
+			whatHappened: failureReason,
+			submittedBy: "System refund workflow",
+			recordId: refundId,
+			adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}&refundId=${encodeURIComponent(refundId)}`,
+			dedupeKey: `refund-failed:${refundId}`,
+		});
 		console.error(
 			`[refunds] PAYSTACK REFUND FAILED order=${orderId} refund=${refundId} amountKobo=${amountKobo} — row left unprocessed for reconciliation:`,
 			error,

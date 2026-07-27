@@ -17,7 +17,11 @@ import {
 	marketplaceSearchSchema,
 	myDailyOrdersQuerySchema,
 } from "@/server/validators/dailyOrders/validate";
-import { createMenuItemSchema } from "@/server/validators/menu/validate";
+import {
+	createMenuItemSchema,
+	imagePresignSchema,
+	menuValidationError,
+} from "@/server/validators/menu/validate";
 import { createReviewSchema } from "@/server/validators/reviews/validate";
 import {
 	parseUpdateProfile,
@@ -293,6 +297,42 @@ describe("menu createMenuItemSchema", () => {
 				priceNaira: 500,
 			}).success,
 		).toBe(false);
+	});
+
+	it("reports exact menu validation messages", () => {
+		const noName = createMenuItemSchema.safeParse({
+			name: "",
+			category: "MEALS",
+			priceNaira: 500,
+		});
+		expect(noName.success).toBe(false);
+		if (!noName.success) {
+			expect(menuValidationError(noName.error).message).toBe(
+				"Menu name is required.",
+			);
+		}
+
+		const badPrice = createMenuItemSchema.safeParse({
+			name: "Rice",
+			category: "MEALS",
+			priceNaira: 0,
+		});
+		expect(badPrice.success).toBe(false);
+		if (!badPrice.success) {
+			expect(menuValidationError(badPrice.error).message).toBe(
+				"Price must be greater than zero.",
+			);
+		}
+
+		const badImage = imagePresignSchema.safeParse({
+			mimeType: "image/bmp",
+		});
+		expect(badImage.success).toBe(false);
+		if (!badImage.success) {
+			expect(menuValidationError(badImage.error).message).toBe(
+				"The uploaded image format is not supported.",
+			);
+		}
 	});
 });
 

@@ -1,14 +1,9 @@
-import {
-	ErrDailyOrderNotFound,
-	ErrForbidden,
-	tryDecrypt,
-} from "../../constants";
+import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
 import {
 	type DailyOrderStatus,
 	getCampusByIdDB,
 	getDailyOrderByIdDB,
 	getDailyOrderByTokenDB,
-	getUserByIdWithPhoneDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	type IDailyOrder,
@@ -33,8 +28,12 @@ export async function campusIdsInSameState(
 	campusId: string,
 ): Promise<string[]> {
 	const campus = await getCampusByIdDB({ id: campusId });
-	if (!campus?.state) return [campusId];
-	const siblings = await listCampusesDB({ state: campus.state });
+	if (!campus?.state || !campus.isActive || !campus.isPublic) return [];
+	const siblings = await listCampusesDB({
+		activeOnly: true,
+		publicOnly: true,
+		state: campus.state,
+	});
 	const ids = siblings.map((c) => c._id.toString());
 	if (!ids.includes(campusId)) ids.push(campusId);
 	return ids;
@@ -44,7 +43,10 @@ export async function marketplaceCampusIds(
 	campusId?: string,
 ): Promise<string[]> {
 	if (campusId) return campusIdsInSameState(campusId);
-	const campuses = await listCampusesDB({ activeOnly: true });
+	const campuses = await listCampusesDB({
+		activeOnly: true,
+		publicOnly: true,
+	});
 	return campuses.map((campus) => campus._id.toString());
 }
 
@@ -149,9 +151,6 @@ export async function getPublicDailyOrder({
 	const vendor = await getVendorProfileByIdDB({
 		id: order.vendorId.toString(),
 	});
-	const vendorUser = vendor?.userId
-		? await getUserByIdWithPhoneDB({ id: vendor.userId.toString() })
-		: null;
 	const vendorOpen = vendor?.isOpenForOrders ?? false;
 	const isOwnListing =
 		!!viewerUserId && vendor?.userId?.toString() === viewerUserId;
@@ -163,12 +162,13 @@ export async function getPublicDailyOrder({
 	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
 	return {
 		...order,
+		deliveryContactPhone: undefined,
 		isOwnListing,
 		vendorOpen,
 		vendorId,
 		vendorName,
 		vendorPickupLocation: pickupLocation(vendor),
-		vendorPhone: vendorUser?.phone ? tryDecrypt(vendorUser.phone) : null,
+		vendorPhone: null,
 		vendorRating,
 		vendorTotalReviews,
 	};

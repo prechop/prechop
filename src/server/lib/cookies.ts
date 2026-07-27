@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import {
 	COOKIE_DOMAIN,
 	IS_PROD,
@@ -62,6 +63,24 @@ export async function setAuthCookies(token: IJwtPayload): Promise<void> {
 	});
 }
 
+export function setAuthCookiesOnResponse(
+	response: NextResponse,
+	token: IJwtPayload,
+): void {
+	response.cookies.set(ACCESS_COOKIE, token.accessToken, {
+		...getAuthCookieOptions({ expires: new Date(token.expiresIn) }),
+	});
+	response.cookies.set(REFRESH_COOKIE, token.refreshToken, {
+		...getAuthCookieOptions({
+			expires: new Date(
+				token.refreshTokenExpiresIn ??
+					Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000,
+			),
+			maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS,
+		}),
+	});
+}
+
 export async function clearAuthCookies(): Promise<void> {
 	const store = await cookies();
 	const opts = getAuthCookieOptions();
@@ -70,6 +89,22 @@ export async function clearAuthCookies(): Promise<void> {
 	if (IS_PROD) {
 		store.set(LEGACY_ACCESS_COOKIE, "", { ...opts, maxAge: 0 });
 		store.set(LEGACY_REFRESH_COOKIE, "", { ...opts, maxAge: 0 });
+	}
+}
+
+export function clearAuthCookiesOnResponse(response: NextResponse): void {
+	const opts = getAuthCookieOptions();
+	response.cookies.set(ACCESS_COOKIE, "", { ...opts, maxAge: 0 });
+	response.cookies.set(REFRESH_COOKIE, "", { ...opts, maxAge: 0 });
+	if (IS_PROD) {
+		response.cookies.set(LEGACY_ACCESS_COOKIE, "", {
+			...opts,
+			maxAge: 0,
+		});
+		response.cookies.set(LEGACY_REFRESH_COOKIE, "", {
+			...opts,
+			maxAge: 0,
+		});
 	}
 }
 

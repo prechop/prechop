@@ -27,6 +27,7 @@ interface AdminCampus {
 	shortCode: string;
 	state: string;
 	isActive: boolean;
+	isPublic: boolean;
 }
 
 const Scroll = styled.div`
@@ -126,6 +127,7 @@ export default function AdminCampusesWrapper() {
 	const [shortCode, setShortCode] = useState("");
 	const [state, setState] = useState("");
 	const [isActive, setIsActive] = useState(true);
+	const [isPublic, setIsPublic] = useState(false);
 	const [busy, setBusy] = useState(false);
 
 	function open(target: Editing) {
@@ -134,11 +136,13 @@ export default function AdminCampusesWrapper() {
 			setShortCode("");
 			setState("");
 			setIsActive(true);
+			setIsPublic(false);
 		} else if (target) {
 			setName(target.name);
 			setShortCode(target.shortCode);
 			setState(target.state);
 			setIsActive(target.isActive);
+			setIsPublic(target.isPublic);
 		}
 		setEditing(target);
 	}
@@ -151,6 +155,7 @@ export default function AdminCampusesWrapper() {
 					name: name.trim(),
 					shortCode: shortCode.trim(),
 					state: state.trim(),
+					isPublic,
 				});
 				toast("Campus created", "success");
 			} else if (editing) {
@@ -159,6 +164,7 @@ export default function AdminCampusesWrapper() {
 					shortCode: shortCode.trim(),
 					state: state.trim(),
 					isActive,
+					isPublic,
 				});
 				toast("Campus updated", "success");
 			}
@@ -201,13 +207,14 @@ export default function AdminCampusesWrapper() {
 									<th>Short code</th>
 									<th>State</th>
 									<th>Status</th>
+									<th>Marketplace</th>
 									<th></th>
 								</tr>
 							</thead>
 							<tbody>
 								{Array.from({ length: 5 }).map((_, i) => (
 									<tr key={i}>
-										{Array.from({ length: 5 }).map(
+										{Array.from({ length: 6 }).map(
 											(__, j) => (
 												<td key={j}>
 													<Skeleton $h={16} />
@@ -262,6 +269,7 @@ export default function AdminCampusesWrapper() {
 											<th>Short code</th>
 											<th>State</th>
 											<th>Status</th>
+											<th>Marketplace</th>
 											<th></th>
 										</tr>
 									</thead>
@@ -286,6 +294,19 @@ export default function AdminCampusesWrapper() {
 														{c.isActive
 															? "Active"
 															: "Inactive"}
+													</Badge>
+												</td>
+												<td>
+													<Badge
+														$tone={
+															c.isPublic
+																? "success"
+																: "muted"
+														}
+													>
+														{c.isPublic
+															? "Public"
+															: "Private"}
 													</Badge>
 												</td>
 												<td className="right">
@@ -346,6 +367,16 @@ export default function AdminCampusesWrapper() {
 									Active
 								</CheckRow>
 							)}
+							<CheckRow>
+								<input
+									type="checkbox"
+									checked={isPublic}
+									onChange={(e) =>
+										setIsPublic(e.target.checked)
+									}
+								/>
+								Public in marketplace
+							</CheckRow>
 							<Row $gap={10} $justify="flex-end">
 								<Button
 									$variant="secondary"

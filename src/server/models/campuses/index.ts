@@ -20,6 +20,7 @@ const schema = new mongoose.Schema<any>(
 		},
 		state: { type: String, required: true },
 		isActive: { type: Boolean, default: true },
+		isPublic: { type: Boolean, default: false },
 	},
 	{ timestamps: true },
 );
@@ -54,6 +55,7 @@ export async function createCampusDB({
 			shortCode: payload.shortCode,
 			state: payload.state,
 			isActive: payload.isActive ?? true,
+			isPublic: payload.isPublic ?? false,
 		}).save({ session });
 		timer({
 			operation: IOperationType.Create,
@@ -190,10 +192,12 @@ export async function getCampusByShortCodeDB({
 
 export async function listCampusesDB({
 	activeOnly,
+	publicOnly,
 	state,
 	session,
 }: {
 	activeOnly?: boolean;
+	publicOnly?: boolean;
 	/** Restrict to campuses in this state (case-insensitive exact match). */
 	state?: string;
 	session?: ClientSession;
@@ -202,6 +206,7 @@ export async function listCampusesDB({
 	try {
 		const match: Record<string, unknown> = {};
 		if (activeOnly) match.isActive = true;
+		if (publicOnly) match.isPublic = true;
 		if (state?.trim())
 			match.state = {
 				$regex: `^${escapeRegExp(state.trim())}$`,

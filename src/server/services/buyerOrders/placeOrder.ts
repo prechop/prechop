@@ -198,6 +198,7 @@ export async function placeOrder({
 			menuItemId: orderItem.menuItemId?.toString(),
 			snapshotName: orderItem.snapshotName,
 			snapshotPriceKobo: orderItem.snapshotPriceKobo,
+			snapshotPrepMin: orderItem.snapshotPrepMin,
 			quantity: req.quantity,
 			subtotalKobo: itemSubtotal,
 			selectedOptions: resolvedOptions,

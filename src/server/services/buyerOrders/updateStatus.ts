@@ -113,12 +113,22 @@ export async function updateOrderStatus({
 
 	if (status === OrderStatus.ACCEPTED) {
 		const acceptedAt = new Date();
+		const itemPrepMins = order.items
+			.map((item) => item.snapshotPrepMin ?? 0)
+			.filter((min) => min > 0);
+		const expectedPrepMin =
+			itemPrepMins.length > 0 ? Math.max(...itemPrepMins) : 20;
+		const expectedReadyAt = new Date(
+			acceptedAt.getTime() + expectedPrepMin * 60 * 1000,
+		);
 		const accepted = await setBuyerOrderStatusDB({
 			id: orderId,
 			status: OrderStatus.ACCEPTED,
 			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
 			acceptedAt,
 			acceptanceDeadline: order.acceptanceDeadline,
+			expectedReadyAt,
+			expectedPrepMin,
 		});
 		if (!accepted)
 			throw invalidOrderState("Order status changed â€” please retry.");
@@ -176,16 +186,30 @@ export async function updateOrderStatus({
 		return (await getBuyerOrderByIdDB({ id: orderId })) ?? rejected;
 	}
 
+	const readyAt =
+		status === OrderStatus.READY ||
+		status === OrderStatus.READY_FOR_PICKUP ||
+		status === OrderStatus.READY_FOR_DELIVERY
+			? new Date()
+			: undefined;
+	const actualPrepMin =
+		readyAt && order.acceptedAt
+			? Math.max(
+					0,
+					Math.round(
+						(readyAt.getTime() -
+							new Date(order.acceptedAt).getTime()) /
+							(60 * 1000),
+					),
+				)
+			: undefined;
+
 	const updated = await setBuyerOrderStatusDB({
 		id: orderId,
 		status,
 		fromStatuses: [order.status as OrderStatus],
-		readyAt:
-			status === OrderStatus.READY ||
-			status === OrderStatus.READY_FOR_PICKUP ||
-			status === OrderStatus.READY_FOR_DELIVERY
-				? new Date()
-				: undefined,
+		readyAt,
+		actualPrepMin,
 		deliveryStartedAt:
 			status === OrderStatus.IN_TRANSIT ? new Date() : undefined,
 	});

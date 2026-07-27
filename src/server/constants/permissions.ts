@@ -33,6 +33,7 @@ export const PERMISSION_CATALOG = {
 			"order:read": "View orders",
 			"order:cancel": "Cancel an order",
 			"order:update": "Update order status",
+			"order:handover:reveal": "Reveal sensitive handover PIN",
 		},
 	},
 	menu: {

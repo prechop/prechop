@@ -13,21 +13,21 @@ import { dropScratchDatabases, SCRATCH_DB_PREFIX } from "./scratchDb";
 export { SCRATCH_DB_PREFIX };
 
 export async function connectTestDB(): Promise<typeof mongoose> {
-	const conn = await connectMongoDB();
-	assertScratchDb();
-	return conn;
+  const conn = await connectMongoDB();
+  assertScratchDb();
+  return conn;
 }
 
 /** Throws unless the live connection points at a per-worker scratch database. */
 function assertScratchDb(): string {
-	const name = mongoose.connection.name ?? "";
-	if (!name.startsWith(SCRATCH_DB_PREFIX)) {
-		throw new Error(
-			`Refusing to operate on non-scratch database "${name}". ` +
-				`Test DBs must start with "${SCRATCH_DB_PREFIX}".`,
-		);
-	}
-	return name;
+  const name = mongoose.connection.name ?? "";
+  if (!name.startsWith(SCRATCH_DB_PREFIX)) {
+    throw new Error(
+      `Refusing to operate on non-scratch database "${name}". ` +
+        `Test DBs must start with "${SCRATCH_DB_PREFIX}".`,
+    );
+  }
+  return name;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,43 +44,43 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * which nothing can reconnect for the final file in a worker).
  */
 export async function dropAndDisconnect(): Promise<void> {
-	if (mongoose.connection.readyState === 0) return;
-	const dbName = assertScratchDb();
-	try {
-		const db = mongoose.connection.db!;
-		for (let attempt = 0; attempt < 10; attempt++) {
-			await mongoose.connection.dropDatabase();
-			await sleep(120);
-			const remaining = await db.listCollections().toArray();
-			if (remaining.length === 0) break;
-		}
-	} finally {
-		// Disconnect and the out-of-band drop must happen even if the loop above
-		// throws (a dropped connection mid-teardown used to leak the whole DB).
-		await disconnectMongoDB().catch(() => {});
-		// Final drop via a raw driver client (no mongoose model registration → no
-		// autoIndex), so a straggler that recreated empty collections after the
-		// mongoose drop can't leave the scratch DB behind. Scratch-name guarded
-		// inside `dropScratchDatabases`.
-		await dropScratchDatabases((name) => name === dbName);
-	}
+  if (mongoose.connection.readyState === 0) return;
+  const dbName = assertScratchDb();
+  try {
+    const db = mongoose.connection.db!;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await mongoose.connection.dropDatabase();
+      await sleep(120);
+      const remaining = await db.listCollections().toArray();
+      if (remaining.length === 0) break;
+    }
+  } finally {
+    // Disconnect and the out-of-band drop must happen even if the loop above
+    // throws (a dropped connection mid-teardown used to leak the whole DB).
+    await disconnectMongoDB().catch(() => {});
+    // Final drop via a raw driver client (no mongoose model registration → no
+    // autoIndex), so a straggler that recreated empty collections after the
+    // mongoose drop can't leave the scratch DB behind. Scratch-name guarded
+    // inside `dropScratchDatabases`.
+    await dropScratchDatabases((name) => name === dbName);
+  }
 }
 
 /** Wipe all documents from every collection between tests where useful. */
 export async function clearCollections(): Promise<void> {
-	assertScratchDb();
-	const collections = await mongoose.connection.db!.collections();
-	await Promise.all(collections.map((c) => c.deleteMany({})));
+  assertScratchDb();
+  const collections = await mongoose.connection.db!.collections();
+  await Promise.all(collections.map((c) => c.deleteMany({})));
 }
 
 /**
  * Random-ish Nigerian phone in the LOCAL `0…` form — the shape a buyer actually
- * types. The app normalizes it to E.164 on the way in; see `e164()`.
+ * types. The app normalizes it to E.164 In transit in; see `e164()`.
  */
 export function uniquePhone(): string {
-	// Valid Nigerian mobile number with a supported 0801 prefix.
-	const tail = Math.floor(1_000_000 + Math.random() * 8_999_999);
-	return `0801${tail.toString()}`;
+  // Valid Nigerian mobile number with a supported 0801 prefix.
+  const tail = Math.floor(1_000_000 + Math.random() * 8_999_999);
+  return `0801${tail.toString()}`;
 }
 
 /**
@@ -91,10 +91,10 @@ export function uniquePhone(): string {
  * code under test passes no matter what that code does.
  */
 export function e164(localPhone: string): string {
-	return `+234${localPhone.replace(/^0/, "")}`;
+  return `+234${localPhone.replace(/^0/, "")}`;
 }
 
 /** Fresh ObjectId hex string. */
 export function oid(): string {
-	return new mongoose.Types.ObjectId().toString();
+  return new mongoose.Types.ObjectId().toString();
 }

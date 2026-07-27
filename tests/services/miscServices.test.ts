@@ -135,6 +135,19 @@ describe("push service + provider", () => {
 });
 
 describe("menu image service", () => {
+	it("creates a menu item with its uploaded image URL", async () => {
+		const { userId } = await makeVendor();
+		const created = await createMenuItem({
+			userId,
+			name: "Egusi Soup",
+			category: MenuCategory.MEALS,
+			priceNaira: 1200,
+			imageUrl: "https://img.test/egusi.jpg",
+		});
+
+		expect(created?.imageUrl).toBe("https://img.test/egusi.jpg");
+	});
+
 	it("presigns for an owned item and confirms the image", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const item = await makeMenuItem({ vendorId, campusId });

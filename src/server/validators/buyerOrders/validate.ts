@@ -58,6 +58,12 @@ export const updateOrderStatusBodySchema = zod
 	})
 	.strict();
 
+export const reviseReadyEstimateBodySchema = zod
+	.object({
+		revisedPrepMin: zod.coerce.number().int().min(5).max(240),
+	})
+	.strict();
+
 export const cancelOrderBodySchema = zod
 	.object({ reason: zod.string().min(1).max(500) })
 	.strict();

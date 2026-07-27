@@ -67,6 +67,19 @@ export const openStatusSchema = zod
 	})
 	.strict();
 
+export const securityOnboardingSchema = zod.discriminatedUnion("action", [
+	zod.object({ action: zod.literal("DISMISS") }).strict(),
+	zod
+		.object({
+			action: zod.literal("COMPLETE"),
+			pin: zod
+				.string()
+				.trim()
+				.regex(/^\d{4,6}$/),
+		})
+		.strict(),
+]);
+
 // Resolve-only bank lookup: previews the account name (Paystack) without
 // creating a subaccount or persisting anything.
 export const resolveBankSchema = zod

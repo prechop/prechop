@@ -14,6 +14,7 @@ export async function createMenuItem({
 	category,
 	priceNaira,
 	description,
+	imageUrl,
 	estimatedPrepMin,
 	displayOrder,
 	optionGroupIds,
@@ -23,6 +24,7 @@ export async function createMenuItem({
 	category: MenuCategory;
 	priceNaira: number;
 	description?: string;
+	imageUrl?: string;
 	estimatedPrepMin?: number;
 	displayOrder?: number;
 	optionGroupIds?: string[];
@@ -43,6 +45,7 @@ export async function createMenuItem({
 			name,
 			priceKobo: nairaToKobo(priceNaira),
 			description,
+			imageUrl,
 			estimatedPrepMin,
 			displayOrder,
 			optionGroupIds: await resolveOwnedOptionGroupIds({

@@ -7,6 +7,7 @@ import {
 	FiCheckCircle,
 	FiClock,
 	FiPackage,
+	FiPhone,
 	FiPlayCircle,
 	FiTruck,
 } from "react-icons/fi";
@@ -51,6 +52,14 @@ type BuyerOrderDetail = BuyerOrder & {
 	vendorNoResponseExpiredAt?: string | null;
 };
 
+interface ContactReveal {
+	phone?: string;
+	telUrl?: string;
+	whatsappUrl?: string;
+	location?: string | null;
+	instructions?: string[];
+}
+
 const CANCELLABLE: OrderStatus[] = [
 	"PENDING_PAYMENT",
 	"AWAITING_EXTERNAL_PAYMENT",
@@ -60,15 +69,22 @@ const CANCELLABLE: OrderStatus[] = [
 	"CONFIRMED",
 ];
 
+const LATE_CANCELLABLE: OrderStatus[] = [
+	"ACCEPTED",
+	"CONFIRMED",
+	"COOKING",
+	"PREPARING",
+];
+
 const STEP_META: Record<string, { icon: string; hint: string }> = {
 	PAID: { icon: "💳", hint: "Payment received" },
 	CONFIRMED: { icon: "✅", hint: "Kitchen accepted your order" },
 	PREPARING: { icon: "🍳", hint: "Your food is being cooked" },
-	READY: { icon: "🛎️", hint: "Ready for pickup / on the way" },
+	READY: { icon: "🛎️", hint: "Ready for pickup / In transit" },
 	COMPLETED: { icon: "🎉", hint: "Order fulfilled — enjoy!" },
 };
 
-STEP_META.IN_TRANSIT = { icon: "->", hint: "Your order is on the way" };
+STEP_META.IN_TRANSIT = { icon: "->", hint: "Your order is In transit" };
 STEP_META.AWAITING_BUYER_NO_SHOW_RESPONSE = {
 	icon: "!",
 	hint: "Please respond to the pickup report",
@@ -131,175 +147,188 @@ const statusTone: Record<
 };
 
 const Wrap = styled(Stack)`
-	max-width: 560px;
-	margin: 0 auto;
+  max-width: 560px;
+  margin: 0 auto;
 `;
 const HeroCard = styled(Card)`
-	background: var(--pc-gradient-calm-orange);
-	border: none;
+  background: var(--pc-gradient-calm-orange);
+  border: none;
 `;
 const SummaryGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 8px;
-	width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
 
-	@media (max-width: 340px) {
-		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-	}
+  @media (max-width: 340px) {
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  }
 
-	> div {
-		min-width: 0;
-		padding: 12px 10px;
-		gap: 6px;
-	}
+  > div {
+    min-width: 0;
+    padding: 12px 10px;
+    gap: 6px;
+  }
 
-	> div > div:first-child {
-		min-width: 0;
-		gap: 6px;
-	}
+  > div > div:first-child {
+    min-width: 0;
+    gap: 6px;
+  }
 
-	> div > div:first-child > span:first-child {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: 11.5px;
-		font-weight: 800;
-		line-height: 1.15;
-	}
+  > div > div:first-child > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
 
-	> div > div:first-child > span:last-child {
-		flex: 0 0 auto;
-		font-size: 15px;
-	}
+  > div > div:first-child > span:last-child {
+    flex: 0 0 auto;
+    font-size: 15px;
+  }
 
-	> div > div:nth-child(2) {
-		min-width: 0;
-		overflow-wrap: anywhere;
-		font-size: 20px;
-		font-weight: 900;
-		letter-spacing: 0;
-		line-height: 1.05;
-	}
+  > div > div:nth-child(2) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
 
-	@media (min-width: 390px) {
-		> div > div:nth-child(2) {
-			font-size: 22px;
-		}
-	}
+  @media (min-width: 390px) {
+    > div > div:nth-child(2) {
+      font-size: 22px;
+    }
+  }
 `;
 const Track = styled.div`
-	display: flex;
-	flex-direction: column;
+  display: flex;
+  flex-direction: column;
 `;
 const Step = styled.div<{ $done: boolean; $current: boolean }>`
-	display: grid;
-	grid-template-columns: 30px 1fr;
-	gap: 12px;
-	opacity: ${(p) => (p.$done || p.$current ? 1 : 0.5)};
-	transition: opacity var(--pc-dur) var(--pc-ease);
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 12px;
+  opacity: ${(p) => (p.$done || p.$current ? 1 : 0.5)};
+  transition: opacity var(--pc-dur) var(--pc-ease);
 `;
 const DotCol = styled.div`
-	display: flex;
-	flex-direction: column;
-	align-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 `;
 const Dot = styled.div<{ $done: boolean; $current: boolean }>`
-	width: 30px;
-	height: 30px;
-	border-radius: 50%;
-	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 14px;
-	font-weight: 700;
-	color: #fff;
-	background: ${(p) =>
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: ${(p) =>
 		p.$done
 			? "var(--pc-color-accent)"
 			: p.$current
 				? "var(--pc-color-primary)"
 				: "var(--pc-border)"};
-	box-shadow: ${(p) =>
+  box-shadow: ${(p) =>
 		p.$current ? "0 0 0 4px var(--pc-color-primary-50)" : "none"};
 `;
 const Conn = styled.div<{ $done: boolean }>`
-	flex: 1;
-	width: 2px;
-	min-height: 22px;
-	margin: 2px 0;
-	background: ${(p) =>
+  flex: 1;
+  width: 2px;
+  min-height: 22px;
+  margin: 2px 0;
+  background: ${(p) =>
 		p.$done ? "var(--pc-color-accent)" : "var(--pc-border)"};
 `;
 const StepBody = styled.div`
-	padding-bottom: var(--pc-space-4);
+  padding-bottom: var(--pc-space-4);
 `;
 const StepTitle = styled.span`
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 `;
 const StepIcon = styled.span`
-	display: inline-flex;
-	color: var(--pc-color-primary);
+  display: inline-flex;
+  color: var(--pc-color-primary);
 `;
 const Line = styled(Row)`
-	justify-content: space-between;
-	font-size: 14px;
+  justify-content: space-between;
+  font-size: 14px;
 `;
 const Divider = styled.div`
-	border-top: 1px solid var(--pc-border);
-	margin: 4px 0;
+  border-top: 1px solid var(--pc-border);
+  margin: 4px 0;
 `;
 const FulfillmentCard = styled(Card)`
-	margin-top: 12px;
-	padding: var(--pc-space-4);
+  margin-top: 12px;
+  padding: var(--pc-space-4);
 `;
 const InstructionGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 
-	@media (max-width: 620px) {
-		grid-template-columns: 1fr;
-	}
+  @media (max-width: 620px) {
+    grid-template-columns: 1fr;
+  }
 `;
 const InstructionPanel = styled.div`
-	min-width: 0;
-	padding: 12px;
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-surface-2);
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface-2);
 `;
 const StatusNote = styled.div`
-	padding: 12px;
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-surface);
+  padding: 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+`;
+const ContactBox = styled.div`
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface-2);
+  overflow-wrap: anywhere;
 `;
 const HandoverRow = styled(Row)`
-	@media (max-width: 520px) {
-		align-items: flex-start;
-		flex-direction: column;
-	}
+  @media (max-width: 520px) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 `;
 const Stars = styled.div`
-	display: flex;
-	gap: 4px;
-	font-size: 30px;
-	cursor: pointer;
+  display: flex;
+  gap: 4px;
+  font-size: 30px;
+  cursor: pointer;
 `;
 const Star = styled.button<{ $on: boolean }>`
-	background: none;
-	border: none;
-	cursor: pointer;
-	padding: 0;
-	line-height: 1;
-	transition: transform var(--pc-dur) var(--pc-ease), color var(--pc-dur) var(--pc-ease);
-	color: ${(p) => (p.$on ? "var(--pc-color-gold)" : "var(--pc-border)")};
-	&:hover { transform: scale(1.15); }
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition:
+    transform var(--pc-dur) var(--pc-ease),
+    color var(--pc-dur) var(--pc-ease);
+  color: ${(p) => (p.$on ? "var(--pc-color-gold)" : "var(--pc-border)")};
+  &:hover {
+    transform: scale(1.15);
+  }
 `;
 
 function timelineIcon(icon: string) {
@@ -316,6 +345,22 @@ function timelineIcon(icon: string) {
 		default:
 			return <FiClock size={18} aria-hidden />;
 	}
+}
+
+function canRevealKitchenContact(data: BuyerOrderDetail) {
+	return (
+		data.fulfillmentType === "PICKUP" &&
+		[
+			"ACCEPTED",
+			"CONFIRMED",
+			"COOKING",
+			"PREPARING",
+			"READY",
+			"READY_FOR_PICKUP",
+			"AWAITING_BUYER_NO_SHOW_RESPONSE",
+			"PICKUP_PROBLEM_REPORTED",
+		].includes(data.status)
+	);
 }
 
 export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
@@ -347,6 +392,10 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const [rating, setRating] = useState(0);
 	const [comment, setComment] = useState("");
 	const [submitting, setSubmitting] = useState(false);
+	const [contactLoading, setContactLoading] = useState(false);
+	const [kitchenContact, setKitchenContact] = useState<ContactReveal | null>(
+		null,
+	);
 
 	if (isLoading) {
 		return (
@@ -404,6 +453,11 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
 	const statusCopy = currentStatusCopy(data.status, data.fulfillmentType);
 	const refundCopy = getRefundCopy(data);
+	const isLateActive =
+		!!data.lateMarkedAt &&
+		LATE_CANCELLABLE.includes(data.status) &&
+		!data.handoverCredentialUsedAt;
+	const canCancel = CANCELLABLE.includes(data.status) || isLateActive;
 
 	async function cancel() {
 		if (!reason.trim()) {
@@ -443,6 +497,41 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 			toast(errMsg(e), "error");
 		} finally {
 			setSubmitting(false);
+		}
+	}
+
+	function openContactUrl(url?: string) {
+		if (!url || typeof window === "undefined") return false;
+		window.location.href = url;
+		return true;
+	}
+
+	async function revealKitchenContact(
+		intent: "call" | "whatsapp" | "reveal" = "call",
+	) {
+		setContactLoading(true);
+		try {
+			const res = await api.get<{ data: ContactReveal }>(
+				`/orders/${orderId}/contact/kitchen`,
+			);
+			const contact = res.data.data;
+			setKitchenContact(contact);
+			const opened =
+				intent === "whatsapp"
+					? openContactUrl(contact.whatsappUrl)
+					: intent === "call"
+						? openContactUrl(contact.telUrl)
+						: false;
+			if (!opened) {
+				toast(
+					"Kitchen contact unlocked for this active order.",
+					"success",
+				);
+			}
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setContactLoading(false);
 		}
 	}
 
@@ -525,6 +614,71 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 								</Stack>
 							</InstructionPanel>
 						</InstructionGrid>
+						{canRevealKitchenContact(data) && (
+							<ContactBox>
+								<Text $weight={800} $size={13}>
+									Contact kitchen
+								</Text>
+								{kitchenContact ? (
+									<Stack $gap={6}>
+										{kitchenContact.location && (
+											<Text $muted $size={13}>
+												Pickup:{" "}
+												{kitchenContact.location}
+											</Text>
+										)}
+										{kitchenContact.phone ? (
+											<Row $gap={10} $align="center">
+												<FiPhone
+													size={14}
+													aria-hidden
+												/>
+												<a href={kitchenContact.telUrl}>
+													Call kitchen
+												</a>
+												{kitchenContact.whatsappUrl && (
+													<a
+														href={
+															kitchenContact.whatsappUrl
+														}
+														target="_blank"
+														rel="noreferrer"
+													>
+														WhatsApp
+													</a>
+												)}
+											</Row>
+										) : (
+											<Text $muted $size={13}>
+												This kitchen has not added a
+												pickup phone yet.
+											</Text>
+										)}
+										{kitchenContact.instructions?.map(
+											(instruction) => (
+												<Text
+													key={instruction}
+													$muted
+													$size={13}
+												>
+													{instruction}
+												</Text>
+											),
+										)}
+									</Stack>
+								) : (
+									<Button
+										$size="sm"
+										$variant="secondary"
+										$loading={contactLoading}
+										onClick={() => revealKitchenContact()}
+									>
+										<FiPhone size={14} aria-hidden /> Call
+										kitchen
+									</Button>
+								)}
+							</ContactBox>
+						)}
 					</Stack>
 				</FulfillmentCard>
 			</FadeIn>
@@ -817,7 +971,34 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				</Card>
 			)}
 
-			{CANCELLABLE.includes(data.status) &&
+			{isLateActive && (
+				<Card $accent>
+					<Stack $gap={10}>
+						<Text $weight={900}>Order running late</Text>
+						<Text $muted>
+							The kitchen missed the estimated ready time
+							{data.expectedReadyAt
+								? ` (${formatDateTime(data.expectedReadyAt)})`
+								: ""}
+							. You can wait, contact support, or cancel for a
+							refund.
+						</Text>
+						{data.revisedReadyAt && (
+							<Text $muted>
+								Updated estimate:{" "}
+								{formatDateTime(data.revisedReadyAt)}
+							</Text>
+						)}
+						{data.lateEscalatedAt && (
+							<Badge $tone="warning">
+								Support review requested
+							</Badge>
+						)}
+					</Stack>
+				</Card>
+			)}
+
+			{canCancel &&
 				(showCancel ? (
 					<Card>
 						<Stack $gap={12}>
@@ -889,7 +1070,7 @@ function currentStatusCopy(
 	if (status === "READY" && fulfillmentType === "PICKUP")
 		return "Your order is ready. Go to the pickup point and show your QR or PIN at handover.";
 	if (status === "IN_TRANSIT")
-		return "Your order is on the way. Show your QR or PIN only when it arrives.";
+		return "Your order is In transit. Show your QR or PIN only when it arrives.";
 	if (status === "REFUND_PENDING" || status === "REFUND_PROCESSING")
 		return "A refund is being handled through the payment provider.";
 	if (status === "REFUNDED") return "This order has been marked refunded.";

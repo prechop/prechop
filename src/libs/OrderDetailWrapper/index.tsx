@@ -340,6 +340,18 @@ function itemOptionsValid(item: DailyOrderItem, line: Line): boolean {
 	return (item.optionGroups ?? []).every((g) => groupSatisfied(g, line));
 }
 
+function availableFulfillment(
+	order: DailyOrder | null | undefined,
+	requested: Fulfillment,
+): Fulfillment {
+	if (!order) return requested;
+	if (order.deliveryAvailable && !order.pickupAvailable) return "DELIVERY";
+	if (order.pickupAvailable && !order.deliveryAvailable) return "PICKUP";
+	if (requested === "DELIVERY" && !order.deliveryAvailable) return "PICKUP";
+	if (requested === "PICKUP" && !order.pickupAvailable) return "DELIVERY";
+	return requested;
+}
+
 /** Short human hint describing a group's selection rule. */
 function ruleLabel(group: DailyOrderOptionGroup, min: number): string {
 	if (min > 0 && group.maxSelect === min)
@@ -395,17 +407,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 
 	useEffect(() => {
 		if (!data) return;
-		setFulfillment((current) => {
-			if (data.deliveryAvailable && !data.pickupAvailable)
-				return "DELIVERY";
-			if (data.pickupAvailable && !data.deliveryAvailable)
-				return "PICKUP";
-			if (current === "DELIVERY" && !data.deliveryAvailable)
-				return "PICKUP";
-			if (current === "PICKUP" && !data.pickupAvailable)
-				return "DELIVERY";
-			return current;
-		});
+		setFulfillment((current) => availableFulfillment(data, current));
 	}, [data]);
 
 	useEffect(() => {
@@ -463,7 +465,9 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 					),
 				);
 			}
-			if (parsed.fulfillment) setFulfillment(parsed.fulfillment);
+			if (parsed.fulfillment) {
+				setFulfillment(availableFulfillment(data, parsed.fulfillment));
+			}
 			setHostel(parsed.hostel ?? "");
 			setRoom(parsed.room ?? "");
 			setExtra(parsed.extra ?? "");
@@ -633,7 +637,15 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			: 0;
 	const checkoutTotal = subtotal + deliveryFee + processingFee;
 	const feeExplainer = describeBuyerFeeExplainer(feePolicy);
-	const canOrder = orderable && itemCount > 0 && optionsValid && canQuoteFee;
+	const fulfillmentAvailable =
+		(fulfillment === "PICKUP" && data.pickupAvailable) ||
+		(fulfillment === "DELIVERY" && data.deliveryAvailable);
+	const canOrder =
+		orderable &&
+		itemCount > 0 &&
+		optionsValid &&
+		canQuoteFee &&
+		fulfillmentAvailable;
 
 	function saveCartForLogin() {
 		if (typeof window === "undefined") return;
@@ -746,10 +758,14 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			);
 			return;
 		}
+		if (!fulfillmentAvailable) {
+			toast("Choose an available pickup or delivery option.", "error");
+			return;
+		}
 		if (!canOrder) return;
 		if (
 			fulfillment === "DELIVERY" &&
-			(!deliveryPhone.trim() || !hostel.trim() || !room.trim())
+			(!deliveryPhone.trim() || !hostel.trim())
 		) {
 			toast("Add your phone, hostel and room for delivery.", "error");
 			return;
@@ -923,7 +939,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							)}
 						</Chips>
 						{fulfillment === "PICKUP" &&
-							(data.vendorPickupLocation || data.vendorPhone) && (
+							data.vendorPickupLocation && (
 								<PickupLocation>
 									<span aria-hidden>📍</span>
 									<span>
@@ -933,19 +949,6 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 												<strong>
 													{data.vendorPickupLocation}
 												</strong>
-											</>
-										)}
-										{data.vendorPhone && (
-											<>
-												{data.vendorPickupLocation && (
-													<br />
-												)}
-												Call vendor:{" "}
-												<a
-													href={`tel:${data.vendorPhone}`}
-												>
-													{data.vendorPhone}
-												</a>
 											</>
 										)}
 									</span>
@@ -1220,8 +1223,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 							the rider or delivery method.
 						</Text>
 						{(data.deliveryCoverage ||
-							data.deliveryEstimateMinutes ||
-							data.deliveryContactPhone) && (
+							data.deliveryEstimateMinutes) && (
 							<Stack $gap={4}>
 								{data.deliveryCoverage && (
 									<Text $muted $size={12}>
@@ -1232,12 +1234,6 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 									<Text $muted $size={12}>
 										Estimated delivery:{" "}
 										{data.deliveryEstimateMinutes} minutes
-									</Text>
-								)}
-								{data.deliveryContactPhone && (
-									<Text $muted $size={12}>
-										Vendor delivery contact:{" "}
-										{data.deliveryContactPhone}
 									</Text>
 								)}
 							</Stack>

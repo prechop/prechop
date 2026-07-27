@@ -9,6 +9,7 @@ import {
 	getClientIp,
 	handleError,
 	setAuthCookies,
+	setAuthCookiesOnResponse,
 	withApiHandler,
 } from "@/server/lib";
 import {
@@ -114,9 +115,11 @@ export const GET = withApiHandler(
 				ip: getClientIp(req),
 			});
 			await setAuthCookies(token);
-			return NextResponse.redirect(
+			const response = NextResponse.redirect(
 				new URL(resolvePostAuthRedirect(user, state.next), req.url),
 			);
+			setAuthCookiesOnResponse(response, token);
+			return response;
 		} catch (error) {
 			return handleError(error);
 		}

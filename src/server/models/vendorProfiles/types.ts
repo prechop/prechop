@@ -43,6 +43,9 @@ export interface IVendorProfile {
 	totalReviews: number;
 	totalOrders: number;
 	completionRate: number;
+	lateOrderCount?: number;
+	unfulfilledOrderCount?: number;
+	avgPrepDelayMin?: number;
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
 	// Vendor notification preferences (email/push opt-ins).
@@ -63,6 +66,11 @@ export interface IVendorProfile {
 	reviewedBy?: string;
 	rejectionReason?: string;
 	reviewNotes?: string;
+	// Post-approval security onboarding.
+	securityOnboardingDismissedAt?: Date;
+	securityOnboardingCompletedAt?: Date;
+	securityPinHash?: string;
+	securityPinSet?: boolean;
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;
