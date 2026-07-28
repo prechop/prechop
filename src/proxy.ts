@@ -99,10 +99,6 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.redirect(new URL("/", request.url));
 	}
 
-	if (canAttemptRefresh && AUTH_ROUTES.includes(pathname)) {
-		return NextResponse.redirect(buildRefreshRedirect(request, "/"));
-	}
-
 	if (!isAuthenticated && isProtectedRoute(pathname)) {
 		if (canAttemptRefresh) {
 			const original = `${pathname}${request.nextUrl.search}`;

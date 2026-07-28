@@ -3,6 +3,9 @@
 /.pnp
 .pnp.*
 .yarn/*
+.codex
+.kilo
+
 
 # next.js
 /.next/
@@ -34,6 +37,7 @@ yarn-error.log*
 .env.local
 .env*.local
 .env2
+.env.dev
 
 # typescript
 *.tsbuildinfo
