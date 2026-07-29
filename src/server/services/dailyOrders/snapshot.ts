@@ -85,6 +85,7 @@ export async function buildSnapshotItems({
 
 		return {
 			menuItemId: (menuItem.id ?? menuItem._id).toString(),
+			category: menuItem.category,
 			snapshotName: menuItem.name,
 			snapshotPriceKobo: menuItem.priceKobo,
 			snapshotImageUrl: menuItem.imageUrl,

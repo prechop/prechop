@@ -85,7 +85,9 @@ function VendorOnboardingContent() {
 
 	const vendorWithDefaults: VendorMe = {
 		...vendor,
-		email: vendor.email || user?.email || "",
+		email: isDraftVendorEmail(vendor.email)
+			? (user?.email ?? "")
+			: vendor.email || user?.email || "",
 		contactPhone: vendor.contactPhone || user?.phone || "",
 	};
 
@@ -118,4 +120,8 @@ function errMsg(e: unknown): string {
 		err?.message ??
 		"Something went wrong. Try again."
 	);
+}
+
+function isDraftVendorEmail(email?: string) {
+	return !!email?.toLowerCase().endsWith("@draft.prechop.local");
 }

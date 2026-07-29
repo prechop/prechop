@@ -30,6 +30,7 @@ import { describeFeePolicy, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import BankDetailsForm from "@/libs/BankDetailsForm";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
+import VendorSecurityPinForm from "@/libs/VendorSecurityPinForm";
 import type { Campus } from "@/types";
 
 interface School {
@@ -278,9 +279,6 @@ export default function VendorSettingsWrapper() {
 	const [notifyNewOrders, setNotifyNewOrders] = useState(true);
 	const [notifyPayouts, setNotifyPayouts] = useState(true);
 	const [notifyReviews, setNotifyReviews] = useState(true);
-	const [securityPin, setSecurityPin] = useState("");
-	const [securityPinConfirm, setSecurityPinConfirm] = useState("");
-
 	const [busy, setBusy] = useState<string | null>(null);
 	const [startAttempted, setStartAttempted] = useState(false);
 
@@ -558,29 +556,8 @@ export default function VendorSettingsWrapper() {
 		});
 	}
 
-	async function completeSecurityOnboarding() {
-		if (!/^\d{4,6}$/.test(securityPin.trim())) {
-			toast("Enter a 4-6 digit security PIN", "error");
-			return;
-		}
-		if (securityPin.trim() !== securityPinConfirm.trim()) {
-			toast("Security PINs do not match", "error");
-			return;
-		}
-		await run("security-onboarding", async () => {
-			await api.patch("/vendors/me", {
-				action: "COMPLETE",
-				pin: securityPin.trim(),
-			});
-			setSecurityPin("");
-			setSecurityPinConfirm("");
-			toast("Security verification completed", "success");
-		});
-	}
-
-	const securityVerified =
-		vendor.status !== "ACTIVE" ||
-		(!!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet);
+	const securityPinReady =
+		!!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet;
 
 	return (
 		<FadeIn>
@@ -906,57 +883,14 @@ export default function VendorSettingsWrapper() {
 					</Stack>
 				</Card>
 
-				{vendor.status === "ACTIVE" && (
+				{(vendor.status === "ACTIVE" || !securityPinReady) && (
 					<Card>
 						<Stack $gap={14}>
 							<SectionHeader title="Vendor security" icon="!" />
-							{securityVerified ? (
-								<Text $muted $size={13}>
-									Security verification is complete for
-									sensitive vendor actions.
-								</Text>
-							) : (
-								<>
-									<Text $muted $size={13}>
-										Create a 4-6 digit security PIN before
-										changing payout details or other
-										sensitive vendor settings.
-									</Text>
-									<Input
-										label="Security PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPin}
-										onChange={(e) =>
-											setSecurityPin(e.target.value)
-										}
-										placeholder="4-6 digits"
-									/>
-									<Input
-										label="Confirm PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPinConfirm}
-										onChange={(e) =>
-											setSecurityPinConfirm(
-												e.target.value,
-											)
-										}
-										placeholder="Re-enter PIN"
-									/>
-									<Button
-										$loading={
-											busy === "security-onboarding"
-										}
-										disabled={
-											busy === "security-onboarding"
-										}
-										onClick={completeSecurityOnboarding}
-									>
-										Save security PIN
-									</Button>
-								</>
-							)}
+							<VendorSecurityPinForm
+								securityPinReady={securityPinReady}
+								onSaved={() => mutate()}
+							/>
 						</Stack>
 					</Card>
 				)}
@@ -970,7 +904,7 @@ export default function VendorSettingsWrapper() {
 							initialAccountName={vendor.accountName}
 							saveLabel="Update bank details"
 							onSaved={() => mutate()}
-							securityVerified={securityVerified}
+							securityVerified={securityPinReady}
 							onSecureAccount={() => {
 								toast(
 									"Use the Vendor security section to create your PIN.",

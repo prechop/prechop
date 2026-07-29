@@ -1,8 +1,10 @@
 import type {
+	BakeryBusinessType,
 	LocationType,
 	MenuCategory,
 	VendorStatus,
 	VendorType,
+	VendorVerificationDocumentType,
 } from "../enums";
 
 export interface IVendorProfileCreateInput {
@@ -11,6 +13,7 @@ export interface IVendorProfileCreateInput {
 	email: string;
 	businessName?: string;
 	vendorType?: VendorType;
+	contactPhone?: string;
 }
 
 export interface IVendorProfile {
@@ -20,6 +23,7 @@ export interface IVendorProfile {
 	campusId?: string;
 	campusIds?: string[];
 	vendorType?: VendorType;
+	bakeryBusinessType?: BakeryBusinessType;
 	businessName?: string;
 	description?: string;
 	email: string;
@@ -32,6 +36,13 @@ export interface IVendorProfile {
 	state?: string;
 	areaOrAddress?: string;
 	profileImageUrl?: string;
+	verificationDocuments?: {
+		type: VendorVerificationDocumentType;
+		key: string;
+		fileName?: string;
+		mimeType?: string;
+		uploadedAt: Date;
+	}[];
 	categories: MenuCategory[];
 	paystackSubaccountCode?: string;
 	bankCode?: string;

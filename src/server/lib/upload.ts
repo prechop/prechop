@@ -6,7 +6,7 @@ export async function presignImageUpload({
 	folder,
 	mimeType,
 }: {
-	folder: "menu-items" | "vendor-profiles";
+	folder: "menu-items" | "vendor-profiles" | "vendor-verifications";
 	mimeType: string;
 }) {
 	return s3Provider.getPresignedUploadUrl(folder, mimeType);

@@ -23,6 +23,7 @@ export interface IDailyOrderItem {
 	_id?: string;
 	id?: string;
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
 	snapshotImageUrl?: string;
@@ -44,6 +45,7 @@ export interface IDailyOrderOptionGroupInput {
 
 export interface IDailyOrderItemInput {
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
 	snapshotImageUrl?: string;

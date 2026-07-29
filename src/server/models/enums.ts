@@ -14,6 +14,21 @@ export enum VendorType {
 	BAKERY = "BAKERY",
 }
 
+export enum BakeryBusinessType {
+	HOME_BASED = "HOME_BASED",
+	CAMPUS_BASED = "CAMPUS_BASED",
+	REGISTERED = "REGISTERED",
+}
+
+export enum VendorVerificationDocumentType {
+	SCHOOL_ID = "SCHOOL_ID",
+	STALL_EVIDENCE = "STALL_EVIDENCE",
+	OPERATOR_ID = "OPERATOR_ID",
+	CAC = "CAC",
+	REPRESENTATIVE_ID = "REPRESENTATIVE_ID",
+	OWNER_ID = "OWNER_ID",
+}
+
 export enum VendorStatus {
 	/** Vendor is still filling in their onboarding details. */
 	INCOMPLETE = "INCOMPLETE",

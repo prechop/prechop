@@ -10,6 +10,7 @@ import {
 	listBuyerOrdersByVendorAndDailyOrderDB,
 	listIncomingBuyerOrdersByVendorDB,
 } from "../../models";
+import { sweepLateBuyerOrders } from "./lateOrders";
 
 function pickupLocation(
 	vendor: Awaited<ReturnType<typeof getVendorProfileByIdDB>>,
@@ -63,6 +64,7 @@ export async function getOrderById({
 	userId: string;
 	orderId: string;
 }) {
+	await sweepLateBuyerOrders();
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
 
@@ -109,6 +111,7 @@ export async function getVendorOrdersForDailyOrder({
 	vendorUserId: string;
 	dailyOrderId: string;
 }) {
+	await sweepLateBuyerOrders();
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
 	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
@@ -125,6 +128,7 @@ export async function getIncomingVendorOrders({
 	vendorUserId: string;
 	limit?: number;
 }) {
+	await sweepLateBuyerOrders();
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
 	const orders = await listIncomingBuyerOrdersByVendorDB({

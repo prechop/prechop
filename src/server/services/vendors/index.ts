@@ -8,6 +8,7 @@ export * from "./location";
 export * from "./notificationPrefs";
 export * from "./openStatus";
 export * from "./profileImage";
+export * from "./verificationDocuments";
 export * from "./recomputeVendorCompleteness";
 export * from "./resolveBank";
 export * from "./resolveVendor";

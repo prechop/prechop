@@ -71,6 +71,10 @@ export async function placeOrder({
 	campusId: string;
 	input: PlaceOrderInput;
 }) {
+	if (!campusId?.trim()) {
+		throw validationError("Choose your campus in Account before checkout.");
+	}
+
 	const config = await getSiteConfigs();
 	if (!config.marketplaceEnabled) {
 		throw serviceUnavailable(

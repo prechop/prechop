@@ -41,6 +41,7 @@ const itemSchema = new mongoose.Schema(
 			ref: "menuItems",
 			required: true,
 		},
+		category: { type: String },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true, min: 0 },
 		snapshotImageUrl: { type: String },
@@ -176,6 +177,7 @@ export const DailyOrder: DailyOrderModel =
 function mapItems(items: IDailyOrderItemInput[]) {
 	return items.map((it) => ({
 		menuItemId: new mongoose.Types.ObjectId(it.menuItemId),
+		category: it.category,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
 		snapshotImageUrl: it.snapshotImageUrl,
@@ -432,6 +434,12 @@ export async function listActivePublicListingsForVendorIdsDB({
 										$mergeObjects: [
 											"$$it",
 											{
+												category: {
+													$ifNull: [
+														"$$it.category",
+														"$$menuItem.category",
+													],
+												},
 												snapshotImageUrl: {
 													$cond: [
 														{

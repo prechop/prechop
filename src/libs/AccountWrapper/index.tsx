@@ -81,26 +81,6 @@ const GroupBadge = styled(Badge)`
 		margin-left: 64px;
 	}
 `;
-const CampusGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-`;
-const CampusChip = styled.button<{ $on: boolean }>`
-  all: unset;
-  box-sizing: border-box;
-  padding: 11px 12px;
-  border-radius: var(--pc-radius-sm);
-  border: 1.5px solid
-    ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
-  background: ${(p) =>
-		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
-  color: ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-text)")};
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-`;
 const Notice = styled.div`
 	display: flex;
 	flex-direction: column;
@@ -129,11 +109,6 @@ export default function AccountWrapper() {
 	const [savingName, setSavingName] = useState(false);
 	const [vendorBusinessName, setVendorBusinessName] = useState("");
 	const [vendorType, setVendorType] = useState("STUDENT_COOK");
-	const [locationType, setLocationType] = useState("ON_CAMPUS");
-	const [hostelOrStallName, setHostelOrStallName] = useState("");
-	const [state, setState] = useState("");
-	const [areaOrAddress, setAreaOrAddress] = useState("");
-	const [campusIds, setCampusIds] = useState<string[]>([]);
 	const [applyingVendor, setApplyingVendor] = useState(false);
 
 	// Keep the editable fields in sync with the loaded/refreshed profile.
@@ -186,27 +161,10 @@ export default function AccountWrapper() {
 	}
 
 	async function applyToBecomeVendor() {
-		const userCampusId = user?.campusId;
+		if (!user) return;
+		const currentUser = user;
 		if (!vendorBusinessName.trim()) {
 			toast("Enter your business name", "error");
-			return;
-		}
-		if (locationType === "ON_CAMPUS" && !hostelOrStallName.trim()) {
-			toast("Enter your hostel or stall name", "error");
-			return;
-		}
-		if (locationType === "ON_CAMPUS" && !userCampusId) {
-			toast("Choose your campus before applying.", "error");
-			return;
-		}
-		if (
-			locationType === "OFF_CAMPUS" &&
-			(!state.trim() || !areaOrAddress.trim() || campusIds.length === 0)
-		) {
-			toast(
-				"Enter your state, address and select at least one campus",
-				"error",
-			);
 			return;
 		}
 		setApplyingVendor(true);
@@ -214,19 +172,9 @@ export default function AccountWrapper() {
 			await api.post("/users/me/become-vendor", {
 				businessName: vendorBusinessName.trim(),
 				vendorType,
-				location:
-					locationType === "ON_CAMPUS"
-						? {
-								locationType,
-								campusId: userCampusId,
-								hostelOrStallName: hostelOrStallName.trim(),
-							}
-						: {
-								locationType,
-								state: state.trim(),
-								areaOrAddress: areaOrAddress.trim(),
-								campusIds,
-							},
+				...(currentUser.phone
+					? { contactPhone: currentUser.phone }
+					: {}),
 			});
 			toast("Vendor application started.", "success");
 			await refresh();
@@ -246,22 +194,6 @@ export default function AccountWrapper() {
 	const showVendorApplicationSection =
 		!isVendor ||
 		(hasVendorApplication && vendorApplication.status !== "ACTIVE");
-	const stateCampuses = (campuses ?? []).filter(
-		(c) =>
-			state.trim() &&
-			c.state.trim().toLowerCase() === state.trim().toLowerCase(),
-	);
-
-	function toggleCampus(id: string) {
-		setCampusIds((current) => {
-			if (current.includes(id)) return current.filter((x) => x !== id);
-			if (current.length >= 3) {
-				toast("Select up to 3 campuses", "error");
-				return current;
-			}
-			return [...current, id];
-		});
-	}
 
 	return (
 		<FadeIn>
@@ -431,8 +363,9 @@ export default function AccountWrapper() {
 							<Stack $gap={12}>
 								<Text $muted $size={14}>
 									Apply with this buyer account so your orders
-									and login stay together. Selling access
-									starts only after admin approval.
+									and login stay together. You&apos;ll finish
+									location, verification documents and payout
+									setup on the next screen.
 								</Text>
 								<Input
 									label="Business name"
@@ -460,87 +393,6 @@ export default function AccountWrapper() {
 									</option>
 									<option value="BAKERY">Bakery</option>
 								</Select>
-								<Select
-									label="Location"
-									value={locationType}
-									onChange={(e) =>
-										setLocationType(e.target.value)
-									}
-								>
-									<option value="ON_CAMPUS">On campus</option>
-									<option value="OFF_CAMPUS">
-										Off campus
-									</option>
-								</Select>
-								{locationType === "ON_CAMPUS" ? (
-									<Input
-										label="Hostel or stall name"
-										value={hostelOrStallName}
-										onChange={(e) =>
-											setHostelOrStallName(e.target.value)
-										}
-										placeholder="Moremi Hall, Block A"
-									/>
-								) : (
-									<>
-										<Input
-											label="State"
-											value={state}
-											onChange={(e) => {
-												setState(e.target.value);
-												setCampusIds([]);
-											}}
-											placeholder="Lagos"
-										/>
-										<Input
-											label="Area or address"
-											value={areaOrAddress}
-											onChange={(e) =>
-												setAreaOrAddress(e.target.value)
-											}
-											placeholder="Yaba, near campus gate"
-										/>
-										{state.trim() && (
-											<Stack $gap={8}>
-												<Text $weight={700} $size={13}>
-													Campuses to show your menu
-													on
-												</Text>
-												{stateCampuses.length > 0 ? (
-													<CampusGrid>
-														{stateCampuses.map(
-															(c) => (
-																<CampusChip
-																	key={c.id}
-																	type="button"
-																	$on={campusIds.includes(
-																		c.id,
-																	)}
-																	onClick={() =>
-																		toggleCampus(
-																			c.id,
-																		)
-																	}
-																>
-																	{c.name}
-																</CampusChip>
-															),
-														)}
-													</CampusGrid>
-												) : (
-													<Text $muted $size={13}>
-														No active campuses found
-														for this state.
-													</Text>
-												)}
-												<Text $muted $size={12}>
-													{campusIds.length}/3
-													selected
-												</Text>
-											</Stack>
-										)}
-									</>
-								)}
 								<Button
 									$variant="secondary"
 									onClick={applyToBecomeVendor}
@@ -548,7 +400,7 @@ export default function AccountWrapper() {
 									disabled={applyingVendor}
 									style={{ alignSelf: "flex-start" }}
 								>
-									Apply to be a vendor
+									Start vendor setup
 								</Button>
 							</Stack>
 						)}

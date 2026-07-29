@@ -3,22 +3,31 @@ import { paystackProvider } from "@/server/providers";
 import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
-import { assertVendorSecurityVerifiedForSensitiveAction } from "./securityOnboarding";
+import {
+	assertFreshVendorSecurityPinForSensitiveAction,
+	assertVendorSecurityPinReady,
+} from "./securityOnboarding";
 
 export async function setBankDetails({
 	userId,
 	bankCode,
 	accountNumber,
 	bankName,
+	securityPin,
 }: {
 	userId: string;
 	bankCode: string;
 	accountNumber: string;
 	bankName?: string;
+	securityPin?: string;
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
-	assertVendorSecurityVerifiedForSensitiveAction(vendor);
+	assertVendorSecurityPinReady(vendor);
+	await assertFreshVendorSecurityPinForSensitiveAction({
+		userId,
+		pin: securityPin,
+	});
 	const hadExistingBank = !!vendor.paystackSubaccountCode;
 
 	const resolved = await paystackProvider.resolveAccountNumber(

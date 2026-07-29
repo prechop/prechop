@@ -43,6 +43,7 @@ export interface OnboardingChecklistInput {
 	hasLocation: boolean;
 	hasBankDetails: boolean;
 	hasProfileImage: boolean;
+	hasVerificationDocuments: boolean;
 }
 
 export interface OnboardingChecklist {
@@ -51,6 +52,7 @@ export interface OnboardingChecklist {
 	location: boolean;
 	bank: boolean;
 	image: boolean;
+	verification: boolean;
 	/** True once every step above is satisfied — the submit todo unlocks. */
 	complete: boolean;
 	/** Keys of the steps still outstanding (for messaging). */
@@ -66,6 +68,7 @@ export function onboardingChecklist(
 		location: input.hasLocation,
 		bank: input.hasBankDetails,
 		image: input.hasProfileImage,
+		verification: input.hasVerificationDocuments,
 	};
 	const missing = Object.entries(steps)
 		.filter(([, done]) => !done)

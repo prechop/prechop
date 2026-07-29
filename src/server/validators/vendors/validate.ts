@@ -1,5 +1,11 @@
 import { z as zod } from "zod";
-import { LocationType, MenuCategory, VendorType } from "@/server/models";
+import {
+	BakeryBusinessType,
+	LocationType,
+	MenuCategory,
+	VendorType,
+	VendorVerificationDocumentType,
+} from "@/server/models";
 
 export const businessIdentitySchema = zod
 	.object({
@@ -53,11 +59,25 @@ export const confirmImageSchema = zod
 	})
 	.strict();
 
+export const confirmVerificationDocumentSchema = zod
+	.object({
+		type: zod.enum(VendorVerificationDocumentType),
+		key: zod.string().trim().min(1),
+		fileName: zod.string().trim().min(1).max(240).optional(),
+		mimeType: zod.string().trim().min(1).max(120).optional(),
+		bakeryBusinessType: zod.enum(BakeryBusinessType).optional(),
+	})
+	.strict();
+
 export const bankDetailsSchema = zod
 	.object({
 		bankCode: zod.string().trim().min(1),
 		accountNumber: zod.string().trim().min(1),
 		bankName: zod.string().trim().min(1).optional(),
+		securityPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/),
 	})
 	.strict();
 
@@ -79,6 +99,15 @@ export const securityOnboardingSchema = zod.discriminatedUnion("action", [
 		})
 		.strict(),
 ]);
+
+export const securityPinVerificationSchema = zod
+	.object({
+		pin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/),
+	})
+	.strict();
 
 // Resolve-only bank lookup: previews the account name (Paystack) without
 // creating a subaccount or persisting anything.
@@ -149,7 +178,9 @@ export const becomeVendorSchema = zod
 	.object({
 		businessName: zod.string().trim().min(1).max(120),
 		vendorType: zod.enum(VendorType),
-		location: locationSchema,
+		email: zod.string().trim().email().optional(),
+		contactPhone: zod.string().trim().min(5).max(30).optional(),
+		location: locationSchema.optional(),
 	})
 	.strict();
 

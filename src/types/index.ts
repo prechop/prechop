@@ -62,6 +62,7 @@ export interface VendorProfile {
 	campusId?: string;
 	campusIds?: string[];
 	vendorType?: string;
+	bakeryBusinessType?: string;
 	businessName?: string;
 	description?: string;
 	email: string;
@@ -78,6 +79,13 @@ export interface VendorProfile {
 	locationType?: string;
 	categories: string[];
 	profileImageUrl?: string;
+	verificationDocuments?: Array<{
+		type: string;
+		key: string;
+		fileName?: string;
+		mimeType?: string;
+		uploadedAt?: string;
+	}>;
 	rating: number;
 	totalReviews: number;
 	totalOrders: number;
@@ -122,6 +130,7 @@ export interface DailyOrderItem {
 	maxPlate: any;
 	id: string;
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
 	snapshotImageUrl?: string;

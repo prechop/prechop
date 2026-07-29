@@ -9,6 +9,7 @@ import { resendProvider } from "@/server/providers";
 import { recordAudit } from "@/server/services/audit";
 import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
+import { hasRequiredVerificationDocuments } from "./verificationDocuments";
 
 const ErrNotSubmittable = new AppError(
 	"Complete every onboarding step before submitting for review.",
@@ -54,7 +55,10 @@ export async function submitVendorForReview({
 	// also requires menu items + timetable entries that live behind the
 	// active-vendor gate and would otherwise deadlock every applicant).
 	const checklist = onboardingChecklist({
-		hasBusinessIdentity: !!vendor.businessName,
+		hasBusinessIdentity:
+			!!vendor.businessName &&
+			!!vendor.vendorType &&
+			!!vendor.contactPhone,
 		hasCategory: (vendor.categories?.length ?? 0) > 0,
 		hasLocation:
 			vendor.locationType === "OFF_CAMPUS"
@@ -64,6 +68,7 @@ export async function submitVendorForReview({
 				: !!vendor.locationType && !!vendor.campusId,
 		hasBankDetails: !!vendor.paystackSubaccountCode,
 		hasProfileImage: !!vendor.profileImageUrl,
+		hasVerificationDocuments: hasRequiredVerificationDocuments(vendor),
 	});
 	if (!checklist.complete) {
 		throw ErrNotSubmittable;

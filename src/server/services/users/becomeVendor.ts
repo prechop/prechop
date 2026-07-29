@@ -38,7 +38,8 @@ export async function startVendorApplication({ userId }: { userId: string }) {
 		payload: {
 			userId,
 			...(user.campusId ? { campusId: user.campusId.toString() } : {}),
-			email: user.email,
+			email: vendorDraftEmail(user),
+			...(user.phone ? { contactPhone: user.phone } : {}),
 		},
 	});
 	if (!vendor)
@@ -65,13 +66,18 @@ export async function becomeVendor({
 }) {
 	const vendor = await startVendorApplication({ userId });
 	const vendorId = vendor._id.toString();
+	const user = await getUserByIdDB({ id: userId });
+	if (!user) throw ErrUserNotFound;
 
 	await updateVendorProfileDB({
 		id: vendorId,
 		payload: {
 			businessName: input.businessName,
 			vendorType: input.vendorType,
-			...input.location,
+			email: input.email ?? vendor.email ?? vendorDraftEmail(user),
+			contactPhone:
+				input.contactPhone ?? vendor.contactPhone ?? user.phone,
+			...(input.location ?? {}),
 		},
 	});
 	await recomputeVendorCompleteness({ vendorId, userId });
@@ -84,9 +90,13 @@ export async function becomeVendor({
 		newState: {
 			businessName: input.businessName,
 			vendorType: input.vendorType,
-			locationType: input.location.locationType,
+			locationType: input.location?.locationType,
 		},
 	});
 
 	return getVendorProfileByUserIdDB({ userId });
+}
+
+function vendorDraftEmail(user: { _id: string; email?: string }) {
+	return `vendor-${user._id.toString()}@draft.prechop.local`;
 }

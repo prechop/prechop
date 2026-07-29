@@ -8,7 +8,7 @@ const RATE_LIMIT_DISABLED =
 	process.env.DISABLE_RATE_LIMIT === "1" ||
 	process.env.DISABLE_RATE_LIMIT === "true";
 
-interface RateLimitOptions {
+export interface RateLimitOptions {
 	windowMs: number;
 	maxRequests: number;
 	keyGenerator?: (req: NextRequest | Request) => string;

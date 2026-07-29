@@ -2,7 +2,14 @@ import mongoose, { type ClientSession, type Model } from "mongoose";
 import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { ErrVendorNotFound, encrypt, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { LocationType, MenuCategory, VendorStatus, VendorType } from "../enums";
+import {
+	BakeryBusinessType,
+	LocationType,
+	MenuCategory,
+	VendorStatus,
+	VendorType,
+	VendorVerificationDocumentType,
+} from "../enums";
 import { IOperationType } from "../utils";
 import type { IVendorProfile, IVendorProfileCreateInput } from "./types";
 
@@ -30,6 +37,10 @@ const schema = new mongoose.Schema<any>(
 			index: true,
 		},
 		vendorType: { type: String, enum: Object.values(VendorType) },
+		bakeryBusinessType: {
+			type: String,
+			enum: Object.values(BakeryBusinessType),
+		},
 		businessName: { type: String, trim: true },
 		description: { type: String },
 		contactPhone: { type: String },
@@ -53,6 +64,22 @@ const schema = new mongoose.Schema<any>(
 		state: { type: String },
 		areaOrAddress: { type: String },
 		profileImageUrl: { type: String },
+		verificationDocuments: {
+			type: [
+				{
+					type: {
+						type: String,
+						enum: Object.values(VendorVerificationDocumentType),
+						required: true,
+					},
+					key: { type: String, required: true },
+					fileName: { type: String },
+					mimeType: { type: String },
+					uploadedAt: { type: Date, default: Date.now },
+				},
+			],
+			default: [],
+		},
 		categories: {
 			type: [String],
 			enum: Object.values(MenuCategory),
@@ -643,6 +670,47 @@ export async function getVendorWithSecretsDB({
 					...res,
 					id: res._id.toString(),
 				} as IVendorProfile)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Internal: fetch only the fields needed to verify sensitive-action PINs. */
+export async function getVendorSecuritySecretsByUserIdDB({
+	userId,
+	session,
+}: {
+	userId: string;
+	session?: ClientSession;
+}): Promise<Pick<
+	IVendorProfile,
+	| "_id"
+	| "id"
+	| "userId"
+	| "status"
+	| "securityOnboardingCompletedAt"
+	| "securityPinHash"
+> | null> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(userId)) return null;
+		const res = await VendorProfile.findOne(
+			{ userId: new mongoose.Types.ObjectId(userId), deleted: false },
+			null,
+			{ session },
+		)
+			.select("+securityPinHash")
+			.lean<IVendorProfile>();
+		return res
+			? {
+					_id: res._id,
+					id: res._id.toString(),
+					userId: res.userId,
+					status: res.status,
+					securityOnboardingCompletedAt:
+						res.securityOnboardingCompletedAt,
+					securityPinHash: res.securityPinHash,
+				}
 			: null;
 	} catch {
 		return null;

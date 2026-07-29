@@ -640,6 +640,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 	const fulfillmentAvailable =
 		(fulfillment === "PICKUP" && data.pickupAvailable) ||
 		(fulfillment === "DELIVERY" && data.deliveryAvailable);
+	const hasBuyerCampus = !!user?.campusId;
 	const canOrder =
 		orderable &&
 		itemCount > 0 &&
@@ -749,6 +750,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		if (!isAuthenticated) {
 			saveCartForLogin();
 			router.push(`/login?next=${encodeURIComponent(`/o/${token}`)}`);
+			return;
+		}
+		if (!hasBuyerCampus) {
+			toast("Choose your campus in Account before checkout.", "error");
 			return;
 		}
 		if (itemCount > 0 && !optionsValid) {
@@ -1415,13 +1420,15 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 									: "Ordering closed"
 								: itemCount === 0
 									? "Select items"
-									: !optionsValid
-										? "Complete required options"
-										: // The buyer must never be sent to Paystack against a
-											// total we could not compute. See the fee note at the top.
-											!canQuoteFee
-											? "Fees unavailable — try again"
-											: `Pay ${formatKobo(checkoutTotal)} →`}
+									: !hasBuyerCampus
+										? "Choose campus in Account"
+										: !optionsValid
+											? "Complete required options"
+											: // The buyer must never be sent to Paystack against a
+												// total we could not compute. See the fee note at the top.
+												!canQuoteFee
+												? "Fees unavailable — try again"
+												: `Pay ${formatKobo(checkoutTotal)} →`}
 					</Button>
 				</Stack>
 			</Sticky>

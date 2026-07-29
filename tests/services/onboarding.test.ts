@@ -7,6 +7,8 @@ import {
 	updateVendorProfileDB,
 	upsertTimetableEntryDB,
 	VendorStatus,
+	VendorType,
+	VendorVerificationDocumentType,
 } from "@/server/models";
 import {
 	approveVendor,
@@ -57,6 +59,17 @@ async function makeOnboardedVendor({
 		id: vendorId,
 		payload: {
 			profileImageUrl: "https://cdn.test/v.png",
+			vendorType: VendorType.STUDENT_COOK,
+			contactPhone: "+2348012345678",
+			verificationDocuments: [
+				{
+					type: VendorVerificationDocumentType.SCHOOL_ID,
+					key: "vendor-verifications/school-id.pdf",
+					fileName: "school-id.pdf",
+					mimeType: "application/pdf",
+					uploadedAt: new Date(),
+				},
+			],
 			categories: [MenuCategory.MEALS],
 			locationType: LocationType.ON_CAMPUS,
 			hostelOrStallName: "Block C",
@@ -128,6 +141,17 @@ describe("vendor onboarding gate", () => {
 			id: vendorId,
 			payload: {
 				profileImageUrl: "https://cdn.test/v.png",
+				vendorType: VendorType.STUDENT_COOK,
+				contactPhone: "+2348012345678",
+				verificationDocuments: [
+					{
+						type: VendorVerificationDocumentType.SCHOOL_ID,
+						key: "vendor-verifications/school-id.pdf",
+						fileName: "school-id.pdf",
+						mimeType: "application/pdf",
+						uploadedAt: new Date(),
+					},
+				],
 				categories: [MenuCategory.MEALS],
 				paystackSubaccountCode: "ACCT_test",
 			},

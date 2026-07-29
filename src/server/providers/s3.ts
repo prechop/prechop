@@ -23,7 +23,11 @@ const s3Client = new S3Client({
 	},
 });
 
-const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_DOCUMENT_MIME_TYPES = [
+	...ALLOWED_IMAGE_MIME_TYPES,
+	"application/pdf",
+];
 const PRESIGNED_UPLOAD_EXPIRY_SECONDS = 300; // 5 min
 const PRESIGNED_READ_EXPIRY_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
@@ -36,13 +40,18 @@ export interface PresignedUploadResult {
 class S3Provider {
 	/** Pre-signed URL the client uploads directly to (file never hits our API). */
 	async getPresignedUploadUrl(
-		folder: "menu-items" | "vendor-profiles",
+		folder: "menu-items" | "vendor-profiles" | "vendor-verifications",
 		mimeType: string,
 	): Promise<PresignedUploadResult> {
-		if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+		const allowed =
+			folder === "vendor-verifications"
+				? ALLOWED_DOCUMENT_MIME_TYPES
+				: ALLOWED_IMAGE_MIME_TYPES;
+		if (!allowed.includes(mimeType)) {
 			throw new Error(`Unsupported file type: ${mimeType}`);
 		}
-		const extension = mimeType.split("/")[1];
+		const extension =
+			mimeType === "application/pdf" ? "pdf" : mimeType.split("/")[1];
 		const key = `${folder}/${crypto.randomUUID()}.${extension}`;
 		const command = new PutObjectCommand({
 			Bucket: AWS_S3_BUCKET_NAME,

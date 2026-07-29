@@ -24,11 +24,20 @@ interface QueueVendor {
 	businessName?: string;
 	email: string;
 	vendorType?: string;
+	bakeryBusinessType?: string;
 	description?: string;
 	categories: string[];
 	state?: string;
 	areaOrAddress?: string;
 	profileImageUrl?: string;
+	verificationDocuments?: {
+		type: string;
+		label?: string;
+		fileName?: string;
+		mimeType?: string;
+		uploadedAt?: string;
+		reviewUrl?: string;
+	}[];
 	profileCompleteness: number;
 	submittedAt?: string;
 	bankName?: string;
@@ -51,6 +60,23 @@ const Layout = styled.div`
 	@media (max-width: 900px) {
 		grid-template-columns: 1fr;
 	}
+`;
+const DocumentList = styled.div`
+	display: grid;
+	gap: 8px;
+`;
+const DocumentLink = styled.a`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	color: var(--pc-color-primary);
+	font-size: 13px;
+	font-weight: 700;
 `;
 const List = styled(Stack)`
 	gap: 10px;
@@ -210,6 +236,24 @@ export default function AdminOnboardingWrapper() {
 												"—"}
 										</span>
 									</Field>
+									{submission.vendor.vendorType ===
+										"BAKERY" && (
+										<Field>
+											<span>Bakery type</span>
+											<span>
+												{submission.vendor
+													.bakeryBusinessType ?? "—"}
+											</span>
+										</Field>
+									)}
+									<Field>
+										<span>Verification documents</span>
+										<span>
+											{submission.vendor
+												.verificationDocuments
+												?.length ?? 0}
+										</span>
+									</Field>
 									<Field>
 										<span>Categories</span>
 										<span>
@@ -248,6 +292,33 @@ export default function AdminOnboardingWrapper() {
 										</span>
 									</Field>
 								</div>
+								<DocumentList>
+									{submission.vendor.verificationDocuments
+										?.length ? (
+										submission.vendor.verificationDocuments.map(
+											(doc) => (
+												<DocumentLink
+													key={`${doc.type}-${doc.uploadedAt}`}
+													href={doc.reviewUrl}
+													target="_blank"
+													rel="noreferrer"
+												>
+													<span>
+														{doc.label ?? doc.type}
+														{doc.fileName
+															? ` - ${doc.fileName}`
+															: ""}
+													</span>
+													<span>Open document</span>
+												</DocumentLink>
+											),
+										)
+									) : (
+										<Text $muted $size={13}>
+											No verification documents uploaded.
+										</Text>
+									)}
+								</DocumentList>
 								{submission.vendor.description && (
 									<Text $muted $size={14}>
 										{submission.vendor.description}

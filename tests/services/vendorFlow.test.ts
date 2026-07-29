@@ -4,6 +4,8 @@ import {
 	LocationType,
 	MenuCategory,
 	VendorStatus,
+	VendorType,
+	VendorVerificationDocumentType,
 } from "@/server/models/enums";
 import { getVendorProfileByIdDB } from "@/server/models/vendorProfiles";
 import { resendProvider } from "@/server/providers/resend";
@@ -163,6 +165,17 @@ describe("vendor onboarding services", () => {
 			id: vendorId,
 			payload: {
 				profileImageUrl: "https://img.test/x.jpg",
+				vendorType: VendorType.STUDENT_COOK,
+				contactPhone: "+2348012345678",
+				verificationDocuments: [
+					{
+						type: VendorVerificationDocumentType.SCHOOL_ID,
+						key: "vendor-verifications/school-id.pdf",
+						fileName: "school-id.pdf",
+						mimeType: "application/pdf",
+						uploadedAt: new Date(),
+					},
+				],
 				paystackSubaccountCode: "ACCT_x",
 				locationType: LocationType.ON_CAMPUS,
 				campusId,

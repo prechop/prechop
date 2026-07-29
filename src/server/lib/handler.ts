@@ -9,6 +9,7 @@ import { csrfReject } from "./csrf";
 import {
 	applyRateLimitHeaders,
 	enforceRateLimit,
+	type RateLimitOptions,
 	type RateLimitResult,
 } from "./rateLimit";
 import { fail, handleError } from "./response";
@@ -17,7 +18,7 @@ const DEFAULT_RATE_LIMIT = { windowMs: 60 * 1000, maxRequests: 100 };
 
 interface HandlerOptions {
 	route: string;
-	rateLimit?: { windowMs: number; maxRequests: number } | false;
+	rateLimit?: RateLimitOptions | false;
 	/**
 	 * Skip Origin/Referer CSRF validation. Only for routes that legitimately
 	 * accept non-browser callers (the Paystack webhook).
