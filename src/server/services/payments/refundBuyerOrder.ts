@@ -1,4 +1,4 @@
-import { issueRefund } from "../refunds";
+import { issueRefund, type IssueRefundResult } from "../refunds";
 
 /**
  * Refund a paid order through Paystack, then flip the payment + order to
@@ -21,6 +21,6 @@ export async function refundBuyerOrder({
 	paystackRef: string;
 	amountKobo: number;
 	reason?: string;
-}): Promise<void> {
-	await issueRefund({ orderId, paystackRef, amountKobo, reason });
+}): Promise<IssueRefundResult> {
+	return issueRefund({ orderId, paystackRef, amountKobo, reason });
 }

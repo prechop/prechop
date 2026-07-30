@@ -104,6 +104,13 @@ async function assertSuccessfulPayment(orderId: string) {
 	}
 }
 
+async function hasSuccessfulVerifiedPayment(orderId: string): Promise<boolean> {
+	const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
+	return (
+		!!payment?.webhookVerified && payment.status === PaymentStatus.SUCCESS
+	);
+}
+
 export async function getBuyerHandoverCredential({
 	buyerId,
 	orderId,
@@ -156,6 +163,7 @@ export async function getAdminHandoverVerificationDetails({
 		order.fulfillmentType,
 		order.handoverCredentialUsedAt,
 	);
+	const paymentVerified = await hasSuccessfulVerifiedPayment(orderId);
 
 	return {
 		orderId: order._id.toString(),
@@ -163,6 +171,7 @@ export async function getAdminHandoverVerificationDetails({
 		fulfillmentType: order.fulfillmentType,
 		status: order.status,
 		isPaid: SETTLED_ORDER_STATUSES.includes(order.status),
+		paymentVerified,
 		handoverEligible,
 		qrGenerated: !!order.handoverTokenHash,
 		pinGenerated: !!order.handoverPinHash,

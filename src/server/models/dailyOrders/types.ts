@@ -95,6 +95,7 @@ export interface IDailyOrder {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	totalOrdersCount: number;
+	activeBuyerOrdersCount?: number;
 	items: IDailyOrderItem[];
 	deleted: boolean;
 	createdAt: Date;

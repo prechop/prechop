@@ -11,7 +11,7 @@ import {
 import { databaseResponseTimeHistogram } from "../../metrics";
 import type { IJwtPayload } from "../../types";
 import { IOperationType } from "../utils";
-import type { IUser, IUserCreateInput } from "./types";
+import type { IRefreshTokenEntry, IUser, IUserCreateInput } from "./types";
 import {
 	EMAIL_MAX_LENGTH,
 	generateAuthToken,
@@ -73,6 +73,7 @@ const schema = new mongoose.Schema<any>(
 					_id: false,
 					refreshToken: { type: String, required: true },
 					deadline: { type: Date, required: true },
+					absoluteDeadline: { type: Date, required: false },
 				},
 			],
 			select: false,
@@ -84,6 +85,7 @@ const schema = new mongoose.Schema<any>(
 );
 
 schema.index({ "refreshTokens.deadline": 1 });
+schema.index({ "refreshTokens.absoluteDeadline": 1 });
 
 const notDeletedFilter = {
 	$or: [{ deleted: { $ne: true } }, { deleted: { $exists: false } }],
@@ -104,11 +106,13 @@ schema.pre("aggregate", function () {
 
 schema.methods.generateAuthToken = async function (
 	ip?: string,
+	options?: { refreshTokenAbsoluteExpiresIn?: Date },
 ): Promise<IJwtPayload> {
 	const result = await generateAuthToken({
 		userId: this._id.toString(),
 		ip: ip || "",
 		shouldRegenerateRefreshToken: true,
+		refreshTokenAbsoluteExpiresIn: options?.refreshTokenAbsoluteExpiresIn,
 	});
 	if (!result) throw ErrInvalidAction;
 
@@ -125,6 +129,7 @@ schema.methods.generateAuthToken = async function (
 		{
 			refreshToken: result.refreshToken,
 			deadline: result.refreshTokenExpiresIn,
+			absoluteDeadline: result.refreshTokenAbsoluteExpiresIn,
 		},
 	];
 	await this.save();
@@ -713,18 +718,36 @@ export async function reLoginUserWithRefreshTokenDB({
 			_id: new mongoose.Types.ObjectId(id),
 			...notDeletedFilter,
 			refreshTokens: {
-				$elemMatch: { refreshToken, deadline: { $gt: now } },
+				$elemMatch: {
+					refreshToken,
+					deadline: { $gt: now },
+					$or: [
+						{ absoluteDeadline: { $exists: false } },
+						{ absoluteDeadline: { $gt: now } },
+					],
+				},
 			},
 		} as unknown as Parameters<typeof User.findOneAndUpdate>[0];
 		const claimed = await User.findOneAndUpdate(
 			filter,
 			{ $pull: { refreshTokens: { refreshToken } } },
-			{ session, returnDocument: "after" },
+			{ session, returnDocument: "before" },
 		).select("+refreshTokens");
 
 		if (!claimed) throw ErrUserNotFound;
 
-		const result = await claimed.generateAuthToken(ip);
+		const refreshTokens = (claimed.refreshTokens ??
+			[]) as IRefreshTokenEntry[];
+		const claimedToken = refreshTokens.find(
+			(entry) => entry.refreshToken === refreshToken,
+		);
+		claimed.refreshTokens = refreshTokens.filter(
+			(entry) => entry.refreshToken !== refreshToken,
+		);
+		const result = await claimed.generateAuthToken(ip, {
+			refreshTokenAbsoluteExpiresIn:
+				claimedToken?.absoluteDeadline ?? claimedToken?.deadline,
+		});
 		timer({
 			operation: IOperationType.Update,
 			collection: collectionName,
@@ -772,8 +795,22 @@ export async function removeExpiredUsersTokensDB(): Promise<boolean> {
 	try {
 		const now = new Date();
 		const res = await User.updateMany(
-			{ "refreshTokens.deadline": { $lt: now } },
-			{ $pull: { refreshTokens: { deadline: { $lt: now } } } },
+			{
+				$or: [
+					{ "refreshTokens.deadline": { $lt: now } },
+					{ "refreshTokens.absoluteDeadline": { $lt: now } },
+				],
+			},
+			{
+				$pull: {
+					refreshTokens: {
+						$or: [
+							{ deadline: { $lt: now } },
+							{ absoluteDeadline: { $lt: now } },
+						],
+					},
+				},
+			},
 		);
 		return res.acknowledged;
 	} catch {

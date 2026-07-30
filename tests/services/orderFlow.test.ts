@@ -28,6 +28,7 @@ import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import { listNotificationsDB } from "@/server/models/notifications";
 import { paystackProvider } from "@/server/providers";
 import { cancelOrderAsBuyer } from "@/server/services/buyerOrders/cancel";
+import { revealBuyerContactForVendor } from "@/server/services/buyerOrders/contactAccess";
 import {
 	isNoShowOrFailedDeliveryFinanciallySettled,
 	markDeliveryFailed,
@@ -82,6 +83,11 @@ async function makeOrder({
 	status,
 	fulfillmentType = FulfillmentType.PICKUP,
 	acceptanceDeadline,
+	deliveryHostelName,
+	deliveryRoomNumber,
+	deliveryAdditionalInfo,
+	deliveryPhone,
+	customerMessage,
 }: {
 	vendorId: string;
 	buyerId: string;
@@ -89,6 +95,11 @@ async function makeOrder({
 	status?: OrderStatus;
 	fulfillmentType?: FulfillmentType;
 	acceptanceDeadline?: Date;
+	deliveryHostelName?: string;
+	deliveryRoomNumber?: string;
+	deliveryAdditionalInfo?: string;
+	deliveryPhone?: string;
+	customerMessage?: string;
 }) {
 	const itemId = oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
@@ -100,6 +111,21 @@ async function makeOrder({
 			buyerId,
 			campusId,
 			fulfillmentType,
+			deliveryHostelName,
+			deliveryRoomNumber,
+			deliveryAdditionalInfo,
+			deliveryFullAddress:
+				fulfillmentType === FulfillmentType.DELIVERY
+					? [
+							deliveryHostelName,
+							deliveryRoomNumber,
+							deliveryAdditionalInfo,
+						]
+							.filter(Boolean)
+							.join(", ")
+					: undefined,
+			deliveryPhone,
+			customerMessage,
 			subtotalKobo: 150000,
 			deliveryFeeKobo: 0,
 			platformFeeKobo: 5000,
@@ -182,6 +208,113 @@ describe("buyerOrders queries", () => {
 			dailyOrderId: order.dailyOrderId.toString(),
 		});
 		expect(list.length).toBe(1);
+	});
+
+	it("redacts delivery details until an accepted delivery order is revealed", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryRoomNumber: "B12",
+			deliveryAdditionalInfo: "Near the back gate",
+			deliveryPhone: "08012345678",
+			customerMessage: "Please call when you arrive.",
+		});
+
+		const list = await getVendorOrdersForDailyOrder({
+			vendorUserId: userId,
+			dailyOrderId: order.dailyOrderId.toString(),
+		});
+		expect(list[0].deliveryFullAddress).toBeUndefined();
+		expect(list[0].deliveryPhone).toBeUndefined();
+		expect(list[0].customerMessage).toBeUndefined();
+
+		const revealed = await revealBuyerContactForVendor({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+		});
+		expect(revealed.buyerName).toBe("Test User");
+		expect(revealed.address).toBe("Kofo Hall, B12, Near the back gate");
+		expect(revealed.deliveryRoomNumber).toBe("B12");
+		expect(revealed.deliveryAdditionalInfo).toBe("Near the back gate");
+		expect(revealed.phone).toBe("+2348012345678");
+		expect(revealed.checkoutNote).toBe("Please call when you arrive.");
+	});
+
+	it("reveals accepted delivery contact without inventing a checkout note", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Moremi Hall",
+			deliveryPhone: "+2348012345678",
+		});
+
+		const revealed = await revealBuyerContactForVendor({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+		});
+		expect(revealed.address).toBe("Moremi Hall");
+		expect(revealed.checkoutNote).toBeUndefined();
+	});
+
+	it("does not reveal delivery details before acceptance, for pickup, or to another vendor", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const otherVendor = await makeVendor();
+		const buyer = await makeUser();
+		const pendingDelivery = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryPhone: "+2348012345678",
+		});
+		const acceptedPickup = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		const acceptedDelivery = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryPhone: "+2348012345678",
+		});
+
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: userId,
+				orderId: pendingDelivery._id.toString(),
+			}),
+		).rejects.toThrow(/accepted orders/i);
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: userId,
+				orderId: acceptedPickup._id.toString(),
+			}),
+		).rejects.toThrow(/delivery orders/i);
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: otherVendor.userId,
+				orderId: acceptedDelivery._id.toString(),
+			}),
+		).rejects.toThrow();
 	});
 });
 
@@ -574,6 +707,7 @@ describe("handover confirmation", () => {
 		expect(before.qrGenerated).toBe(false);
 		expect(before.pinGenerated).toBe(false);
 		expect(before.handoverEligible).toBe(true);
+		expect(before.paymentVerified).toBe(true);
 
 		const adminUserId = oid();
 		const revealed = await revealAdminHandoverPin({

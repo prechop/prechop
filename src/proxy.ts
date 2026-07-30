@@ -82,6 +82,8 @@ function buildRefreshRedirect(request: NextRequest, fallbackNext: string): URL {
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 	const state = await resolveAuthState(request);
+	const refreshFailed =
+		request.nextUrl.searchParams.get("refresh") === "failed";
 
 	// Only a verified access token counts as authenticated here. A refresh
 	// cookie alone can be stale, so /api/auth/refresh verifies it before the
@@ -97,6 +99,12 @@ export async function proxy(request: NextRequest) {
 		}
 
 		return NextResponse.redirect(new URL("/", request.url));
+	}
+
+	if (canAttemptRefresh && AUTH_ROUTES.includes(pathname) && !refreshFailed) {
+		return NextResponse.redirect(
+			buildRefreshRedirect(request, "/marketplace"),
+		);
 	}
 
 	if (!isAuthenticated && isProtectedRoute(pathname)) {

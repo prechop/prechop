@@ -27,6 +27,7 @@ import {
 } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
+import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
 interface AdminHandoverDetails {
@@ -35,6 +36,7 @@ interface AdminHandoverDetails {
 	status: OrderStatus;
 	fulfillmentType: "PICKUP" | "DELIVERY";
 	isPaid: boolean;
+	paymentVerified?: boolean;
 	handoverEligible: boolean;
 	qrGenerated: boolean;
 	pinGenerated: boolean;
@@ -52,6 +54,19 @@ interface AdminHandoverDetails {
 		actorId?: string;
 		note?: string;
 	}>;
+}
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+	if (typeof error === "object" && error !== null && "response" in error) {
+		const response = (
+			error as { response?: { data?: { message?: unknown } } }
+		).response;
+		if (typeof response?.data?.message === "string") {
+			return response.data.message;
+		}
+	}
+	if (error instanceof Error && error.message) return error.message;
+	return fallback;
 }
 
 const STATUSES: OrderStatus[] = [
@@ -245,6 +260,10 @@ export default function AdminOrdersWrapper() {
 	const completedCount = orders.filter(
 		(o) => o.status === "COMPLETED",
 	).length;
+	const canRevealHandoverPin =
+		!!handover?.handoverEligible &&
+		handover.paymentVerified !== false &&
+		!handover.credentialUsedAt;
 	const grossKobo = orders
 		.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED")
 		.reduce((s, o) => s + o.totalKobo, 0);
@@ -260,8 +279,8 @@ export default function AdminOrdersWrapper() {
 			}>(api.post(`/admin/orders/${detailId}/handover/reveal-pin`));
 			setRevealedPin(result.pin);
 			toast("PIN revealed and audit logged.", "success");
-		} catch {
-			toast("Could not reveal PIN.", "error");
+		} catch (error) {
+			toast(apiErrorMessage(error, "Could not reveal PIN."), "error");
 		} finally {
 			setRevealBusy(false);
 		}
@@ -559,6 +578,13 @@ export default function AdminOrdersWrapper() {
 										</ItemsPanel>
 									</Stack>
 
+									<OrderConversationPanel
+										orderId={detail.id}
+										admin
+										readOnly
+										title="Order messages"
+									/>
+
 									<Stack $gap={0}>
 										<KV>
 											<Text $muted>Subtotal</Text>
@@ -684,6 +710,16 @@ export default function AdminOrdersWrapper() {
 													</KV>
 													<KV>
 														<Text $muted>
+															Payment verified
+														</Text>
+														<Text $weight={600}>
+															{handover.paymentVerified
+																? "Yes"
+																: "No"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
 															Confirmation method
 														</Text>
 														<Text $weight={600}>
@@ -734,14 +770,33 @@ export default function AdminOrdersWrapper() {
 													</Row>
 												</ItemsPanel>
 											) : can("order:handover:reveal") ? (
-												<Button
-													$variant="secondary"
-													$size="sm"
-													$loading={revealBusy}
-													onClick={revealPin}
-												>
-													Reveal PIN
-												</Button>
+												<Stack $gap={8}>
+													<Button
+														$variant="secondary"
+														$size="sm"
+														$loading={revealBusy}
+														disabled={
+															!canRevealHandoverPin
+														}
+														onClick={revealPin}
+													>
+														Reveal PIN
+													</Button>
+													{handover &&
+														!canRevealHandoverPin && (
+															<Text
+																$muted
+																$size={13}
+															>
+																PIN reveal is
+																available only
+																after payment is
+																verified and the
+																order reaches
+																handover.
+															</Text>
+														)}
+												</Stack>
 											) : (
 												<Text $muted $size={13}>
 													You do not have permission

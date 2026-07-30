@@ -5,6 +5,7 @@ import {
 	koboToNaira,
 	tryDecrypt,
 } from "../../constants";
+import type { IBuyerOrder } from "../../models";
 import {
 	claimPaymentWebhookDB,
 	getBuyerOrderByIdDB,
@@ -18,7 +19,10 @@ import {
 } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { commitSlots } from "../buyerOrders/slots";
-import { createUserNotification } from "../notifications";
+import {
+	createUserNotification,
+	sendVendorNewPaidOrderEmail,
+} from "../notifications";
 import { issueRefund } from "../refunds";
 
 interface PaystackChargeEvent {
@@ -139,12 +143,7 @@ export async function handlePaystackWebhook({
 	return { received: true, orderNumber: order.orderNumber };
 }
 
-async function notifyParties(order: {
-	orderNumber: string;
-	vendorId: string;
-	buyerId: string;
-	totalKobo: number;
-}): Promise<void> {
+async function notifyParties(order: IBuyerOrder): Promise<void> {
 	let vendorName = "";
 	// The vendor and buyer legs are isolated on purpose. They used to share one
 	// try/catch, which made the buyer — who has just parted with money and is the
@@ -156,7 +155,7 @@ async function notifyParties(order: {
 		});
 		vendorName = vendor?.businessName ?? "";
 		if (vendor?.userId) {
-			await createUserNotification({
+			const notification = await createUserNotification({
 				userId: vendor.userId.toString(),
 				title: "New paid order",
 				body: `Order ${order.orderNumber} • ₦${koboToNaira(order.totalKobo).toLocaleString()}`,
@@ -164,10 +163,25 @@ async function notifyParties(order: {
 				dedupeKey: `order:${order.orderNumber}:vendor:paid`,
 				data: { orderNumber: order.orderNumber },
 			});
+			if (notification.created) {
+				void sendVendorNewPaidOrderEmail({
+					notification: notification.notification,
+					vendor,
+					order,
+				}).catch((error) =>
+					console.error(
+						`[webhook] vendor new-order email failed order=${order.orderNumber}:`,
+						error,
+					),
+				);
+			}
 			const vendorUser = await getUserByIdWithPhoneDB({
 				id: vendor.userId.toString(),
 			});
-			const phone = vendorUser?.phone ? tryDecrypt(vendorUser.phone) : "";
+			const phone =
+				notification.created && vendorUser?.phone
+					? tryDecrypt(vendorUser.phone)
+					: "";
 			if (phone) {
 				sendchampProvider
 					.sendVendorNewOrder(

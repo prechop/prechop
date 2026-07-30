@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styled from "styled-components";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
 	Badge,
 	Card,
@@ -20,6 +20,7 @@ import {
 	useVendorStatus,
 	VendorStatusBadge,
 } from "@/components";
+import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
 import {
@@ -28,10 +29,12 @@ import {
 	normalizeMenuCategory,
 } from "@/constants/menuCategories";
 import { useAuth } from "@/hooks/Auth/useAuth";
+import { useToast } from "@/hooks/useToast";
 import type {
 	Campus,
 	DailyOrder,
 	MarketplaceVendor,
+	PublicUser,
 	VendorSearchHit,
 } from "@/types";
 
@@ -448,15 +451,18 @@ function CampusFilter({
 	campuses,
 	value,
 	onChange,
+	disabled,
 }: {
 	campuses: Campus[];
 	value: string;
 	onChange: (value: string) => void;
+	disabled?: boolean;
 }) {
 	return (
 		<CampusPickerWrap>
 			<CampusSelect
 				value={value}
+				disabled={disabled}
 				onChange={(event) => onChange(event.target.value)}
 				aria-label="Filter marketplace by campus"
 			>
@@ -541,12 +547,14 @@ function filterMarketplaceRows<T extends MarketplaceVendor>(
 }
 
 export default function MarketplaceWrapper() {
-	const { user, isLoading: authLoading } = useAuth();
+	const { user, isLoading: authLoading, refresh } = useAuth();
+	const { toast } = useToast();
 	const { data: campuses, isLoading: campusesLoading } = useSWR<Campus[]>(
 		"/campuses",
 		fetcher,
 	);
 	const [selectedCampusId, setSelectedCampusId] = useState("");
+	const [savingCampusId, setSavingCampusId] = useState<string | null>(null);
 	const [selectedCategory, setSelectedCategory] =
 		useState<CategoryFilterValue>("ALL");
 	const [locationNotice, setLocationNotice] = useState("");
@@ -629,10 +637,32 @@ export default function MarketplaceWrapper() {
 		);
 	}, [activeCampuses, user]);
 
+	async function saveAccountCampus(campusId: string) {
+		if (!user || !campusId || campusId === user.campusId) return;
+		setSavingCampusId(campusId);
+		try {
+			const response = await api.patch("/users/me/campus", { campusId });
+			const updatedUser = response.data?.data as PublicUser | undefined;
+			if (updatedUser) {
+				await globalMutate("/users/me", updatedUser, {
+					revalidate: false,
+				});
+			} else {
+				refresh();
+			}
+			toast("Campus saved to your account.", "success");
+		} catch (error) {
+			toast(errMsg(error), "error");
+		} finally {
+			setSavingCampusId(null);
+		}
+	}
+
 	function handleCampusChange(value: string) {
 		manualCampusRef.current = true;
 		setLocationNotice("");
 		setSelectedCampusId(value);
+		void saveAccountCampus(value);
 	}
 
 	if (availabilityLoading || authLoading || campusesLoading || isLoading) {
@@ -647,6 +677,7 @@ export default function MarketplaceWrapper() {
 							campuses={activeCampuses}
 							value={selectedCampusId}
 							onChange={handleCampusChange}
+							disabled={!!savingCampusId}
 						/>
 					}
 				/>
@@ -694,6 +725,7 @@ export default function MarketplaceWrapper() {
 						campuses={activeCampuses}
 						value={selectedCampusId}
 						onChange={handleCampusChange}
+						disabled={!!savingCampusId}
 					/>
 				}
 			/>
@@ -744,6 +776,11 @@ export default function MarketplaceWrapper() {
 			)}
 		</Stack>
 	);
+}
+
+function errMsg(error: unknown): string {
+	const err = error as { response?: { data?: { message?: string } } };
+	return err?.response?.data?.message ?? "Could not save campus.";
 }
 
 /**

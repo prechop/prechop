@@ -1,7 +1,24 @@
-import { listUsersDB } from "../../models";
+import { listNotificationsDB, listUsersDB } from "../../models";
 import { recordAudit } from "../audit";
 import { createUserNotification } from "../notifications/createUserNotification";
 import type { AdminActor } from "./vendors";
+
+export function listAdminNotificationInbox({
+	adminUserId,
+	limit,
+	offset,
+}: {
+	adminUserId: string;
+	limit?: number;
+	offset?: number;
+}) {
+	return listNotificationsDB({
+		userId: adminUserId,
+		type: "ADMIN_ATTENTION",
+		limit,
+		offset,
+	});
+}
 
 /**
  * Broadcast an in-app (+ push) notification to users, optionally scoped to a

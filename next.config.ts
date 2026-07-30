@@ -30,18 +30,6 @@ const nextConfig: NextConfig = {
 			},
 		];
 	},
-	async rewrites() {
-		return [
-			{
-				source: "/api/auth/google/start",
-				destination: "/api/auth/google",
-			},
-			{
-				source: "/api/auth/google/callback",
-				destination: "/api/auth/google",
-			},
-		];
-	},
 };
 
 export default nextConfig;

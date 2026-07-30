@@ -2,13 +2,17 @@ import mongoose from "mongoose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateOrderNumber } from "@/server/constants/orderNumber";
 import {
+	backfillMissingReadyDeadlinesDB,
 	countBuyerOrdersDB,
 	createBuyerOrderDB,
 	deleteBuyerOrderHardDB,
 	getBuyerOrderByIdDB,
 	getBuyerOrderByNumberDB,
 	listBuyerOrdersByBuyerDB,
+	listLateOrdersForEscalationDB,
+	listReadyDeadlineDueOrdersDB,
 	markBuyerOrderCancelledDB,
+	markBuyerOrderLateDB,
 	markBuyerOrderPaidDB,
 	markBuyerOrderRefundedDB,
 	setBuyerOrderStatusDB,
@@ -96,6 +100,56 @@ describe("buyerOrders model", () => {
 			fromStatuses: [OrderStatus.PENDING_PAYMENT],
 		});
 		expect(blocked).toBeNull();
+	});
+
+	it("detects accepted prep deadlines when late marker fields are null", async () => {
+		const acceptedAt = new Date("2026-07-29T10:00:00.000Z");
+		const now = new Date("2026-07-29T10:03:00.000Z");
+		const order = await createBuyerOrderDB({
+			payload: makePayload({
+				items: [
+					{
+						dailyOrderItemId: oid(),
+						menuItemId: oid(),
+						snapshotName: "Quick rice",
+						snapshotPriceKobo: 150000,
+						snapshotPrepMin: 2,
+						quantity: 1,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			}),
+		});
+		await setBuyerOrderStatusDB({
+			id: order!._id.toString(),
+			status: OrderStatus.ACCEPTED,
+			acceptedAt,
+		});
+
+		const backfilled = await backfillMissingReadyDeadlinesDB();
+		expect(backfilled).toBeGreaterThanOrEqual(1);
+
+		const due = await listReadyDeadlineDueOrdersDB({ now });
+		expect(
+			due.some((row) => row._id.toString() === order!._id.toString()),
+		).toBe(true);
+
+		const marked = await markBuyerOrderLateDB({
+			id: order!._id.toString(),
+			now,
+		});
+		expect(marked!.lateMarkedAt).toBeTruthy();
+
+		const escalationDue = await listLateOrdersForEscalationDB({
+			now: new Date("2026-07-29T10:33:00.000Z"),
+			delayMs: 30 * 60 * 1000,
+		});
+		expect(
+			escalationDue.some(
+				(row) => row._id.toString() === order!._id.toString(),
+			),
+		).toBe(true);
 	});
 
 	it("cancels and refunds", async () => {

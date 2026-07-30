@@ -182,6 +182,7 @@ export async function getMyDailyOrders({
 	to,
 	limit,
 	offset,
+	includeFulfillmentQueue,
 }: {
 	userId: string;
 	status?: DailyOrderStatus;
@@ -192,6 +193,7 @@ export async function getMyDailyOrders({
 	to?: Date;
 	limit?: number;
 	offset?: number;
+	includeFulfillmentQueue?: boolean;
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw ErrForbidden;
@@ -203,6 +205,7 @@ export async function getMyDailyOrders({
 		to,
 		limit,
 		offset,
+		includeFulfillmentQueue,
 	});
 }
 

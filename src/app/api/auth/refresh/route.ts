@@ -9,10 +9,10 @@ import {
 	clearAuthCookiesOnResponse,
 	getClientIp,
 	getCookieValue,
+	getRequestCookieValue,
 	handleError,
 	ok,
 	REFRESH_COOKIE,
-	setAuthCookies,
 	setAuthCookiesOnResponse,
 	withApiHandler,
 } from "@/server/lib";
@@ -27,7 +27,9 @@ function cleanNext(value: string | null): string {
 }
 
 async function refreshSession(req: Request) {
-	const refreshToken = await getCookieValue(REFRESH_COOKIE);
+	const refreshToken =
+		getRequestCookieValue(req, REFRESH_COOKIE) ??
+		(await getCookieValue(REFRESH_COOKIE));
 	if (!refreshToken) throw ErrUnauthorized;
 	const decoded = await decodeJwtToken({ refreshToken }).catch(() => null);
 	if (!decoded) throw ErrUnauthorized;
@@ -37,7 +39,6 @@ async function refreshSession(req: Request) {
 		ip: decoded.ip || getClientIp(req),
 	});
 	if (!token) throw ErrUnauthorized;
-	await setAuthCookies(token);
 	return token;
 }
 
@@ -75,6 +76,7 @@ export const GET = withApiHandler(
 			}
 			const login = new URL("/login", req.url);
 			login.searchParams.set("next", next);
+			login.searchParams.set("refresh", "failed");
 			const response = NextResponse.redirect(login);
 			clearAuthCookiesOnResponse(response);
 			return response;

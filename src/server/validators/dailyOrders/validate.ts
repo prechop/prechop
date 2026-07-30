@@ -155,6 +155,10 @@ export const myDailyOrdersQuerySchema = z
 		to: z.coerce.date().optional(),
 		limit: z.coerce.number().int().positive().max(100).optional(),
 		offset: z.coerce.number().int().min(0).optional(),
+		includeFulfillmentQueue: z
+			.union([z.literal("true"), z.literal("1")])
+			.optional()
+			.transform(Boolean),
 	})
 	.strict()
 	.refine((v) => !(v.from && v.to) || v.from <= v.to, {

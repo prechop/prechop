@@ -25,6 +25,8 @@ export const POST = withApiHandler(
 				buyerId: auth.userId,
 				orderId,
 				reason: parsed.data.reason,
+				reasonCode: parsed.data.reasonCode,
+				explanation: parsed.data.explanation,
 			});
 			return ok(result);
 		} catch (error) {

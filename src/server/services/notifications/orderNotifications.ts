@@ -2,6 +2,10 @@ import { tryDecrypt } from "../../constants";
 import { getUserByIdWithPhoneDB } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { createUserNotification } from "./createUserNotification";
+import {
+	sendBuyerImportantOrderEmail,
+	sendVendorImportantOrderEmail,
+} from "./orderEmails";
 
 /**
  * Resolve a user's mobile number for SMS. Phones are stored AES-encrypted;
@@ -53,7 +57,7 @@ export async function notifyOrderConfirmed({
 	vendorName: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Order confirmed",
 		body: `Your order ${orderNumber} from ${vendorName} is confirmed. We'll let you know when it's ready.`,
@@ -61,6 +65,7 @@ export async function notifyOrderConfirmed({
 		dedupeKey: `order:${orderNumber}:buyer:confirmed`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
 	// Fire-and-forget: the in-app notification is the source of truth.
 	void trySms(
 		buyerId,
@@ -91,7 +96,7 @@ export async function notifyOrderReady({
 	vendorName?: string | null;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Your order is ready",
 		body: vendorName
@@ -101,6 +106,20 @@ export async function notifyOrderReady({
 		dedupeKey: `order:${orderNumber}:buyer:ready`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
+	void sendBuyerImportantOrderEmail({
+		notification: result.notification,
+		buyerId,
+		orderNumber,
+		subject: `Order ${orderNumber} is ready`,
+		title: "Your order is ready",
+		body: vendorName
+			? `Your order from ${vendorName} is ready.`
+			: "Your order is ready.",
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(`[notifications] order-ready email failed:`, error),
+	);
 	void trySms(
 		buyerId,
 		(phone) => sendchampProvider.sendOrderReady(phone, orderNumber),
@@ -117,7 +136,7 @@ export async function notifyOrderInTransit({
 	orderNumber: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Order In transit",
 		body: "Your order is In transit.",
@@ -125,6 +144,7 @@ export async function notifyOrderInTransit({
 		dedupeKey: `order:${orderNumber}:buyer:in-transit`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
 	void trySms(
 		buyerId,
 		(phone) =>
@@ -147,7 +167,7 @@ export async function notifyOrderAccepted({
 	vendorName: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Order accepted",
 		body: `${vendorName} accepted your order and started cooking.`,
@@ -155,6 +175,7 @@ export async function notifyOrderAccepted({
 		dedupeKey: `order:${orderNumber}:buyer:accepted`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
 }
 
 export async function notifyOrderRunningLate({
@@ -170,7 +191,7 @@ export async function notifyOrderRunningLate({
 	expectedReadyAt?: Date;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Order running late",
 		body: `${vendorName} is running late on order ${orderNumber}. You can wait, contact support, or cancel for a refund from your order page.`,
@@ -184,6 +205,21 @@ export async function notifyOrderRunningLate({
 			...(data ?? {}),
 		},
 	});
+	if (!result.created) return;
+	void sendBuyerImportantOrderEmail({
+		notification: result.notification,
+		buyerId,
+		orderNumber,
+		subject: `Order ${orderNumber} is running late`,
+		title: "Order running late",
+		body: `${vendorName} is running late on your order. You can wait, contact support, or cancel for a refund from your order page.`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(
+			`[notifications] order-running-late email failed:`,
+			error,
+		),
+	);
 }
 
 export async function notifyVendorOrderRunningLate({
@@ -197,7 +233,7 @@ export async function notifyVendorOrderRunningLate({
 	maxExtensions: number;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: vendorUserId,
 		title: "Order deadline missed",
 		body: `Order ${orderNumber} is late. Send a revised ready time now. You can revise up to ${maxExtensions} times before admin review.`,
@@ -205,6 +241,21 @@ export async function notifyVendorOrderRunningLate({
 		dedupeKey: `order:${orderNumber}:vendor:running-late`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
+	void sendVendorImportantOrderEmail({
+		notification: result.notification,
+		vendorUserId,
+		orderNumber,
+		subject: `Order ${orderNumber} deadline missed`,
+		title: "Order deadline missed",
+		body: `Order ${orderNumber} is late. Send a revised ready time now.`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(
+			`[notifications] vendor-running-late email failed:`,
+			error,
+		),
+	);
 }
 
 export async function notifyOrderReadyEstimateRevised({
@@ -220,7 +271,7 @@ export async function notifyOrderReadyEstimateRevised({
 	revisedReadyAt: Date;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Ready time updated",
 		body: `${vendorName} updated order ${orderNumber}. New estimated ready time: ${revisedReadyAt.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" })}.`,
@@ -232,6 +283,7 @@ export async function notifyOrderReadyEstimateRevised({
 			...(data ?? {}),
 		},
 	});
+	if (!result.created) return;
 }
 
 export async function notifyOrderLateEscalated({
@@ -243,7 +295,7 @@ export async function notifyOrderLateEscalated({
 	orderNumber: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Support is reviewing your order",
 		body: `Order ${orderNumber} is significantly delayed. Support has been alerted, and you can cancel for a refund from the order page.`,
@@ -251,6 +303,18 @@ export async function notifyOrderLateEscalated({
 		dedupeKey: `order:${orderNumber}:buyer:late-escalated`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
+	void sendBuyerImportantOrderEmail({
+		notification: result.notification,
+		buyerId,
+		orderNumber,
+		subject: `Support is reviewing order ${orderNumber}`,
+		title: "Support is reviewing your order",
+		body: `Order ${orderNumber} is significantly delayed. Support has been alerted.`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(`[notifications] late-escalated email failed:`, error),
+	);
 }
 
 export async function notifyOrderRefundPending({
@@ -264,7 +328,7 @@ export async function notifyOrderRefundPending({
 	reason: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: buyerId,
 		title: "Refund started",
 		body: `Order ${orderNumber} could not be fulfilled. ${reason}`,
@@ -272,6 +336,18 @@ export async function notifyOrderRefundPending({
 		dedupeKey: `order:${orderNumber}:buyer:refund-pending`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
+	void sendBuyerImportantOrderEmail({
+		notification: result.notification,
+		buyerId,
+		orderNumber,
+		subject: `Refund started for order ${orderNumber}`,
+		title: "Refund started",
+		body: `Order ${orderNumber} could not be fulfilled. ${reason}`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(`[notifications] refund-pending email failed:`, error),
+	);
 }
 
 export async function notifyVendorAcceptanceReminder({
@@ -285,7 +361,7 @@ export async function notifyVendorAcceptanceReminder({
 	minutesElapsed: 5 | 8;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: vendorUserId,
 		title:
 			minutesElapsed === 5
@@ -302,6 +378,7 @@ export async function notifyVendorAcceptanceReminder({
 		dedupeKey: `order:${orderNumber}:vendor:acceptance-${minutesElapsed}`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
 }
 
 export async function notifyVendorOrderExpired({
@@ -313,7 +390,7 @@ export async function notifyVendorOrderExpired({
 	orderNumber: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
-	await createUserNotification({
+	const result = await createUserNotification({
 		userId: vendorUserId,
 		title: "Order expired",
 		body: `Order ${orderNumber} expired because it was not accepted in time.`,
@@ -321,6 +398,18 @@ export async function notifyVendorOrderExpired({
 		dedupeKey: `order:${orderNumber}:vendor:expired-no-response`,
 		data: { orderNumber, ...(data ?? {}) },
 	});
+	if (!result.created) return;
+	void sendVendorImportantOrderEmail({
+		notification: result.notification,
+		vendorUserId,
+		orderNumber,
+		subject: `Order ${orderNumber} expired`,
+		title: "Order expired",
+		body: `Order ${orderNumber} expired because it was not accepted in time.`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(`[notifications] vendor-expired email failed:`, error),
+	);
 }
 
 export async function notifyPickupNoShowReminder({

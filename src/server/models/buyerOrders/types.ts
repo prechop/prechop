@@ -98,6 +98,8 @@ export interface IBuyerOrder {
 	vendorSettlementKobo?: number;
 	totalKobo: number;
 	cancellationReason?: string;
+	cancellationReasonCode?: string;
+	cancellationExplanation?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";
 	paidAt?: Date;
 	acceptedAt?: Date;
@@ -116,6 +118,8 @@ export interface IBuyerOrder {
 	vendorAcceptanceReminder5SentAt?: Date;
 	vendorAcceptanceWarning8SentAt?: Date;
 	vendorRejectedAt?: Date;
+	vendorRejectionReasonCode?: string;
+	vendorRejectionExplanation?: string;
 	refundPendingAt?: Date;
 	refundProcessingAt?: Date;
 	refundFailedAt?: Date;

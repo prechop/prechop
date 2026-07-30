@@ -5,6 +5,7 @@ import {
 	tryDecrypt,
 } from "../../constants";
 import {
+	appendBuyerOrderTimelineDB,
 	decrementDailyOrderItemQuantityDB,
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
@@ -16,7 +17,8 @@ import {
 	OrderStatus,
 } from "../../models";
 import { sendchampProvider } from "../../providers";
-import { createUserNotification } from "../notifications";
+import { createUserNotification, notifyAdminAttention } from "../notifications";
+import type { RefundOutcome } from "../refunds";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
 import { releaseSlots } from "./slots";
 
@@ -39,10 +41,14 @@ export async function cancelOrderAsBuyer({
 	buyerId,
 	orderId,
 	reason,
+	reasonCode,
+	explanation,
 }: {
 	buyerId: string;
 	orderId: string;
 	reason: string;
+	reasonCode?: string;
+	explanation?: string;
 }) {
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
@@ -54,6 +60,8 @@ export async function cancelOrderAsBuyer({
 	const cancelled = await markBuyerOrderCancelledDB({
 		id: orderId,
 		reason,
+		reasonCode: reasonCode ?? "BUYER_CANCELLED",
+		explanation: explanation ?? reason,
 		cancelledBy: "buyer",
 		fromStatuses,
 	});
@@ -62,14 +70,33 @@ export async function cancelOrderAsBuyer({
 	// capacity. A lost race means someone else already cancelled it.
 	if (!cancelled) throw ErrOrderNotCancellable;
 
+	let outcome: CancellationPaymentOutcome;
 	if (order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT) {
 		await releaseHeldCapacity(order);
 		await markPaymentCancelledDB({ buyerOrderId: orderId });
+		outcome = "PAYMENT_CANCELLED";
 	} else {
 		await returnCapacity(order);
-		await refundOrder(order);
+		outcome = await refundOrder(order);
 	}
+	await recordCancellationEvent({
+		orderId,
+		orderNumber: order.orderNumber,
+		actor: "buyer",
+		actorId: buyerId,
+		reasonCode: reasonCode ?? "BUYER_CANCELLED",
+		explanation: explanation ?? reason,
+		outcome,
+	});
 	await notifyVendorBuyerCancelled(order, reason);
+	await notifyAdminCancellation({
+		order,
+		actor: "buyer",
+		actorId: buyerId,
+		reasonCode: reasonCode ?? "BUYER_CANCELLED",
+		explanation: explanation ?? reason,
+		outcome,
+	});
 
 	return {
 		message:
@@ -94,10 +121,14 @@ export async function cancelOrderAsVendor({
 	vendorUserId,
 	orderId,
 	reason,
+	reasonCode,
+	explanation,
 }: {
 	vendorUserId: string;
 	orderId: string;
 	reason: string;
+	reasonCode?: string;
+	explanation?: string;
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
@@ -111,18 +142,39 @@ export async function cancelOrderAsVendor({
 	const cancelled = await markBuyerOrderCancelledDB({
 		id: orderId,
 		reason,
+		reasonCode: reasonCode ?? "VENDOR_CANCELLED",
+		explanation: explanation ?? reason,
 		cancelledBy: "vendor",
 		fromStatuses: CANCELLABLE,
 	});
 	if (!cancelled) throw ErrOrderNotCancellable;
 
+	let outcome: CancellationPaymentOutcome;
 	if (order.status === OrderStatus.AWAITING_EXTERNAL_PAYMENT) {
 		await releaseHeldCapacity(order);
 		await markPaymentCancelledDB({ buyerOrderId: orderId });
+		outcome = "PAYMENT_CANCELLED";
 	} else {
 		await returnCapacity(order);
-		await refundOrder(order);
+		outcome = await refundOrder(order);
 	}
+	await recordCancellationEvent({
+		orderId,
+		orderNumber: order.orderNumber,
+		actor: "vendor",
+		actorId: vendorUserId,
+		reasonCode: reasonCode ?? "VENDOR_CANCELLED",
+		explanation: explanation ?? reason,
+		outcome,
+	});
+	await notifyAdminCancellation({
+		order,
+		actor: "vendor",
+		actorId: vendorUserId,
+		reasonCode: reasonCode ?? "VENDOR_CANCELLED",
+		explanation: explanation ?? reason,
+		outcome,
+	});
 
 	// Notify the buyer by SMS (fire-and-forget).
 	const buyer = await getUserByIdWithPhoneDB({
@@ -140,6 +192,92 @@ export async function cancelOrderAsVendor({
 	}
 
 	return { message: "Order cancelled and buyer notified." };
+}
+
+type CancellationPaymentOutcome = RefundOutcome | "PAYMENT_CANCELLED" | "NO_REFUND";
+
+async function recordCancellationEvent({
+	orderId,
+	orderNumber,
+	actor,
+	actorId,
+	reasonCode,
+	explanation,
+	outcome,
+}: {
+	orderId: string;
+	orderNumber: string;
+	actor: "buyer" | "vendor";
+	actorId: string;
+	reasonCode: string;
+	explanation: string;
+	outcome: CancellationPaymentOutcome;
+}) {
+	await appendBuyerOrderTimelineDB({
+		id: orderId,
+		entry: {
+			at: new Date(),
+			type:
+				actor === "buyer"
+					? "ORDER_CANCELLED_BY_BUYER"
+					: "ORDER_CANCELLED_BY_VENDOR",
+			actor,
+			actorId,
+			note: explanation,
+			data: {
+				orderId,
+				orderNumber,
+				reasonCode,
+				explanation,
+				paymentOutcome: outcome,
+			},
+		},
+	});
+}
+
+async function notifyAdminCancellation({
+	order,
+	actor,
+	actorId,
+	reasonCode,
+	explanation,
+	outcome,
+}: {
+	order: {
+		_id: string;
+		orderNumber: string;
+		buyerId: { toString(): string };
+		vendorId: { toString(): string };
+	};
+	actor: "buyer" | "vendor";
+	actorId: string;
+	reasonCode: string;
+	explanation: string;
+	outcome: CancellationPaymentOutcome;
+}) {
+	await notifyAdminAttention({
+		kind: actor === "buyer" ? "REFUND_REVIEW" : "SYSTEM_MANUAL_REVIEW",
+		title:
+			actor === "buyer"
+				? "Buyer cancelled order"
+				: "Vendor cancelled order",
+		whatHappened: `Order ${order.orderNumber} was cancelled by the ${actor}.`,
+		submittedBy: `${actor} ${actorId}`,
+		recordId: order._id.toString(),
+		adminPath: `/admin/orders?orderId=${encodeURIComponent(order._id.toString())}`,
+		dedupeKey: `order:${order.orderNumber}:admin:${actor}-cancelled`,
+		severity: outcome === "REFUND_FAILED" ? "critical" : "warning",
+		category: "ORDER_CANCELLATION",
+		reason: { code: reasonCode, explanation },
+		references: {
+			orderId: order._id.toString(),
+			orderNumber: order.orderNumber,
+			buyerId: order.buyerId.toString(),
+			vendorId: order.vendorId.toString(),
+		},
+		actionLabel: "View order",
+		email: outcome === "REFUND_FAILED",
+	});
 }
 
 async function notifyVendorBuyerCancelled(
@@ -178,17 +316,19 @@ async function notifyVendorBuyerCancelled(
 async function refundOrder(order: {
 	_id: string;
 	totalKobo: number;
-}): Promise<void> {
+}): Promise<CancellationPaymentOutcome> {
 	const payment = await getPaymentByOrderIdDB({
 		buyerOrderId: order._id.toString(),
 	});
 	if (payment?.paystackRef) {
-		await refundBuyerOrder({
+		const result = await refundBuyerOrder({
 			orderId: order._id.toString(),
 			paystackRef: payment.paystackRef,
 			amountKobo: order.totalKobo,
 		});
+		return result.outcome;
 	}
+	return "NO_REFUND";
 }
 
 /**

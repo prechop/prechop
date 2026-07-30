@@ -15,7 +15,7 @@ const collectionName = "buyerOrders";
 
 export type BuyerOrderModel = Model<any>;
 
-const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
+export const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.PAID,
 	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
 	OrderStatus.ACCEPTED,
@@ -133,6 +133,8 @@ const schema = new mongoose.Schema<any>(
 		vendorSettlementKobo: { type: Number, default: 0 },
 		totalKobo: { type: Number, required: true },
 		cancellationReason: { type: String },
+		cancellationReasonCode: { type: String },
+		cancellationExplanation: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
 		paidAt: { type: Date },
 		acceptedAt: { type: Date },
@@ -151,6 +153,8 @@ const schema = new mongoose.Schema<any>(
 		vendorAcceptanceReminder5SentAt: { type: Date },
 		vendorAcceptanceWarning8SentAt: { type: Date },
 		vendorRejectedAt: { type: Date },
+		vendorRejectionReasonCode: { type: String },
+		vendorRejectionExplanation: { type: String },
 		refundPendingAt: { type: Date },
 		refundProcessingAt: { type: Date },
 		refundFailedAt: { type: Date },
@@ -617,6 +621,8 @@ export async function setBuyerOrderStatusDB({
 	actualPrepMin,
 	refundPendingAt,
 	vendorRejectedAt,
+	vendorRejectionReasonCode,
+	vendorRejectionExplanation,
 	vendorNoResponseExpiredAt,
 	readyAt,
 	deliveryStartedAt,
@@ -634,6 +640,8 @@ export async function setBuyerOrderStatusDB({
 	actualPrepMin?: number;
 	refundPendingAt?: Date;
 	vendorRejectedAt?: Date;
+	vendorRejectionReasonCode?: string;
+	vendorRejectionExplanation?: string;
 	vendorNoResponseExpiredAt?: Date;
 	readyAt?: Date;
 	deliveryStartedAt?: Date;
@@ -658,6 +666,12 @@ export async function setBuyerOrderStatusDB({
 					...(actualPrepMin != null ? { actualPrepMin } : {}),
 					...(refundPendingAt ? { refundPendingAt } : {}),
 					...(vendorRejectedAt ? { vendorRejectedAt } : {}),
+					...(vendorRejectionReasonCode
+						? { vendorRejectionReasonCode }
+						: {}),
+					...(vendorRejectionExplanation
+						? { vendorRejectionExplanation }
+						: {}),
 					...(vendorNoResponseExpiredAt
 						? { vendorNoResponseExpiredAt }
 						: {}),
@@ -682,6 +696,56 @@ const PRE_READY_ORDER_STATUSES = [
 	OrderStatus.PREPARING,
 ];
 
+function expectedPrepMinForOrder(order: IBuyerOrder): number {
+	const itemPrepMins = (order.items ?? [])
+		.map((item) => item.snapshotPrepMin ?? 0)
+		.filter((min) => min > 0);
+	return (
+		order.expectedPrepMin ??
+		(itemPrepMins.length ? Math.max(...itemPrepMins) : 20)
+	);
+}
+
+export async function backfillMissingReadyDeadlinesDB({
+	limit = 200,
+}: {
+	limit?: number;
+} = {}): Promise<number> {
+	try {
+		const rows = await BuyerOrder.find({
+			status: { $in: PRE_READY_ORDER_STATUSES },
+			acceptedAt: { $ne: null },
+			expectedReadyAt: null,
+			readyAt: null,
+			lateMarkedAt: null,
+		})
+			.sort({ acceptedAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+		let updated = 0;
+		for (const order of rows as unknown as IBuyerOrder[]) {
+			const acceptedAt = new Date(order.acceptedAt as Date);
+			const expectedPrepMin = expectedPrepMinForOrder(order);
+			const expectedReadyAt = new Date(
+				acceptedAt.getTime() + expectedPrepMin * 60 * 1000,
+			);
+			const res = await BuyerOrder.updateOne(
+				{
+					_id: new mongoose.Types.ObjectId(order._id),
+					status: { $in: PRE_READY_ORDER_STATUSES },
+					expectedReadyAt: null,
+					readyAt: null,
+				},
+				{ $set: { expectedReadyAt, expectedPrepMin } },
+			);
+			updated += res.modifiedCount;
+		}
+		return updated;
+	} catch {
+		return 0;
+	}
+}
+
 export async function listReadyDeadlineDueOrdersDB({
 	now,
 	limit = 200,
@@ -693,8 +757,8 @@ export async function listReadyDeadlineDueOrdersDB({
 		const rows = await BuyerOrder.find({
 			status: { $in: PRE_READY_ORDER_STATUSES },
 			expectedReadyAt: { $lte: now },
-			readyAt: { $exists: false },
-			lateMarkedAt: { $exists: false },
+			readyAt: null,
+			lateMarkedAt: null,
 		})
 			.sort({ expectedReadyAt: 1 })
 			.limit(limit)
@@ -717,8 +781,8 @@ export async function markBuyerOrderLateDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: false },
+				readyAt: null,
+				lateMarkedAt: null,
 			},
 			{
 				$set: {
@@ -749,9 +813,9 @@ export async function listLateOrdersForEscalationDB({
 		const rows = await BuyerOrder.find({
 			status: { $in: PRE_READY_ORDER_STATUSES },
 			expectedReadyAt: { $lte: cutoff },
-			readyAt: { $exists: false },
-			lateMarkedAt: { $exists: true },
-			lateEscalatedAt: { $exists: false },
+			readyAt: null,
+			lateMarkedAt: { $ne: null },
+			lateEscalatedAt: null,
 		})
 			.sort({ expectedReadyAt: 1 })
 			.limit(limit)
@@ -776,9 +840,9 @@ export async function markBuyerOrderLateEscalatedDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: true },
-				lateEscalatedAt: { $exists: false },
+				readyAt: null,
+				lateMarkedAt: { $ne: null },
+				lateEscalatedAt: null,
 			},
 			{
 				$set: {
@@ -816,8 +880,8 @@ export async function reviseBuyerOrderReadyEstimateDB({
 				_id: new mongoose.Types.ObjectId(id),
 				vendorId: new mongoose.Types.ObjectId(vendorId),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: true },
+				readyAt: null,
+				lateMarkedAt: { $ne: null },
 				$or: [
 					{ readyExtensionCount: { $exists: false } },
 					{ readyExtensionCount: { $lt: maxExtensions } },
@@ -1318,12 +1382,16 @@ export async function markBuyerOrderPendingPaymentDB({
 export async function markBuyerOrderCancelledDB({
 	id,
 	reason,
+	reasonCode,
+	explanation,
 	cancelledBy,
 	fromStatuses,
 	session,
 }: {
 	id: string;
 	reason: string;
+	reasonCode?: string;
+	explanation?: string;
 	cancelledBy: "buyer" | "vendor" | "system";
 	fromStatuses?: OrderStatus[];
 	session?: ClientSession;
@@ -1339,6 +1407,10 @@ export async function markBuyerOrderCancelledDB({
 				$set: {
 					status: OrderStatus.CANCELLED,
 					cancellationReason: reason,
+					...(reasonCode ? { cancellationReasonCode: reasonCode } : {}),
+					...(explanation
+						? { cancellationExplanation: explanation }
+						: {}),
 					cancelledBy,
 				},
 			},

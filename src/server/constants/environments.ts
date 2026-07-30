@@ -51,10 +51,17 @@ export const ACCESS_TOKEN_MAX_AGE_SECONDS = parseDuration(
 	process.env.ACCESS_TOKEN_MAX_AGE,
 	15 * 60, // 15 minutes
 );
-export const REFRESH_TOKEN_MAX_AGE_SECONDS = parseDuration(
-	process.env.REFRESH_TOKEN_MAX_AGE,
+export const REFRESH_TOKEN_IDLE_MAX_AGE_SECONDS = parseDuration(
+	process.env.REFRESH_TOKEN_IDLE_MAX_AGE,
+	60 * 60 * 24 * 7, // 7 days idle
+);
+export const REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS = parseDuration(
+	process.env.REFRESH_TOKEN_ABSOLUTE_MAX_AGE ??
+		process.env.REFRESH_TOKEN_MAX_AGE,
 	60 * 60 * 24 * 30, // 30 days
 );
+export const REFRESH_TOKEN_MAX_AGE_SECONDS =
+	REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS;
 
 // PII encryption
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "";

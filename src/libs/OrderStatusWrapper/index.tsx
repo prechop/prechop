@@ -41,6 +41,7 @@ import {
 	orderTimelineSteps,
 } from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
+import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
 import { ReceiptCard, RefundNote } from "@/libs/ReceiptCard";
 import { OrderAgainButton } from "@/libs/ReorderSheet";
 import type { BuyerOrder, OrderStatus } from "@/types";
@@ -682,6 +683,20 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Stack>
 				</FulfillmentCard>
 			</FadeIn>
+
+			{data.status !== "PENDING_PAYMENT" &&
+				data.status !== "AWAITING_EXTERNAL_PAYMENT" && (
+					<FadeIn $delay={90}>
+						<OrderConversationPanel
+							orderId={orderId}
+							title="Message kitchen"
+							autoFocus={
+								typeof window !== "undefined" &&
+								window.location.hash === "#messages"
+							}
+						/>
+					</FadeIn>
+				)}
 
 			{!isTerminalBad && data.status !== "PENDING_PAYMENT" && (
 				<FadeIn $delay={120}>

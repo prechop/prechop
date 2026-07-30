@@ -159,6 +159,7 @@ export interface DailyOrder {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	totalOrdersCount: number;
+	activeBuyerOrdersCount?: number;
 	items: DailyOrderItem[];
 	/** True on the public listing response when the signed-in caller owns it. */
 	isOwnListing?: boolean;
@@ -406,6 +407,34 @@ export interface BuyerOrder {
 	refundStatus?: "INITIATED" | "SENT_TO_PROVIDER" | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
+}
+
+export interface OrderConversationMessage {
+	id: string;
+	clientMessageId?: string;
+	senderId: string;
+	senderRole: "BUYER" | "VENDOR" | "ADMIN";
+	body: string;
+	createdAt: string;
+}
+
+export interface OrderConversation {
+	id: string;
+	orderId: string;
+	orderNumber: string;
+	orderStatus: OrderStatus;
+	buyerId: string;
+	vendorId: string;
+	vendorUserId: string;
+	participantRole: "buyer" | "vendor" | "admin";
+	messages: OrderConversationMessage[];
+	unreadCount: number;
+	canSend: boolean;
+	closedReason?: string;
+	lastMessageAt?: string;
+	lastMessagePreview?: string;
+	createdAt: string;
+	updatedAt: string;
 }
 
 /**

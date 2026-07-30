@@ -8,6 +8,13 @@ export interface INotificationCreateInput {
 	isRead?: boolean;
 }
 
+export interface INotificationDeliveryAttempt {
+	channel: "email" | "push" | "sms";
+	status: "sent" | "skipped" | "failed";
+	attemptedAt: Date;
+	message?: string;
+}
+
 export interface INotification {
 	_id: string;
 	id?: string;
@@ -17,6 +24,8 @@ export interface INotification {
 	type: string;
 	dedupeKey?: string;
 	data?: Record<string, unknown>;
+	deliveryAttempts?: INotificationDeliveryAttempt[];
+	wasCreated?: boolean;
 	isRead: boolean;
 	createdAt: Date;
 	updatedAt: Date;

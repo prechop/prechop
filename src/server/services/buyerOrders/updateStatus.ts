@@ -6,6 +6,7 @@ import {
 } from "../../constants";
 import {
 	FulfillmentType,
+	appendBuyerOrderTimelineDB,
 	getBuyerOrderByIdDB,
 	getVendorProfileByUserIdDB,
 	OrderStatus,
@@ -18,17 +19,24 @@ import {
 	notifyOrderReady,
 	notifyOrderRefundPending,
 } from "../notifications";
-import { issueRefund } from "../refunds";
+import { createUserNotification, notifyAdminAttention } from "../notifications";
+import { issueRefund, type RefundOutcome } from "../refunds";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 export async function updateOrderStatus({
 	vendorUserId,
 	orderId,
 	status,
+	reason,
+	reasonCode,
+	explanation,
 }: {
 	vendorUserId: string;
 	orderId: string;
 	status: OrderStatus;
+	reason?: string;
+	reasonCode?: string;
+	explanation?: string;
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId: vendorUserId });
 	if (!vendor) throw ErrForbidden;
@@ -147,11 +155,16 @@ export async function updateOrderStatus({
 	}
 
 	if (status === OrderStatus.VENDOR_REJECTED) {
+		const rejectionReasonCode = reasonCode ?? "VENDOR_REJECTED";
+		const rejectionExplanation =
+			explanation ?? reason ?? "Vendor rejected this order.";
 		const rejected = await setBuyerOrderStatusDB({
 			id: orderId,
 			status: OrderStatus.VENDOR_REJECTED,
 			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
 			vendorRejectedAt: new Date(),
+			vendorRejectionReasonCode: rejectionReasonCode,
+			vendorRejectionExplanation: rejectionExplanation,
 		});
 		if (!rejected)
 			throw invalidOrderState("Order status changed â€” please retry.");
@@ -163,19 +176,20 @@ export async function updateOrderStatus({
 			refundPendingAt: new Date(),
 		});
 
-		const reason =
-			"The vendor rejected this order, so your refund has started.";
+		const refundReason = `${rejectionExplanation} Your refund has started.`;
+		let refundOutcome: RefundOutcome | "REFUND_FAILED" = "REFUND_PENDING";
 		try {
-			await issueRefund({
+			const refund = await issueRefund({
 				orderId,
 				amountKobo: order.totalKobo,
-				reason,
+				reason: refundReason,
 			});
+			refundOutcome = refund.outcome;
 		} finally {
 			void notifyOrderRefundPending({
 				buyerId: order.buyerId.toString(),
 				orderNumber: order.orderNumber,
-				reason,
+				reason: refundReason,
 			}).catch((error) =>
 				console.error(
 					`[orders] ORDER_REFUND_PENDING notification failed for ${orderId}:`,
@@ -183,6 +197,21 @@ export async function updateOrderStatus({
 				),
 			);
 		}
+		await recordVendorRejectionEvent({
+			orderId,
+			orderNumber: order.orderNumber,
+			vendorUserId,
+			reasonCode: rejectionReasonCode,
+			explanation: rejectionExplanation,
+			refundOutcome,
+		});
+		await notifyVendorRejectionParties({
+			order,
+			vendorUserId,
+			reasonCode: rejectionReasonCode,
+			explanation: rejectionExplanation,
+			refundOutcome,
+		});
 		return (await getBuyerOrderByIdDB({ id: orderId })) ?? rejected;
 	}
 
@@ -279,4 +308,92 @@ export async function updateOrderStatus({
 	}
 
 	return updated;
+}
+
+async function recordVendorRejectionEvent({
+	orderId,
+	orderNumber,
+	vendorUserId,
+	reasonCode,
+	explanation,
+	refundOutcome,
+}: {
+	orderId: string;
+	orderNumber: string;
+	vendorUserId: string;
+	reasonCode: string;
+	explanation: string;
+	refundOutcome: string;
+}) {
+	await appendBuyerOrderTimelineDB({
+		id: orderId,
+		entry: {
+			at: new Date(),
+			type: "ORDER_REJECTED_BY_VENDOR",
+			actor: "vendor",
+			actorId: vendorUserId,
+			note: explanation,
+			data: {
+				orderId,
+				orderNumber,
+				reasonCode,
+				explanation,
+				refundOutcome,
+			},
+		},
+	});
+}
+
+async function notifyVendorRejectionParties({
+	order,
+	vendorUserId,
+	reasonCode,
+	explanation,
+	refundOutcome,
+}: {
+	order: {
+		_id: string;
+		orderNumber: string;
+		buyerId: { toString(): string };
+		vendorId: { toString(): string };
+	};
+	vendorUserId: string;
+	reasonCode: string;
+	explanation: string;
+	refundOutcome: string;
+}) {
+	await createUserNotification({
+		userId: vendorUserId,
+		title: "Order rejected",
+		body: `You rejected order ${order.orderNumber}.`,
+		type: "ORDER_VENDOR_REJECTED",
+		dedupeKey: `order:${order.orderNumber}:vendor:rejected`,
+		data: {
+			orderId: order._id.toString(),
+			orderNumber: order.orderNumber,
+			reasonCode,
+			explanation,
+			refundOutcome,
+		},
+	});
+	await notifyAdminAttention({
+		kind: "REFUND_REVIEW",
+		title: "Vendor rejected order",
+		whatHappened: `Order ${order.orderNumber} was rejected by the vendor.`,
+		submittedBy: `Vendor user ${vendorUserId}`,
+		recordId: order._id.toString(),
+		adminPath: `/admin/orders?orderId=${encodeURIComponent(order._id.toString())}`,
+		dedupeKey: `order:${order.orderNumber}:admin:vendor-rejected`,
+		severity: refundOutcome === "REFUND_FAILED" ? "critical" : "warning",
+		category: "ORDER_REJECTION",
+		reason: { code: reasonCode, explanation },
+		references: {
+			orderId: order._id.toString(),
+			orderNumber: order.orderNumber,
+			buyerId: order.buyerId.toString(),
+			vendorId: order.vendorId.toString(),
+		},
+		actionLabel: "View order",
+		email: refundOutcome === "REFUND_FAILED",
+	});
 }

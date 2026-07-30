@@ -1,6 +1,7 @@
 import {
 	createNotificationDB,
 	deletePushSubscriptionByEndpointDB,
+	type INotification,
 	listPushSubscriptionsByUserDB,
 } from "../../models";
 import { sendPush } from "../../providers/push";
@@ -25,9 +26,11 @@ export async function createUserNotification({
 	type: string;
 	data?: Record<string, unknown>;
 	dedupeKey?: string;
-}): Promise<void> {
+}): Promise<{ created: boolean; notification: INotification | null }> {
+	let notification: INotification | null = null;
+	let created = false;
 	try {
-		const created = await createNotificationDB({
+		notification = await createNotificationDB({
 			payload: {
 				userId,
 				title,
@@ -38,7 +41,8 @@ export async function createUserNotification({
 				isRead: false,
 			},
 		});
-		if (!created) {
+		created = notification?.wasCreated !== false;
+		if (!notification) {
 			console.error(
 				`[notifications] failed to persist notification userId=${userId} type=${type} dedupeKey=${dedupeKey ?? "none"}`,
 			);
@@ -51,7 +55,8 @@ export async function createUserNotification({
 	}
 
 	// Fire-and-forget push fan-out.
-	void dispatchPush(userId, { title, body, type, data });
+	if (created) void dispatchPush(userId, { title, body, type, data });
+	return { created, notification };
 }
 
 async function dispatchPush(

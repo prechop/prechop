@@ -194,7 +194,9 @@ describe("placeOrder service", () => {
 				fulfillmentType: FulfillmentType.DELIVERY,
 				deliveryHostelName: "Kofo Hall",
 				deliveryRoomNumber: "B12",
+				deliveryAdditionalInfo: "Near the back gate",
 				deliveryPhone: "+2348012345678",
+				customerMessage: "Please call when you arrive.",
 				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
 			},
 		});
@@ -208,6 +210,10 @@ describe("placeOrder service", () => {
 
 		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
 		expect(order!.deliveryPhone).toBe("+2348012345678");
+		expect(order!.deliveryFullAddress).toBe(
+			"Kofo Hall, B12, Near the back gate",
+		);
+		expect(order!.customerMessage).toBe("Please call when you arrive.");
 		expect(order!.deliveryFeeKobo).toBe(deliveryFeeKobo);
 		expect(order!.totalKobo).toBe(
 			subtotalKobo + deliveryFeeKobo + processingFee,

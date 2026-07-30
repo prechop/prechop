@@ -1,6 +1,7 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { ErrDailyOrderNotFound, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
+import { VENDOR_ATTENTION_ORDER_STATUSES } from "../buyerOrders";
 import { DailyOrderStatus, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type {
@@ -308,6 +309,7 @@ export async function listDailyOrdersByVendorDB({
 	to,
 	limit = MAX_LIMIT,
 	offset = 0,
+	includeFulfillmentQueue = false,
 	session,
 }: {
 	vendorId: string;
@@ -319,14 +321,22 @@ export async function listDailyOrdersByVendorDB({
 	to?: Date;
 	limit?: number;
 	offset?: number;
+	includeFulfillmentQueue?: boolean;
 	session?: ClientSession;
 }): Promise<IDailyOrder[]> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(vendorId)) return [];
+		const vendorObjectId = new mongoose.Types.ObjectId(vendorId);
+		const includeClosedWithActiveBuyerOrders =
+			includeFulfillmentQueue && status === DailyOrderStatus.ACTIVE;
 		const match: Record<string, unknown> = {
-			vendorId: new mongoose.Types.ObjectId(vendorId),
+			vendorId: vendorObjectId,
 		};
-		if (status) match.status = status;
+		if (includeClosedWithActiveBuyerOrders) {
+			match.status = {
+				$in: [DailyOrderStatus.ACTIVE, DailyOrderStatus.CLOSED],
+			};
+		} else if (status) match.status = status;
 		const term = q?.trim();
 		if (term) {
 			// Escape so a title containing regex metacharacters (e.g. "Buy 1 (get 1)")
@@ -339,15 +349,77 @@ export async function listDailyOrdersByVendorDB({
 			if (to) range.$lte = to;
 			match.scheduledDate = range;
 		}
-		return await DailyOrder.aggregate<IDailyOrder>(
-			[
-				{ $match: match },
-				{ $sort: { scheduledDate: -1 } },
-				{ $skip: offset },
-				{ $limit: Math.min(limit, MAX_LIMIT) },
-			],
-			{ session },
+		const pipeline: mongoose.PipelineStage[] = [{ $match: match }];
+		if (includeClosedWithActiveBuyerOrders) {
+			pipeline.push(
+				{
+					$lookup: {
+						from: "buyerorders",
+						let: { dailyOrderId: "$_id" },
+						pipeline: [
+							{
+								$match: {
+									$expr: {
+										$and: [
+											{
+												$eq: [
+													"$dailyOrderId",
+													"$$dailyOrderId",
+												],
+											},
+											{
+												$eq: [
+													"$vendorId",
+													vendorObjectId,
+												],
+											},
+											{
+												$in: [
+													"$status",
+													VENDOR_ATTENTION_ORDER_STATUSES,
+												],
+											},
+										],
+									},
+								},
+							},
+							{ $count: "count" },
+						],
+						as: "_activeBuyerOrders",
+					},
+				},
+				{
+					$addFields: {
+						activeBuyerOrdersCount: {
+							$ifNull: [
+								{
+									$arrayElemAt: [
+										"$_activeBuyerOrders.count",
+										0,
+									],
+								},
+								0,
+							],
+						},
+					},
+				},
+				{
+					$match: {
+						$or: [
+							{ status: DailyOrderStatus.ACTIVE },
+							{ activeBuyerOrdersCount: { $gt: 0 } },
+						],
+					},
+				},
+				{ $project: { _activeBuyerOrders: 0 } },
+			);
+		}
+		pipeline.push(
+			{ $sort: { scheduledDate: -1 } },
+			{ $skip: offset },
+			{ $limit: Math.min(limit, MAX_LIMIT) },
 		);
+		return await DailyOrder.aggregate<IDailyOrder>(pipeline, { session });
 	} catch {
 		return [];
 	}
