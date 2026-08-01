@@ -13,6 +13,7 @@ import {
 	listVendorsByIdsDB,
 	VendorStatus,
 } from "../../models";
+import { withSlotAvailabilityForListings } from "../buyerOrders/slots";
 import { assertMarketplaceEnabled } from "../siteConfigs";
 import {
 	comparePublicVendors,
@@ -80,7 +81,9 @@ export async function getVendorStorefront({
 	]);
 	return {
 		vendor: toPublicVendor(vendor),
-		listings: withMenuImages(listings, menu),
+		listings: await withSlotAvailabilityForListings(
+			withMenuImages(listings, menu),
+		),
 		menu,
 	};
 }
@@ -142,10 +145,11 @@ export async function searchMarketplace({
 	// reproduces the previous per-vendor shape and ordering exactly. Mirrors
 	// `getMarketplace` in ./queries.
 	const now = new Date();
-	const [vendors, listings] = await Promise.all([
+	const [vendors, listingsRaw] = await Promise.all([
 		listVendorsByIdsDB(vendorIds),
 		listActivePublicListingsForVendorIdsDB({ vendorIds, now }),
 	]);
+	const listings = await withSlotAvailabilityForListings(listingsRaw);
 	const vendorById = new Map(vendors.map((v) => [v._id.toString(), v]));
 	const listingsByVendor = new Map<string, IDailyOrder[]>();
 	for (const listing of listings) {

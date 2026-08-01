@@ -90,10 +90,21 @@ export async function createDailyOrderFromTemplate({
 	for (const entry of todaysEntries) {
 		const menuItem = byId.get(entry.menuItemId.toString());
 		if (!menuItem) continue;
+		const activeVariants = (menuItem.variants ?? [])
+			.filter((v) => v.isActive)
+			.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 		items.push({
 			menuItemId: (menuItem.id ?? menuItem._id).toString(),
 			snapshotName: menuItem.name,
 			snapshotPriceKobo: menuItem.priceKobo,
+			snapshotVariants: activeVariants.map((variant, index) => ({
+				sourceVariantId:
+					(variant.id ?? variant._id)?.toString() ?? null,
+				name: variant.name,
+				priceKobo: variant.priceKobo,
+				isDefault: variant.isDefault,
+				displayOrder: variant.displayOrder ?? index,
+			})),
 			snapshotImageUrl: menuItem.imageUrl,
 			snapshotPrepMin: menuItem.estimatedPrepMin,
 			maxQuantity: null,

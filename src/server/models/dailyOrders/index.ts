@@ -45,6 +45,24 @@ const itemSchema = new mongoose.Schema(
 		category: { type: String },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true, min: 0 },
+		snapshotVariants: {
+			type: [
+				new mongoose.Schema(
+					{
+						sourceVariantId: {
+							type: mongoose.Schema.Types.ObjectId,
+							default: null,
+						},
+						name: { type: String, required: true },
+						priceKobo: { type: Number, required: true, min: 0 },
+						isDefault: { type: Boolean, default: false },
+						displayOrder: { type: Number, default: 0 },
+					},
+					{ _id: true },
+				),
+			],
+			default: [],
+		},
 		snapshotImageUrl: { type: String },
 		snapshotPrepMin: { type: Number, default: 20 },
 		maxQuantity: { type: Number, default: null },
@@ -158,6 +176,37 @@ const withEmbeddedIds = {
 								},
 							},
 						},
+						snapshotVariants: {
+							$map: {
+								input: {
+									$ifNull: ["$$it.snapshotVariants", []],
+								},
+								as: "v",
+								in: {
+									$mergeObjects: [
+										"$$v",
+										{
+											id: { $toString: "$$v._id" },
+											sourceVariantId: {
+												$cond: [
+													{
+														$ifNull: [
+															"$$v.sourceVariantId",
+															false,
+														],
+													},
+													{
+														$toString:
+															"$$v.sourceVariantId",
+													},
+													null,
+												],
+											},
+										},
+									],
+								},
+							},
+						},
 					},
 				],
 			},
@@ -181,6 +230,17 @@ function mapItems(items: IDailyOrderItemInput[]) {
 		category: it.category,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
+		snapshotVariants: (it.snapshotVariants ?? []).map((v, i) => ({
+			sourceVariantId:
+				v.sourceVariantId &&
+				mongoose.Types.ObjectId.isValid(v.sourceVariantId)
+					? new mongoose.Types.ObjectId(v.sourceVariantId)
+					: null,
+			name: v.name,
+			priceKobo: v.priceKobo,
+			isDefault: v.isDefault ?? false,
+			displayOrder: v.displayOrder ?? i,
+		})),
 		snapshotImageUrl: it.snapshotImageUrl,
 		snapshotPrepMin: it.snapshotPrepMin,
 		maxQuantity: it.maxQuantity ?? null,
@@ -816,10 +876,61 @@ export async function incrementDailyOrderItemQuantityDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
+		if (by <= 0) return false;
+		const dailyOrderObjectId = new mongoose.Types.ObjectId(dailyOrderId);
+		const itemObjectId = new mongoose.Types.ObjectId(dailyOrderItemId);
 		const res = await DailyOrder.updateOne(
 			{
-				_id: new mongoose.Types.ObjectId(dailyOrderId),
-				"items._id": new mongoose.Types.ObjectId(dailyOrderItemId),
+				_id: dailyOrderObjectId,
+				"items._id": itemObjectId,
+				$expr: {
+					$let: {
+						vars: {
+							item: {
+								$first: {
+									$filter: {
+										input: "$items",
+										as: "item",
+										cond: {
+											$eq: ["$$item._id", itemObjectId],
+										},
+									},
+								},
+							},
+						},
+						in: {
+							$or: [
+								{
+									$eq: [
+										{
+											$ifNull: [
+												"$$item.maxQuantity",
+												null,
+											],
+										},
+										null,
+									],
+								},
+								{
+									$lte: [
+										{
+											$add: [
+												{
+													$ifNull: [
+														"$$item.orderedQuantity",
+														0,
+													],
+												},
+												by,
+											],
+										},
+										"$$item.maxQuantity",
+									],
+								},
+							],
+						},
+					},
+				},
 			},
 			{ $inc: { "items.$.orderedQuantity": by } },
 			{ session },

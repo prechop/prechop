@@ -77,10 +77,12 @@ interface InitializeTransactionResponse {
 	access_code: string;
 	reference: string;
 }
-interface VerifyTransactionResponse {
+export interface VerifyTransactionResponse {
 	status: string;
 	reference: string;
 	amount: number;
+	currency?: string;
+	domain?: "test" | "live" | string;
 	channel: string;
 	paid_at: string | null;
 	metadata: Record<string, unknown>;

@@ -100,6 +100,8 @@ export const metadata: Metadata = {
 	},
 	description:
 		"Pre-order meals from student vendors and campus kitchens before they start cooking. No queues, no sold-out food. Available on Nigerian university campuses.",
+		
+
 	keywords: [
 		"campus food Nigeria",
 		"student food order",

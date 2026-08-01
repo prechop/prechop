@@ -63,6 +63,59 @@ describe("menuItems model", () => {
 		expect(await getMenuItemByIdDB({ id })).toBeNull();
 	});
 
+	it("persists vendor-defined variants", async () => {
+		const vendorId = oid();
+		const campusId = oid();
+		const item = await createMenuItemDB({
+			payload: {
+				vendorId,
+				campusId,
+				category: MenuCategory.MEALS,
+				name: "Cupcake",
+				priceKobo: 200000,
+				variants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						isActive: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Box of 6",
+						priceKobo: 900000,
+						isDefault: false,
+						isActive: false,
+						displayOrder: 1,
+					},
+				],
+			},
+		});
+
+		if (!item) throw new Error("Expected menu item to be created");
+		expect(item?.variants).toHaveLength(2);
+		expect(item?.variants[0].id).toBeTruthy();
+		expect(item?.variants[0].name).toBe("Small");
+
+		const updated = await updateMenuItemDB({
+			id: item._id.toString(),
+			vendorId,
+			payload: {
+				variants: [
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isDefault: true,
+						isActive: true,
+						displayOrder: 0,
+					},
+				],
+			},
+		});
+		expect(updated?.variants).toHaveLength(1);
+		expect(updated?.variants[0].name).toBe("Large");
+	});
+
 	it("lists by vendor with filters and counts non-deleted", async () => {
 		const vendorId = oid();
 		const campusId = oid();

@@ -1,4 +1,9 @@
 import {
+	ORDER_CHAT_NOT_OPEN,
+	ORDER_CHAT_READ_ONLY,
+	orderChatAvailability,
+} from "@/constants/orderChat";
+import {
 	AppError,
 	ErrForbidden,
 	ErrInvalidAction,
@@ -21,8 +26,6 @@ import {
 	OrderStatus,
 } from "../../models";
 import { createUserNotification } from "../notifications";
-
-const SUPPORT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const READABLE_STATUSES = new Set<OrderStatus>([
 	OrderStatus.PAID,
@@ -48,37 +51,6 @@ const READABLE_STATUSES = new Set<OrderStatus>([
 	OrderStatus.REFUND_PENDING,
 	OrderStatus.REFUND_PROCESSING,
 	OrderStatus.REFUND_FAILED,
-	OrderStatus.CANCELLED,
-	OrderStatus.REFUNDED,
-]);
-
-const COORDINATION_STATUSES = new Set<OrderStatus>([
-	OrderStatus.PAID,
-	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
-	OrderStatus.ACCEPTED,
-	OrderStatus.CONFIRMED,
-	OrderStatus.COOKING,
-	OrderStatus.PREPARING,
-	OrderStatus.READY,
-	OrderStatus.READY_FOR_PICKUP,
-	OrderStatus.READY_FOR_DELIVERY,
-	OrderStatus.IN_TRANSIT,
-	OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
-	OrderStatus.PICKUP_PROBLEM_REPORTED,
-	OrderStatus.BUYER_UNREACHABLE_REPORTED,
-	OrderStatus.REFUND_PENDING,
-	OrderStatus.REFUND_PROCESSING,
-	OrderStatus.REFUND_FAILED,
-]);
-
-const TERMINAL_STATUSES = new Set<OrderStatus>([
-	OrderStatus.COMPLETED_BUYER_NO_SHOW,
-	OrderStatus.DELIVERY_FAILED,
-	OrderStatus.PICKED_UP,
-	OrderStatus.DELIVERED,
-	OrderStatus.COMPLETED,
-	OrderStatus.VENDOR_REJECTED,
-	OrderStatus.EXPIRED_VENDOR_NO_RESPONSE,
 	OrderStatus.CANCELLED,
 	OrderStatus.REFUNDED,
 ]);
@@ -143,26 +115,11 @@ function canSendForOrder(
 	order: { status: OrderStatus; updatedAt?: Date },
 	now = new Date(),
 ) {
-	if (COORDINATION_STATUSES.has(order.status)) {
-		return { canSend: true };
-	}
-	if (TERMINAL_STATUSES.has(order.status)) {
-		const updatedAt = order.updatedAt
-			? new Date(order.updatedAt).getTime()
-			: 0;
-		if (updatedAt && now.getTime() - updatedAt <= SUPPORT_WINDOW_MS) {
-			return { canSend: true };
-		}
-		return {
-			canSend: false,
-			closedReason:
-				"This order conversation is closed. Open a support request if you still need help.",
-		};
-	}
-	return {
-		canSend: false,
-		closedReason: "Messaging opens after payment.",
-	};
+	return orderChatAvailability({
+		status: order.status,
+		updatedAt: order.updatedAt,
+		now,
+	});
 }
 
 async function resolveParticipant({
@@ -355,7 +312,9 @@ export async function sendOrderMessage({
 		throw new AppError(
 			sendState.closedReason ?? "This conversation is closed.",
 			409,
-			"CONVERSATION_CLOSED",
+			sendState.errorCode === ORDER_CHAT_NOT_OPEN
+				? ORDER_CHAT_NOT_OPEN
+				: ORDER_CHAT_READ_ONLY,
 		);
 	}
 	if (!participant.senderRole || participant.senderRole === "ADMIN") {

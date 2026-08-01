@@ -63,6 +63,16 @@ function weekdayOf(dateStr: string): string {
 const EMPTY_SET: Set<string> = new Set();
 const EMPTY_EDITS: Record<string, EditableOption[]> = {};
 
+function menuItemPriceLabel(item: MenuItem): string {
+	const activeVariantPrices = (item.variants ?? [])
+		.filter((variant) => variant.isActive)
+		.map((variant) => variant.priceKobo);
+	if (activeVariantPrices.length === 0) return formatKobo(item.priceKobo);
+	const min = Math.min(...activeVariantPrices);
+	const max = Math.max(...activeVariantPrices);
+	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+}
+
 const ItemRow = styled(Card)<{ $on: boolean }>`
   padding: var(--pc-space-3) var(--pc-space-4);
   cursor: pointer;
@@ -373,7 +383,7 @@ export default function DailyOrderComposerWrapper({
 		const sel: Record<string, string> = {};
 		const edits: Record<string, Record<string, EditableOption[]>> = {};
 		for (const it of editing.items) {
-			sel[it.menuItemId] = it.maxPlate ? String(it.maxPlate) : "";
+			sel[it.menuItemId] = it.maxQuantity ? String(it.maxQuantity) : "";
 			for (const g of it.optionGroups ?? []) {
 				if (!g.sourceGroupId) continue;
 				edits[it.menuItemId] ??= {};
@@ -566,7 +576,7 @@ export default function DailyOrderComposerWrapper({
 		// validating that each kept group still has enough named options.
 		const items: Array<{
 			menuItemId: string;
-			maxPlate?: number;
+			maxQuantity?: number;
 			optionGroups?: Array<{
 				sourceGroupId: string;
 				name: string;
@@ -610,7 +620,7 @@ export default function DailyOrderComposerWrapper({
 			}
 			items.push({
 				menuItemId: id,
-				...(q > 0 ? { maxPlate: Math.floor(q) } : {}),
+				...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
 				...(optionGroups.length > 0 ? { optionGroups } : {}),
 			});
 		}
@@ -1036,7 +1046,7 @@ export default function DailyOrderComposerWrapper({
 													</Text>
 												</Row>
 												<Text $weight={700}>
-													{formatKobo(m.priceKobo)}
+													{menuItemPriceLabel(m)}
 												</Text>
 											</Row>
 											{on && (

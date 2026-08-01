@@ -1,16 +1,14 @@
-import crypto from "node:crypto";
 import QRCode from "qrcode";
 import {
 	handoverUnavailableMessage,
 	isBuyerHandoverEligible,
 } from "@/constants/orderLifecycle";
+import { deriveHandoverCredential } from "@/server/constants/handoverCredential";
 import {
-	ENCRYPTION_KEY,
+	AppError,
 	ErrForbidden,
 	ErrOrderNotFound,
 	invalidOrderState,
-	JWT_ACCESS_TOKEN_SECRET,
-	validationError,
 } from "../../constants";
 import hashToken from "../../constants/hashToken";
 import {
@@ -39,39 +37,13 @@ export interface AdminHandoverActor {
 
 const MAX_PIN_ATTEMPTS = 5;
 const LOCK_MS = 5 * 60 * 1000;
+const UNPAID_HANDOVER_STATUSES = new Set<OrderStatus>([
+	OrderStatus.PENDING_PAYMENT,
+	OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+]);
 
-function handoverSecret(): string {
-	const secret = ENCRYPTION_KEY || JWT_ACCESS_TOKEN_SECRET;
-	if (!secret) {
-		throw validationError("Confirmation credentials are unavailable.");
-	}
-	return secret;
-}
-
-function deriveCredential(order: {
-	_id: string;
-	orderNumber: string;
-	buyerId: string;
-	vendorId: string;
-}) {
-	const base = `${order._id}:${order.orderNumber}:${order.buyerId}:${order.vendorId}`;
-	const token = crypto
-		.createHmac("sha256", handoverSecret())
-		.update(`qr:${base}`)
-		.digest("hex");
-	const pinSeed = crypto
-		.createHmac("sha256", handoverSecret())
-		.update(`pin:${base}`)
-		.digest("hex");
-	const pin = String(
-		Number.parseInt(pinSeed.slice(0, 12), 16) % 1_000_000,
-	).padStart(6, "0");
-	return {
-		qrToken: token,
-		pin,
-		qrTokenHash: hashToken(token),
-		pinHash: hashToken(pin),
-	};
+function handoverBlocked(message: string, appCode: string) {
+	return new AppError(message, 409, appCode);
 }
 
 function assertCredentialVisible(order: {
@@ -80,8 +52,9 @@ function assertCredentialVisible(order: {
 	handoverCredentialUsedAt?: Date;
 }) {
 	if (order.handoverCredentialUsedAt) {
-		throw invalidOrderState(
+		throw handoverBlocked(
 			"This confirmation credential has already been used.",
+			"HANDOVER_CREDENTIAL_USED",
 		);
 	}
 	if (
@@ -91,8 +64,9 @@ function assertCredentialVisible(order: {
 			order.handoverCredentialUsedAt,
 		)
 	) {
-		throw invalidOrderState(
+		throw handoverBlocked(
 			handoverUnavailableMessage(order.fulfillmentType),
+			"HANDOVER_NOT_ELIGIBLE",
 		);
 	}
 }
@@ -100,7 +74,55 @@ function assertCredentialVisible(order: {
 async function assertSuccessfulPayment(orderId: string) {
 	const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
 	if (!payment?.webhookVerified || payment.status !== PaymentStatus.SUCCESS) {
-		throw invalidOrderState("This order has not been paid.");
+		throw handoverBlocked(
+			"This order has not been paid.",
+			"HANDOVER_PAYMENT_NOT_VERIFIED",
+		);
+	}
+}
+
+function assertOrderPaidForHandover(status: OrderStatus) {
+	if (SETTLED_ORDER_STATUSES.includes(status)) return;
+	if (UNPAID_HANDOVER_STATUSES.has(status)) {
+		throw handoverBlocked(
+			"This order has not been paid.",
+			"HANDOVER_PAYMENT_NOT_VERIFIED",
+		);
+	}
+	throw handoverBlocked(
+		"PIN reveal is not available for this order.",
+		"HANDOVER_NOT_ELIGIBLE",
+	);
+}
+
+async function ensureHandoverCredentialStored({
+	orderId,
+	order,
+	tokenHash,
+	pinHash,
+}: {
+	orderId: string;
+	order: {
+		handoverTokenHash?: string;
+		handoverPinHash?: string;
+		handoverCredentialUsedAt?: Date;
+	};
+	tokenHash: string;
+	pinHash: string;
+}) {
+	if (order.handoverTokenHash && order.handoverPinHash) return;
+	const saved = await setBuyerOrderHandoverCredentialDB({
+		id: orderId,
+		tokenHash,
+		pinHash,
+	});
+	if (!saved) {
+		const latest = await getBuyerOrderByIdDB({ id: orderId });
+		if (latest?.handoverTokenHash && latest.handoverPinHash) return;
+		throw handoverBlocked(
+			"Confirmation credential is unavailable.",
+			"HANDOVER_CREDENTIAL_UNAVAILABLE",
+		);
 	}
 }
 
@@ -121,25 +143,22 @@ export async function getBuyerHandoverCredential({
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
 	if (order.buyerId.toString() !== buyerId) throw ErrForbidden;
-	if (!SETTLED_ORDER_STATUSES.includes(order.status)) {
-		throw invalidOrderState("This order has not been paid.");
-	}
+	assertOrderPaidForHandover(order.status);
 	await assertSuccessfulPayment(orderId);
 	assertCredentialVisible(order);
 
-	const credential = deriveCredential({
+	const credential = deriveHandoverCredential({
 		_id: order._id.toString(),
 		orderNumber: order.orderNumber,
 		buyerId: order.buyerId.toString(),
 		vendorId: order.vendorId.toString(),
 	});
-	const saved = await setBuyerOrderHandoverCredentialDB({
-		id: orderId,
+	await ensureHandoverCredentialStored({
+		orderId,
+		order,
 		tokenHash: credential.qrTokenHash,
 		pinHash: credential.pinHash,
 	});
-	if (!saved)
-		throw invalidOrderState("Confirmation credential is unavailable.");
 
 	return {
 		qrToken: credential.qrToken,
@@ -214,25 +233,22 @@ export async function revealAdminHandoverPin({
 }): Promise<{ orderId: string; orderNumber: string; pin: string }> {
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
-	if (!SETTLED_ORDER_STATUSES.includes(order.status)) {
-		throw invalidOrderState("This order has not been paid.");
-	}
+	assertOrderPaidForHandover(order.status);
 	await assertSuccessfulPayment(orderId);
 	assertCredentialVisible(order);
 
-	const credential = deriveCredential({
+	const credential = deriveHandoverCredential({
 		_id: order._id.toString(),
 		orderNumber: order.orderNumber,
 		buyerId: order.buyerId.toString(),
 		vendorId: order.vendorId.toString(),
 	});
-	const saved = await setBuyerOrderHandoverCredentialDB({
-		id: orderId,
+	await ensureHandoverCredentialStored({
+		orderId,
+		order,
 		tokenHash: credential.qrTokenHash,
 		pinHash: credential.pinHash,
 	});
-	if (!saved)
-		throw invalidOrderState("Confirmation credential is unavailable.");
 
 	await recordAuditSync({
 		userId: actor.userId,
@@ -273,30 +289,35 @@ export async function confirmOrderHandover({
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
 	if (order.vendorId.toString() !== vendor._id.toString()) throw ErrForbidden;
-	if (!SETTLED_ORDER_STATUSES.includes(order.status)) {
-		throw invalidOrderState("This order has not been paid.");
-	}
+	assertOrderPaidForHandover(order.status);
 	await assertSuccessfulPayment(orderId);
 	if (
 		order.status === OrderStatus.COMPLETED ||
 		order.handoverCredentialUsedAt
 	) {
-		throw invalidOrderState("This order has already been confirmed.");
+		throw handoverBlocked(
+			"This order has already been confirmed.",
+			"HANDOVER_CREDENTIAL_USED",
+		);
 	}
 	assertCredentialVisible(order);
 	const now = new Date();
 	if (order.handoverLockedUntil && order.handoverLockedUntil > now) {
-		throw invalidOrderState("Confirmation is temporarily locked.");
+		throw handoverBlocked(
+			"Confirmation is temporarily locked.",
+			"HANDOVER_CONFIRMATION_LOCKED",
+		);
 	}
 
-	const credential = deriveCredential({
+	const credential = deriveHandoverCredential({
 		_id: order._id.toString(),
 		orderNumber: order.orderNumber,
 		buyerId: order.buyerId.toString(),
 		vendorId: order.vendorId.toString(),
 	});
-	await setBuyerOrderHandoverCredentialDB({
-		id: orderId,
+	await ensureHandoverCredentialStored({
+		orderId,
+		order,
 		tokenHash: credential.qrTokenHash,
 		pinHash: credential.pinHash,
 	});
@@ -312,7 +333,10 @@ export async function confirmOrderHandover({
 					? new Date(now.getTime() + LOCK_MS)
 					: undefined,
 		});
-		throw invalidOrderState("Invalid confirmation code.");
+		throw handoverBlocked(
+			"Invalid confirmation code.",
+			"HANDOVER_INVALID_CODE",
+		);
 	}
 
 	const fromStatus =

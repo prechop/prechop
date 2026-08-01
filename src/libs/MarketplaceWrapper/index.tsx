@@ -355,7 +355,11 @@ function isMarketplaceUnavailable(error: unknown): boolean {
 
 function vendorPriceRange(listings: DailyOrder[]): string {
 	const prices = listings.flatMap((o) =>
-		o.items.map((i) => i.snapshotPriceKobo),
+		o.items.flatMap((i) =>
+			(i.snapshotVariants ?? []).length > 0
+				? i.snapshotVariants.map((variant) => variant.priceKobo)
+				: [i.snapshotPriceKobo],
+		),
 	);
 	if (prices.length === 0) return "View menu";
 	const min = Math.min(...prices);

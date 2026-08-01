@@ -19,6 +19,16 @@ export interface IDailyOrderOptionGroup {
 	options: IDailyOrderOption[];
 }
 
+export interface IDailyOrderItemVariant {
+	_id?: string;
+	id?: string;
+	sourceVariantId?: string | null;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	displayOrder: number;
+}
+
 export interface IDailyOrderItem {
 	_id?: string;
 	id?: string;
@@ -26,11 +36,14 @@ export interface IDailyOrderItem {
 	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotVariants: IDailyOrderItemVariant[];
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	// null / undefined = unlimited
 	maxQuantity?: number | null;
 	orderedQuantity: number;
+	reservedQuantity?: number;
+	remainingQuantity?: number | null;
 	optionGroups: IDailyOrderOptionGroup[];
 }
 
@@ -48,6 +61,13 @@ export interface IDailyOrderItemInput {
 	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotVariants?: Array<{
+		sourceVariantId?: string | null;
+		name: string;
+		priceKobo: number;
+		isDefault?: boolean;
+		displayOrder?: number;
+	}>;
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;

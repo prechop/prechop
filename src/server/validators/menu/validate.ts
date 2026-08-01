@@ -8,6 +8,47 @@ const SUPPORTED_IMAGE_MIME_TYPES = [
 	"image/webp",
 ] as const;
 
+const menuVariantSchema = zod
+	.object({
+		name: zod.string().trim().min(1).max(120),
+		priceNaira: zod.number().positive(),
+		isDefault: zod.boolean().optional(),
+		isActive: zod.boolean().optional(),
+	})
+	.strict();
+
+const menuVariantsSchema = zod
+	.array(menuVariantSchema)
+	.superRefine((variants, ctx) => {
+		if (variants.length === 0) return;
+		if (variants.length < 2) {
+			ctx.addIssue({
+				code: zod.ZodIssueCode.custom,
+				message: "Add at least two variants or turn variants off.",
+			});
+		}
+		const active = variants.filter((v) => v.isActive !== false);
+		if (active.length === 0) {
+			ctx.addIssue({
+				code: zod.ZodIssueCode.custom,
+				message: "At least one variant must be active.",
+			});
+		}
+		const defaults = variants.filter((v) => v.isDefault);
+		if (defaults.length > 1) {
+			ctx.addIssue({
+				code: zod.ZodIssueCode.custom,
+				message: "Only one variant can be the default.",
+			});
+		}
+		if (defaults.some((v) => v.isActive === false)) {
+			ctx.addIssue({
+				code: zod.ZodIssueCode.custom,
+				message: "The default variant must be active.",
+			});
+		}
+	});
+
 export const createMenuItemSchema = zod
 	.object({
 		name: zod
@@ -21,6 +62,7 @@ export const createMenuItemSchema = zod
 		priceNaira: zod
 			.number({ message: "Price is required." })
 			.positive("Price must be greater than zero."),
+		variants: menuVariantsSchema.optional(),
 		description: zod
 			.string()
 			.trim()
@@ -60,6 +102,7 @@ export const updateMenuItemSchema = zod
 			.number({ message: "Price is required." })
 			.positive("Price must be greater than zero.")
 			.optional(),
+		variants: menuVariantsSchema.optional(),
 		description: zod
 			.string()
 			.trim()
@@ -145,6 +188,7 @@ export function menuValidationError(error: zod.ZodError) {
 		name: "Menu name is required.",
 		category: "Menu category is invalid.",
 		priceNaira: "Price must be greater than zero.",
+		variants: "Menu variants are invalid.",
 		description: "Description must be 2000 characters or fewer.",
 		imageUrl: "The uploaded image URL is invalid.",
 		estimatedPrepMin: "Prep time must be greater than zero.",

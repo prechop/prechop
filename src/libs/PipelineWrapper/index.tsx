@@ -1,6 +1,12 @@
 "use client";
 
-import { type ComponentType, useEffect, useState } from "react";
+import {
+	type ComponentType,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import {
 	FiCamera,
 	FiCheckCircle,
@@ -22,6 +28,7 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
+	Input,
 	PageHeader,
 	Row,
 	Select,
@@ -33,6 +40,10 @@ import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo, statusLabel } from "@/constants/formatters";
+import {
+	canSendOrderChat,
+	ORDER_CHAT_NOT_OPEN_MESSAGE,
+} from "@/constants/orderChat";
 import {
 	canonicalOrderStatus,
 	isBuyerHandoverEligible,
@@ -73,6 +84,7 @@ interface PipelineOrder {
 	handoverCredentialUsedAt?: string | null;
 	items: Array<{
 		snapshotName: string;
+		selectedVariantName?: string;
 		quantity: number;
 		subtotalKobo: number;
 	}>;
@@ -89,6 +101,13 @@ interface BuyerContactReveal {
 	telUrl?: string;
 	whatsappUrl?: string;
 	instructions?: string[];
+}
+
+function canMessageBuyer(order: PipelineOrder) {
+	return canSendOrderChat({
+		status: order.status,
+		updatedAt: order.updatedAt,
+	});
 }
 
 type CompletedFilter = "today" | "7d" | "all";
@@ -331,6 +350,28 @@ const LateSheet = styled.div`
     border-radius: 22px 22px 0 0;
     padding: var(--pc-space-4);
   }
+`;
+
+const HandoverSheet = styled(LateSheet)`
+  width: min(100%, 520px);
+`;
+
+const Segmented = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+
+  @media (max-width: 420px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const CameraPreview = styled.video`
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--pc-radius-sm);
+  background: #000;
+  object-fit: cover;
 `;
 
 const ModalActions = styled.div`
@@ -580,6 +621,19 @@ export default function PipelineWrapper() {
 		null,
 	);
 	const [messageOrderId, setMessageOrderId] = useState<string | null>(null);
+	const [handoverOrder, setHandoverOrder] = useState<PipelineOrder | null>(
+		null,
+	);
+	const [handoverMode, setHandoverMode] = useState<"QR" | "PIN" | "PASTE">(
+		"QR",
+	);
+	const [handoverCode, setHandoverCode] = useState("");
+	const [handoverStatus, setHandoverStatus] = useState<
+		"idle" | "scanning" | "loading" | "success" | "error"
+	>("idle");
+	const [handoverError, setHandoverError] = useState<string | null>(null);
+	const videoRef = useRef<HTMLVideoElement | null>(null);
+	const streamRef = useRef<MediaStream | null>(null);
 	const [estimateByOrder, setEstimateByOrder] = useState<
 		Record<string, string>
 	>({});
@@ -621,6 +675,7 @@ export default function PipelineWrapper() {
 			(order) =>
 				!!order.lateMarkedAt &&
 				!order.handoverCredentialUsedAt &&
+				canMessageBuyer(order) &&
 				COLUMNS.some((column) => orderBelongsInColumn(order, column)) &&
 				!hasLateOrderAck("vendor", order.id),
 		);
@@ -691,32 +746,140 @@ export default function PipelineWrapper() {
 		}
 	}
 
-	async function confirmHandover(order: PipelineOrder, method: "QR" | "PIN") {
-		const label = method === "QR" ? "buyer QR code" : "buyer PIN";
-		const code = window.prompt(
-			method === "QR"
-				? `Scan or paste the ${label} for ${order.orderNumber}:`
-				: `Enter the ${label} for ${order.orderNumber}:`,
-		);
-		if (!code?.trim()) return;
-		setBusyId(order.id);
-		try {
-			await api.post(`/vendor/orders/${order.id}/confirm-handover`, {
-				method,
-				code: code.trim(),
-			});
-			toast("Handover confirmed.", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-				globalMutate(`/orders/${order.id}`),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
+	const stopScanner = useCallback(() => {
+		streamRef.current?.getTracks().forEach((track) => {
+			track.stop();
+		});
+		streamRef.current = null;
+		if (videoRef.current) videoRef.current.srcObject = null;
+	}, []);
+
+	function openHandover(order: PipelineOrder, mode: "QR" | "PIN" | "PASTE") {
+		setHandoverOrder(order);
+		setHandoverMode(mode);
+		setHandoverCode("");
+		setHandoverError(null);
+		setHandoverStatus("idle");
 	}
+
+	const closeHandover = useCallback(() => {
+		stopScanner();
+		setHandoverOrder(null);
+		setHandoverCode("");
+		setHandoverError(null);
+		setHandoverStatus("idle");
+	}, [stopScanner]);
+
+	const submitHandover = useCallback(
+		async (order: PipelineOrder, method: "QR" | "PIN", code: string) => {
+			const trimmed = code.trim();
+			if (!trimmed) {
+				setHandoverError(
+					method === "PIN"
+						? "Enter the buyer PIN."
+						: "Scan or paste the buyer QR value.",
+				);
+				setHandoverStatus("error");
+				return;
+			}
+			setBusyId(order.id);
+			setHandoverStatus("loading");
+			setHandoverError(null);
+			try {
+				await api.post(`/vendor/orders/${order.id}/confirm-handover`, {
+					method,
+					code: trimmed,
+				});
+				setHandoverStatus("success");
+				toast("Handover confirmed.", "success");
+				closeHandover();
+				await Promise.all([
+					mutate(),
+					globalMutate("/vendor/orders/incoming"),
+					globalMutate(`/orders/${order.id}`),
+				]);
+			} catch (e) {
+				const message = errMsg(e);
+				setHandoverStatus("error");
+				setHandoverError(message);
+				toast(message, "error");
+			} finally {
+				setBusyId(null);
+			}
+		},
+		[closeHandover, mutate, toast],
+	);
+
+	useEffect(() => {
+		if (!handoverOrder || handoverMode !== "QR") {
+			stopScanner();
+			return;
+		}
+		const order = handoverOrder;
+		let cancelled = false;
+		let timer: number | undefined;
+		async function scan() {
+			const BarcodeDetectorCtor = (
+				window as unknown as {
+					BarcodeDetector?: new (options?: {
+						formats?: string[];
+					}) => {
+						detect: (
+							video: HTMLVideoElement,
+						) => Promise<Array<{ rawValue?: string }>>;
+					};
+				}
+			).BarcodeDetector;
+			if (!BarcodeDetectorCtor || !navigator.mediaDevices?.getUserMedia) {
+				setHandoverStatus("error");
+				setHandoverError(
+					"Camera scanning is not available on this device. Enter PIN or paste the QR value instead.",
+				);
+				return;
+			}
+			try {
+				setHandoverStatus("scanning");
+				const stream = await navigator.mediaDevices.getUserMedia({
+					video: { facingMode: "environment" },
+				});
+				if (cancelled) {
+					stream.getTracks().forEach((track) => {
+						track.stop();
+					});
+					return;
+				}
+				streamRef.current = stream;
+				if (videoRef.current) {
+					videoRef.current.srcObject = stream;
+					await videoRef.current.play();
+				}
+				const detector = new BarcodeDetectorCtor({
+					formats: ["qr_code"],
+				});
+				const tick = async () => {
+					if (cancelled || !videoRef.current) return;
+					const [result] = await detector.detect(videoRef.current);
+					if (result?.rawValue) {
+						await submitHandover(order, "QR", result.rawValue);
+						return;
+					}
+					timer = window.setTimeout(tick, 350);
+				};
+				timer = window.setTimeout(tick, 350);
+			} catch {
+				setHandoverStatus("error");
+				setHandoverError(
+					"Could not open the camera. Enter PIN or paste the QR value instead.",
+				);
+			}
+		}
+		scan();
+		return () => {
+			cancelled = true;
+			if (timer) window.clearTimeout(timer);
+			stopScanner();
+		};
+	}, [handoverOrder, handoverMode, stopScanner, submitHandover]);
 
 	if (isLoading) return <PageLoader />;
 
@@ -768,6 +931,10 @@ export default function PipelineWrapper() {
 	}
 
 	function openBuyerMessages(order: PipelineOrder) {
+		if (!canMessageBuyer(order)) {
+			toast(ORDER_CHAT_NOT_OPEN_MESSAGE, "error");
+			return;
+		}
 		setMessageOrderId(order.id);
 		dismissLateModal(order);
 	}
@@ -997,6 +1164,163 @@ export default function PipelineWrapper() {
 								</Stack>
 							</Stack>
 						</LateSheet>
+					</ModalOverlay>
+				)}
+				{handoverOrder && (
+					<ModalOverlay role="presentation" onClick={closeHandover}>
+						<HandoverSheet
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="handover-title"
+							onClick={(event) => event.stopPropagation()}
+						>
+							<Stack $gap={14}>
+								<Stack $gap={6}>
+									<Badge $tone="primary">
+										Confirm handover
+									</Badge>
+									<Text
+										id="handover-title"
+										$weight={900}
+										$size={22}
+									>
+										Order #{handoverOrder.orderNumber}
+									</Text>
+									<Text $muted>
+										Scan the buyer's Prechop QR code, enter
+										the PIN instead, or paste the QR value
+										if scanning is unavailable.
+									</Text>
+								</Stack>
+								<Segmented>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "QR"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("QR")}
+									>
+										<FiCamera size={14} aria-hidden /> Scan
+										QR code
+									</Button>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "PIN"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("PIN")}
+									>
+										<FiHash size={14} aria-hidden /> Enter
+										PIN instead
+									</Button>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "PASTE"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("PASTE")}
+									>
+										Paste QR value
+									</Button>
+								</Segmented>
+								{handoverMode === "QR" ? (
+									<Stack $gap={8}>
+										<CameraPreview
+											ref={videoRef}
+											muted
+											playsInline
+										/>
+										<Text $muted $size={13}>
+											{handoverStatus === "scanning"
+												? "Looking for a Prechop QR code..."
+												: "Camera scanning starts automatically when supported."}
+										</Text>
+									</Stack>
+								) : (
+									<Input
+										label={
+											handoverMode === "PIN"
+												? "Buyer PIN"
+												: "QR value"
+										}
+										type={
+											handoverMode === "PIN"
+												? "tel"
+												: "text"
+										}
+										inputMode={
+											handoverMode === "PIN"
+												? "numeric"
+												: "text"
+										}
+										pattern={
+											handoverMode === "PIN"
+												? "[0-9]*"
+												: undefined
+										}
+										maxLength={
+											handoverMode === "PIN" ? 6 : 256
+										}
+										value={handoverCode}
+										onChange={(event) =>
+											setHandoverCode(
+												handoverMode === "PIN"
+													? event.target.value.replace(
+															/\D/g,
+															"",
+														)
+													: event.target.value,
+											)
+										}
+										error={handoverError}
+									/>
+								)}
+								{handoverMode === "QR" && handoverError && (
+									<Text $size={13} $weight={800}>
+										{handoverError}
+									</Text>
+								)}
+								{handoverStatus === "success" && (
+									<Badge $tone="success">
+										Handover confirmed
+									</Badge>
+								)}
+								<ModalActions>
+									<Button
+										type="button"
+										$loading={
+											busyId === handoverOrder.id ||
+											handoverStatus === "loading"
+										}
+										onClick={() =>
+											submitHandover(
+												handoverOrder,
+												handoverMode === "PIN"
+													? "PIN"
+													: "QR",
+												handoverCode,
+											)
+										}
+										disabled={handoverMode === "QR"}
+									>
+										Confirm handover
+									</Button>
+									<Button
+										type="button"
+										$variant="secondary"
+										onClick={closeHandover}
+									>
+										Cancel
+									</Button>
+								</ModalActions>
+							</Stack>
+						</HandoverSheet>
 					</ModalOverlay>
 				)}
 				<Stack $gap={20}>
@@ -1303,6 +1627,18 @@ export default function PipelineWrapper() {
 																					item.snapshotName
 																				}
 																			</Text>
+																			{item.selectedVariantName && (
+																				<Text
+																					$muted
+																					$size={
+																						12
+																					}
+																				>
+																					{
+																						item.selectedVariantName
+																					}
+																				</Text>
+																			)}
 																		</Row>
 																	),
 																)}
@@ -1493,6 +1829,18 @@ export default function PipelineWrapper() {
 																<Button
 																	$size="sm"
 																	$variant="secondary"
+																	disabled={
+																		!canMessageBuyer(
+																			order,
+																		)
+																	}
+																	title={
+																		canMessageBuyer(
+																			order,
+																		)
+																			? "Message buyer"
+																			: ORDER_CHAT_NOT_OPEN_MESSAGE
+																	}
 																	onClick={() =>
 																		setMessageOrderId(
 																			messageOrderId ===
@@ -1596,7 +1944,7 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				confirmHandover(
+																				openHandover(
 																					order,
 																					"QR",
 																				)
@@ -1620,7 +1968,7 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				confirmHandover(
+																				openHandover(
 																					order,
 																					"PIN",
 																				)

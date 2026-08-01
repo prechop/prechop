@@ -114,6 +114,37 @@ export function slotUnavailable(itemName?: string): AppError {
 	);
 }
 
+export function insufficientQuantity(
+	itemName?: string,
+	remaining?: number,
+): AppError {
+	const message =
+		typeof remaining === "number"
+			? `Only ${remaining} plate${remaining === 1 ? " is" : "s are"} currently available.`
+			: "Not enough plates are currently available.";
+	return new AppError(
+		itemName ? `${itemName}: ${message}` : message,
+		409,
+		"INSUFFICIENT_QUANTITY",
+	);
+}
+
+export function listingSoldOut(itemName?: string): AppError {
+	return new AppError(
+		itemName ? `${itemName} is sold out.` : "This listing is sold out.",
+		409,
+		"LISTING_SOLD_OUT",
+	);
+}
+
+export function reservationExpired(): AppError {
+	return new AppError(
+		"Your checkout reservation expired. Please start checkout again.",
+		409,
+		"RESERVATION_EXPIRED",
+	);
+}
+
 export function invalidOrderState(message: string): AppError {
 	return new AppError(message, 409, "INVALID_ORDER_STATE");
 }

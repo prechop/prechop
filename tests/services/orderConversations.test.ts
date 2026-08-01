@@ -1,4 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+	ORDER_CHAT_NOT_OPEN,
+	ORDER_CHAT_NOT_OPEN_MESSAGE,
+	ORDER_CHAT_READ_ONLY,
+	ORDER_CHAT_READ_ONLY_MESSAGE,
+} from "@/constants/orderChat";
 import { generateOrderNumber } from "@/server/constants/orderNumber";
 import {
 	BuyerOrder,
@@ -76,6 +82,46 @@ async function makePaidOrder(status: OrderStatus = OrderStatus.ACCEPTED) {
 }
 
 describe("order conversations service", () => {
+	it.each([
+		OrderStatus.PAID,
+		OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+	])("keeps %s conversations closed until the vendor accepts", async (status) => {
+		const { order, buyerId, vendorUserId } = await makePaidOrder(status);
+
+		const buyerView = await readOrderConversation({
+			auth: auth(buyerId),
+			orderId: order._id.toString(),
+		});
+		expect(buyerView.canSend).toBe(false);
+		expect(buyerView.closedReason).toBe(ORDER_CHAT_NOT_OPEN_MESSAGE);
+
+		await expect(
+			sendOrderMessage({
+				auth: auth(vendorUserId),
+				orderId: order._id.toString(),
+				message: "Please confirm pickup time.",
+			}),
+		).rejects.toMatchObject({ appCode: ORDER_CHAT_NOT_OPEN });
+	});
+
+	it.each([
+		OrderStatus.ACCEPTED,
+		OrderStatus.COOKING,
+		OrderStatus.READY,
+		OrderStatus.READY_FOR_PICKUP,
+		OrderStatus.READY_FOR_DELIVERY,
+		OrderStatus.IN_TRANSIT,
+	])("allows chat while an accepted order is %s", async (status) => {
+		const { order, buyerId } = await makePaidOrder(status);
+		const view = await sendOrderMessage({
+			auth: auth(buyerId),
+			orderId: order._id.toString(),
+			message: "Thanks for the update.",
+		});
+		expect(view.canSend).toBe(true);
+		expect(view.messages).toHaveLength(1);
+	});
+
 	it("lets the buyer and owning vendor read and send order messages", async () => {
 		const { order, buyerId, vendorUserId } = await makePaidOrder();
 		const buyerView = await sendOrderMessage({
@@ -183,13 +229,25 @@ describe("order conversations service", () => {
 			orderId: order._id.toString(),
 		});
 		expect(view.canSend).toBe(false);
+		expect(view.closedReason).toBe(ORDER_CHAT_READ_ONLY_MESSAGE);
 		await expect(
 			sendOrderMessage({
 				auth: auth(buyerId),
 				orderId: order._id.toString(),
 				message: "Still need help.",
 			}),
-		).rejects.toThrow(/closed/i);
+		).rejects.toMatchObject({ appCode: ORDER_CHAT_READ_ONLY });
+	});
+
+	it("allows completed follow-up inside the support window", async () => {
+		const { order, buyerId } = await makePaidOrder(OrderStatus.COMPLETED);
+		const view = await sendOrderMessage({
+			auth: auth(buyerId),
+			orderId: order._id.toString(),
+			message: "One last receipt question.",
+		});
+		expect(view.canSend).toBe(true);
+		expect(view.messages).toHaveLength(1);
 	});
 
 	it("keeps cancelled history visible but closes old cancelled orders", async () => {
@@ -203,5 +261,31 @@ describe("order conversations service", () => {
 			orderId: order._id.toString(),
 		});
 		expect(view.canSend).toBe(false);
+		expect(view.closedReason).toBe(ORDER_CHAT_READ_ONLY_MESSAGE);
+		await expect(
+			sendOrderMessage({
+				auth: auth(buyerId),
+				orderId: order._id.toString(),
+				message: "Can we follow up?",
+			}),
+		).rejects.toMatchObject({ appCode: ORDER_CHAT_READ_ONLY });
+	});
+
+	it.each([
+		OrderStatus.VENDOR_REJECTED,
+		OrderStatus.CANCELLED,
+	])("allows short follow-up after %s", async (status) => {
+		const { order, buyerId, vendorUserId } = await makePaidOrder(status);
+		const buyerView = await sendOrderMessage({
+			auth: auth(buyerId),
+			orderId: order._id.toString(),
+			message: "I need help with this order.",
+		});
+		expect(buyerView.canSend).toBe(true);
+		const vendorView = await readOrderConversation({
+			auth: auth(vendorUserId),
+			orderId: order._id.toString(),
+		});
+		expect(vendorView.unreadCount).toBe(1);
 	});
 });

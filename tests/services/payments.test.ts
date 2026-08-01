@@ -12,13 +12,21 @@ import {
 	getBuyerOrderByIdDB,
 } from "@/server/models/buyerOrders";
 import {
+	createDailyOrderDB,
+	getDailyOrderByIdDB,
+	setDailyOrderStatusDB,
+} from "@/server/models/dailyOrders";
+import {
+	DailyOrderStatus,
 	FulfillmentType,
 	OrderStatus,
 	PaymentStatus,
 } from "@/server/models/enums";
 import { createPaymentDB, getPaymentByRefDB } from "@/server/models/payments";
+import { getRefundByPaymentIdDB } from "@/server/models/refunds";
 import { paystackProvider } from "@/server/providers/paystack";
 import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
+import { confirmBuyerPaymentByReference } from "@/server/services/payments/confirmBuyerPayment";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
 import {
 	ensureReceiptUrl,
@@ -53,13 +61,37 @@ function sign(rawBody: string): string {
 async function seedPaidOrder(amountKobo = 155000) {
 	const { vendorId, campusId } = await makeVendor();
 	const buyerId = oid();
-	const itemId = oid();
+	const menuItemId = oid();
+	const listing = await createDailyOrderDB({
+		payload: {
+			vendorId,
+			campusId,
+			shareableToken: `tok_${Math.random().toString(36).slice(2)}`,
+			title: "Lunch",
+			scheduledDate: new Date(Date.now() + 3_600_000),
+			cutoffTime: new Date(Date.now() + 1_800_000),
+			pickupAvailable: true,
+			items: [
+				{
+					menuItemId,
+					snapshotName: "Jollof",
+					snapshotPriceKobo: 150000,
+					snapshotPrepMin: 20,
+					maxQuantity: null,
+				},
+			],
+		},
+	});
+	const savedListing = await getDailyOrderByIdDB({
+		id: listing!._id.toString(),
+	});
+	const itemId = savedListing!.items[0].id ?? savedListing!.items[0]._id!;
 	slotKeys.add(`slot:reserved:${itemId}`);
 	const ref = generatePaystackRef();
 	const order = await createBuyerOrderDB({
 		payload: {
 			orderNumber: generateOrderNumber(),
-			dailyOrderId: oid(),
+			dailyOrderId: listing!._id.toString(),
 			vendorId,
 			buyerId,
 			campusId,
@@ -71,7 +103,7 @@ async function seedPaidOrder(amountKobo = 155000) {
 			items: [
 				{
 					dailyOrderItemId: itemId,
-					menuItemId: oid(),
+					menuItemId,
 					snapshotName: "Jollof",
 					snapshotPriceKobo: 150000,
 					quantity: 1,
@@ -94,6 +126,114 @@ async function seedPaidOrder(amountKobo = 155000) {
 		},
 	});
 	return { order: order!, ref, amountKobo };
+}
+
+async function seedConfirmableOrder(amountKobo = 155000) {
+	const { vendorId, campusId } = await makeVendor();
+	const buyerId = oid();
+	const menuItemId = oid();
+	const listing = await createDailyOrderDB({
+		payload: {
+			vendorId,
+			campusId,
+			shareableToken: `tok_${Math.random().toString(36).slice(2)}`,
+			title: "Lunch",
+			scheduledDate: new Date(Date.now() + 3_600_000),
+			cutoffTime: new Date(Date.now() + 1_800_000),
+			pickupAvailable: true,
+			items: [
+				{
+					menuItemId,
+					snapshotName: "Jollof",
+					snapshotPriceKobo: 150000,
+					snapshotPrepMin: 20,
+					maxQuantity: 10,
+				},
+			],
+		} as never,
+	});
+	const savedListing = await getDailyOrderByIdDB({
+		id: listing!._id.toString(),
+	});
+	const itemId = savedListing!.items[0].id ?? savedListing!.items[0]._id!;
+	slotKeys.add(`slot:reserved:${itemId}`);
+	await setDailyOrderStatusDB({
+		id: listing!._id.toString(),
+		vendorId,
+		status: DailyOrderStatus.ACTIVE,
+	});
+	const ref = generatePaystackRef();
+	const order = await createBuyerOrderDB({
+		payload: {
+			orderNumber: generateOrderNumber(),
+			dailyOrderId: listing!._id.toString(),
+			vendorId,
+			buyerId,
+			campusId,
+			fulfillmentType: FulfillmentType.PICKUP,
+			subtotalKobo: 150000,
+			deliveryFeeKobo: 0,
+			platformFeeKobo: amountKobo - 150000,
+			totalKobo: amountKobo,
+			items: [
+				{
+					dailyOrderItemId: itemId,
+					menuItemId,
+					snapshotName: "Jollof",
+					snapshotPriceKobo: 150000,
+					quantity: 1,
+					subtotalKobo: 150000,
+					selectedOptions: [],
+				},
+			],
+		},
+	});
+	await createPaymentDB({
+		payload: {
+			buyerOrderId: order!._id.toString(),
+			buyerId,
+			vendorId,
+			paystackRef: ref,
+			amountKobo,
+			platformFeeKobo: amountKobo - 150000,
+			vendorAmountKobo: 140000,
+			idempotencyKey: hash(ref),
+		},
+	});
+	slotKeys.add(`slot:reserved:${itemId}:order:${order!._id.toString()}`);
+	return {
+		order: order!,
+		ref,
+		amountKobo,
+		buyerId,
+		dailyOrderId: listing!._id.toString(),
+		dailyOrderItemId: itemId.toString(),
+	};
+}
+
+function verifiedTx({
+	ref,
+	amountKobo,
+	status = "success",
+	domain = "test",
+	currency = "NGN",
+}: {
+	ref: string;
+	amountKobo: number;
+	status?: string;
+	domain?: string;
+	currency?: string;
+}) {
+	return {
+		status,
+		reference: ref,
+		amount: amountKobo,
+		currency,
+		domain,
+		channel: "card",
+		paid_at: status === "success" ? new Date().toISOString() : null,
+		metadata: {},
+	};
 }
 
 describe("handlePaystackWebhook", () => {
@@ -135,7 +275,7 @@ describe("handlePaystackWebhook", () => {
 		expect(res.orderNumber).toBe(order.orderNumber);
 
 		const paid = await getBuyerOrderByIdDB({ id: order._id.toString() });
-		expect(paid!.status).toBe(OrderStatus.PAID);
+		expect(paid!.status).toBe(OrderStatus.AWAITING_VENDOR_ACCEPTANCE);
 		const payment = await getPaymentByRefDB({ paystackRef: ref });
 		expect(payment!.status).toBe(PaymentStatus.SUCCESS);
 		expect(payment!.webhookVerified).toBe(true);
@@ -207,6 +347,328 @@ describe("handlePaystackWebhook", () => {
 		await expect(
 			handlePaystackWebhook({ rawBody: body, signature: sign(body) }),
 		).rejects.toThrow();
+	});
+});
+
+describe("confirmBuyerPaymentByReference", () => {
+	it("finalises a successful callback before the webhook arrives", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_CONFIRMED");
+		expect(res.order!.orderNumber).toBe(order.orderNumber);
+		const paid = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		expect(paid!.status).toBe(OrderStatus.AWAITING_VENDOR_ACCEPTANCE);
+		const payment = await getPaymentByRefDB({ paystackRef: ref });
+		expect(payment!.status).toBe(PaymentStatus.SUCCESS);
+		expect(payment!.webhookVerified).toBe(true);
+	});
+
+	it("recovers capacity when the order owner hold is missing but atomic stock is available", async () => {
+		const {
+			order,
+			ref,
+			amountKobo,
+			buyerId,
+			dailyOrderId,
+			dailyOrderItemId,
+		} = await seedConfirmableOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { DailyOrder } = await import("@/server/models/dailyOrders");
+		await DailyOrder.collection.updateOne(
+			{
+				_id: new mongoose.Types.ObjectId(dailyOrderId),
+				"items._id": new mongoose.Types.ObjectId(dailyOrderItemId),
+			},
+			{
+				$set: {
+					"items.$.maxQuantity": 1,
+					"items.$.orderedQuantity": 0,
+				},
+			},
+		);
+		await Redis.set(`slot:reserved:${dailyOrderItemId}`, "1");
+		await Redis.del(
+			`slot:reserved:${dailyOrderItemId}:order:${order._id.toString()}`,
+		);
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 77,
+				status: "success",
+				amount: amountKobo,
+			});
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_CONFIRMED");
+		const paid = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		expect(paid!.status).toBe(OrderStatus.AWAITING_VENDOR_ACCEPTANCE);
+		expect(paid!.inventoryCommittedAt).toBeTruthy();
+		const listing = await getDailyOrderByIdDB({ id: dailyOrderId });
+		expect(
+			listing!.items.find((item) => item.id === dailyOrderItemId)!
+				.orderedQuantity,
+		).toBe(1);
+		const payment = await getPaymentByRefDB({ paystackRef: ref });
+		expect(payment!.status).toBe(PaymentStatus.SUCCESS);
+		const refund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		expect(refund).toBeNull();
+		expect(refundSpy).not.toHaveBeenCalled();
+	});
+
+	it("is idempotent when the webhook already finalised the order", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		const body = JSON.stringify({
+			event: "charge.success",
+			data: {
+				reference: ref,
+				amount: amountKobo,
+				channel: "card",
+				status: "success",
+			},
+		});
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_CONFIRMED");
+		expect(res.order!.orderNumber).toBe(order.orderNumber);
+	});
+
+	it("does not refund or double-commit on duplicate callback and webhook", async () => {
+		const {
+			order,
+			ref,
+			amountKobo,
+			buyerId,
+			dailyOrderId,
+			dailyOrderItemId,
+		} = await seedConfirmableOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { DailyOrder } = await import("@/server/models/dailyOrders");
+		await DailyOrder.collection.updateOne(
+			{
+				_id: new mongoose.Types.ObjectId(dailyOrderId),
+				"items._id": new mongoose.Types.ObjectId(dailyOrderItemId),
+			},
+			{
+				$set: {
+					"items.$.maxQuantity": 1,
+					"items.$.orderedQuantity": 0,
+				},
+			},
+		);
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 78,
+				status: "success",
+				amount: amountKobo,
+			});
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+		const body = JSON.stringify({
+			event: "charge.success",
+			data: {
+				reference: ref,
+				amount: amountKobo,
+				channel: "card",
+				status: "success",
+			},
+		});
+
+		await confirmBuyerPaymentByReference({ buyerId, reference: ref });
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		await confirmBuyerPaymentByReference({ buyerId, reference: ref });
+
+		const listing = await getDailyOrderByIdDB({ id: dailyOrderId });
+		expect(
+			listing!.items.find((item) => item.id === dailyOrderItemId)!
+				.orderedQuantity,
+		).toBe(1);
+		const paid = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		expect(paid!.status).toBe(OrderStatus.AWAITING_VENDOR_ACCEPTANCE);
+		const payment = await getPaymentByRefDB({ paystackRef: ref });
+		const refund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		expect(refund).toBeNull();
+		expect(refundSpy).not.toHaveBeenCalled();
+	});
+
+	it("refunds only when atomic capacity is genuinely exhausted", async () => {
+		const {
+			order,
+			ref,
+			amountKobo,
+			buyerId,
+			dailyOrderId,
+			dailyOrderItemId,
+		} = await seedConfirmableOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { DailyOrder } = await import("@/server/models/dailyOrders");
+		await DailyOrder.collection.updateOne(
+			{
+				_id: new mongoose.Types.ObjectId(dailyOrderId),
+				"items._id": new mongoose.Types.ObjectId(dailyOrderItemId),
+			},
+			{
+				$set: {
+					"items.$.maxQuantity": 1,
+					"items.$.orderedQuantity": 1,
+				},
+			},
+		);
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 79,
+				status: "success",
+				amount: amountKobo,
+			});
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("ORDER_STATE_CONFLICT");
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+		const refunded = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(refunded!.status).toBe(OrderStatus.REFUNDED);
+	});
+
+	it("returns pending for a non-terminal Paystack transaction", async () => {
+		const { ref, amountKobo, buyerId } = await seedConfirmableOrder();
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo, status: "ongoing" }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_PENDING");
+		expect(res.retryable).toBe(true);
+	});
+
+	it("returns failed for a terminal unsuccessful Paystack transaction", async () => {
+		const { ref, amountKobo, buyerId } = await seedConfirmableOrder();
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo, status: "failed" }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_FAILED");
+	});
+
+	it("returns amount mismatch without finalising", async () => {
+		const { order, ref, buyerId } = await seedConfirmableOrder(155000);
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo: 154000 }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("AMOUNT_MISMATCH");
+		const unchanged = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(unchanged!.status).toBe(OrderStatus.PENDING_PAYMENT);
+	});
+
+	it("returns reference not found for the wrong buyer", async () => {
+		const { ref } = await seedConfirmableOrder();
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId: oid(),
+			reference: ref,
+		});
+
+		expect(res.status).toBe("REFERENCE_NOT_FOUND");
+	});
+
+	it("returns mode mismatch without finalising", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo, domain: "live" }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("MODE_MISMATCH");
+		const unchanged = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(unchanged!.status).toBe(OrderStatus.PENDING_PAYMENT);
+	});
+
+	it("routes a successful payment on a cancelled order to conflict", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { BuyerOrder } = await import("@/server/models/buyerOrders");
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(order._id) },
+			{ $set: { status: OrderStatus.CANCELLED } },
+		);
+		vi.spyOn(paystackProvider, "refund").mockResolvedValue({
+			id: 99,
+			status: "success",
+			amount: amountKobo,
+		});
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("ORDER_STATE_CONFLICT");
 	});
 });
 

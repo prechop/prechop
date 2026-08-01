@@ -24,6 +24,7 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import { canSendOrderChat } from "@/constants/orderChat";
 import {
 	hasLateOrderAck,
 	rememberLateOrderAck,
@@ -239,6 +240,7 @@ function isLateActiveOrder(order: BuyerOrder) {
 	return (
 		!!order.lateMarkedAt &&
 		ACTIVE.includes(order.status) &&
+		canSendOrderChat({ status: order.status }) &&
 		!order.handoverCredentialUsedAt
 	);
 }
@@ -283,6 +285,7 @@ export default function MyOrdersWrapper() {
 	}
 
 	function messageKitchen(order: BuyerOrder) {
+		if (!canSendOrderChat({ status: order.status })) return;
 		dismissLateModal(order);
 		router.push(`/my-orders/${order.id}#messages`);
 	}

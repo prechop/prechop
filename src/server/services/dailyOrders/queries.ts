@@ -12,6 +12,10 @@ import {
 	listDailyOrdersByVendorDB,
 	listMarketplaceVendorsDB,
 } from "../../models";
+import {
+	withSlotAvailability,
+	withSlotAvailabilityForListings,
+} from "../buyerOrders/slots";
 import { assertMarketplaceEnabled } from "../siteConfigs";
 import {
 	comparePublicVendors,
@@ -97,10 +101,12 @@ export async function getMarketplace({
 	// so grouping the flat result by vendor reproduces the previous per-vendor
 	// shape and ordering exactly.
 	const now = new Date();
-	const listings = await listActivePublicListingsForVendorIdsDB({
-		vendorIds: vendors.map((vendor) => vendor._id.toString()),
-		now,
-	});
+	const listings = await withSlotAvailabilityForListings(
+		await listActivePublicListingsForVendorIdsDB({
+			vendorIds: vendors.map((vendor) => vendor._id.toString()),
+			now,
+		}),
+	);
 	const listingsByVendor = new Map<string, IDailyOrder[]>();
 	for (const listing of listings) {
 		const key = listing.vendorId.toString();
@@ -160,8 +166,9 @@ export async function getPublicDailyOrder({
 	// Same trust gate as the feed — the listing page shows the shop's rating.
 	const vendorTotalReviews = vendor?.totalReviews ?? 0;
 	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
+	const orderWithAvailability = await withSlotAvailability(order);
 	return {
-		...order,
+		...orderWithAvailability,
 		deliveryContactPhone: undefined,
 		isOwnListing,
 		vendorOpen,

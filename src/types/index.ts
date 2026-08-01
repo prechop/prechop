@@ -30,12 +30,22 @@ export interface MenuItem {
 	name: string;
 	description?: string;
 	priceKobo: number;
+	variants: MenuItemVariant[];
 	imageUrl?: string;
 	estimatedPrepMin: number;
 	isAvailable: boolean;
 	isSoldOut: boolean;
 	displayOrder: number;
 	optionGroupIds: string[];
+}
+
+export interface MenuItemVariant {
+	id: string;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	isActive: boolean;
+	displayOrder: number;
 }
 
 export interface MenuOption {
@@ -127,17 +137,28 @@ export interface DailyOrderOptionGroup {
 }
 
 export interface DailyOrderItem {
-	maxPlate: any;
 	id: string;
 	menuItemId: string;
 	category?: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	snapshotVariants: DailyOrderItemVariant[];
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;
 	orderedQuantity: number;
+	reservedQuantity?: number;
+	remainingQuantity?: number | null;
 	optionGroups: DailyOrderOptionGroup[];
+}
+
+export interface DailyOrderItemVariant {
+	id: string;
+	sourceVariantId?: string | null;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	displayOrder: number;
 }
 
 export interface DailyOrder {
@@ -304,6 +325,9 @@ export interface BuyerOrderItem {
 	dailyOrderItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	selectedVariantDailyOrderVariantId?: string;
+	selectedVariantName?: string;
+	selectedVariantPriceKobo?: number;
 	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
@@ -395,6 +419,7 @@ export interface BuyerOrder {
 	lateEscalatedAt?: string | null;
 	adminReviewRequiredAt?: string | null;
 	adminReviewReason?: string | null;
+	readyAt?: string | null;
 	deliveryStartedAt?: string | null;
 	pickedUpAt?: string | null;
 	deliveredAt?: string | null;

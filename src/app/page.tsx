@@ -56,7 +56,7 @@ const Logo = styled.span`
   display: grid;
   place-items: center;
   border-radius: 10px;
-  background: var(--pc-gradient-warm);
+  // background: var(--pc-gradient-warm);
   box-shadow: var(--pc-shadow-primary);
   font-size: 18px;
 `;
@@ -350,288 +350,257 @@ const AuthCluster = styled.div`
 
 /** Auth-aware nav control: reflects whether the visitor is signed in. */
 function HeaderAuth() {
-	const { user, isLoading, isAuthenticated } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuth();
 
-	// Don't flash "Log in" before we know — just hold the space.
-	if (isLoading) return <AuthCluster aria-hidden />;
+  // Don't flash "Log in" before we know — just hold the space.
+  if (isLoading) return <AuthCluster aria-hidden />;
 
-	if (!isAuthenticated) {
-		return (
-			<AuthCluster as="nav" aria-label="Account">
-				<Button
-					as={Link}
-					href="/login"
-					$variant="ghost"
-					$size="sm"
-					$pill
-				>
-					Log in
-				</Button>
-			</AuthCluster>
-		);
-	}
+  if (!isAuthenticated) {
+    return (
+      <AuthCluster as="nav" aria-label="Account">
+        <Button as={Link} href="/login" $variant="ghost" $size="sm" $pill>
+          Log in
+        </Button>
+      </AuthCluster>
+    );
+  }
 
-	const isVendor = !!user?.groups?.includes("Vendors");
-	const primaryHref = isVendor ? "/dashboard" : "/my-orders";
-	const primaryLabel = isVendor ? "Dashboard" : "My orders";
-	const fullName = user
-		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
-		: undefined;
+  const isVendor = !!user?.groups?.includes("Vendors");
+  const primaryHref = isVendor ? "/dashboard" : "/my-orders";
+  const primaryLabel = isVendor ? "Dashboard" : "My orders";
+  const fullName = user
+    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+    : undefined;
 
-	return (
-		<AuthCluster as="nav" aria-label="Account">
-			<Button
-				as={Link}
-				href={primaryHref}
-				$variant="ghost"
-				$size="sm"
-				$pill
-			>
-				{primaryLabel}
-			</Button>
-			<Link href="/account" aria-label="Your account">
-				<Avatar name={fullName} size={38} />
-			</Link>
-		</AuthCluster>
-	);
+  return (
+    <AuthCluster as="nav" aria-label="Account">
+      <Button as={Link} href={primaryHref} $variant="ghost" $size="sm" $pill>
+        {primaryLabel}
+      </Button>
+      <Link href="/account" aria-label="Your account">
+        <Avatar name={fullName} size={38} />
+      </Link>
+    </AuthCluster>
+  );
 }
 
 export default function LandingPage() {
-	const [flowAudience, setFlowAudience] = useState<"BUYERS" | "VENDORS">(
-		"BUYERS",
-	);
+  const [flowAudience, setFlowAudience] = useState<"BUYERS" | "VENDORS">(
+    "BUYERS",
+  );
 
-	return (
-		<Page>
-			<SkipLink href="#main-content">Skip to content</SkipLink>
-			<Nav as="header">
-				<Brand>
-					<Logo aria-hidden>🍲</Logo>
-					Prechop
-				</Brand>
-				<HeaderAuth />
-			</Nav>
-			<Hero as="main" id="main-content">
-				<Copy>
-					<Kicker>
-						<span aria-hidden>⏱️</span> Order <b>before</b> they cook
-					</Kicker>
-					<H1>
-						Skip the queue.
-						<br />
-						<em>Reserve your meal.</em>
-					</H1>
-					<Lead>
-						Browse today&apos;s campus kitchens, reserve your meal,
-						and pay upfront. Pick up hot &mdash; or choose hostel
-						delivery&mdash;without worrying about sold-out food.
-					</Lead>
-					<CTAs>
-						<Button as={Link} href="/marketplace" $size="lg" $pill>
-							Browse food 🍛
-						</Button>
-						<Button
-							as={Link}
-							href="/sell"
-							$size="lg"
-							$variant="secondary"
-							$pill
-						>
-							Become a vendor
-						</Button>
-					</CTAs>
-    
-					<Points>
-						<li>
-							<span>✓</span> Secure Paystack checkout
-						</li>
-						<li>
-							<span>✓</span> Live cutoff timers
-						</li>
-						<li>
-							<span>✓</span> Pickup or hostel delivery
-						</li>
-					</Points>
-				</Copy>
-				<Visual aria-hidden>
-					<Plate>🍲</Plate>
-					<FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
-						<span
-							className="emoji"
-							style={{ background: "var(--pc-color-accent-50)" }}
-						>
-							✅
-						</span>
-						<div>
-							<strong>Order confirmed</strong>
-							<br />
-							<small>Ready by 1:30 PM</small>
-						</div>
-					</FloatCard>
-					<FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
-						<span
-							className="emoji"
-							style={{ background: "var(--pc-color-gold-50)" }}
-						>
-							🔥
-						</span>
-						<div>
-							<strong>Now cooking</strong>
-							<br />
-							<small>Jollof &amp; grilled chicken</small>
-						</div>
-					</FloatCard>
-				</Visual>
-			</Hero>
-			<Info aria-label="Help and information">
-				<InfoHeader>
-					<h2>How Prechop works</h2>
-					<p>
-						Prechop helps buyers reserve food before it sells out
-						and helps campus kitchens cook only for confirmed
-						orders.
-					</p>
-				</InfoHeader>
-				<FlowSwitch role="tablist" aria-label="How it works audience">
-					<FlowTab
-						type="button"
-						role="tab"
-						$active={flowAudience === "BUYERS"}
-						aria-selected={flowAudience === "BUYERS"}
-						onClick={() => setFlowAudience("BUYERS")}
-					>
-						For Buyers
-					</FlowTab>
-					<FlowTab
-						type="button"
-						role="tab"
-						$active={flowAudience === "VENDORS"}
-						aria-selected={flowAudience === "VENDORS"}
-						onClick={() => setFlowAudience("VENDORS")}
-					>
-						For Vendors
-					</FlowTab>
-				</FlowSwitch>
-				{flowAudience === "BUYERS" ? (
-					<InfoGrid>
-						<InfoCard>
-							<h3>Buyer flow</h3>
-							<StepList>
-								<li>
-									<span>1</span>
-									<div>
-										<strong>Browse kitchens</strong>
-										<small>
-											See open and closed vendors across
-											your campus.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>2</span>
-									<div>
-										<strong>Choose a meal</strong>
-										<small>
-											Pick items, options, pickup or
-											delivery.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>3</span>
-									<div>
-										<strong>Pay and reserve</strong>
-										<small>
-											Payment confirms your slot with the
-											vendor.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>4</span>
-									<div>
-										<strong>Receive your order</strong>
-										<small>
-											Track cooking status, then pick up
-											or receive delivery.
-										</small>
-									</div>
-								</li>
-							</StepList>
-						</InfoCard>
-						<InfoCard>
-							<h3>Pay for Me</h3>
-							<p>
-								Choose Pay for Me at checkout to create a secure
-								payment link. Send it to a parent, friend or
-								sponsor; once they pay through Paystack, your
-								original order is confirmed automatically.
-							</p>
-						</InfoCard>
-					</InfoGrid>
-				) : (
-					<InfoGrid>
-						<InfoCard>
-							<h3>Vendor flow</h3>
-							<StepList>
-								<li>
-									<span>1</span>
-									<div>
-										<strong>
-											Create your kitchen profile
-										</strong>
-										<small>
-											Add your business information,
-											location, menu and fulfilment
-											options.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>2</span>
-									<div>
-										<strong>
-											Post what you are cooking
-										</strong>
-										<small>
-											Create a daily menu, set order
-											opening and closing times, quantity
-											and price.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>3</span>
-									<div>
-										<strong>
-											Receive confirmed orders
-										</strong>
-										<small>
-											See paid orders in your dashboard
-											and prepare only what customers
-											reserved.
-										</small>
-									</div>
-								</li>
-								<li>
-									<span>4</span>
-									<div>
-										<strong>Cook and fulfil</strong>
-										<small>
-											Update the cooking status, then hand
-											over for pickup or complete
-											vendor-managed delivery.
-										</small>
-									</div>
-								</li>
-							</StepList>
-						</InfoCard>
-					</InfoGrid>
-				)}
-			</Info>
-			<Footer as="footer">
-				© {new Date().getFullYear()} Prechop · Campus food, pre-ordered.
-			</Footer>
-		</Page>
-	);
+  return (
+    <Page>
+      <SkipLink href="#main-content">Skip to content</SkipLink>
+      <Nav as="header">
+        <Brand>
+          {/* <Logo aria-hidden>🍲</Logo> */}
+          <Logo aria-hidden>
+            <img src="/dark.png" alt="Prechop" />
+          </Logo>
+          Prechop
+        </Brand>
+        <HeaderAuth />
+      </Nav>
+      <Hero as="main" id="main-content">
+        <Copy>
+          <Kicker>
+            <span aria-hidden>⏱️</span> Order <b>before</b> they cook
+          </Kicker>
+          <H1>
+            Skip the queue.
+            <br />
+            <em>Reserve your meal.</em>
+          </H1>
+          <Lead>
+            Browse today&apos;s campus kitchens, reserve your meal, and pay
+            upfront. Pick up hot &mdash; or choose hostel delivery&mdash;without
+            worrying about sold-out food.
+          </Lead>
+          <CTAs>
+            <Button as={Link} href="/marketplace" $size="lg" $pill>
+              Browse food 🍛
+            </Button>
+            <Button
+              as={Link}
+              href="/sell"
+              $size="lg"
+              $variant="secondary"
+              $pill>
+              Become a vendor
+            </Button>
+          </CTAs>
+
+          <Points>
+            <li>
+              <span>✓</span> Secure Paystack checkout
+            </li>
+            <li>
+              <span>✓</span> Live cutoff timers
+            </li>
+            <li>
+              <span>✓</span> Pickup or hostel delivery
+            </li>
+          </Points>
+        </Copy>
+        <Visual aria-hidden>
+          {/* <Plate>🍲</Plate> */}
+          <Plate>
+            <img src="/img-2.png" alt="" aria-hidden />
+          </Plate>
+          <FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
+            <span
+              className="emoji"
+              style={{ background: "var(--pc-color-accent-50)" }}>
+              ✅
+            </span>
+            <div>
+              <strong>Order confirmed</strong>
+              <br />
+              <small>Ready by 1:30 PM</small>
+            </div>
+          </FloatCard>
+          <FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
+            <span
+              className="emoji"
+              style={{ background: "var(--pc-color-gold-50)" }}>
+              🔥
+            </span>
+            <div>
+              <strong>Now cooking</strong>
+              <br />
+              <small>Jollof &amp; grilled chicken</small>
+            </div>
+          </FloatCard>
+        </Visual>
+      </Hero>
+      <Info aria-label="Help and information">
+        <InfoHeader>
+          <h2>How Prechop works</h2>
+          <p>
+            Prechop helps buyers reserve food before it sells out and helps
+            campus kitchens cook only for confirmed orders.
+          </p>
+        </InfoHeader>
+        <FlowSwitch role="tablist" aria-label="How it works audience">
+          <FlowTab
+            type="button"
+            role="tab"
+            $active={flowAudience === "BUYERS"}
+            aria-selected={flowAudience === "BUYERS"}
+            onClick={() => setFlowAudience("BUYERS")}>
+            For Buyers
+          </FlowTab>
+          <FlowTab
+            type="button"
+            role="tab"
+            $active={flowAudience === "VENDORS"}
+            aria-selected={flowAudience === "VENDORS"}
+            onClick={() => setFlowAudience("VENDORS")}>
+            For Vendors
+          </FlowTab>
+        </FlowSwitch>
+        {flowAudience === "BUYERS" ? (
+          <InfoGrid>
+            <InfoCard>
+              <h3>Buyer flow</h3>
+              <StepList>
+                <li>
+                  <span>1</span>
+                  <div>
+                    <strong>Browse kitchens</strong>
+                    <small>
+                      See open and closed vendors across your campus.
+                    </small>
+                  </div>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>Choose a meal</strong>
+                    <small>Pick items, options, pickup or delivery.</small>
+                  </div>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>Pay and reserve</strong>
+                    <small>Payment confirms your slot with the vendor.</small>
+                  </div>
+                </li>
+                <li>
+                  <span>4</span>
+                  <div>
+                    <strong>Receive your order</strong>
+                    <small>
+                      Track cooking status, then pick up or receive delivery.
+                    </small>
+                  </div>
+                </li>
+              </StepList>
+            </InfoCard>
+            <InfoCard>
+              <h3>Pay for Me</h3>
+              <p>
+                Choose Pay for Me at checkout to create a secure payment link.
+                Send it to a parent, friend or sponsor; once they pay through
+                Paystack, your original order is confirmed automatically.
+              </p>
+            </InfoCard>
+          </InfoGrid>
+        ) : (
+          <InfoGrid>
+            <InfoCard>
+              <h3>Vendor flow</h3>
+              <StepList>
+                <li>
+                  <span>1</span>
+                  <div>
+                    <strong>Create your kitchen profile</strong>
+                    <small>
+                      Add your business information, location, menu and
+                      fulfilment options.
+                    </small>
+                  </div>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>Post what you are cooking</strong>
+                    <small>
+                      Create a daily menu, set order opening and closing times,
+                      quantity and price.
+                    </small>
+                  </div>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>Receive confirmed orders</strong>
+                    <small>
+                      See paid orders in your dashboard and prepare only what
+                      customers reserved.
+                    </small>
+                  </div>
+                </li>
+                <li>
+                  <span>4</span>
+                  <div>
+                    <strong>Cook and fulfil</strong>
+                    <small>
+                      Update the cooking status, then hand over for pickup or
+                      complete vendor-managed delivery.
+                    </small>
+                  </div>
+                </li>
+              </StepList>
+            </InfoCard>
+          </InfoGrid>
+        )}
+      </Info>
+      <Footer as="footer">
+        © {new Date().getFullYear()} Prechop · Campus food, pre-ordered.
+      </Footer>
+    </Page>
+  );
 }

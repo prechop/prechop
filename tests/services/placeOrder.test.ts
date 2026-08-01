@@ -56,12 +56,23 @@ async function activeListing({
 	availableFrom,
 	deliveryAvailable = false,
 	deliveryFeeKobo = 0,
+	item,
 }: {
 	maxQuantity?: number | null;
 	campusId: string;
 	availableFrom?: Date;
 	deliveryAvailable?: boolean;
 	deliveryFeeKobo?: number;
+	item?: Partial<{
+		snapshotName: string;
+		snapshotPriceKobo: number;
+		snapshotVariants: Array<{
+			name: string;
+			priceKobo: number;
+			isDefault?: boolean;
+			displayOrder?: number;
+		}>;
+	}>;
 }) {
 	const vendor = await createVendorProfileDB({
 		payload: {
@@ -96,8 +107,9 @@ async function activeListing({
 			items: [
 				{
 					menuItemId: oid(),
-					snapshotName: "Jollof",
-					snapshotPriceKobo: 150000,
+					snapshotName: item?.snapshotName ?? "Jollof",
+					snapshotPriceKobo: item?.snapshotPriceKobo ?? 150000,
+					snapshotVariants: item?.snapshotVariants,
 					snapshotPrepMin: 20,
 					maxQuantity,
 				},
@@ -110,7 +122,8 @@ async function activeListing({
 		vendorId,
 		status: DailyOrderStatus.ACTIVE,
 	});
-	const itemId = listing.items[0]._id!.toString();
+	const itemId = listing.items[0]._id?.toString();
+	if (!itemId) throw new Error("Expected daily order item id");
 	slotKeys.add(`slot:reserved:${itemId}`);
 	return { listing, vendorId, vendorUserId, itemId };
 }
@@ -222,6 +235,116 @@ describe("placeOrder service", () => {
 		expect(order!.vendorSettlementKobo).toBe(
 			subtotalKobo - commission + deliveryFeeKobo,
 		);
+	});
+
+	it("uses the selected variant price as the item base price", async () => {
+		const campusId = oid();
+		const buyerId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotName: "Cupcake",
+				snapshotPriceKobo: 200000,
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isDefault: false,
+						displayOrder: 1,
+					},
+				],
+			},
+		});
+		const large = listing.items[0].snapshotVariants.find(
+			(variant) => variant.name === "Large",
+		);
+		const largeId = (large?.id ?? large?._id)?.toString();
+		if (!largeId) throw new Error("Expected Large variant snapshot");
+
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [
+					{
+						dailyOrderItemId: itemId,
+						quantity: 2,
+						selectedVariantId: largeId,
+					},
+				],
+			},
+		});
+
+		const subtotalKobo = 600000;
+		expect(result.totalKobo).toBe(
+			subtotalKobo + calculateBuyerServiceFeeKobo(subtotalKobo),
+		);
+		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
+		if (!order) throw new Error("Expected buyer order to be created");
+		expect(order.subtotalKobo).toBe(subtotalKobo);
+		expect(order.items[0].snapshotPriceKobo).toBe(300000);
+		expect(order.items[0].selectedVariantName).toBe("Large");
+		expect(order.items[0].selectedVariantPriceKobo).toBe(300000);
+	});
+
+	it("rejects a variant item without a valid selected variant", async () => {
+		const campusId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						displayOrder: 1,
+					},
+				],
+			},
+		});
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [
+						{
+							dailyOrderItemId: itemId,
+							quantity: 1,
+							selectedVariantId: oid(),
+						},
+					],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
 	});
 
 	it("creates a pay-for-me order without initializing Paystack immediately", async () => {

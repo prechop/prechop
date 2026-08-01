@@ -31,6 +31,9 @@ export interface IBuyerOrderItem {
 	menuItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	selectedVariantDailyOrderVariantId?: string;
+	selectedVariantName?: string;
+	selectedVariantPriceKobo?: number;
 	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
@@ -69,6 +72,9 @@ export interface IBuyerOrderCreateInput {
 	vendorDeliveryAmountKobo?: number;
 	vendorSettlementKobo?: number;
 	totalKobo: number;
+	handoverTokenHash?: string;
+	handoverPinHash?: string;
+	handoverCredentialCreatedAt?: Date;
 	items: IBuyerOrderItem[];
 }
 
@@ -102,6 +108,7 @@ export interface IBuyerOrder {
 	cancellationExplanation?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";
 	paidAt?: Date;
+	inventoryCommittedAt?: Date;
 	acceptedAt?: Date;
 	acceptanceDeadline?: Date;
 	expectedReadyAt?: Date;

@@ -704,8 +704,8 @@ describe("handover confirmation", () => {
 		const before = await getAdminHandoverVerificationDetails({
 			orderId: order._id.toString(),
 		});
-		expect(before.qrGenerated).toBe(false);
-		expect(before.pinGenerated).toBe(false);
+		expect(before.qrGenerated).toBe(true);
+		expect(before.pinGenerated).toBe(true);
 		expect(before.handoverEligible).toBe(true);
 		expect(before.paymentVerified).toBe(true);
 
@@ -726,6 +726,9 @@ describe("handover confirmation", () => {
 		});
 		expect(after.qrGenerated).toBe(true);
 		expect(after.pinGenerated).toBe(true);
+		expect(after.credentialGeneratedAt?.getTime()).toBe(
+			before.credentialGeneratedAt?.getTime(),
+		);
 
 		const audit = await listAuditLogsDB({
 			filter: {
@@ -740,6 +743,89 @@ describe("handover confirmation", () => {
 		if (!entry) throw new Error("Expected handover audit entry");
 		expect(entry.userId?.toString()).toBe(adminUserId);
 		expect(JSON.stringify(entry.newState)).not.toContain(revealed.pin);
+	});
+
+	it("generates handover credentials when the buyer order is created and does not regenerate them", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		await addSuccessfulPayment(order);
+
+		const created = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		expect(created?.handoverTokenHash).toBeTruthy();
+		expect(created?.handoverPinHash).toBeTruthy();
+		expect(created?.handoverCredentialCreatedAt).toBeInstanceOf(Date);
+
+		await getBuyerHandoverCredential({
+			buyerId,
+			orderId: order._id.toString(),
+		});
+		const afterDisplay = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(afterDisplay?.handoverTokenHash).toBe(
+			created?.handoverTokenHash,
+		);
+		expect(afterDisplay?.handoverPinHash).toBe(created?.handoverPinHash);
+		expect(afterDisplay?.handoverCredentialCreatedAt?.getTime()).toBe(
+			created?.handoverCredentialCreatedAt?.getTime(),
+		);
+	});
+
+	it("blocks admin PIN reveal after the handover credential has been used", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		await addSuccessfulPayment(order);
+		const credential = await getBuyerHandoverCredential({
+			buyerId,
+			orderId: order._id.toString(),
+		});
+		await confirmOrderHandover({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+			method: "PIN",
+			code: credential.pin,
+		});
+
+		await expect(
+			revealAdminHandoverPin({
+				orderId: order._id.toString(),
+				actor: { userId: oid(), role: "Administrators" },
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_CREDENTIAL_USED" });
+	});
+
+	it("blocks admin PIN reveal before the permitted handover stage", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.COOKING,
+		});
+		await addSuccessfulPayment(order);
+
+		await expect(
+			revealAdminHandoverPin({
+				orderId: order._id.toString(),
+				actor: { userId: oid(), role: "Administrators" },
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_NOT_ELIGIBLE" });
 	});
 
 	it("confirms pickup with the correct PIN", async () => {
@@ -912,6 +998,39 @@ describe("handover confirmation", () => {
 		expect(completed.status).toBe(OrderStatus.COMPLETED);
 		expect(completed.confirmationMethod).toBe("QR");
 		expect(completed.deliveredAt).toBeInstanceOf(Date);
+	});
+
+	it("rejects a QR credential from a different order", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const first = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		const second = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		await addSuccessfulPayment(first);
+		await addSuccessfulPayment(second);
+		const credential = await getBuyerHandoverCredential({
+			buyerId,
+			orderId: first._id.toString(),
+		});
+
+		await expect(
+			confirmOrderHandover({
+				vendorUserId: userId,
+				orderId: second._id.toString(),
+				method: "QR",
+				code: credential.qrToken,
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_INVALID_CODE" });
 	});
 });
 

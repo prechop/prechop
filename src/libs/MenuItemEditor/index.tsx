@@ -42,15 +42,26 @@ interface Draft {
 	name: string;
 	category: string;
 	priceNaira: string;
+	hasVariants: boolean;
+	variants: DraftVariant[];
 	description: string;
 	estimatedPrepMin: string;
 	optionGroupIds: string[];
+}
+
+interface DraftVariant {
+	name: string;
+	priceNaira: string;
+	isDefault: boolean;
+	isActive: boolean;
 }
 
 const emptyDraft: Draft = {
 	name: "",
 	category: "MEALS",
 	priceNaira: "",
+	hasVariants: false,
+	variants: [],
 	description: "",
 	estimatedPrepMin: "",
 	optionGroupIds: [],
@@ -157,6 +168,35 @@ const SuggestionName = styled.span`
 	background: var(--pc-surface);
 	border: 1px solid var(--pc-border);
 `;
+const VariantBox = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const VariantRow = styled.div`
+	display: grid;
+	grid-template-columns: minmax(0, 1.4fr) minmax(90px, 0.8fr) auto auto auto;
+	gap: 8px;
+	align-items: end;
+
+	@media (max-width: 560px) {
+		grid-template-columns: 1fr;
+		align-items: stretch;
+	}
+`;
+const CheckLabel = styled.label`
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--pc-text-muted);
+	cursor: pointer;
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -194,6 +234,15 @@ function menuItemId(item: MenuItem): string | undefined {
 			item as unknown as { _id?: { toString(): string } | string }
 		)._id?.toString()
 	);
+}
+
+function blankVariant(): DraftVariant {
+	return {
+		name: "",
+		priceNaira: "",
+		isDefault: false,
+		isActive: true,
+	};
 }
 
 /**
@@ -246,6 +295,13 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 			name: item.name,
 			category: normalizeMenuCategory(item.category),
 			priceNaira: String((item.priceKobo ?? 0) / 100),
+			hasVariants: (item.variants ?? []).length > 0,
+			variants: (item.variants ?? []).map((variant) => ({
+				name: variant.name,
+				priceNaira: String((variant.priceKobo ?? 0) / 100),
+				isDefault: variant.isDefault,
+				isActive: variant.isActive,
+			})),
 			description: item.description ?? "",
 			estimatedPrepMin: item.estimatedPrepMin
 				? String(item.estimatedPrepMin)
@@ -347,11 +403,80 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		}
 	}
 
+	function setVariant(index: number, patch: Partial<DraftVariant>) {
+		setDraft((current) => ({
+			...current,
+			variants: current.variants.map((variant, i) =>
+				i === index ? { ...variant, ...patch } : variant,
+			),
+		}));
+	}
+
+	function setDefaultVariant(index: number) {
+		setDraft((current) => ({
+			...current,
+			variants: current.variants.map((variant, i) => ({
+				...variant,
+				isDefault: i === index,
+				isActive: i === index ? true : variant.isActive,
+			})),
+		}));
+	}
+
+	function toggleVariants(on: boolean) {
+		setDraft((current) => ({
+			...current,
+			hasVariants: on,
+			variants: on
+				? current.variants.length >= 2
+					? current.variants
+					: [
+							{
+								...blankVariant(),
+								priceNaira: current.priceNaira,
+								isDefault: true,
+							},
+							blankVariant(),
+						]
+				: [],
+		}));
+	}
+
 	async function save() {
 		const price = Number(draft.priceNaira);
 		if (!draft.name.trim() || !(price > 0)) {
 			toast("Enter a name and a valid price", "error");
 			return;
+		}
+		const variants = draft.hasVariants
+			? draft.variants.map((variant) => ({
+					name: variant.name.trim(),
+					priceNaira: Number(variant.priceNaira),
+					isDefault: variant.isDefault,
+					isActive: variant.isActive,
+				}))
+			: [];
+		if (draft.hasVariants) {
+			if (
+				variants.length < 2 ||
+				variants.some(
+					(variant) => !variant.name || !(variant.priceNaira > 0),
+				)
+			) {
+				toast(
+					"Add at least two variants with valid names and prices.",
+					"error",
+				);
+				return;
+			}
+			if (!variants.some((variant) => variant.isActive)) {
+				toast("At least one variant must be active.", "error");
+				return;
+			}
+			if (variants.filter((variant) => variant.isDefault).length > 1) {
+				toast("Choose only one default variant.", "error");
+				return;
+			}
 		}
 		setBusy(true);
 		try {
@@ -359,6 +484,7 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 				name: draft.name.trim(),
 				category: normalizeMenuCategory(draft.category),
 				priceNaira: price,
+				variants,
 				optionGroupIds: draft.optionGroupIds,
 			};
 			if (draft.description.trim())
@@ -522,6 +648,131 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 							}
 							placeholder="1500"
 						/>
+						<VariantBox>
+							<Row $justify="space-between" $gap={10} $wrap>
+								<Stack $gap={3} style={{ flex: 1 }}>
+									<Text $weight={700} $size={14}>
+										Does this menu item have sizes or
+										options?
+									</Text>
+									<Text $muted $size={12}>
+										Use this for final-price choices like
+										sizes, pieces or litres. Extras stay in
+										option groups.
+									</Text>
+								</Stack>
+								<CheckLabel>
+									<input
+										type="checkbox"
+										checked={draft.hasVariants}
+										onChange={(e) =>
+											toggleVariants(e.target.checked)
+										}
+									/>
+									Enabled
+								</CheckLabel>
+							</Row>
+							{draft.hasVariants && (
+								<Stack $gap={10}>
+									{draft.variants.map((variant, index) => (
+										<VariantRow key={index}>
+											<Input
+												label="Option name"
+												value={variant.name}
+												onChange={(e) =>
+													setVariant(index, {
+														name: e.target.value,
+													})
+												}
+												placeholder="Small"
+											/>
+											<Input
+												label="Price"
+												type="number"
+												inputMode="decimal"
+												min={0}
+												step="0.01"
+												value={variant.priceNaira}
+												onChange={(e) =>
+													setVariant(index, {
+														priceNaira:
+															e.target.value,
+													})
+												}
+												placeholder="1500"
+											/>
+											<CheckLabel>
+												<input
+													type="radio"
+													name="defaultVariant"
+													checked={variant.isDefault}
+													onChange={() =>
+														setDefaultVariant(index)
+													}
+												/>
+												Default
+											</CheckLabel>
+											<CheckLabel>
+												<input
+													type="checkbox"
+													checked={variant.isActive}
+													onChange={(e) =>
+														setVariant(index, {
+															isActive:
+																e.target
+																	.checked,
+															isDefault: e.target
+																.checked
+																? variant.isDefault
+																: false,
+														})
+													}
+												/>
+												Active
+											</CheckLabel>
+											<Button
+												type="button"
+												$variant="ghost"
+												$size="sm"
+												disabled={
+													draft.variants.length <= 2
+												}
+												onClick={() =>
+													setDraft((current) => ({
+														...current,
+														variants:
+															current.variants.filter(
+																(_, i) =>
+																	i !== index,
+															),
+													}))
+												}
+											>
+												Remove
+											</Button>
+										</VariantRow>
+									))}
+									<Row>
+										<Button
+											type="button"
+											$variant="secondary"
+											$size="sm"
+											onClick={() =>
+												setDraft((current) => ({
+													...current,
+													variants: [
+														...current.variants,
+														blankVariant(),
+													],
+												}))
+											}
+										>
+											Add option
+										</Button>
+									</Row>
+								</Stack>
+							)}
+						</VariantBox>
 						<Input
 							label="Prep time (mins, optional)"
 							type="number"

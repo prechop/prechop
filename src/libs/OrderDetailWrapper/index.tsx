@@ -36,9 +36,14 @@ import type {
 
 type Fulfillment = "PICKUP" | "DELIVERY";
 type PaymentMode = "SELF" | "PAY_FOR_ME";
-type Line = { quantity: number; optionQuantities: Record<string, number> };
+type Line = {
+	quantity: number;
+	selectedVariantId?: string;
+	optionQuantities: Record<string, number>;
+};
 type SavedLine = {
 	quantity: number;
+	selectedVariantId?: string;
 	optionQuantities?: Record<string, number>;
 	optionIds?: string[];
 };
@@ -83,9 +88,17 @@ const MAX_PER_ORDER = 50;
  *  Infinite-capacity items (null maxQuantity) are bounded only by the limit. */
 function remainingCap(item: DailyOrderItem): number {
 	if (item.maxQuantity == null) return MAX_PER_ORDER;
+	if (typeof item.remainingQuantity === "number") {
+		return Math.max(0, Math.min(MAX_PER_ORDER, item.remainingQuantity));
+	}
 	return Math.max(
 		0,
-		Math.min(MAX_PER_ORDER, item.maxQuantity - item.orderedQuantity),
+		Math.min(
+			MAX_PER_ORDER,
+			item.maxQuantity -
+				item.orderedQuantity -
+				(item.reservedQuantity ?? 0),
+		),
 	);
 }
 
@@ -307,12 +320,43 @@ function allOptions(item: DailyOrderItem) {
 	return (item.optionGroups ?? []).flatMap((g) => g.options);
 }
 
+function activeVariants(item: DailyOrderItem) {
+	return item.snapshotVariants ?? [];
+}
+
+function defaultVariantId(item: DailyOrderItem): string | undefined {
+	const variants = activeVariants(item);
+	return variants.find((variant) => variant.isDefault)?.id ?? variants[0]?.id;
+}
+
+function selectedVariant(item: DailyOrderItem, line: Line | undefined) {
+	const variants = activeVariants(item);
+	if (variants.length === 0) return undefined;
+	return (
+		variants.find((variant) => variant.id === line?.selectedVariantId) ??
+		variants.find((variant) => variant.isDefault) ??
+		variants[0]
+	);
+}
+
+function itemBasePrice(item: DailyOrderItem, line: Line): number {
+	return selectedVariant(item, line)?.priceKobo ?? item.snapshotPriceKobo;
+}
+
+function dailyItemPriceLabel(item: DailyOrderItem): string {
+	const prices = activeVariants(item).map((variant) => variant.priceKobo);
+	if (prices.length === 0) return formatKobo(item.snapshotPriceKobo);
+	const min = Math.min(...prices);
+	const max = Math.max(...prices);
+	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+}
+
 function lineSubtotal(item: DailyOrderItem, line: Line): number {
 	const optionSum = allOptions(item).reduce(
 		(s, o) => s + o.priceKobo * (line.optionQuantities[o.id] ?? 0),
 		0,
 	);
-	return item.snapshotPriceKobo * line.quantity + optionSum;
+	return itemBasePrice(item, line) * line.quantity + optionSum;
 }
 
 /** Effective minimum selections for a group (required ⇒ at least 1). */
@@ -337,6 +381,9 @@ function groupSatisfied(group: DailyOrderOptionGroup, line: Line): boolean {
 
 /** Every selected item must satisfy all of its required/bounded groups. */
 function itemOptionsValid(item: DailyOrderItem, line: Line): boolean {
+	if (activeVariants(item).length > 0 && !selectedVariant(item, line)) {
+		return false;
+	}
 	return (item.optionGroups ?? []).every((g) => groupSatisfied(g, line));
 }
 
@@ -446,24 +493,38 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				paymentMode?: PaymentMode;
 			};
 			if (parsed.lines) {
-				setLines(
-					Object.fromEntries(
-						Object.entries(parsed.lines).map(([id, line]) => [
-							id,
-							{
-								quantity: line.quantity,
-								optionQuantities:
-									line.optionQuantities ??
-									Object.fromEntries(
-										(line.optionIds ?? []).map((id) => [
-											id,
-											line.quantity,
-										]),
-									),
-							},
-						]),
-					),
-				);
+				const byId = new Map(data.items.map((item) => [item.id, item]));
+				const restored: Array<[string, Line]> = [];
+				for (const [id, line] of Object.entries(parsed.lines)) {
+					const item = byId.get(id);
+					if (!item) continue;
+					const liveVariants = new Set(
+						activeVariants(item).map((variant) => variant.id),
+					);
+					restored.push([
+						id,
+						{
+							quantity: Math.min(
+								Math.max(0, Math.floor(line.quantity)),
+								remainingCap(item),
+							),
+							selectedVariantId:
+								line.selectedVariantId &&
+								liveVariants.has(line.selectedVariantId)
+									? line.selectedVariantId
+									: defaultVariantId(item),
+							optionQuantities:
+								line.optionQuantities ??
+								Object.fromEntries(
+									(line.optionIds ?? []).map((id) => [
+										id,
+										line.quantity,
+									]),
+								),
+						},
+					]);
+				}
+				setLines(Object.fromEntries(restored));
 			}
 			if (parsed.fulfillment) {
 				setFulfillment(availableFulfillment(data, parsed.fulfillment));
@@ -503,6 +564,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			const seed = JSON.parse(saved) as Array<{
 				dailyOrderItemId: string;
 				quantity: number;
+				selectedVariantId?: string;
 				selectedOptionIds?: string[];
 			}>;
 			if (!Array.isArray(seed) || seed.length === 0) return;
@@ -518,8 +580,16 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 				if (quantity <= 0) continue;
 				// Only keep options that still exist on today's snapshot.
 				const live = new Set(allOptions(item).map((o) => o.id));
+				const liveVariants = new Set(
+					activeVariants(item).map((variant) => variant.id),
+				);
 				next[item.id] = {
 					quantity,
+					selectedVariantId:
+						row.selectedVariantId &&
+						liveVariants.has(row.selectedVariantId)
+							? row.selectedVariantId
+							: defaultVariantId(item),
 					optionQuantities: Object.fromEntries(
 						(row.selectedOptionIds ?? [])
 							.filter((id) => live.has(id))
@@ -658,6 +728,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 						id,
 						{
 							quantity: line.quantity,
+							selectedVariantId: line.selectedVariantId,
 							optionQuantities: line.optionQuantities,
 						},
 					]),
@@ -677,6 +748,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		setLines((prev) => {
 			const cur = prev[item.id] ?? {
 				quantity: 0,
+				selectedVariantId: defaultVariantId(item),
 				optionQuantities: {},
 			};
 			// Cap at what's actually still available (maxQuantity − already
@@ -702,7 +774,11 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		optionId: string,
 	) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 1, optionQuantities: {} };
+			const cur = prev[item.id] ?? {
+				quantity: 1,
+				selectedVariantId: defaultVariantId(item),
+				optionQuantities: {},
+			};
 			const optionQuantities = { ...cur.optionQuantities };
 			const groupIds = group.options.map((o) => o.id);
 			const single = group.maxSelect === 1;
@@ -724,7 +800,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 					optionQuantities[optionId] = 1;
 			}
 			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return { ...prev, [item.id]: { quantity, optionQuantities } };
+			return {
+				...prev,
+				[item.id]: { ...cur, quantity, optionQuantities },
+			};
 		});
 	}
 
@@ -734,14 +813,38 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 		delta: number,
 	) {
 		setLines((prev) => {
-			const cur = prev[item.id] ?? { quantity: 1, optionQuantities: {} };
+			const cur = prev[item.id] ?? {
+				quantity: 1,
+				selectedVariantId: defaultVariantId(item),
+				optionQuantities: {},
+			};
 			const current = cur.optionQuantities[optionId] ?? 0;
 			const next = Math.max(0, Math.min(MAX_PER_ORDER, current + delta));
 			const optionQuantities = { ...cur.optionQuantities };
 			if (next === 0) delete optionQuantities[optionId];
 			else optionQuantities[optionId] = next;
 			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return { ...prev, [item.id]: { quantity, optionQuantities } };
+			return {
+				...prev,
+				[item.id]: { ...cur, quantity, optionQuantities },
+			};
+		});
+	}
+
+	function selectVariant(item: DailyOrderItem, variantId: string) {
+		setLines((prev) => {
+			const cur = prev[item.id] ?? {
+				quantity: 1,
+				optionQuantities: {},
+			};
+			return {
+				...prev,
+				[item.id]: {
+					...cur,
+					quantity: cur.quantity === 0 ? 1 : cur.quantity,
+					selectedVariantId: variantId,
+				},
+			};
 		});
 	}
 
@@ -780,6 +883,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 			.map(([dailyOrderItemId, l]) => ({
 				dailyOrderItemId,
 				quantity: l.quantity,
+				selectedVariantId: l.selectedVariantId,
 				selectedOptions: Object.entries(l.optionQuantities)
 					.filter(([, quantity]) => quantity > 0)
 					.map(([optionId, quantity]) => ({
@@ -969,8 +1073,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 					const line = lines[item.id];
 					const qty = line?.quantity ?? 0;
 					const listingSoldOut =
-						item.maxQuantity != null &&
-						item.orderedQuantity >= item.maxQuantity;
+						item.maxQuantity != null && remainingCap(item) <= 0;
 					const Wrapper = listingSoldOut ? SoldOut : ItemCard;
 					return (
 						<Wrapper key={item.id}>
@@ -992,10 +1095,8 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 												{item.snapshotName}
 											</Text>
 											<Text $muted $size={13}>
-												{formatKobo(
-													item.snapshotPriceKobo,
-												)}{" "}
-												· {item.snapshotPrepMin}m prep
+												{dailyItemPriceLabel(item)} ·{" "}
+												{item.snapshotPrepMin}m prep
 											</Text>
 										</Stack>
 									</Row>
@@ -1038,6 +1139,55 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
 										</Qty>
 									)}
 								</Row>
+								{listingSoldOut && (
+									<Text $muted $size={13}>
+										This item is sold out.
+									</Text>
+								)}
+								{qty > 0 && activeVariants(item).length > 0 && (
+									<AddonBox>
+										<Stack $gap={8}>
+											<GroupHead>
+												<Text
+													$weight={700}
+													$size={13.5}
+												>
+													Size or option
+												</Text>
+												<GroupRule>
+													Required Â· pick 1
+												</GroupRule>
+											</GroupHead>
+											{activeVariants(item).map(
+												(variant) => (
+													<AddonRow key={variant.id}>
+														<input
+															type="radio"
+															name={`variant-${item.id}`}
+															checked={
+																selectedVariant(
+																	item,
+																	line,
+																)?.id ===
+																variant.id
+															}
+															onChange={() =>
+																selectVariant(
+																	item,
+																	variant.id,
+																)
+															}
+														/>
+														{variant.name} Â·{" "}
+														{formatKobo(
+															variant.priceKobo,
+														)}
+													</AddonRow>
+												),
+											)}
+										</Stack>
+									</AddonBox>
+								)}
 								{qty > 0 &&
 									(item.optionGroups ?? []).length > 0 && (
 										<AddonBox>

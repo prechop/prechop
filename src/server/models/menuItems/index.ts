@@ -10,6 +10,17 @@ const collectionName = "menuItems";
 
 export type MenuItemModel = Model<any>;
 
+const variantSchema = new mongoose.Schema(
+	{
+		name: { type: String, required: true, trim: true },
+		priceKobo: { type: Number, required: true, min: 0 },
+		isDefault: { type: Boolean, default: false },
+		isActive: { type: Boolean, default: true },
+		displayOrder: { type: Number, default: 0 },
+	},
+	{ _id: true },
+);
+
 const schema = new mongoose.Schema<any>(
 	{
 		vendorId: {
@@ -32,6 +43,7 @@ const schema = new mongoose.Schema<any>(
 		name: { type: String, required: true, trim: true },
 		description: { type: String },
 		priceKobo: { type: Number, required: true, min: 0 },
+		variants: { type: [variantSchema], default: [] },
 		imageUrl: { type: String },
 		estimatedPrepMin: { type: Number, default: 20 },
 		isAvailable: { type: Boolean, default: true },
@@ -67,6 +79,18 @@ schema.pre("aggregate", function () {
 					input: { $ifNull: ["$optionGroupIds", []] },
 					as: "g",
 					in: { $toString: "$$g" },
+				},
+			},
+			variants: {
+				$map: {
+					input: { $ifNull: ["$variants", []] },
+					as: "v",
+					in: {
+						$mergeObjects: [
+							"$$v",
+							{ id: { $toString: "$$v._id" } },
+						],
+					},
 				},
 			},
 		},

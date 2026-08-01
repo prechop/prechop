@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
+import { deriveHandoverCredential } from "@/server/constants/handoverCredential";
 import {
 	APP_URL,
 	calculateBuyerServiceFeeKobo,
@@ -13,11 +14,12 @@ import {
 	generateOrderNumber,
 	generatePaystackRef,
 	hash,
+	insufficientQuantity,
 	koboToNaira,
+	listingSoldOut,
 	notFound,
 	resolveFeePolicy,
 	serviceUnavailable,
-	slotUnavailable,
 	sumKobo,
 	validationError,
 } from "../../constants";
@@ -53,6 +55,7 @@ export interface PlaceOrderInput {
 	items: Array<{
 		dailyOrderItemId: string;
 		quantity: number;
+		selectedVariantId?: string;
 		selectedOptionIds?: string[];
 		selectedOptions?: Array<{ optionId: string; quantity: number }>;
 	}>;
@@ -135,6 +138,38 @@ export async function placeOrder({
 			(i) => (i.id ?? i._id)?.toString() === req.dailyOrderItemId,
 		);
 		if (!orderItem) throw notFound("Item");
+		if (orderItem.maxQuantity != null) {
+			const remaining = Math.max(
+				0,
+				orderItem.maxQuantity - (orderItem.orderedQuantity ?? 0),
+			);
+			if (req.quantity > remaining) {
+				throw remaining <= 0
+					? listingSoldOut(orderItem.snapshotName)
+					: insufficientQuantity(orderItem.snapshotName, remaining);
+			}
+		}
+		const variants = orderItem.snapshotVariants ?? [];
+		const selectedVariant =
+			variants.length > 0
+				? variants.find(
+						(v) =>
+							(v.id ?? v._id)?.toString() ===
+							req.selectedVariantId,
+					)
+				: undefined;
+		if (variants.length > 0 && !selectedVariant) {
+			throw validationError(
+				`Choose one option for "${orderItem.snapshotName}".`,
+			);
+		}
+		if (variants.length === 0 && req.selectedVariantId) {
+			throw validationError(
+				`"${orderItem.snapshotName}" does not have selectable variants.`,
+			);
+		}
+		const basePriceKobo =
+			selectedVariant?.priceKobo ?? orderItem.snapshotPriceKobo;
 
 		const selectedOptionQuantities = new Map<string, number>();
 		for (const id of req.selectedOptionIds ?? []) {
@@ -194,14 +229,18 @@ export async function placeOrder({
 			(s, a) => s + a.subtotalKobo,
 			0,
 		);
-		const itemSubtotal =
-			orderItem.snapshotPriceKobo * req.quantity + optionsSubtotal;
+		const itemSubtotal = basePriceKobo * req.quantity + optionsSubtotal;
 
 		return {
 			dailyOrderItemId: (orderItem.id ?? orderItem._id)?.toString() ?? "",
 			menuItemId: orderItem.menuItemId?.toString(),
 			snapshotName: orderItem.snapshotName,
-			snapshotPriceKobo: orderItem.snapshotPriceKobo,
+			snapshotPriceKobo: basePriceKobo,
+			selectedVariantDailyOrderVariantId: selectedVariant
+				? (selectedVariant.id ?? selectedVariant._id)?.toString()
+				: undefined,
+			selectedVariantName: selectedVariant?.name,
+			selectedVariantPriceKobo: selectedVariant?.priceKobo,
 			snapshotPrepMin: orderItem.snapshotPrepMin,
 			quantity: req.quantity,
 			subtotalKobo: itemSubtotal,
@@ -272,6 +311,11 @@ export async function placeOrder({
 	}
 
 	// ── 5. Reserve slots (atomic oversell guard) ─────────────────────────
+	const buyerOrderId = new mongoose.Types.ObjectId().toString();
+	const orderNumber = generateOrderNumber();
+	const paystackRef = generatePaystackRef();
+	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
+
 	const slotRequests: SlotRequest[] = resolvedItems.map((it) => {
 		const listing = dailyOrder.items.find(
 			(i) => (i.id ?? i._id)?.toString() === it.dailyOrderItemId,
@@ -286,18 +330,17 @@ export async function placeOrder({
 	const reservation = await reserveSlots(
 		slotRequests,
 		config.slotHoldTtlSeconds,
+		buyerOrderId,
 	);
 	if (!reservation.ok) {
 		const failed = resolvedItems.find(
 			(i) => i.dailyOrderItemId === reservation.failedItemId,
 		);
-		throw slotUnavailable(failed?.snapshotName);
+		throw reservation.remaining <= 0
+			? listingSoldOut(failed?.snapshotName)
+			: insufficientQuantity(failed?.snapshotName, reservation.remaining);
 	}
 
-	const buyerOrderId = new mongoose.Types.ObjectId().toString();
-	const orderNumber = generateOrderNumber();
-	const paystackRef = generatePaystackRef();
-	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
 	const payForMe = input.paymentMode === "PAY_FOR_ME";
 	const externalPaymentToken = payForMe
 		? generateExternalPaymentToken()
@@ -341,7 +384,7 @@ export async function placeOrder({
 				},
 			});
 		} catch (error) {
-			await releaseSlots(holds);
+			await releaseSlots(holds, buyerOrderId);
 			console.error("Paystack init failed:", error);
 			throw validationError(
 				"Payment initialisation failed. Please try again.",
@@ -361,6 +404,12 @@ export async function placeOrder({
 			.join(", ");
 	}
 
+	const handoverCredential = deriveHandoverCredential({
+		_id: buyerOrderId,
+		orderNumber,
+		buyerId,
+		vendorId: dailyOrder.vendorId,
+	});
 	const order = await createBuyerOrderDB({
 		id: buyerOrderId,
 		payload: {
@@ -388,11 +437,14 @@ export async function placeOrder({
 			vendorDeliveryAmountKobo,
 			vendorSettlementKobo,
 			totalKobo,
+			handoverTokenHash: handoverCredential.qrTokenHash,
+			handoverPinHash: handoverCredential.pinHash,
+			handoverCredentialCreatedAt: new Date(),
 			items: resolvedItems,
 		},
 	});
 	if (!order) {
-		await releaseSlots(holds);
+		await releaseSlots(holds, buyerOrderId);
 		throw validationError("Could not create your order. Please try again.");
 	}
 
@@ -422,7 +474,7 @@ export async function placeOrder({
 	});
 	if (!payment) {
 		await deleteBuyerOrderHardDB({ id: buyerOrderId });
-		await releaseSlots(holds);
+		await releaseSlots(holds, buyerOrderId);
 		throw validationError("Could not create your order. Please try again.");
 	}
 

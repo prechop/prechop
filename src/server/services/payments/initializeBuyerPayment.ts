@@ -1,4 +1,8 @@
-import { ErrPaymentVerification, validationError } from "../../constants";
+import {
+	ErrPaymentVerification,
+	reservationExpired,
+	validationError,
+} from "../../constants";
 import {
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
@@ -9,6 +13,7 @@ import {
 	PaymentStatus,
 } from "../../models";
 import { paystackProvider } from "../../providers";
+import { getSiteConfigs } from "../siteConfigs";
 
 /**
  * Paystack requires an email per transaction, but Prechop buyers authenticate by
@@ -49,6 +54,9 @@ export async function initializeBuyerPayment({
 	const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
 	if (!payment || payment.webhookVerified) {
 		throw validationError("This order can no longer be paid.");
+	}
+	if (await pendingReservationExpired(payment.createdAt)) {
+		throw reservationExpired();
 	}
 	if (
 		payment.status === PaymentStatus.INITIALIZED &&
@@ -127,4 +135,10 @@ export async function initializeBuyerPayment({
 		accessCode: updated.paystackAccessCode ?? tx.access_code,
 		paystackRef: updated.paystackRef,
 	};
+}
+
+async function pendingReservationExpired(createdAt: Date): Promise<boolean> {
+	const config = await getSiteConfigs();
+	if (config.slotHoldTtlSeconds <= 0) return false;
+	return createdAt.getTime() + config.slotHoldTtlSeconds * 1000 <= Date.now();
 }

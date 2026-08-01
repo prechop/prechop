@@ -35,6 +35,16 @@ const CATEGORIES = MENU_CATEGORIES;
 const CATEGORY_ORDER = CATEGORIES.map((c) => c.value);
 const CATEGORY_ICON = MENU_CATEGORY_ICONS;
 
+function menuItemPriceLabel(item: MenuItem): string {
+	const activeVariantPrices = (item.variants ?? [])
+		.filter((variant) => variant.isActive)
+		.map((variant) => variant.priceKobo);
+	if (activeVariantPrices.length === 0) return formatKobo(item.priceKobo);
+	const min = Math.min(...activeVariantPrices);
+	const max = Math.max(...activeVariantPrices);
+	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+}
+
 const ReorderCol = styled.div`
 	display: flex;
 	flex-direction: column;
@@ -449,8 +459,8 @@ export default function MenuWrapper() {
 															{it.name}
 														</Text>
 														<Price>
-															{formatKobo(
-																it.priceKobo,
+															{menuItemPriceLabel(
+																it,
 															)}
 														</Price>
 													</Row>

@@ -35,6 +35,10 @@ import {
   isBuyerHandoverEligible,
   nextVendorOrderAction,
 } from "@/constants/orderLifecycle";
+import {
+  ORDER_CHAT_NOT_OPEN_MESSAGE,
+  canSendOrderChat,
+} from "@/constants/orderChat";
 import { useToast } from "@/hooks/useToast";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
 import type { DailyOrder, OrderStatus } from "@/types";
@@ -62,6 +66,7 @@ interface IncomingOrder {
   readyExtensionCount?: number | null;
   lateEscalatedAt?: string | null;
   handoverCredentialUsedAt?: string | null;
+  updatedAt?: string;
   items: Array<{ snapshotName: string; quantity: number }>;
 }
 
@@ -336,6 +341,13 @@ export default function VendorDailyOrderDetailWrapper({
       cancelled = true;
     };
   }, [shareToken]);
+
+  function canMessageBuyer(buyerOrder: IncomingOrder) {
+    return canSendOrderChat({
+      status: buyerOrder.status,
+      updatedAt: buyerOrder.updatedAt ?? buyerOrder.createdAt,
+    });
+  }
 
   if (isLoading) return <PageLoader />;
 
@@ -873,6 +885,12 @@ export default function VendorDailyOrderDetailWrapper({
                             <Button
                               $size="sm"
                               $variant="secondary"
+                              disabled={!canMessageBuyer(o)}
+                              title={
+                                canMessageBuyer(o)
+                                  ? "Message buyer"
+                                  : ORDER_CHAT_NOT_OPEN_MESSAGE
+                              }
                               onClick={() =>
                                 setMessageOrderId(
                                   messageOrderId === o.id ? null : o.id,

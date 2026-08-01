@@ -130,6 +130,56 @@ describe("buildSnapshotItems option groups", () => {
 		});
 		expect(snap.optionGroups![0].options[0].priceKobo).toBe(20000);
 	});
+
+	it("snapshots only active menu variants", async () => {
+		const campusId = oid();
+		const vendorId = await vendorWithMenu(campusId);
+		const item = await createMenuItemDB({
+			payload: {
+				vendorId,
+				campusId,
+				category: MenuCategory.CAKES_DESSERTS,
+				name: "Cupcake",
+				priceKobo: 200000,
+				variants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						isActive: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isDefault: false,
+						isActive: true,
+						displayOrder: 1,
+					},
+					{
+						name: "Party tray",
+						priceKobo: 1200000,
+						isDefault: false,
+						isActive: false,
+						displayOrder: 2,
+					},
+				],
+			},
+		});
+		if (!item) throw new Error("Expected menu item to be created");
+
+		const [snap] = await buildSnapshotItems({
+			vendorId,
+			items: [{ menuItemId: item._id.toString() }],
+		});
+
+		expect(snap.snapshotVariants).toHaveLength(2);
+		expect(snap.snapshotVariants?.map((v) => v.name)).toEqual([
+			"Small",
+			"Large",
+		]);
+		expect(snap.snapshotVariants?.[0].isDefault).toBe(true);
+	});
 });
 
 async function listingWithProtein(campusId: string) {

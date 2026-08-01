@@ -34,12 +34,14 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import { shouldShowOrderChatEntry } from "@/constants/orderChat";
 import {
 	canonicalOrderStatus,
 	handoverUnavailableMessage,
 	isBuyerHandoverEligible,
 	orderTimelineSteps,
 } from "@/constants/orderLifecycle";
+import { readyEstimateNoteForTimelineStep } from "@/constants/orderReadyEstimate";
 import { useToast } from "@/hooks/useToast";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
 import { ReceiptCard, RefundNote } from "@/libs/ReceiptCard";
@@ -252,6 +254,15 @@ const Conn = styled.div<{ $done: boolean }>`
 `;
 const StepBody = styled.div`
   padding-bottom: var(--pc-space-4);
+`;
+const EstimateText = styled.div`
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  color: var(--pc-text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
 `;
 const StepTitle = styled.span`
   display: inline-flex;
@@ -684,19 +695,18 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				</FulfillmentCard>
 			</FadeIn>
 
-			{data.status !== "PENDING_PAYMENT" &&
-				data.status !== "AWAITING_EXTERNAL_PAYMENT" && (
-					<FadeIn $delay={90}>
-						<OrderConversationPanel
-							orderId={orderId}
-							title="Message kitchen"
-							autoFocus={
-								typeof window !== "undefined" &&
-								window.location.hash === "#messages"
-							}
-						/>
-					</FadeIn>
-				)}
+			{shouldShowOrderChatEntry(data.status) && (
+				<FadeIn $delay={90}>
+					<OrderConversationPanel
+						orderId={orderId}
+						title="Message kitchen"
+						autoFocus={
+							typeof window !== "undefined" &&
+							window.location.hash === "#messages"
+						}
+					/>
+				</FadeIn>
+			)}
 
 			{!isTerminalBad && data.status !== "PENDING_PAYMENT" && (
 				<FadeIn $delay={120}>
@@ -707,6 +717,11 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 								{timeline.map((step, i) => {
 									const done = currentIdx > i;
 									const current = currentIdx === i;
+									const estimateNote =
+										readyEstimateNoteForTimelineStep(
+											data,
+											step.status,
+										);
 									return (
 										<Step
 											key={step.status}
@@ -742,6 +757,19 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 												<Text $muted $size={13}>
 													{step.hint}
 												</Text>
+												{estimateNote && (
+													<EstimateText>
+														{estimateNote.lines.map(
+															(line) => (
+																<span
+																	key={line}
+																>
+																	{line}
+																</span>
+															),
+														)}
+													</EstimateText>
+												)}
 											</StepBody>
 										</Step>
 									);
@@ -831,6 +859,19 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 									{formatKobo(it.subtotalKobo)}
 								</Text>
 							</Line>
+							{it.selectedVariantName && (
+								<Line>
+									<Text $muted $size={13}>
+										{it.selectedVariantName}
+									</Text>
+									<Text $muted $size={13}>
+										{formatKobo(
+											it.selectedVariantPriceKobo ??
+												it.snapshotPriceKobo,
+										)}
+									</Text>
+								</Line>
+							)}
 							{it.selectedOptions.map((a) => (
 								<Line key={`${a.groupName}-${a.snapshotName}`}>
 									<Text $muted $size={13}>

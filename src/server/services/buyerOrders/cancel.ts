@@ -357,6 +357,7 @@ async function returnCapacity(order: {
 }
 
 async function releaseHeldCapacity(order: {
+	_id: { toString(): string };
 	items: Array<{
 		dailyOrderItemId: { toString(): string };
 		quantity: number;
@@ -367,5 +368,6 @@ async function releaseHeldCapacity(order: {
 			dailyOrderItemId: item.dailyOrderItemId.toString(),
 			quantity: item.quantity,
 		})),
+		order._id.toString(),
 	);
 }

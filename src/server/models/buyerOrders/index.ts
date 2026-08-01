@@ -1,5 +1,6 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { MAX_LIMIT } from "../../constants";
+import { deriveHandoverCredential } from "../../constants/handoverCredential";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { FulfillmentType, OrderStatus, SETTLED_ORDER_STATUSES } from "../enums";
 import { IOperationType, PLATFORM_TIMEZONE } from "../utils";
@@ -51,6 +52,11 @@ const itemSchema = new mongoose.Schema(
 		menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "menuItems" },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true },
+		selectedVariantDailyOrderVariantId: {
+			type: mongoose.Schema.Types.ObjectId,
+		},
+		selectedVariantName: { type: String },
+		selectedVariantPriceKobo: { type: Number },
 		snapshotPrepMin: { type: Number },
 		quantity: { type: Number, required: true, min: 1 },
 		subtotalKobo: { type: Number, required: true },
@@ -137,6 +143,7 @@ const schema = new mongoose.Schema<any>(
 		cancellationExplanation: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
 		paidAt: { type: Date },
+		inventoryCommittedAt: { type: Date },
 		acceptedAt: { type: Date },
 		acceptanceDeadline: { type: Date, index: true },
 		expectedReadyAt: { type: Date, index: true },
@@ -253,7 +260,24 @@ schema.pre("aggregate", function () {
 					in: {
 						$mergeObjects: [
 							"$$it",
-							{ id: { $toString: "$$it.dailyOrderItemId" } },
+							{
+								id: { $toString: "$$it.dailyOrderItemId" },
+								selectedVariantDailyOrderVariantId: {
+									$cond: [
+										{
+											$ifNull: [
+												"$$it.selectedVariantDailyOrderVariantId",
+												false,
+											],
+										},
+										{
+											$toString:
+												"$$it.selectedVariantDailyOrderVariantId",
+										},
+										null,
+									],
+								},
+							},
 						],
 					},
 				},
@@ -275,6 +299,17 @@ function mapItems(items: IBuyerOrderCreateInput["items"]) {
 			: undefined,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
+		selectedVariantDailyOrderVariantId:
+			it.selectedVariantDailyOrderVariantId &&
+			mongoose.Types.ObjectId.isValid(
+				it.selectedVariantDailyOrderVariantId,
+			)
+				? new mongoose.Types.ObjectId(
+						it.selectedVariantDailyOrderVariantId,
+					)
+				: undefined,
+		selectedVariantName: it.selectedVariantName,
+		selectedVariantPriceKobo: it.selectedVariantPriceKobo,
 		snapshotPrepMin: it.snapshotPrepMin,
 		quantity: it.quantity,
 		subtotalKobo: it.subtotalKobo,
@@ -305,8 +340,20 @@ export async function createBuyerOrderDB({
 }): Promise<IBuyerOrder | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		const orderObjectId = id
+			? new mongoose.Types.ObjectId(id)
+			: new mongoose.Types.ObjectId();
+		const generatedCredential =
+			payload.handoverTokenHash && payload.handoverPinHash
+				? null
+				: deriveHandoverCredential({
+						_id: orderObjectId.toString(),
+						orderNumber: payload.orderNumber,
+						buyerId: payload.buyerId,
+						vendorId: payload.vendorId,
+					});
 		const doc = await new BuyerOrder({
-			...(id ? { _id: new mongoose.Types.ObjectId(id) } : {}),
+			_id: orderObjectId,
 			orderNumber: payload.orderNumber,
 			dailyOrderId: payload.dailyOrderId,
 			vendorId: payload.vendorId,
@@ -329,6 +376,13 @@ export async function createBuyerOrderDB({
 			vendorDeliveryAmountKobo: payload.vendorDeliveryAmountKobo ?? 0,
 			vendorSettlementKobo: payload.vendorSettlementKobo ?? 0,
 			totalKobo: payload.totalKobo,
+			handoverTokenHash:
+				payload.handoverTokenHash ?? generatedCredential?.qrTokenHash,
+			handoverPinHash:
+				payload.handoverPinHash ?? generatedCredential?.pinHash,
+			handoverCredentialCreatedAt:
+				payload.handoverCredentialCreatedAt ??
+				(generatedCredential ? new Date() : undefined),
 			items: mapItems(payload.items),
 		}).save({ session });
 		timer({
@@ -889,7 +943,6 @@ export async function reviseBuyerOrderReadyEstimateDB({
 			},
 			{
 				$set: {
-					expectedReadyAt: revisedReadyAt,
 					revisedReadyAt,
 					revisedPrepMin,
 					lastReadyExtensionAt: now,
@@ -1357,6 +1410,38 @@ export async function markBuyerOrderPaidDB({
 	}
 }
 
+export async function markBuyerOrderInventoryCommittedDB({
+	id,
+	committedAt = new Date(),
+	session,
+}: {
+	id: string;
+	committedAt?: Date;
+	session?: ClientSession;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				inventoryCommittedAt: { $exists: false },
+				status: {
+					$nin: [
+						OrderStatus.PENDING_PAYMENT,
+						OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+						OrderStatus.CANCELLED,
+						OrderStatus.REFUNDED,
+					],
+				},
+			},
+			{ $set: { inventoryCommittedAt: committedAt } },
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function markBuyerOrderPendingPaymentDB({
 	id,
 	session,
@@ -1407,7 +1492,9 @@ export async function markBuyerOrderCancelledDB({
 				$set: {
 					status: OrderStatus.CANCELLED,
 					cancellationReason: reason,
-					...(reasonCode ? { cancellationReasonCode: reasonCode } : {}),
+					...(reasonCode
+						? { cancellationReasonCode: reasonCode }
+						: {}),
 					...(explanation
 						? { cancellationExplanation: explanation }
 						: {}),
@@ -1529,6 +1616,10 @@ export async function setBuyerOrderHandoverCredentialDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				handoverCredentialUsedAt: { $exists: false },
+				$or: [
+					{ handoverTokenHash: { $exists: false } },
+					{ handoverPinHash: { $exists: false } },
+				],
 			},
 			{
 				$set: {

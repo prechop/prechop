@@ -5,21 +5,21 @@ import { useRouter } from "next/navigation";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  FadeIn,
-  Grid,
-  RatingThresholdNote,
-  Row,
-  SectionHeader,
-  Stack,
-  Text,
-  Title,
-  useListingStatus,
-  useVendorStatus,
-  VendorStatusBadge,
+	Badge,
+	Button,
+	Card,
+	EmptyState,
+	FadeIn,
+	Grid,
+	RatingThresholdNote,
+	Row,
+	SectionHeader,
+	Stack,
+	Text,
+	Title,
+	useListingStatus,
+	useVendorStatus,
+	VendorStatusBadge,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { fetcher } from "@/constants/fetcher";
@@ -27,17 +27,51 @@ import { formatDate, formatKobo } from "@/constants/formatters";
 import type { DailyOrder, VendorStorefront } from "@/types";
 
 interface ReviewResponse {
-  reviews: Array<{
-    id: string;
-    buyerName?: string;
-    rating: number;
-    comment?: string;
-    createdAt: string;
-  }>;
-  aggregate: { avg: number; count: number };
+	reviews: Array<{
+		id: string;
+		buyerName?: string;
+		rating: number;
+		comment?: string;
+		createdAt: string;
+	}>;
+	aggregate: { avg: number; count: number };
 }
 interface MarketplaceAvailability {
-  marketplaceEnabled: boolean;
+	marketplaceEnabled: boolean;
+}
+
+function menuItemPriceLabel(item: VendorStorefront["menu"][number]): string {
+	const activeVariantPrices = (item.variants ?? [])
+		.filter((variant) => variant.isActive)
+		.map((variant) => variant.priceKobo);
+	if (activeVariantPrices.length === 0) return formatKobo(item.priceKobo);
+	const min = Math.min(...activeVariantPrices);
+	const max = Math.max(...activeVariantPrices);
+	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+}
+
+function remainingCap(item: DailyOrder["items"][number]): number | null {
+	if (item.maxQuantity == null) return null;
+	if (typeof item.remainingQuantity === "number") {
+		return Math.max(0, item.remainingQuantity);
+	}
+	return Math.max(
+		0,
+		item.maxQuantity -
+			(item.orderedQuantity ?? 0) -
+			(item.reservedQuantity ?? 0),
+	);
+}
+
+function listingSoldOut(listing: DailyOrder): boolean {
+	const finiteItems = listing.items.filter(
+		(item) => item.maxQuantity != null,
+	);
+	return (
+		listing.items.length > 0 &&
+		finiteItems.length === listing.items.length &&
+		finiteItems.every((item) => remainingCap(item) === 0)
+	);
 }
 
 // const Wrap = styled(Stack)`
@@ -63,9 +97,9 @@ const Avatar = styled.div<{ $src?: string | null }>`
   flex: 0 0 auto;
   border-radius: 999px;
   background: ${(p) =>
-    p.$src
-      ? `center / cover no-repeat url(${p.$src})`
-      : "rgba(255,255,255,0.2)"};
+		p.$src
+			? `center / cover no-repeat url(${p.$src})`
+			: "rgba(255,255,255,0.2)"};
   display: grid;
   place-items: center;
   font-size: 32px;
@@ -112,6 +146,12 @@ const CardLink = styled(Link)`
   height: 100%;
   color: inherit;
 `;
+const StaticCardBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: inherit;
+`;
 const Thumbs = styled.div`
   display: flex;
   gap: 2px;
@@ -122,9 +162,9 @@ const Thumb = styled.div<{ $src?: string | null }>`
   position: relative;
   flex: 1;
   background: ${(p) =>
-    p.$src
-      ? `center / cover no-repeat url(${p.$src})`
-      : "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 20px, transparent 21px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
+		p.$src
+			? `center / cover no-repeat url(${p.$src})`
+			: "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 20px, transparent 21px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -174,22 +214,22 @@ const MenuThumb = styled.div<{ $src?: string }>`
   flex: 0 0 auto;
   border-radius: var(--pc-radius-sm);
   background: ${(p) =>
-    p.$src
-      ? `center / cover no-repeat url(${p.$src})`
-      : "var(--pc-color-primary-50)"};
+		p.$src
+			? `center / cover no-repeat url(${p.$src})`
+			: "var(--pc-color-primary-50)"};
   display: grid;
   place-items: center;
   font-size: 22px;
 `;
 
 function isMarketplaceUnavailable(error: unknown): boolean {
-  const err = error as {
-    response?: { status?: number; data?: { appCode?: string } };
-  };
-  return (
-    err?.response?.status === 503 ||
-    err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
-  );
+	const err = error as {
+		response?: { status?: number; data?: { appCode?: string } };
+	};
+	return (
+		err?.response?.status === 503 ||
+		err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
+	);
 }
 
 /**
@@ -201,257 +241,303 @@ function isMarketplaceUnavailable(error: unknown): boolean {
  * had switched itself off still rendered "⏱ 2h left" here.
  */
 function StorefrontListingCard({
-  listing,
-  vendorOpen,
+	listing,
+	vendorOpen,
 }: {
-  listing: DailyOrder;
-  vendorOpen: boolean;
+	listing: DailyOrder;
+	vendorOpen: boolean;
 }) {
-  const status = useListingStatus(listing, { vendorOpen });
+	const status = useListingStatus(listing, { vendorOpen });
+	const soldOut = listingSoldOut(listing);
+	const Content = (
+		<>
+			<Thumbs>
+				{listing.items.slice(0, 3).map((it) => (
+					<Thumb
+						key={it.id}
+						$src={it.snapshotImageUrl}
+						aria-label={
+							it.snapshotImageUrl
+								? it.snapshotName
+								: `${it.snapshotName} image placeholder`
+						}
+					/>
+				))}
+				{listing.items.length === 0 && (
+					<Thumb aria-label="Food image placeholder" />
+				)}
+			</Thumbs>
+			<Body $gap={10}>
+				<Title $size={16}>{listing.title}</Title>
+				<Row $justify="space-between" $align="center">
+					{soldOut ? (
+						<Badge $tone="danger">Sold out</Badge>
+					) : (
+						status && <VendorStatusBadge status={status} compact />
+					)}
+					<Badge $tone="muted">
+						{listing.items.length} item
+						{listing.items.length === 1 ? "" : "s"}
+					</Badge>
+				</Row>
+				{soldOut && (
+					<Text $muted $size={12}>
+						This item is sold out.
+					</Text>
+				)}
+			</Body>
+		</>
+	);
 
-  return (
-    <ListingCard>
-      <CardLink href={`/o/${listing.shareableToken}`}>
-        <Thumbs>
-          {listing.items.slice(0, 3).map((it) => (
-            <Thumb
-              key={it.id}
-              $src={it.snapshotImageUrl}
-              aria-label={
-                it.snapshotImageUrl
-                  ? it.snapshotName
-                  : `${it.snapshotName} image placeholder`
-              }
-            />
-          ))}
-          {listing.items.length === 0 && (
-            <Thumb aria-label="Food image placeholder" />
-          )}
-        </Thumbs>
-        <Body $gap={10}>
-          <Title $size={16}>{listing.title}</Title>
-          <Row $justify="space-between" $align="center">
-            {status && <VendorStatusBadge status={status} compact />}
-            <Badge $tone="muted">
-              {listing.items.length} item
-              {listing.items.length === 1 ? "" : "s"}
-            </Badge>
-          </Row>
-        </Body>
-      </CardLink>
-    </ListingCard>
-  );
+	return (
+		<ListingCard>
+			{soldOut ? (
+				<StaticCardBody aria-disabled>{Content}</StaticCardBody>
+			) : (
+				<CardLink href={`/o/${listing.shareableToken}`}>
+					{Content}
+				</CardLink>
+			)}
+		</ListingCard>
+	);
 }
 
 export default function VendorStorefrontWrapper({
-  vendorId,
+	vendorId,
 }: {
-  vendorId: string;
+	vendorId: string;
 }) {
-  const router = useRouter();
-  const { data: availability, isLoading: availabilityLoading } =
-    useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
-      refreshInterval: 10_000,
-    });
-  const marketplaceEnabled = availability?.marketplaceEnabled !== false;
-  const { data, isLoading, error } = useSWR<VendorStorefront>(
-    marketplaceEnabled ? `/vendors/${vendorId}/storefront` : null,
-    fetcher,
-  );
-  const { data: reviewData } = useSWR<ReviewResponse>(
-    marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
-    fetcher,
-  );
-  // Declared before the early returns — hooks can't live behind a branch. Ticks
-  // every 30s, so the hero badge decays on its own instead of going stale.
-  const vendorStatus = useVendorStatus({
-    isOpenForOrders: data?.vendor.isOpenForOrders,
-    listings: data?.listings,
-  });
+	const router = useRouter();
+	const { data: availability, isLoading: availabilityLoading } =
+		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
+			refreshInterval: 10_000,
+		});
+	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
+	const { data, isLoading, error } = useSWR<VendorStorefront>(
+		marketplaceEnabled ? `/vendors/${vendorId}/storefront` : null,
+		fetcher,
+	);
+	const { data: reviewData } = useSWR<ReviewResponse>(
+		marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
+		fetcher,
+	);
+	// Declared before the early returns — hooks can't live behind a branch. Ticks
+	// every 30s, so the hero badge decays on its own instead of going stale.
+	const vendorStatus = useVendorStatus({
+		isOpenForOrders: data?.vendor.isOpenForOrders,
+		listings: data?.listings,
+	});
 
-  if (availabilityLoading || isLoading) return <PageLoader />;
-  if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
-    return (
-      <Wrap>
-        <Card $accent>
-          <Stack $gap={10}>
-            <Title $size={20}>Marketplace unavailable</Title>
-            <Text $muted>
-              The marketplace is temporarily unavailable. Existing paid orders
-              are still being fulfilled.
-            </Text>
-            <Row>
-              <Button onClick={() => router.push("/my-orders")}>
-                View my orders
-              </Button>
-            </Row>
-          </Stack>
-        </Card>
-      </Wrap>
-    );
-  }
-  if (error || !data) {
-    return (
-      <Wrap>
-        <Card $accent>
-          <Stack $gap={10}>
-            <Title $size={20}>Shop not found</Title>
-            <Text $muted>
-              This vendor may no longer be active, or the link is invalid.
-            </Text>
-            <Row>
-              <Button onClick={() => router.push("/marketplace")}>
-                Browse marketplace
-              </Button>
-            </Row>
-          </Stack>
-        </Card>
-      </Wrap>
-    );
-  }
+	if (availabilityLoading || isLoading) return <PageLoader />;
+	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
+		return (
+			<Wrap>
+				<Card $accent>
+					<Stack $gap={10}>
+						<Title $size={20}>Marketplace unavailable</Title>
+						<Text $muted>
+							The marketplace is temporarily unavailable. Existing
+							paid orders are still being fulfilled.
+						</Text>
+						<Row>
+							<Button onClick={() => router.push("/my-orders")}>
+								View my orders
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
+	if (error || !data) {
+		return (
+			<Wrap>
+				<Card $accent>
+					<Stack $gap={10}>
+						<Title $size={20}>Shop not found</Title>
+						<Text $muted>
+							This vendor may no longer be active, or the link is
+							invalid.
+						</Text>
+						<Row>
+							<Button onClick={() => router.push("/marketplace")}>
+								Browse marketplace
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+			</Wrap>
+		);
+	}
 
-  const { vendor, listings, menu } = data;
+	const { vendor, listings, menu } = data;
 
-  return (
-    <Wrap $gap={18}>
-      <FadeIn>
-        <Header>
-          <Row $gap={16} $align="center">
-            <Avatar $src={vendor.profileImageUrl} aria-hidden>
-              {vendor.profileImageUrl ? "" : "🏪"}
-            </Avatar>
-            <Stack $gap={6}>
-              <Text $weight={800} $size={22} style={{ color: "#fff" }}>
-                {vendor.businessName ?? "Campus kitchen"}
-              </Text>
-              {/* Availability first, then trust — two orthogonal
+	return (
+		<Wrap $gap={18}>
+			<FadeIn>
+				<Header>
+					<Row $gap={16} $align="center">
+						<Avatar $src={vendor.profileImageUrl} aria-hidden>
+							{vendor.profileImageUrl ? "" : "🏪"}
+						</Avatar>
+						<Stack $gap={6}>
+							<Text
+								$weight={800}
+								$size={22}
+								style={{ color: "#fff" }}
+							>
+								{vendor.businessName ?? "Campus kitchen"}
+							</Text>
+							{/* Availability first, then trust — two orthogonal
 							    axes, never more than two badges. `onHero` swaps
 							    the tone tokens for a scrim that survives the
 							    gradient. */}
-              <Row $gap={10} $align="center" $wrap>
-                <VendorStatusBadge status={vendorStatus} onHero live />
-                <HeroMeta
-                  $size={13}
-                  style={{ color: "rgba(255,255,255,0.92)" }}>
-                  🍽️ {vendor.totalOrders} orders
-                </HeroMeta>
-              </Row>
-              {(vendor.areaOrAddress || vendor.state) && (
-                <Text $size={13} style={{ color: "rgba(255,255,255,0.85)" }}>
-                  📍{" "}
-                  {[vendor.areaOrAddress, vendor.state]
-                    .filter(Boolean)
-                    .join(", ")}
-                </Text>
-              )}
-            </Stack>
-          </Row>
-          {vendor.description && (
-            <Text
-              $size={14}
-              style={{
-                color: "rgba(255,255,255,0.9)",
-                marginTop: 12,
-              }}>
-              {vendor.description}
-            </Text>
-          )}
-          {vendor.categories.length > 0 && (
-            <CatChips $gap={6} style={{ marginTop: 12 }}>
-              {vendor.categories.map((c) => (
-                <CatChip key={c}>{c}</CatChip>
-              ))}
-            </CatChips>
-          )}
-        </Header>
-      </FadeIn>
+							<Row $gap={10} $align="center" $wrap>
+								<VendorStatusBadge
+									status={vendorStatus}
+									onHero
+									live
+								/>
+								<HeroMeta
+									$size={13}
+									style={{ color: "rgba(255,255,255,0.92)" }}
+								>
+									🍽️ {vendor.totalOrders} orders
+								</HeroMeta>
+							</Row>
+							{(vendor.areaOrAddress || vendor.state) && (
+								<Text
+									$size={13}
+									style={{ color: "rgba(255,255,255,0.85)" }}
+								>
+									📍{" "}
+									{[vendor.areaOrAddress, vendor.state]
+										.filter(Boolean)
+										.join(", ")}
+								</Text>
+							)}
+						</Stack>
+					</Row>
+					{vendor.description && (
+						<Text
+							$size={14}
+							style={{
+								color: "rgba(255,255,255,0.9)",
+								marginTop: 12,
+							}}
+						>
+							{vendor.description}
+						</Text>
+					)}
+					{vendor.categories.length > 0 && (
+						<CatChips $gap={6} style={{ marginTop: 12 }}>
+							{vendor.categories.map((c) => (
+								<CatChip key={c}>{c}</CatChip>
+							))}
+						</CatChips>
+					)}
+				</Header>
+			</FadeIn>
 
-      <Stack $gap={12}>
-        <SectionHeader title="Cooking today" icon="🔥" />
-        {listings.length === 0 ? (
-          <EmptyState
-            icon="😴"
-            title="Nothing cooking right now"
-            description="This kitchen has no open listings at the moment. Check back later."
-          />
-        ) : (
-          <Grid $min={240} $gap={16}>
-            {listings.map((o, i) => (
-              <FadeIn key={o.id} $delay={i * 45}>
-                <StorefrontListingCard
-                  listing={o}
-                  vendorOpen={vendor.isOpenForOrders}
-                />
-              </FadeIn>
-            ))}
-          </Grid>
-        )}
-      </Stack>
+			<Stack $gap={12}>
+				<SectionHeader title="Cooking today" icon="🔥" />
+				{listings.length === 0 ? (
+					<EmptyState
+						icon="😴"
+						title="Nothing cooking right now"
+						description="This kitchen has no open listings at the moment. Check back later."
+					/>
+				) : (
+					<Grid $min={240} $gap={16}>
+						{listings.map((o, i) => (
+							<FadeIn key={o.id} $delay={i * 45}>
+								<StorefrontListingCard
+									listing={o}
+									vendorOpen={vendor.isOpenForOrders}
+								/>
+							</FadeIn>
+						))}
+					</Grid>
+				)}
+			</Stack>
 
-      <Stack $gap={12}>
-        <SectionHeader title="Full menu" icon="🍽️" />
-        {menu.length === 0 ? (
-          <EmptyState
-            icon="📭"
-            title="No menu items yet"
-            description="This kitchen hasn't published its menu."
-          />
-        ) : (
-          <Card>
-            <Stack $gap={0}>
-              {menu.map((m) => (
-                <MenuRow key={m.id}>
-                  <Row $gap={12} $align="center">
-                    <MenuThumb $src={m.imageUrl} aria-hidden>
-                      {m.imageUrl ? "" : "🍛"}
-                    </MenuThumb>
-                    <Stack $gap={2}>
-                      <Text $weight={700}>{m.name}</Text>
-                      {m.description && (
-                        <Text $muted $size={12.5}>
-                          {m.description}
-                        </Text>
-                      )}
-                    </Stack>
-                  </Row>
-                  <Text $weight={700}>{formatKobo(m.priceKobo)}</Text>
-                </MenuRow>
-              ))}
-            </Stack>
-          </Card>
-        )}
-      </Stack>
+			<Stack $gap={12}>
+				<SectionHeader title="Full menu" icon="🍽️" />
+				{menu.length === 0 ? (
+					<EmptyState
+						icon="📭"
+						title="No menu items yet"
+						description="This kitchen hasn't published its menu."
+					/>
+				) : (
+					<Card>
+						<Stack $gap={0}>
+							{menu.map((m) => (
+								<MenuRow key={m.id}>
+									<Row $gap={12} $align="center">
+										<MenuThumb
+											$src={m.imageUrl}
+											aria-hidden
+										>
+											{m.imageUrl ? "" : "🍛"}
+										</MenuThumb>
+										<Stack $gap={2}>
+											<Text $weight={700}>{m.name}</Text>
+											{m.description && (
+												<Text $muted $size={12.5}>
+													{m.description}
+												</Text>
+											)}
+										</Stack>
+									</Row>
+									<Text $weight={700}>
+										{menuItemPriceLabel(m)}
+									</Text>
+								</MenuRow>
+							))}
+						</Stack>
+					</Card>
+				)}
+			</Stack>
 
-      <Stack $gap={12}>
-        <SectionHeader title="Reviews" icon="★" />
-        {(reviewData?.reviews ?? []).length === 0 ? (
-          <EmptyState
-            icon="★"
-            title="No reviews yet"
-            description="Buyer reviews will appear here after completed orders."
-          />
-        ) : (
-          <Stack $gap={10}>
-            {/* Says out loud why no public score is shown yet, so a
+			<Stack $gap={12}>
+				<SectionHeader title="Reviews" icon="★" />
+				{(reviewData?.reviews ?? []).length === 0 ? (
+					<EmptyState
+						icon="★"
+						title="No reviews yet"
+						description="Buyer reviews will appear here after completed orders."
+					/>
+				) : (
+					<Stack $gap={10}>
+						{/* Says out loud why no public score is shown yet, so a
 						    below-threshold vendor doesn't read as un-rated. */}
-            <RatingThresholdNote totalReviews={vendor.totalReviews} />
-            {(reviewData?.reviews ?? []).map((r) => (
-              <Card key={r.id}>
-                <Stack $gap={6}>
-                  <Row $justify="space-between" $gap={10}>
-                    <Text $weight={700}>{r.buyerName || "Buyer"}</Text>
-                    <Text $weight={800}>{"★".repeat(r.rating)}</Text>
-                  </Row>
-                  {r.comment && <Text $size={14}>{r.comment}</Text>}
-                  <Text $muted $size={12}>
-                    {formatDate(r.createdAt)}
-                  </Text>
-                </Stack>
-              </Card>
-            ))}
-          </Stack>
-        )}
-      </Stack>
-    </Wrap>
-  );
+						<RatingThresholdNote
+							totalReviews={vendor.totalReviews}
+						/>
+						{(reviewData?.reviews ?? []).map((r) => (
+							<Card key={r.id}>
+								<Stack $gap={6}>
+									<Row $justify="space-between" $gap={10}>
+										<Text $weight={700}>
+											{r.buyerName || "Buyer"}
+										</Text>
+										<Text $weight={800}>
+											{"★".repeat(r.rating)}
+										</Text>
+									</Row>
+									{r.comment && (
+										<Text $size={14}>{r.comment}</Text>
+									)}
+									<Text $muted $size={12}>
+										{formatDate(r.createdAt)}
+									</Text>
+								</Stack>
+							</Card>
+						))}
+					</Stack>
+				)}
+			</Stack>
+		</Wrap>
+	);
 }
