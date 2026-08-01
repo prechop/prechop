@@ -370,10 +370,10 @@ export default function AdminShell({
       <Backdrop $open={open} onClick={() => setOpen(false)} />
       <Sidebar $open={open}>
         <Brand href="/admin">
-          <Logo aria-hidden>🍲</Logo>
-          {/* <Logo aria-hidden>
+          {/* <Logo aria-hidden>🍲</Logo> */}
+          <Logo aria-hidden>
             <img src="/dark.png" alt="Prechop" />
-          </Logo> */}
+          </Logo>
           Prechop
         </Brand>
         <NavLabel>Management</NavLabel>

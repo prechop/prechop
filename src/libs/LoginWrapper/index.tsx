@@ -43,7 +43,7 @@ const Mark = styled.div`
   place-items: center;
   font-size: 30px;
   border-radius: var(--pc-radius-lg);
-  background: var(--pc-gradient-hero);
+//   background: var(--pc-gradient-hero);
   box-shadow: var(--pc-shadow-primary);
 `;
 const Title = styled.h1`
@@ -149,7 +149,7 @@ export default function LoginWrapper() {
           <Brand>
             {/* <Mark aria-hidden>🍲</Mark> */}
             <Mark aria-hidden>
-              <img src="/light.png" alt="" aria-hidden />
+              <img src="/dark.png" alt="" aria-hidden />
             </Mark>
             <Stack $gap={2}>
               <TitleH>Prechop</TitleH>

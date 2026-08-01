@@ -112,6 +112,11 @@ export const metadata: Metadata = {
 		"prechop",
 	],
 	manifest: "/manifest.webmanifest",
+	icons: {
+		icon: "/dark.png",
+		shortcut: "/dark.png",
+		apple: "/dark.png",
+	},
 	appleWebApp: {
 		capable: true,
 		title: "Prechop",
@@ -172,7 +177,7 @@ export default function RootLayout({
 			suppressHydrationWarning
 		>
 			<head>
-				<link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+				<link rel="apple-touch-icon" href="/dark.png" />
 				<style>{`html,body{background:#FFF6EC}:root[data-theme="dark"] body{background:#14100C}`}</style>
 				<script
 					dangerouslySetInnerHTML={{

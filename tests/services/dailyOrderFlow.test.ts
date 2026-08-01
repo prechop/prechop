@@ -275,6 +275,68 @@ describe("dailyOrders status transitions", () => {
 		);
 	});
 
+	it.each([
+		OrderStatus.COMPLETED,
+		OrderStatus.ACCEPTED,
+		OrderStatus.COOKING,
+		OrderStatus.READY,
+		OrderStatus.CANCELLED,
+		OrderStatus.REFUNDED,
+	])("closes a listing without cancelling buyer orders when an attached order is %s", async (status) => {
+		vi.clearAllMocks();
+		const { userId, vendorId, campusId } = await makeVendor();
+		const item = await makeMenuItem({ vendorId, campusId });
+		const listing = await createDailyOrder({
+			userId,
+			input: {
+				title: "Lunch",
+				scheduledDate: futureISO(3_600_000),
+				cutoffTime: futureISO(1_800_000),
+				items: [{ menuItemId: item!._id.toString() }],
+			},
+		});
+		const listingItem = listing.items[0];
+		const order = await createBuyerOrderDB({
+			payload: {
+				orderNumber: `CLOSE-${status}-${Date.now()}`,
+				dailyOrderId: listing._id.toString(),
+				vendorId,
+				buyerId: oid(),
+				campusId,
+				status,
+				fulfillmentType: FulfillmentType.PICKUP,
+				subtotalKobo: 150000,
+				deliveryFeeKobo: 0,
+				platformFeeKobo: 0,
+				totalKobo: 150000,
+				items: [
+					{
+						dailyOrderItemId:
+							listingItem.id ?? listingItem._id!.toString(),
+						menuItemId: item!._id.toString(),
+						snapshotName: "Rice",
+						snapshotPriceKobo: 150000,
+						quantity: 1,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			},
+		});
+
+		const closed = await closeDailyOrder({
+			userId,
+			orderId: listing._id.toString(),
+		});
+
+		expect((closed as { status: string }).status).toBe(
+			DailyOrderStatus.CLOSED,
+		);
+		const unchangedOrder = await BuyerOrder.findById(order!._id).lean();
+		expect(unchangedOrder!.status).toBe(status);
+		expect(paystackProvider.refund).not.toHaveBeenCalled();
+	});
+
 	it("cancels a listing and reports the refund summary", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const item = await makeMenuItem({ vendorId, campusId });

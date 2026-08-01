@@ -1,14 +1,8 @@
-import {
-	ErrDailyOrderNotFound,
-	ErrForbidden,
-	validationError,
-} from "../../constants";
+import { ErrDailyOrderNotFound, ErrForbidden } from "../../constants";
 import {
 	DailyOrderStatus,
 	getDailyOrderByIdDB,
 	getVendorProfileByUserIdDB,
-	listBuyerOrdersByVendorAndDailyOrderDB,
-	OrderStatus,
 	setDailyOrderStatusDB,
 } from "../../models";
 import {
@@ -25,43 +19,10 @@ export async function closeDailyOrder({
 	orderId: string;
 	reason?: string;
 }) {
+	void reason;
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw ErrForbidden;
 	const vendorId = vendor._id.toString();
-
-	const buyerOrders = await listBuyerOrdersByVendorAndDailyOrderDB({
-		vendorId,
-		dailyOrderId: orderId,
-	});
-	const cookingStarted = buyerOrders.some((order) =>
-		[
-			OrderStatus.COOKING,
-			OrderStatus.PREPARING,
-			OrderStatus.READY,
-			OrderStatus.READY_FOR_PICKUP,
-			OrderStatus.READY_FOR_DELIVERY,
-			OrderStatus.IN_TRANSIT,
-			OrderStatus.PICKED_UP,
-			OrderStatus.DELIVERED,
-			OrderStatus.COMPLETED,
-		].includes(order.status),
-	);
-	if (cookingStarted) {
-		throw validationError(
-			"This order cannot be closed because food is already being prepared.",
-		);
-	}
-	const refundable = buyerOrders.filter((order) =>
-		[
-			OrderStatus.PAID,
-			OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
-			OrderStatus.ACCEPTED,
-			OrderStatus.CONFIRMED,
-		].includes(order.status),
-	);
-	if (refundable.length > 0 && !reason?.trim()) {
-		throw validationError("Enter a cancellation reason before closing.");
-	}
 
 	const ok = await setDailyOrderStatusDB({
 		id: orderId,
@@ -71,14 +32,6 @@ export async function closeDailyOrder({
 	});
 	if (!ok) throw ErrDailyOrderNotFound;
 
-	const refund =
-		refundable.length > 0
-			? await refundOrdersForDailyOrder({
-					vendorId,
-					dailyOrderId: orderId,
-					reason: reason?.trim(),
-				})
-			: { refunded: 0, failed: 0 };
 	const expiredExternalPayments =
 		await expireExternalPaymentOrdersForDailyOrder({
 			vendorId,
@@ -87,7 +40,7 @@ export async function closeDailyOrder({
 
 	return {
 		...((await getDailyOrderByIdDB({ id: orderId })) ?? { id: orderId }),
-		refund,
+		refund: { refunded: 0, failed: 0 },
 		expiredExternalPayments,
 	};
 }
