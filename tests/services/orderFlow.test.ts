@@ -16,6 +16,8 @@ import { Redis } from "@/server/databases/redis";
 import {
 	claimPaymentWebhookDB,
 	createPaymentDB,
+	getDailyOrderByIdDB,
+	incrementDailyOrderItemQuantityDB,
 	listAuditLogsDB,
 	PaymentStatus,
 } from "@/server/models";
@@ -44,6 +46,7 @@ import {
 	revealAdminHandoverPin,
 } from "@/server/services/buyerOrders/handoverConfirmation";
 import {
+	getIncomingVendorOrders,
 	getMyOrders,
 	getOrderById,
 	getVendorOrdersForDailyOrder,
@@ -57,7 +60,11 @@ import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSit
 import { updateSiteConfigs } from "@/server/services/siteConfigs/updateSiteConfigs";
 import { getVendorReviews } from "@/server/services/vendors/reviews";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
-import { makeUser, makeVendor } from "../helpers/factories";
+import {
+	makeActiveDailyOrder,
+	makeUser,
+	makeVendor,
+} from "../helpers/factories";
 
 const slotKeys = new Set<string>();
 
@@ -88,6 +95,8 @@ async function makeOrder({
 	deliveryAdditionalInfo,
 	deliveryPhone,
 	customerMessage,
+	dailyOrderId,
+	dailyOrderItemId,
 }: {
 	vendorId: string;
 	buyerId: string;
@@ -100,13 +109,15 @@ async function makeOrder({
 	deliveryAdditionalInfo?: string;
 	deliveryPhone?: string;
 	customerMessage?: string;
+	dailyOrderId?: string;
+	dailyOrderItemId?: string;
 }) {
-	const itemId = oid();
+	const itemId = dailyOrderItemId ?? oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
 	const order = await createBuyerOrderDB({
 		payload: {
 			orderNumber: generateOrderNumber(),
-			dailyOrderId: oid(),
+			dailyOrderId: dailyOrderId ?? oid(),
 			vendorId,
 			buyerId,
 			campusId,
@@ -172,6 +183,14 @@ async function addSuccessfulPayment(
 	});
 	await claimPaymentWebhookDB({ paystackRef: ref, channel: "card" });
 	return ref;
+}
+
+function firstDailyOrderItemId(listing: {
+	items: Array<{ id?: string; _id?: unknown }>;
+}): string {
+	const item = listing.items[0];
+	if (!item) throw new Error("Expected seeded listing item");
+	return (item.id ?? item._id)?.toString() ?? "";
 }
 
 describe("buyerOrders queries", () => {
@@ -452,6 +471,95 @@ describe("updateOrderStatus", () => {
 				status: OrderStatus.ACCEPTED,
 			}),
 		).rejects.toThrow();
+	});
+
+	it("expires and refunds instead of accepting when the deadline has passed", async () => {
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({ id: 447, status: "success", amount: 155000 });
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			acceptanceDeadline: new Date(Date.now() - 1000),
+		});
+		await addSuccessfulPayment(order);
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.ACCEPTED,
+			}),
+		).rejects.toMatchObject({
+			appCode: "ACCEPTANCE_DEADLINE_EXPIRED",
+		});
+
+		const expired = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(expired!.status).toBe(OrderStatus.REFUNDED);
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.ACCEPTED,
+			}),
+		).rejects.toThrow();
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("fetch-time expiry removes overdue accept actions and restores committed capacity", async () => {
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({ id: 448, status: "success", amount: 155000 });
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const listing = await makeActiveDailyOrder({
+			vendorId,
+			campusId,
+			maxQuantity: 1,
+		});
+		const dailyOrderId = listing._id.toString();
+		const dailyOrderItemId = firstDailyOrderItemId(listing);
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			acceptanceDeadline: new Date(Date.now() - 1000),
+			dailyOrderId,
+			dailyOrderItemId,
+		});
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId,
+			dailyOrderItemId,
+			by: 1,
+		});
+		await addSuccessfulPayment(order);
+
+		const incoming = await getIncomingVendorOrders({
+			vendorUserId: userId,
+		});
+		expect(incoming.map((o) => o._id.toString())).not.toContain(
+			order._id.toString(),
+		);
+
+		const expired = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(expired!.status).toBe(OrderStatus.REFUNDED);
+		const freshListing = await getDailyOrderByIdDB({ id: dailyOrderId });
+		const item = freshListing!.items.find(
+			(i) => (i.id ?? i._id)?.toString() === dailyOrderItemId,
+		);
+		expect(item!.orderedQuantity).toBe(0);
+		expect(refundSpy).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps refund idempotent when rejection is retried after refund", async () => {

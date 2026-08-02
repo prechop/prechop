@@ -189,6 +189,7 @@ export default function LoginWrapper() {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setSent(false);
+						
                       }}
                       placeholder="you@example.com"
                       onKeyDown={(e) => {

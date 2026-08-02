@@ -18,8 +18,8 @@ import {
 } from "../../models";
 import { sendchampProvider } from "../../providers";
 import { createUserNotification, notifyAdminAttention } from "../notifications";
-import type { RefundOutcome } from "../refunds";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
+import type { RefundOutcome } from "../refunds";
 import { releaseSlots } from "./slots";
 
 const CANCELLABLE: OrderStatus[] = [
@@ -76,7 +76,7 @@ export async function cancelOrderAsBuyer({
 		await markPaymentCancelledDB({ buyerOrderId: orderId });
 		outcome = "PAYMENT_CANCELLED";
 	} else {
-		await returnCapacity(order);
+		await returnCommittedOrderCapacity(order);
 		outcome = await refundOrder(order);
 	}
 	await recordCancellationEvent({
@@ -155,7 +155,7 @@ export async function cancelOrderAsVendor({
 		await markPaymentCancelledDB({ buyerOrderId: orderId });
 		outcome = "PAYMENT_CANCELLED";
 	} else {
-		await returnCapacity(order);
+		await returnCommittedOrderCapacity(order);
 		outcome = await refundOrder(order);
 	}
 	await recordCancellationEvent({
@@ -194,7 +194,10 @@ export async function cancelOrderAsVendor({
 	return { message: "Order cancelled and buyer notified." };
 }
 
-type CancellationPaymentOutcome = RefundOutcome | "PAYMENT_CANCELLED" | "NO_REFUND";
+type CancellationPaymentOutcome =
+	| RefundOutcome
+	| "PAYMENT_CANCELLED"
+	| "NO_REFUND";
 
 async function recordCancellationEvent({
 	orderId,
@@ -337,7 +340,7 @@ async function refundOrder(order: {
  * already dropped at payment), so cancellation decrements orderedQuantity — it
  * must NOT touch the reserved counter, which tracks only in-flight holds.
  */
-async function returnCapacity(order: {
+export async function returnCommittedOrderCapacity(order: {
 	dailyOrderId: { toString(): string };
 	items: Array<{
 		dailyOrderItemId: { toString(): string };

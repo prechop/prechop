@@ -1442,6 +1442,13 @@ export default function PipelineWrapper() {
 														order.acceptanceDeadline,
 														now,
 													);
+												const acceptanceOverdue =
+													order.status ===
+														"AWAITING_VENDOR_ACCEPTANCE" &&
+													!!order.acceptanceDeadline &&
+													new Date(
+														order.acceptanceDeadline,
+													).getTime() <= now;
 												const buyerContact =
 													buyerContacts[order.id];
 												const checkoutNote =
@@ -1889,7 +1896,8 @@ export default function PipelineWrapper() {
 																		</Button>
 																	)}
 																{order.status ===
-																"AWAITING_VENDOR_ACCEPTANCE" ? (
+																	"AWAITING_VENDOR_ACCEPTANCE" &&
+																!acceptanceOverdue ? (
 																	<>
 																		<Button
 																			$size="sm"

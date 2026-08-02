@@ -145,6 +145,14 @@ export function reservationExpired(): AppError {
 	);
 }
 
+export function acceptanceDeadlineExpired(): AppError {
+	return new AppError(
+		"Acceptance deadline expired. This order can no longer be accepted.",
+		409,
+		"ACCEPTANCE_DEADLINE_EXPIRED",
+	);
+}
+
 export function invalidOrderState(message: string): AppError {
 	return new AppError(message, 409, "INVALID_ORDER_STATE");
 }

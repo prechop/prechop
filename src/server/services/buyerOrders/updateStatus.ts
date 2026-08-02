@@ -1,27 +1,30 @@
 import { isVendorStatusTransitionAllowed } from "@/constants/orderLifecycle";
 import {
+	acceptanceDeadlineExpired,
 	ErrForbidden,
 	ErrOrderNotFound,
 	invalidOrderState,
 } from "../../constants";
 import {
-	FulfillmentType,
 	appendBuyerOrderTimelineDB,
+	FulfillmentType,
 	getBuyerOrderByIdDB,
 	getVendorProfileByUserIdDB,
 	OrderStatus,
 	setBuyerOrderStatusDB,
 } from "../../models";
 import {
+	createUserNotification,
+	notifyAdminAttention,
 	notifyOrderAccepted,
 	notifyOrderConfirmed,
 	notifyOrderInTransit,
 	notifyOrderReady,
 	notifyOrderRefundPending,
 } from "../notifications";
-import { createUserNotification, notifyAdminAttention } from "../notifications";
 import { issueRefund, type RefundOutcome } from "../refunds";
 import { generateReceiptInBackground } from "./receiptPdf";
+import { expireVendorAcceptanceOrder } from "./vendorAcceptance";
 
 export async function updateOrderStatus({
 	vendorUserId,
@@ -44,6 +47,17 @@ export async function updateOrderStatus({
 	const order = await getBuyerOrderByIdDB({ id: orderId });
 	if (!order) throw ErrOrderNotFound;
 	if (order.vendorId.toString() !== vendor._id.toString()) throw ErrForbidden;
+
+	if (
+		order.status === OrderStatus.AWAITING_VENDOR_ACCEPTANCE &&
+		(status === OrderStatus.ACCEPTED ||
+			status === OrderStatus.VENDOR_REJECTED) &&
+		order.acceptanceDeadline &&
+		new Date(order.acceptanceDeadline).getTime() <= Date.now()
+	) {
+		await expireVendorAcceptanceOrder({ orderId });
+		throw acceptanceDeadlineExpired();
+	}
 
 	if (
 		!isVendorStatusTransitionAllowed(

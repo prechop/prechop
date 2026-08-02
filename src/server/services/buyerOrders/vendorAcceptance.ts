@@ -1,4 +1,5 @@
 import {
+	getBuyerOrderByIdDB,
 	getVendorProfileByIdDB,
 	listExpiredVendorAcceptanceOrdersDB,
 	listVendorAcceptanceReminderDueDB,
@@ -13,6 +14,7 @@ import {
 	notifyVendorOrderExpired,
 } from "../notifications";
 import { issueRefund } from "../refunds";
+import { returnCommittedOrderCapacity } from "./cancel";
 
 export const VENDOR_ACCEPTANCE_DEADLINE_MINUTES = 10;
 
@@ -22,6 +24,12 @@ export interface VendorAcceptanceSweepResult {
 	expired: number;
 	refunded: number;
 	failed: number;
+}
+
+export interface VendorAcceptanceExpiryResult {
+	expired: boolean;
+	refunded: boolean;
+	failed: boolean;
 }
 
 const EXPIRED_REASON =
@@ -75,60 +83,93 @@ export async function sweepVendorAcceptanceDeadlines({
 
 	const expired = await listExpiredVendorAcceptanceOrdersDB({ now, limit });
 	for (const order of expired) {
-		try {
-			const markedExpired = await setBuyerOrderStatusDB({
-				id: order.id,
-				status: OrderStatus.EXPIRED_VENDOR_NO_RESPONSE,
-				fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
-				vendorNoResponseExpiredAt: now,
-			});
-			if (!markedExpired) continue;
-			result.expired += 1;
-
-			await setBuyerOrderStatusDB({
-				id: order.id,
-				status: OrderStatus.REFUND_PENDING,
-				fromStatuses: [OrderStatus.EXPIRED_VENDOR_NO_RESPONSE],
-				refundPendingAt: now,
-			});
-
-			const refund = await issueRefund({
-				orderId: order.id,
-				amountKobo: order.totalKobo,
-				reason: EXPIRED_REASON,
-			});
-			if (refund.outcome === "REFUNDED") result.refunded += 1;
-
-			await notifyOrderRefundPending({
-				buyerId: order.buyerId,
-				orderNumber: order.orderNumber,
-				reason: EXPIRED_REASON,
-				data: { orderId: order.id },
-			});
-
-			const userId = await vendorUserId(order.vendorId);
-			if (userId) {
-				await notifyVendorOrderExpired({
-					vendorUserId: userId,
-					orderNumber: order.orderNumber,
-					data: { orderId: order.id },
-				});
-			}
-		} catch (error) {
-			result.failed += 1;
-			console.error(
-				`[vendor-acceptance] expiry handling failed for order ${order.id}:`,
-				error,
-			);
-			createUserNotification({
-				userId: order.buyerId,
-				title: "Refund pending",
-				body: EXPIRED_REASON,
-				type: "ORDER_REFUND_PENDING",
-				data: { orderId: order.id, orderNumber: order.orderNumber },
-			});
-		}
+		const expiry = await expireVendorAcceptanceOrder({
+			orderId: order.id,
+			now,
+		});
+		if (expiry.expired) result.expired += 1;
+		if (expiry.refunded) result.refunded += 1;
+		if (expiry.failed) result.failed += 1;
 	}
 
 	return result;
+}
+
+export async function expireVendorAcceptanceOrder({
+	orderId,
+	now = new Date(),
+}: {
+	orderId: string;
+	now?: Date;
+}): Promise<VendorAcceptanceExpiryResult> {
+	const order = await getBuyerOrderByIdDB({ id: orderId });
+	if (
+		!order ||
+		order.status !== OrderStatus.AWAITING_VENDOR_ACCEPTANCE ||
+		!order.acceptanceDeadline ||
+		new Date(order.acceptanceDeadline).getTime() > now.getTime()
+	) {
+		return { expired: false, refunded: false, failed: false };
+	}
+
+	try {
+		const markedExpired = await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.EXPIRED_VENDOR_NO_RESPONSE,
+			fromStatuses: [OrderStatus.AWAITING_VENDOR_ACCEPTANCE],
+			vendorNoResponseExpiredAt: now,
+		});
+		if (!markedExpired) {
+			return { expired: false, refunded: false, failed: false };
+		}
+
+		await returnCommittedOrderCapacity(order);
+		await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.REFUND_PENDING,
+			fromStatuses: [OrderStatus.EXPIRED_VENDOR_NO_RESPONSE],
+			refundPendingAt: now,
+		});
+
+		const refund = await issueRefund({
+			orderId,
+			amountKobo: order.totalKobo,
+			reason: EXPIRED_REASON,
+		});
+
+		await notifyOrderRefundPending({
+			buyerId: order.buyerId.toString(),
+			orderNumber: order.orderNumber,
+			reason: EXPIRED_REASON,
+			data: { orderId },
+		});
+
+		const userId = await vendorUserId(order.vendorId.toString());
+		if (userId) {
+			await notifyVendorOrderExpired({
+				vendorUserId: userId,
+				orderNumber: order.orderNumber,
+				data: { orderId },
+			});
+		}
+
+		return {
+			expired: true,
+			refunded: refund.outcome === "REFUNDED",
+			failed: false,
+		};
+	} catch (error) {
+		console.error(
+			`[vendor-acceptance] expiry handling failed for order ${orderId}:`,
+			error,
+		);
+		await createUserNotification({
+			userId: order.buyerId.toString(),
+			title: "Refund pending",
+			body: EXPIRED_REASON,
+			type: "ORDER_REFUND_PENDING",
+			data: { orderId, orderNumber: order.orderNumber },
+		});
+		return { expired: true, refunded: false, failed: true };
+	}
 }
