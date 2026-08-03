@@ -55,6 +55,12 @@ import {
 	rememberLateOrderAck,
 } from "@/libs/lateOrderAcknowledgement";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
+import {
+	OrderReasonModal,
+	type OrderReasonPayload,
+	VENDOR_REJECT_REASON_OPTIONS,
+	VENDOR_UNABLE_REASON_OPTIONS,
+} from "@/libs/OrderReasonModal";
 import type { DailyOrder, OrderConversation, OrderStatus } from "@/types";
 
 interface PipelineOrder {
@@ -111,6 +117,7 @@ function canMessageBuyer(order: PipelineOrder) {
 }
 
 type CompletedFilter = "today" | "7d" | "all";
+type ReasonAction = { kind: "reject" | "unable"; order: PipelineOrder };
 
 type LaneKey =
 	| "AWAITING_VENDOR_ACCEPTANCE"
@@ -637,6 +644,8 @@ export default function PipelineWrapper() {
 	const [estimateByOrder, setEstimateByOrder] = useState<
 		Record<string, string>
 	>({});
+	const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
+	const [reasonError, setReasonError] = useState<string | null>(null);
 	const { data: conversations } = useSWR<OrderConversation[]>(
 		"/order-conversations?limit=100",
 		fetcher,
@@ -706,27 +715,47 @@ export default function PipelineWrapper() {
 		}
 	}
 
-	async function reject(order: PipelineOrder) {
-		const reason = window.prompt(
-			`Why are you rejecting order ${order.orderNumber}?`,
-		);
-		if (!reason?.trim()) return;
+	function openReasonAction(kind: ReasonAction["kind"], order: PipelineOrder) {
+		setReasonError(null);
+		setReasonAction({ kind, order });
+	}
+
+	async function submitReasonAction(payload: OrderReasonPayload) {
+		if (!reasonAction) return;
+		const { kind, order } = reasonAction;
 		setBusyId(order.id);
+		setReasonError(null);
 		try {
-			await api.patch(`/vendor/orders/${order.id}/status`, {
-				status: "VENDOR_REJECTED",
-				reason: reason.trim(),
-				reasonCode: "VENDOR_REJECTED",
-				explanation: reason.trim(),
-			});
-			toast("Order rejected. Refund started.", "success");
+			if (kind === "reject") {
+				await api.patch(`/vendor/orders/${order.id}/status`, {
+					status: "VENDOR_REJECTED",
+					reason: payload.reason,
+					reasonCode: payload.reasonCode,
+					explanation: payload.explanation,
+				});
+				toast("Order rejected. Refund started.", "success");
+			} else {
+				await api.post(`/vendor/orders/${order.id}/cancel`, {
+					reason: payload.reason,
+					reasonCode: payload.reasonCode,
+					explanation: payload.explanation,
+				});
+				toast(
+					"Order cancellation sent. Refund handling has started.",
+					"success",
+				);
+				dismissLateModal(order);
+			}
+			setReasonAction(null);
 			await Promise.all([
 				mutate(),
 				globalMutate("/vendor/orders/incoming"),
 				globalMutate(`/orders/${order.id}`),
 			]);
 		} catch (e) {
-			toast(errMsg(e), "error");
+			const message = errMsg(e);
+			setReasonError(message);
+			toast(message, "error");
 		} finally {
 			setBusyId(null);
 		}
@@ -997,35 +1026,48 @@ export default function PipelineWrapper() {
 	}
 
 	async function reportUnableToComplete(order: PipelineOrder) {
-		const reason = window.prompt(
-			`Why can't you complete order ${order.orderNumber}?`,
-		);
-		if (!reason?.trim()) return;
-		setBusyId(order.id);
-		try {
-			await api.post(`/vendor/orders/${order.id}/cancel`, {
-				reason: reason.trim(),
-			});
-			toast(
-				"Order cancellation sent. Refund handling has started.",
-				"success",
-			);
-			dismissLateModal(order);
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-				globalMutate(`/orders/${order.id}`),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
+		openReasonAction("unable", order);
 	}
 
 	return (
 		<FadeIn>
 			<PipelineShell>
+				<OrderReasonModal
+					open={!!reasonAction}
+					title={
+						reasonAction?.kind === "reject"
+							? "Reject order"
+							: "Unable to complete"
+					}
+					description={
+						reasonAction?.kind === "reject"
+							? `Choose why you cannot accept order ${reasonAction.order.orderNumber}.`
+							: `Choose why order ${reasonAction?.order.orderNumber ?? ""} cannot be completed.`
+					}
+					consequence={
+						reasonAction?.kind === "reject"
+							? "The buyer will be told the kitchen rejected the order and refund handling will start."
+							: "The buyer will be told the kitchen cancelled the order and refund handling will start."
+					}
+					confirmLabel={
+						reasonAction?.kind === "reject"
+							? "Reject order"
+							: "Confirm cancellation"
+					}
+					options={
+						reasonAction?.kind === "reject"
+							? VENDOR_REJECT_REASON_OPTIONS
+							: VENDOR_UNABLE_REASON_OPTIONS
+					}
+					loading={!!reasonAction && busyId === reasonAction.order.id}
+					error={reasonError}
+					onCancel={() => {
+						if (busyId) return;
+						setReasonAction(null);
+						setReasonError(null);
+					}}
+					onConfirm={submitReasonAction}
+				/>
 				{lateModalOrder && (
 					<ModalOverlay
 						role="presentation"
@@ -1928,7 +1970,8 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				reject(
+																				openReasonAction(
+																					"reject",
 																					order,
 																				)
 																			}

@@ -103,12 +103,24 @@ export const MenuItem: MenuItemModel =
 	mongoose.model<any>(collectionName, schema);
 
 function normalizeMenuItemCategory<
-	T extends { _id?: unknown; category: string },
+	T extends {
+		_id?: unknown;
+		category: string;
+		variants?: Array<{ _id?: unknown; id?: string }>;
+	},
 >(item: T): T & { id?: string } {
 	return {
 		...item,
 		id: typeof item._id === "string" ? item._id : item._id?.toString(),
-		category: normalizeMenuCategory(item.category),
+		category: normalizeMenuCategory(item.category) as T["category"],
+		variants: (item.variants ?? []).map((variant) => ({
+			...variant,
+			id:
+				variant.id ??
+				(typeof variant._id === "string"
+					? variant._id
+					: variant._id?.toString()),
+		})),
 	};
 }
 

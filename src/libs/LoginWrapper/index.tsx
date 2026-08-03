@@ -139,7 +139,7 @@ export default function LoginWrapper() {
 
   function continueWithGoogle() {
     const query = new URLSearchParams({ next: authNext });
-    window.location.href = `/api/auth/google/start?${query.toString()}`;
+    window.location.href = `/api/auth/google?${query.toString()}`;
   }
 
   return (

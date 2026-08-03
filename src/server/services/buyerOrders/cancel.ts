@@ -175,6 +175,24 @@ export async function cancelOrderAsVendor({
 		explanation: explanation ?? reason,
 		outcome,
 	});
+	await createUserNotification({
+		userId: order.buyerId.toString(),
+		title: "Kitchen could not complete your order",
+		body: [
+			`Reason: ${explanation ?? reason}`,
+			`Your refund of ₦${Math.round(order.totalKobo / 100).toLocaleString("en-NG")} has been started.`,
+		].join("\n"),
+		type: "ORDER_VENDOR_CANCELLED",
+		dedupeKey: `order:${order.orderNumber}:buyer:vendor-cancelled`,
+		data: {
+			orderId: order._id.toString(),
+			orderNumber: order.orderNumber,
+			reasonCode: reasonCode ?? "VENDOR_CANCELLED",
+			explanation: explanation ?? reason,
+			refundOutcome: outcome,
+			refundAmountKobo: order.totalKobo,
+		},
+	});
 
 	// Notify the buyer by SMS (fire-and-forget).
 	const buyer = await getUserByIdWithPhoneDB({

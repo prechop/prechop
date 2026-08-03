@@ -39,6 +39,11 @@ async function trySms(
 	}
 }
 
+function formatNaira(kobo?: unknown): string | null {
+	if (typeof kobo !== "number" || !Number.isFinite(kobo)) return null;
+	return `₦${Math.round(kobo / 100).toLocaleString("en-NG")}`;
+}
+
 /**
  * Order confirmed — in-app **and** SMS (PRD marks this SMS).
  *
@@ -328,13 +333,20 @@ export async function notifyOrderRefundPending({
 	reason: string;
 	data?: Record<string, unknown>;
 }): Promise<void> {
+	const amount = formatNaira(data?.refundAmountKobo);
+	const body = [
+		`Reason: ${reason}`,
+		amount
+			? `Your refund of ${amount} has been started.`
+			: "Your refund has been started.",
+	].join("\n");
 	const result = await createUserNotification({
 		userId: buyerId,
-		title: "Refund started",
-		body: `Order ${orderNumber} could not be fulfilled. ${reason}`,
+		title: "Kitchen could not complete your order",
+		body,
 		type: "ORDER_REFUND_PENDING",
 		dedupeKey: `order:${orderNumber}:buyer:refund-pending`,
-		data: { orderNumber, ...(data ?? {}) },
+		data: { orderNumber, reason, ...(data ?? {}) },
 	});
 	if (!result.created) return;
 	void sendBuyerImportantOrderEmail({
@@ -342,8 +354,8 @@ export async function notifyOrderRefundPending({
 		buyerId,
 		orderNumber,
 		subject: `Refund started for order ${orderNumber}`,
-		title: "Refund started",
-		body: `Order ${orderNumber} could not be fulfilled. ${reason}`,
+		title: "Kitchen could not complete your order",
+		body,
 		orderId: data?.orderId as string | undefined,
 	}).catch((error) =>
 		console.error(`[notifications] refund-pending email failed:`, error),

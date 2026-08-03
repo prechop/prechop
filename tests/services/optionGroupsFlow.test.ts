@@ -13,7 +13,7 @@ import {
 	FulfillmentType,
 	MenuCategory,
 } from "@/server/models/enums";
-import { createMenuItemDB } from "@/server/models/menuItems";
+import { createMenuItemDB, updateMenuItemDB } from "@/server/models/menuItems";
 import { createOptionGroupDB } from "@/server/models/optionGroups";
 import {
 	createVendorProfileDB,
@@ -92,6 +92,7 @@ describe("buildSnapshotItems option groups", () => {
 			vendorId,
 			items: [{ menuItemId: item!._id.toString() }],
 		});
+		expect(snap.snapshotVariants).toEqual([]);
 		expect(snap.optionGroups).toHaveLength(1);
 		expect(snap.optionGroups![0].sourceGroupId).toBe(group!._id.toString());
 		expect(snap.optionGroups![0].required).toBe(true);
@@ -131,7 +132,7 @@ describe("buildSnapshotItems option groups", () => {
 		expect(snap.optionGroups![0].options[0].priceKobo).toBe(20000);
 	});
 
-	it("snapshots only active menu variants", async () => {
+	it("snapshots menu variants with stable IDs, defaults and active state", async () => {
 		const campusId = oid();
 		const vendorId = await vendorWithMenu(campusId);
 		const item = await createMenuItemDB({
@@ -173,12 +174,54 @@ describe("buildSnapshotItems option groups", () => {
 			items: [{ menuItemId: item._id.toString() }],
 		});
 
-		expect(snap.snapshotVariants).toHaveLength(2);
+		expect(snap.snapshotVariants).toHaveLength(3);
 		expect(snap.snapshotVariants?.map((v) => v.name)).toEqual([
 			"Small",
 			"Large",
+			"Party tray",
 		]);
 		expect(snap.snapshotVariants?.[0].isDefault).toBe(true);
+		expect(snap.snapshotVariants?.map((v) => v.isActive)).toEqual([
+			true,
+			true,
+			false,
+		]);
+		expect(snap.snapshotVariants?.map((v) => v.sourceVariantId)).toEqual(
+			item.variants.map((variant) =>
+				(variant.id ?? variant._id)?.toString(),
+			),
+		);
+
+		const listing = await createDailyOrderDB({
+			payload: {
+				vendorId,
+				campusId,
+				shareableToken: generateShareableToken(),
+				title: "Cupcakes",
+				scheduledDate: new Date(Date.now() + 3_600_000),
+				cutoffTime: new Date(Date.now() + 1_800_000),
+				pickupAvailable: true,
+				items: [snap],
+			},
+		});
+		if (!listing) throw new Error("Expected listing to be created");
+		expect(listing.items[0].snapshotVariants).toHaveLength(3);
+		expect(listing.items[0].snapshotVariants[2].isActive).toBe(false);
+
+		await updateMenuItemDB({
+			id: item._id.toString(),
+			vendorId,
+			payload: {
+				variants: item.variants.map((variant) => ({
+					...variant,
+					priceKobo: variant.priceKobo + 50000,
+				})),
+			},
+		});
+		const unchanged = await getDailyOrderByIdDB({
+			id: listing._id.toString(),
+		});
+		expect(unchanged?.items[0].snapshotVariants[0].priceKobo).toBe(200000);
 	});
 });
 

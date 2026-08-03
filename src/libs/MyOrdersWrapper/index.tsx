@@ -26,6 +26,10 @@ import {
 } from "@/constants/formatters";
 import { canSendOrderChat } from "@/constants/orderChat";
 import {
+	orderOutcomeSummary,
+	refundOutcomeLabel,
+} from "@/constants/orderOutcome";
+import {
 	hasLateOrderAck,
 	rememberLateOrderAck,
 } from "@/libs/lateOrderAcknowledgement";
@@ -192,6 +196,12 @@ const LateNotice = styled.div`
   border-radius: var(--pc-radius-sm);
   background: var(--pc-color-danger-50);
   color: var(--pc-color-danger-ink);
+`;
+
+const OutcomeNotice = styled(LateNotice)`
+	border-color: var(--pc-border);
+	background: var(--pc-surface-muted);
+	color: var(--pc-text);
 `;
 
 const ModalOverlay = styled.div`
@@ -458,7 +468,10 @@ export default function MyOrdersWrapper() {
 					</FadeIn>
 
 					<Stack $gap={12}>
-						{orders.map((o, i) => (
+						{orders.map((o, i) => {
+							const outcome = orderOutcomeSummary(o);
+							const refundLabel = refundOutcomeLabel(o);
+							return (
 							<FadeIn key={o.id} $delay={i * 45}>
 								<OrderCard $hover>
 									<CardOverlayLink
@@ -513,6 +526,23 @@ export default function MyOrdersWrapper() {
 												</Text>
 											</LateNotice>
 										)}
+										{outcome && (
+											<OutcomeNotice>
+												<Text $weight={900} $size={12}>
+													{outcome.title}
+												</Text>
+												{outcome.reason && (
+													<Text $size={12}>
+														Reason: {outcome.reason}
+													</Text>
+												)}
+												{refundLabel && (
+													<Text $size={12}>
+														{refundLabel}
+													</Text>
+												)}
+											</OutcomeNotice>
+										)}
 										<Row
 											$justify="space-between"
 											$align="center"
@@ -551,7 +581,8 @@ export default function MyOrdersWrapper() {
 									</Stack>
 								</OrderCard>
 							</FadeIn>
-						))}
+							);
+						})}
 					</Stack>
 				</>
 			)}

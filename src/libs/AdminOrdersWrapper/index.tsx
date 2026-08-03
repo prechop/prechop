@@ -25,6 +25,10 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import {
+	orderOutcomeSummary,
+	refundOutcomeLabel,
+} from "@/constants/orderOutcome";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
@@ -450,6 +454,110 @@ export default function AdminOrdersWrapper() {
 												{statusLabel(detail.status)}
 											</Badge>
 										</KV>
+										{(() => {
+											const outcome =
+												orderOutcomeSummary(detail);
+											const refundLabel =
+												refundOutcomeLabel(detail);
+											if (!outcome && !refundLabel)
+												return null;
+											return (
+												<>
+													{outcome && (
+														<>
+															<KV>
+																<Text $muted>
+																	Outcome
+																</Text>
+																<Text
+																	$weight={
+																		600
+																	}
+																>
+																	{
+																		outcome.title
+																	}
+																</Text>
+															</KV>
+															<KV>
+																<Text $muted>
+																	Initiated by
+																</Text>
+																<Text
+																	$weight={
+																		600
+																	}
+																>
+																	{
+																		outcome.actor
+																	}
+																</Text>
+															</KV>
+															{outcome.reason && (
+																<KV>
+																	<Text
+																		$muted
+																	>
+																		Reason
+																	</Text>
+																	<Text
+																		$weight={
+																			600
+																		}
+																	>
+																		{
+																			outcome.reason
+																		}
+																	</Text>
+																</KV>
+															)}
+															{outcome.occurredAt && (
+																<KV>
+																	<Text
+																		$muted
+																	>
+																		Outcome
+																		time
+																	</Text>
+																	<Text
+																		$weight={
+																			600
+																		}
+																	>
+																		{formatDateTime(
+																			outcome.occurredAt,
+																		)}
+																	</Text>
+																</KV>
+															)}
+														</>
+													)}
+													{refundLabel && (
+														<KV>
+															<Text $muted>
+																Refund status
+															</Text>
+															<Text $weight={600}>
+																{refundLabel}
+															</Text>
+														</KV>
+													)}
+													{detail.refundAmountKobo !=
+														null && (
+														<KV>
+															<Text $muted>
+																Refund amount
+															</Text>
+															<Text $weight={600}>
+																{formatKobo(
+																	detail.refundAmountKobo,
+																)}
+															</Text>
+														</KV>
+													)}
+												</>
+											);
+										})()}
 										<KV>
 											<Text $muted>Fulfilment</Text>
 											<Text $weight={600}>

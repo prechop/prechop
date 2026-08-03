@@ -190,7 +190,7 @@ export async function updateOrderStatus({
 			refundPendingAt: new Date(),
 		});
 
-		const refundReason = `${rejectionExplanation} Your refund has started.`;
+		const refundReason = rejectionExplanation;
 		let refundOutcome: RefundOutcome | "REFUND_FAILED" = "REFUND_PENDING";
 		try {
 			const refund = await issueRefund({
@@ -204,6 +204,12 @@ export async function updateOrderStatus({
 				buyerId: order.buyerId.toString(),
 				orderNumber: order.orderNumber,
 				reason: refundReason,
+				data: {
+					orderId,
+					reasonCode: rejectionReasonCode,
+					explanation: rejectionExplanation,
+					refundAmountKobo: order.totalKobo,
+				},
 			}).catch((error) =>
 				console.error(
 					`[orders] ORDER_REFUND_PENDING notification failed for ${orderId}:`,

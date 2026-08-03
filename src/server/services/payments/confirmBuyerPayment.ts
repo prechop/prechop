@@ -1,9 +1,10 @@
-import { IS_PROD } from "../../constants";
+import { NODE_ENV } from "../../constants";
 import {
 	getBuyerOrderByIdDB,
 	getPaymentByRefDB,
 	OrderStatus,
 	PaymentStatus,
+	SETTLED_ORDER_STATUSES,
 } from "../../models";
 import type { IBuyerOrder } from "../../models/buyerOrders/types";
 import { paystackProvider } from "../../providers";
@@ -26,21 +27,7 @@ export interface BuyerPaymentConfirmResult {
 	message?: string;
 }
 
-const PAID_ORDER_STATUSES = new Set<string>([
-	OrderStatus.PAID,
-	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
-	OrderStatus.ACCEPTED,
-	OrderStatus.CONFIRMED,
-	OrderStatus.COOKING,
-	OrderStatus.PREPARING,
-	OrderStatus.READY,
-	OrderStatus.READY_FOR_PICKUP,
-	OrderStatus.READY_FOR_DELIVERY,
-	OrderStatus.IN_TRANSIT,
-	OrderStatus.PICKED_UP,
-	OrderStatus.DELIVERED,
-	OrderStatus.COMPLETED,
-]);
+const PAID_ORDER_STATUSES = new Set<string>(SETTLED_ORDER_STATUSES);
 
 const CONFLICT_ORDER_STATUSES = new Set<string>([
 	OrderStatus.CANCELLED,
@@ -73,6 +60,7 @@ export async function confirmBuyerPaymentByReference({
 		logPaymentConfirm({
 			reference: normalized,
 			outcome: "REFERENCE_NOT_FOUND",
+			reasonCode: "PAYMENT_NOT_FOUND_OR_WRONG_BUYER",
 		});
 		return {
 			status: "REFERENCE_NOT_FOUND",
@@ -88,6 +76,9 @@ export async function confirmBuyerPaymentByReference({
 			reference: normalized,
 			paymentOrderId: payment.buyerOrderId.toString(),
 			outcome: "REFERENCE_NOT_FOUND",
+			reasonCode: "ORDER_NOT_FOUND_OR_WRONG_BUYER",
+			paymentStatus: payment.status,
+			webhookFinalised: payment.webhookVerified,
 		});
 		return {
 			status: "REFERENCE_NOT_FOUND",
@@ -95,7 +86,16 @@ export async function confirmBuyerPaymentByReference({
 		};
 	}
 
-	const tx = await verifyPaystackSafely(normalized, existingOrder);
+	const diagnostics = {
+		paymentStatus: payment.status,
+		orderStatus: existingOrder.status,
+		webhookFinalised: payment.webhookVerified,
+	};
+	const tx = await verifyPaystackSafely(
+		normalized,
+		existingOrder,
+		diagnostics,
+	);
 	if (!tx) {
 		return {
 			status: "PAYMENT_PENDING",
@@ -107,9 +107,11 @@ export async function confirmBuyerPaymentByReference({
 
 	if (tx.reference !== normalized) {
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: existingOrder._id.toString(),
 			reference: normalized,
 			outcome: "REFERENCE_NOT_FOUND",
+			reasonCode: "PAYSTACK_REFERENCE_MISMATCH",
 			expectedAmountKobo: payment.amountKobo,
 			verifiedAmountKobo: tx.amount,
 			verifiedStatus: tx.status,
@@ -123,9 +125,11 @@ export async function confirmBuyerPaymentByReference({
 
 	if (tx.currency !== "NGN") {
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: existingOrder._id.toString(),
 			reference: normalized,
 			outcome: "CURRENCY_MISMATCH",
+			reasonCode: "PAYSTACK_CURRENCY_MISMATCH",
 			expectedAmountKobo: payment.amountKobo,
 			verifiedAmountKobo: tx.amount,
 			verifiedStatus: tx.status,
@@ -137,12 +141,14 @@ export async function confirmBuyerPaymentByReference({
 		};
 	}
 
-	const expectedDomain = IS_PROD ? "live" : "test";
+	const expectedDomain = expectedPaystackDomain();
 	if (tx.domain !== expectedDomain) {
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: existingOrder._id.toString(),
 			reference: normalized,
 			outcome: "MODE_MISMATCH",
+			reasonCode: "PAYSTACK_MODE_MISMATCH",
 			expectedAmountKobo: payment.amountKobo,
 			verifiedAmountKobo: tx.amount,
 			verifiedStatus: tx.status,
@@ -156,9 +162,11 @@ export async function confirmBuyerPaymentByReference({
 
 	if (tx.amount !== payment.amountKobo) {
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: existingOrder._id.toString(),
 			reference: normalized,
 			outcome: "AMOUNT_MISMATCH",
+			reasonCode: "PAYSTACK_AMOUNT_MISMATCH",
 			expectedAmountKobo: payment.amountKobo,
 			verifiedAmountKobo: tx.amount,
 			verifiedStatus: tx.status,
@@ -174,9 +182,13 @@ export async function confirmBuyerPaymentByReference({
 	if (txStatus !== "success") {
 		const failed = TERMINAL_UNSUCCESSFUL_PAYSTACK_STATUSES.has(txStatus);
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: existingOrder._id.toString(),
 			reference: normalized,
 			outcome: failed ? "PAYMENT_FAILED" : "PAYMENT_PENDING",
+			reasonCode: failed
+				? "PAYSTACK_TERMINAL_FAILURE"
+				: "PAYSTACK_STILL_PROCESSING",
 			expectedAmountKobo: payment.amountKobo,
 			verifiedAmountKobo: tx.amount,
 			verifiedStatus: tx.status,
@@ -200,19 +212,23 @@ export async function confirmBuyerPaymentByReference({
 		? await getBuyerOrderByIdDB({ id: finalised.buyerOrderId })
 		: existingOrder;
 	const latestOrder = order ?? existingOrder;
-	const outcome =
-		finalised.status === "ORDER_STATE_CONFLICT" ||
-		CONFLICT_ORDER_STATUSES.has(latestOrder.status)
-			? "ORDER_STATE_CONFLICT"
-			: PAID_ORDER_STATUSES.has(latestOrder.status) ||
-					payment.status === PaymentStatus.SUCCESS
-				? "PAYMENT_CONFIRMED"
-				: "PAYMENT_PENDING";
+	const latestPayment =
+		(await getPaymentByRefDB({ paystackRef: normalized })) ?? payment;
+	const classification = classifyPaymentConfirmationOutcome({
+		finalisationStatus: finalised.status,
+		orderStatus: latestOrder.status,
+		paymentStatus: latestPayment.status,
+	});
+	const outcome = classification.status;
 
 	logPaymentConfirm({
 		orderId: latestOrder._id.toString(),
 		reference: normalized,
 		outcome,
+		reasonCode: classification.reasonCode,
+		paymentStatus: latestPayment.status,
+		orderStatus: latestOrder.status,
+		webhookFinalised: latestPayment.webhookVerified,
 		expectedAmountKobo: payment.amountKobo,
 		verifiedAmountKobo: tx.amount,
 		verifiedStatus: tx.status,
@@ -238,6 +254,11 @@ export async function confirmBuyerPaymentByReference({
 async function verifyPaystackSafely(
 	reference: string,
 	order: IBuyerOrder,
+	diagnostics: {
+		paymentStatus: PaymentStatus;
+		orderStatus: OrderStatus;
+		webhookFinalised: boolean;
+	},
 ): Promise<{
 	status: string;
 	reference: string;
@@ -250,17 +271,78 @@ async function verifyPaystackSafely(
 		return await paystackProvider.verifyTransaction(reference);
 	} catch (error) {
 		logPaymentConfirm({
+			...diagnostics,
 			orderId: order._id.toString(),
 			reference,
 			outcome: "PAYMENT_PENDING",
+			reasonCode: "PAYSTACK_VERIFY_UNAVAILABLE",
 			finalisationStatus: "verify_error",
 		});
 		console.warn(
 			`[payment-confirm] Paystack verify failed order=${order._id.toString()} ref=${maskReference(reference)}:`,
-			error,
+			error instanceof Error
+				? { name: error.name, message: error.message }
+				: { name: "UnknownError" },
 		);
 		return null;
 	}
+}
+
+export function expectedPaystackDomain(
+	environment = NODE_ENV,
+): "live" | "test" {
+	return environment === "production" ? "live" : "test";
+}
+
+export function classifyPaymentConfirmationOutcome({
+	finalisationStatus,
+	orderStatus,
+	paymentStatus,
+}: {
+	finalisationStatus:
+		| "PAYMENT_CONFIRMED"
+		| "PAYMENT_ALREADY_CONFIRMED"
+		| "ORDER_STATE_CONFLICT";
+	orderStatus: OrderStatus;
+	paymentStatus: PaymentStatus;
+}): {
+	status: Extract<
+		BuyerPaymentConfirmStatus,
+		"PAYMENT_CONFIRMED" | "PAYMENT_PENDING" | "ORDER_STATE_CONFLICT"
+	>;
+	reasonCode: string;
+} {
+	if (CONFLICT_ORDER_STATUSES.has(orderStatus)) {
+		return {
+			status: "ORDER_STATE_CONFLICT",
+			reasonCode: "TERMINAL_ORDER_STATUS",
+		};
+	}
+	// The re-read order is authoritative. A webhook may have completed while the
+	// callback was verifying, so a valid paid state must beat a stale conflict
+	// result from the concurrent finalisation attempt.
+	if (PAID_ORDER_STATUSES.has(orderStatus)) {
+		return {
+			status: "PAYMENT_CONFIRMED",
+			reasonCode: "VALID_PAID_ORDER_STATUS",
+		};
+	}
+	if (finalisationStatus === "ORDER_STATE_CONFLICT") {
+		return {
+			status: "ORDER_STATE_CONFLICT",
+			reasonCode: "FINALISATION_FAILED",
+		};
+	}
+	if (paymentStatus === PaymentStatus.SUCCESS) {
+		return {
+			status: "PAYMENT_CONFIRMED",
+			reasonCode: "PAYMENT_RECORD_SUCCESS",
+		};
+	}
+	return {
+		status: "PAYMENT_PENDING",
+		reasonCode: "FINALISATION_PENDING",
+	};
 }
 
 function maskReference(reference: string): string {
@@ -277,6 +359,10 @@ function logPaymentConfirm({
 	verifiedAmountKobo,
 	verifiedStatus,
 	finalisationStatus,
+	reasonCode,
+	paymentStatus,
+	orderStatus,
+	webhookFinalised,
 }: {
 	orderId?: string;
 	paymentOrderId?: string;
@@ -286,12 +372,20 @@ function logPaymentConfirm({
 	verifiedAmountKobo?: number;
 	verifiedStatus?: string;
 	finalisationStatus?: string;
+	reasonCode: string;
+	paymentStatus?: PaymentStatus;
+	orderStatus?: OrderStatus;
+	webhookFinalised?: boolean;
 }) {
 	console.info("[payment-confirm]", {
 		orderId,
 		paymentOrderId,
 		reference: maskReference(reference),
 		outcome,
+		reasonCode,
+		paymentStatus,
+		orderStatus,
+		webhookFinalised,
 		expectedAmountKobo,
 		verifiedAmountKobo,
 		verifiedStatus,

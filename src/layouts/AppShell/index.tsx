@@ -1,64 +1,74 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import { Avatar, Container, ThemeToggle } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { fetcher } from "@/constants/fetcher";
 import { useAuth } from "@/hooks/Auth/useAuth";
+import {
+	useSavedKitchens,
+	useSavedListings,
+} from "@/hooks/useSavedCollections";
 
 const buyerNav = [
-  { href: "/marketplace", label: "Browse", icon: "🍲" },
-  { href: "/my-orders", label: "Orders", icon: "🧾" },
-  { href: "/notifications", label: "Alerts", icon: "🔔" },
-  { href: "/account", label: "Account", icon: "👤" },
+	{ href: "/marketplace", label: "Browse", icon: "🍲" },
+	{ href: "/my-orders", label: "Orders", icon: "🧾" },
+	{ href: "/notifications", label: "Alerts", icon: "🔔" },
+	{ href: "/account", label: "Account", icon: "👤" },
+];
+const buyerNavWithSaved = [
+	...buyerNav.slice(0, 2),
+	{ href: "/marketplace?saved=1", label: "Saved", icon: "♡" },
+	...buyerNav.slice(2),
 ];
 const vendorNav = [
-  { href: "/dashboard", label: "Home", icon: "🏠" },
-  { href: "/menu", label: "Menu", icon: "📋" },
-  { href: "/pipeline", label: "Cooking", icon: "🔥" },
-  { href: "/timetable", label: "Timetable", icon: "🗓️" },
-  { href: "/earnings", label: "Earnings", icon: "💰" },
-  { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
+	{ href: "/dashboard", label: "Home", icon: "🏠" },
+	{ href: "/menu", label: "Menu", icon: "📋" },
+	{ href: "/pipeline", label: "Cooking", icon: "🔥" },
+	{ href: "/timetable", label: "Timetable", icon: "🗓️" },
+	{ href: "/earnings", label: "Earnings", icon: "💰" },
+	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
 const vendorSetupNav = [
-  { href: "/dashboard", label: "Home", icon: "🏠" },
-  { href: "/vendor/onboarding", label: "Setup", icon: "✅" },
-  { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
+	{ href: "/dashboard", label: "Home", icon: "🏠" },
+	{ href: "/vendor/onboarding", label: "Setup", icon: "✅" },
+	{ href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
 const footerLinks = {
-  buyer: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/buyer-policy", label: "Buyer Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-  vendor: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/vendor-policy", label: "Vendor Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-  public: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/buyer-policy", label: "Buyer Policy" },
-    { href: "/policies/vendor-policy", label: "Vendor Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
+	buyer: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/buyer-policy", label: "Buyer Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
+	vendor: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/vendor-policy", label: "Vendor Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
+	public: [
+		{ href: "/help", label: "Help Center" },
+		{ href: "/policies/buyer-policy", label: "Buyer Policy" },
+		{ href: "/policies/vendor-policy", label: "Vendor Policy" },
+		{ href: "/privacy", label: "Privacy" },
+		{ href: "/terms", label: "Terms" },
+	],
 } as const;
 
 interface VendorMe {
-  profileImageUrl?: string;
-  status?:
-    | "INCOMPLETE"
-    | "PENDING_REVIEW"
-    | "CHANGES_REQUESTED"
-    | "ACTIVE"
-    | "SUSPENDED";
+	profileImageUrl?: string;
+	status?:
+		| "INCOMPLETE"
+		| "PENDING_REVIEW"
+		| "CHANGES_REQUESTED"
+		| "ACTIVE"
+		| "SUSPENDED";
 }
 
 const Bar = styled.header`
@@ -155,7 +165,7 @@ const ModeBtn = styled.button<{ $active: boolean }>`
   padding: 6px 11px;
   border-radius: var(--pc-radius-pill);
   color: ${(p) =>
-    p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
   background: ${(p) => (p.$active ? "var(--pc-surface)" : "transparent")};
   box-shadow: ${(p) => (p.$active ? "var(--pc-shadow-sm)" : "none")};
   transition:
@@ -205,9 +215,9 @@ const TopLink = styled(Link)<{ $active: boolean }>`
   font-size: 14px;
   font-weight: 700;
   color: ${(p) =>
-    p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
   background: ${(p) =>
-    p.$active ? "var(--pc-color-primary-50)" : "transparent"};
+		p.$active ? "var(--pc-color-primary-50)" : "transparent"};
   transition:
     background var(--pc-dur) var(--pc-ease),
     color var(--pc-dur) var(--pc-ease);
@@ -320,6 +330,7 @@ const BottomNav = styled.nav`
   }
 `;
 const NavLink = styled(Link)<{ $active: boolean }>`
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -327,7 +338,7 @@ const NavLink = styled(Link)<{ $active: boolean }>`
   font-size: 11px;
   font-weight: 700;
   color: ${(p) =>
-    p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
   transition: color var(--pc-dur) var(--pc-ease);
   span:first-child {
     font-size: 21px;
@@ -335,150 +346,242 @@ const NavLink = styled(Link)<{ $active: boolean }>`
     transition: transform var(--pc-dur) var(--pc-ease);
   }
 `;
+const NavIcon = styled.span`
+  position: relative;
+  display: inline-flex;
+`;
+const CountBubble = styled.span`
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pc-color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--pc-surface);
+`;
 
 export default function AppShell({
-  children,
-  shellRole,
-  publicAccess = false,
+	children,
+	shellRole,
+	publicAccess = false,
 }: {
-  children: React.ReactNode;
-  shellRole?: "BUYER" | "VENDOR";
-  publicAccess?: boolean;
+	children: React.ReactNode;
+	shellRole?: "BUYER" | "VENDOR";
+	publicAccess?: boolean;
 }) {
-  const { user, isLoading, isAuthenticated, logout } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-  const isVendorOnboarding = pathname === "/vendor/onboarding";
-  const isVendor =
-    shellRole === "VENDOR" ||
-    (shellRole === undefined && !!user?.groups?.includes("Vendors"));
-  const { data: vendor } = useSWR<VendorMe>(
-    isAuthenticated && isVendor && !isVendorOnboarding ? "/vendors/me" : null,
-    fetcher,
-    { shouldRetryOnError: false },
-  );
+	const { user, isLoading, isAuthenticated, logout } = useAuth();
+	const savedKitchens = useSavedKitchens();
+	const savedListings = useSavedListings();
+	const router = useRouter();
+	const pathname = usePathname();
+	const [isSavedQuery, setIsSavedQuery] = useState(false);
+	const isVendorOnboarding = pathname === "/vendor/onboarding";
+	const isVendor =
+		shellRole === "VENDOR" ||
+		(shellRole === undefined && !!user?.groups?.includes("Vendors"));
+	const { data: vendor } = useSWR<VendorMe>(
+		isAuthenticated && isVendor && !isVendorOnboarding
+			? "/vendors/me"
+			: null,
+		fetcher,
+		{ shouldRetryOnError: false },
+	);
 
-  useEffect(() => {
-    if (!publicAccess && !isLoading && !isAuthenticated) {
-      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    }
-  }, [publicAccess, isLoading, isAuthenticated, router, pathname]);
+	useEffect(() => {
+		if (!publicAccess && !isLoading && !isAuthenticated) {
+			router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+		}
+	}, [publicAccess, isLoading, isAuthenticated, router, pathname]);
 
-  if (isLoading) return <PageLoader full />;
-  if (!publicAccess && !isAuthenticated) return <PageLoader full />;
+	useEffect(() => {
+		const syncSavedQuery = () => {
+			setIsSavedQuery(
+				new URLSearchParams(window.location.search).get("saved") ===
+					"1",
+			);
+		};
+		syncSavedQuery();
+		window.addEventListener("popstate", syncSavedQuery);
+		return () => window.removeEventListener("popstate", syncSavedQuery);
+	}, []);
 
-  const isActiveVendor = vendor?.status === "ACTIVE";
-  const nav = isVendor
-    ? isActiveVendor
-      ? vendorNav
-      : vendorSetupNav
-    : buyerNav;
-  // Vendors can also shop as buyers (from other kitchens). The mode switcher
-  // lets them cross between their selling area and the buyer marketplace; it is
-  // hidden from plain buyers. Its state is derived from the current area, so it
-  // can never desync from the route.
-  const canSell = !!user?.groups?.includes("Vendors") || isVendor || !!vendor;
-  const fullName = user
-    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
-    : undefined;
-  const footerAudience = !isAuthenticated
-    ? "public"
-    : isVendor
-      ? "vendor"
-      : "buyer";
+	if (isLoading) return <PageLoader full />;
+	if (!publicAccess && !isAuthenticated) return <PageLoader full />;
 
-  return (
-    <>
-      <Bar>
-        <BarInner>
-          <Brand href={nav === vendorNav ? "/dashboard" : "/marketplace"}>
-            {/* <Logo aria-hidden>🍲</Logo> */}
-            <Logo aria-hidden>
-              <img src="/dark.png" alt="Prechop" />
-            </Logo>
-            Prechop
-          </Brand>
-          <NavRow>
-            {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
-              <TopLink
-                key={n.href}
-                href={n.href}
-                $active={pathname.startsWith(n.href)}>
-                <span aria-hidden>{n.icon}</span>
-                {n.label}
-              </TopLink>
-            ))}
-          </NavRow>
-          <Right>
-            {isAuthenticated && canSell && (
-              <ModeSwitch role="tablist" aria-label="Selling or buying mode">
-                <ModeBtn
-                  type="button"
-                  role="tab"
-                  aria-selected={isVendor}
-                  $active={isVendor}
-                  onClick={() => router.push("/dashboard")}>
-                  🧑‍🍳 Selling
-                </ModeBtn>
-                <ModeBtn
-                  type="button"
-                  role="tab"
-                  aria-selected={!isVendor}
-                  $active={!isVendor}
-                  onClick={() => router.push("/marketplace")}>
-                  🛒 Buying
-                </ModeBtn>
-              </ModeSwitch>
-            )}
-            <ThemeToggle />
-            {isAuthenticated ? (
-              <>
-                <ProfileAvatar>
-                  <Avatar
-                    name={fullName}
-                    src={isVendor ? vendor?.profileImageUrl : undefined}
-                    size={34}
-                  />
-                </ProfileAvatar>
-                <LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
-              </>
-            ) : (
-              <GuestAction href={`/login?next=${encodeURIComponent(pathname)}`}>
-                Log in
-              </GuestAction>
-            )}
-          </Right>
-        </BarInner>
-      </Bar>
-      <Main>
-        <MainInner>
-          {children}
-          <VendorFooter>
-            <FooterLinks aria-label="Footer links">
-              {footerLinks[footerAudience].map((link, index, links) => (
-                <Fragment key={link.href}>
-                  <FooterLink href={link.href}>{link.label}</FooterLink>
-                  {index < links.length - 1 && (
-                    <FooterDot aria-hidden>·</FooterDot>
-                  )}
-                </Fragment>
-              ))}
-            </FooterLinks>
-            <span>© 2026 Prechop</span>
-          </VendorFooter>
-        </MainInner>
-      </Main>
-      <BottomNav>
-        {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
-          <NavLink
-            key={n.href}
-            href={n.href}
-            $active={pathname.startsWith(n.href)}>
-            <span aria-hidden>{n.icon}</span>
-            <span>{n.label}</span>
-          </NavLink>
-        ))}
-      </BottomNav>
-    </>
-  );
+	const isActiveVendor = vendor?.status === "ACTIVE";
+	const nav = isVendor
+		? isActiveVendor
+			? vendorNav
+			: vendorSetupNav
+		: buyerNavWithSaved;
+	// Vendors can also shop as buyers (from other kitchens). The mode switcher
+	// lets them cross between their selling area and the buyer marketplace; it is
+	// hidden from plain buyers. Its state is derived from the current area, so it
+	// can never desync from the route.
+	const canSell = !!user?.groups?.includes("Vendors") || isVendor || !!vendor;
+	const fullName = user
+		? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+		: undefined;
+	const footerAudience = !isAuthenticated
+		? "public"
+		: isVendor
+			? "vendor"
+			: "buyer";
+	const savedView = pathname === "/marketplace" && isSavedQuery;
+	const savedCount = savedKitchens.count + savedListings.count;
+	const isNavActive = (href: string, label: string) => {
+		if (label === "Saved") return savedView;
+		if (href === "/marketplace") return pathname === href && !savedView;
+		return pathname.startsWith(href);
+	};
+
+	return (
+		<>
+			<Bar>
+				<BarInner>
+					<Brand
+						href={nav === vendorNav ? "/dashboard" : "/marketplace"}
+					>
+						{/* <Logo aria-hidden>🍲</Logo> */}
+						<Logo aria-hidden>
+							<Image
+								src="/dark.png"
+								alt="Prechop"
+								width={30}
+								height={30}
+							/>
+						</Logo>
+						Prechop
+					</Brand>
+					<NavRow>
+						{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
+							<TopLink
+								key={n.href}
+								href={n.href}
+								$active={isNavActive(n.href, n.label)}
+								onClick={() => {
+									if (n.href.startsWith("/marketplace")) {
+										setIsSavedQuery(n.label === "Saved");
+									}
+								}}
+							>
+								<NavIcon aria-hidden>
+									{n.icon}
+									{n.label === "Saved" && savedCount > 0 && (
+										<CountBubble>{savedCount}</CountBubble>
+									)}
+								</NavIcon>
+								{n.label}
+							</TopLink>
+						))}
+					</NavRow>
+					<Right>
+						{isAuthenticated && canSell && (
+							<ModeSwitch
+								role="tablist"
+								aria-label="Selling or buying mode"
+							>
+								<ModeBtn
+									type="button"
+									role="tab"
+									aria-selected={isVendor}
+									$active={isVendor}
+									onClick={() => router.push("/dashboard")}
+								>
+									🧑‍🍳 Selling
+								</ModeBtn>
+								<ModeBtn
+									type="button"
+									role="tab"
+									aria-selected={!isVendor}
+									$active={!isVendor}
+									onClick={() => router.push("/marketplace")}
+								>
+									🛒 Buying
+								</ModeBtn>
+							</ModeSwitch>
+						)}
+						<ThemeToggle />
+						{isAuthenticated ? (
+							<>
+								<ProfileAvatar>
+									<Avatar
+										name={fullName}
+										src={
+											isVendor
+												? vendor?.profileImageUrl
+												: undefined
+										}
+										size={34}
+									/>
+								</ProfileAvatar>
+								<LogoutBtn onClick={() => logout()}>
+									Log out
+								</LogoutBtn>
+							</>
+						) : (
+							<GuestAction
+								href={`/login?next=${encodeURIComponent(pathname)}`}
+							>
+								Log in
+							</GuestAction>
+						)}
+					</Right>
+				</BarInner>
+			</Bar>
+			<Main>
+				<MainInner>
+					{children}
+					<VendorFooter>
+						<FooterLinks aria-label="Footer links">
+							{footerLinks[footerAudience].map(
+								(link, index, links) => (
+									<Fragment key={link.href}>
+										<FooterLink href={link.href}>
+											{link.label}
+										</FooterLink>
+										{index < links.length - 1 && (
+											<FooterDot aria-hidden>·</FooterDot>
+										)}
+									</Fragment>
+								),
+							)}
+						</FooterLinks>
+						<span>© 2026 Prechop</span>
+					</VendorFooter>
+				</MainInner>
+			</Main>
+			<BottomNav>
+				{(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
+					<NavLink
+						key={n.href}
+						href={n.href}
+						$active={isNavActive(n.href, n.label)}
+						onClick={() => {
+							if (n.href.startsWith("/marketplace")) {
+								setIsSavedQuery(n.label === "Saved");
+							}
+						}}
+					>
+						<NavIcon aria-hidden>
+							{n.icon}
+							{n.label === "Saved" && savedCount > 0 && (
+								<CountBubble>{savedCount}</CountBubble>
+							)}
+						</NavIcon>
+						<span>{n.label}</span>
+					</NavLink>
+				))}
+			</BottomNav>
+		</>
+	);
 }

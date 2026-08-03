@@ -64,9 +64,9 @@ export async function buildSnapshotItems({
 		const menuItem = byId.get(it.menuItemId);
 		if (!menuItem) throw notFound("Menu item");
 		if (menuItem.vendorId.toString() !== vendorId) throw ErrForbidden;
-		const activeVariants = (menuItem.variants ?? [])
-			.filter((v) => v.isActive)
-			.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+		const inheritedVariants = [...(menuItem.variants ?? [])].sort(
+			(a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
+		);
 
 		const optionGroups: IDailyOrderOptionGroupInput[] = it.optionGroups
 			? it.optionGroups.map((g) => ({
@@ -90,13 +90,15 @@ export async function buildSnapshotItems({
 			menuItemId: (menuItem.id ?? menuItem._id).toString(),
 			category: menuItem.category,
 			snapshotName: menuItem.name,
+			snapshotDescription: menuItem.description,
 			snapshotPriceKobo: menuItem.priceKobo,
-			snapshotVariants: activeVariants.map((variant, index) => ({
+			snapshotVariants: inheritedVariants.map((variant, index) => ({
 				sourceVariantId:
 					(variant.id ?? variant._id)?.toString() ?? null,
 				name: variant.name,
 				priceKobo: variant.priceKobo,
 				isDefault: variant.isDefault,
+				isActive: variant.isActive,
 				displayOrder: variant.displayOrder ?? index,
 			})),
 			snapshotImageUrl: menuItem.imageUrl,

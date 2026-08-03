@@ -149,7 +149,9 @@ export async function placeOrder({
 					: insufficientQuantity(orderItem.snapshotName, remaining);
 			}
 		}
-		const variants = orderItem.snapshotVariants ?? [];
+		const variants = (orderItem.snapshotVariants ?? []).filter(
+			(variant) => variant.isActive !== false,
+		);
 		const selectedVariant =
 			variants.length > 0
 				? variants.find(

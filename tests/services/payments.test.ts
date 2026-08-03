@@ -26,7 +26,11 @@ import { createPaymentDB, getPaymentByRefDB } from "@/server/models/payments";
 import { getRefundByPaymentIdDB } from "@/server/models/refunds";
 import { paystackProvider } from "@/server/providers/paystack";
 import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
-import { confirmBuyerPaymentByReference } from "@/server/services/payments/confirmBuyerPayment";
+import {
+	classifyPaymentConfirmationOutcome,
+	confirmBuyerPaymentByReference,
+	expectedPaystackDomain,
+} from "@/server/services/payments/confirmBuyerPayment";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
 import {
 	ensureReceiptUrl,
@@ -351,6 +355,25 @@ describe("handlePaystackWebhook", () => {
 });
 
 describe("confirmBuyerPaymentByReference", () => {
+	it("uses live Paystack transactions only in production", () => {
+		expect(expectedPaystackDomain("production")).toBe("live");
+		expect(expectedPaystackDomain("development")).toBe("test");
+		expect(expectedPaystackDomain("test")).toBe("test");
+	});
+
+	it("treats a concurrently finalised paid order as authoritative", () => {
+		expect(
+			classifyPaymentConfirmationOutcome({
+				finalisationStatus: "ORDER_STATE_CONFLICT",
+				orderStatus: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+				paymentStatus: PaymentStatus.SUCCESS,
+			}),
+		).toEqual({
+			status: "PAYMENT_CONFIRMED",
+			reasonCode: "VALID_PAID_ORDER_STATUS",
+		});
+	});
+
 	it("finalises a successful callback before the webhook arrives", async () => {
 		const { order, ref, amountKobo, buyerId } =
 			await seedConfirmableOrder();
@@ -457,6 +480,38 @@ describe("confirmBuyerPaymentByReference", () => {
 
 		expect(res.status).toBe("PAYMENT_CONFIRMED");
 		expect(res.order!.orderNumber).toBe(order.orderNumber);
+	});
+
+	it("confirms an order the vendor already accepted", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		const body = JSON.stringify({
+			event: "charge.success",
+			data: {
+				reference: ref,
+				amount: amountKobo,
+				channel: "card",
+				status: "success",
+			},
+		});
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		const mongoose = (await import("mongoose")).default;
+		const { BuyerOrder } = await import("@/server/models/buyerOrders");
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(order._id) },
+			{ $set: { status: OrderStatus.ACCEPTED } },
+		);
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("PAYMENT_CONFIRMED");
+		expect(res.order!.status).toBe(OrderStatus.ACCEPTED);
 	});
 
 	it("does not refund or double-commit on duplicate callback and webhook", async () => {
@@ -659,6 +714,37 @@ describe("confirmBuyerPaymentByReference", () => {
 			status: "success",
 			amount: amountKobo,
 		});
+		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
+			verifiedTx({ ref, amountKobo }),
+		);
+
+		const res = await confirmBuyerPaymentByReference({
+			buyerId,
+			reference: ref,
+		});
+
+		expect(res.status).toBe("ORDER_STATE_CONFLICT");
+	});
+
+	it("routes an already refunded order to conflict", async () => {
+		const { order, ref, amountKobo, buyerId } =
+			await seedConfirmableOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { BuyerOrder } = await import("@/server/models/buyerOrders");
+		const { Payment } = await import("@/server/models/payments");
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(order._id) },
+			{ $set: { status: OrderStatus.REFUNDED } },
+		);
+		await Payment.collection.updateOne(
+			{ paystackRef: ref },
+			{
+				$set: {
+					status: PaymentStatus.REFUNDED,
+					webhookVerified: true,
+				},
+			},
+		);
 		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
 			verifiedTx({ ref, amountKobo }),
 		);

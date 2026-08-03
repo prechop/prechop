@@ -66,6 +66,46 @@ function pickupLocation(
 	);
 }
 
+function dailyOrderItemSoldOut(item: IDailyOrder["items"][number]): boolean {
+	if (item.remainingQuantity != null) return item.remainingQuantity <= 0;
+	if (item.maxQuantity != null) {
+		return (
+			(item.orderedQuantity ?? 0) + (item.reservedQuantity ?? 0) >=
+			item.maxQuantity
+		);
+	}
+	return false;
+}
+
+function listingHasAvailableItem(listing: IDailyOrder): boolean {
+	return listing.items.some((item) => !dailyOrderItemSoldOut(item));
+}
+
+function listingSortDate(listing: IDailyOrder): number {
+	return new Date(listing.scheduledDate ?? listing.createdAt ?? 0).getTime();
+}
+
+export function orderMarketplaceListingsForVendor(
+	listings: IDailyOrder[],
+): IDailyOrder[] {
+	return [...listings]
+		.map((listing) => ({
+			...listing,
+			items: [...listing.items].sort(
+				(a, b) =>
+					Number(dailyOrderItemSoldOut(a)) -
+					Number(dailyOrderItemSoldOut(b)),
+			),
+		}))
+		.sort((a, b) => {
+			const availableDelta =
+				Number(listingHasAvailableItem(b)) -
+				Number(listingHasAvailableItem(a));
+			if (availableDelta !== 0) return availableDelta;
+			return listingSortDate(b) - listingSortDate(a);
+		});
+}
+
 export async function getMarketplace({
 	campusId,
 	limit,
@@ -127,13 +167,15 @@ export async function getMarketplace({
 			// except by walking back up to its parent, which the flattened
 			// views don't do. Rating is the *gated* value, so a
 			// sub-threshold score never crosses the wire here either.
-			listings: vendorListings.map((listing) => ({
-				...listing,
-				vendorOpen: publicVendor.isOpenForOrders,
-				vendorName: publicVendor.businessName,
-				vendorRating: publicVendor.rating,
-				vendorTotalReviews: publicVendor.totalReviews,
-			})),
+			listings: orderMarketplaceListingsForVendor(vendorListings).map(
+				(listing) => ({
+					...listing,
+					vendorOpen: publicVendor.isOpenForOrders,
+					vendorName: publicVendor.businessName,
+					vendorRating: publicVendor.rating,
+					vendorTotalReviews: publicVendor.totalReviews,
+				}),
+			),
 		};
 	});
 	return rows.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
@@ -163,6 +205,8 @@ export async function getPublicDailyOrder({
 	// Shop identity for the storefront link on the public order page.
 	const vendorId = order.vendorId.toString();
 	const vendorName = vendor?.businessName ?? null;
+	const vendorProfileImageUrl = vendor?.profileImageUrl ?? null;
+	const vendorVerified = vendor?.status === "ACTIVE";
 	// Same trust gate as the feed — the listing page shows the shop's rating.
 	const vendorTotalReviews = vendor?.totalReviews ?? 0;
 	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
@@ -174,6 +218,8 @@ export async function getPublicDailyOrder({
 		vendorOpen,
 		vendorId,
 		vendorName,
+		vendorProfileImageUrl,
+		vendorVerified,
 		vendorPickupLocation: pickupLocation(vendor),
 		vendorPhone: null,
 		vendorRating,

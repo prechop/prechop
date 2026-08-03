@@ -26,6 +26,7 @@ export interface IDailyOrderItemVariant {
 	name: string;
 	priceKobo: number;
 	isDefault: boolean;
+	isActive: boolean;
 	displayOrder: number;
 }
 
@@ -35,6 +36,7 @@ export interface IDailyOrderItem {
 	menuItemId: string;
 	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
 	snapshotVariants: IDailyOrderItemVariant[];
 	snapshotImageUrl?: string;
@@ -60,12 +62,14 @@ export interface IDailyOrderItemInput {
 	menuItemId: string;
 	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
 	snapshotVariants?: Array<{
 		sourceVariantId?: string | null;
 		name: string;
 		priceKobo: number;
 		isDefault?: boolean;
+		isActive?: boolean;
 		displayOrder?: number;
 	}>;
 	snapshotImageUrl?: string;

@@ -161,6 +161,29 @@ const ItemsAction = styled.div`
 const QtyWrap = styled.div`
   padding-left: 36px;
 `;
+const VariantReview = styled.div`
+	margin-left: 36px;
+	padding: 10px 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const VariantReviewRow = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--pc-border);
+	&:last-child { border-bottom: 0; }
+`;
+const VariantMeta = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	flex-wrap: wrap;
+`;
 const SubmitBar = styled.div`
   position: sticky;
   bottom: var(--pc-space-3);
@@ -487,6 +510,17 @@ export default function DailyOrderComposerWrapper({
 		return (item.optionGroupIds ?? [])
 			.map((id) => groupById.get(id))
 			.filter((g): g is MenuOptionGroup => Boolean(g));
+	}
+
+	/** Variants frozen on an edited listing win over later menu changes. */
+	function inheritedVariants(item: MenuItem) {
+		const listingVariants = isEdit
+			? editing?.items.find((entry) => entry.menuItemId === item.id)
+					?.snapshotVariants
+			: undefined;
+		return [...(listingVariants ?? item.variants ?? [])].sort(
+			(a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
+		);
 	}
 
 	function toggleGroupForItem(itemId: string, groupId: string) {
@@ -1026,6 +1060,7 @@ export default function DailyOrderComposerWrapper({
 						<Stack $gap={8}>
 							{menuItems.map((m) => {
 								const on = m.id in selected;
+								const variants = inheritedVariants(m);
 								return (
 									<ItemRow
 										key={m.id}
@@ -1075,6 +1110,82 @@ export default function DailyOrderComposerWrapper({
 														placeholder="Unlimited"
 													/>
 												</QtyWrap>
+											)}
+											{on && variants.length > 0 && (
+												<VariantReview
+													onClick={(e) =>
+														e.stopPropagation()
+													}
+												>
+													<Stack $gap={4}>
+														<Text
+															$weight={700}
+															$size={13}
+														>
+															Inherited variants
+														</Text>
+														<Text $muted $size={12}>
+															These sizes and
+															prices are copied
+															from the menu into
+															this listing.
+														</Text>
+														{variants.map(
+															(variant) => (
+																<VariantReviewRow
+																	key={
+																		variant.id
+																	}
+																>
+																	<Text
+																		$weight={
+																			600
+																		}
+																		$size={
+																			13
+																		}
+																	>
+																		{
+																			variant.name
+																		}
+																	</Text>
+																	<VariantMeta>
+																		<Text
+																			$weight={
+																				700
+																			}
+																			$size={
+																				13
+																			}
+																		>
+																			{formatKobo(
+																				variant.priceKobo,
+																			)}
+																		</Text>
+																		{variant.isDefault && (
+																			<Badge $tone="primary">
+																				Default
+																			</Badge>
+																		)}
+																		<Badge
+																			$tone={
+																				variant.isActive ===
+																				false
+																					? "muted"
+																					: "success"
+																			}
+																		>
+																			{variant.isActive ===
+																			false
+																				? "Inactive"
+																				: "Active"}
+																		</Badge>
+																	</VariantMeta>
+																</VariantReviewRow>
+															),
+														)}
+													</Stack>
+												</VariantReview>
 											)}
 											{on &&
 												attachedGroups(m).length >

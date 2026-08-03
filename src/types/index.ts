@@ -141,6 +141,7 @@ export interface DailyOrderItem {
 	menuItemId: string;
 	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
 	snapshotVariants: DailyOrderItemVariant[];
 	snapshotImageUrl?: string;
@@ -158,6 +159,7 @@ export interface DailyOrderItemVariant {
 	name: string;
 	priceKobo: number;
 	isDefault: boolean;
+	isActive?: boolean;
 	displayOrder: number;
 }
 
@@ -188,6 +190,10 @@ export interface DailyOrder {
 	vendorOpen?: boolean;
 	/** On the public listing response: the shop's display name (may be null). */
 	vendorName?: string | null;
+	/** Public presentation image for the compact vendor identity row. */
+	vendorProfileImageUrl?: string | null;
+	/** True only for an approved, active vendor profile. */
+	vendorVerified?: boolean;
 	/** On the public listing response: where pickup buyers should collect from. */
 	vendorPickupLocation?: string | null;
 	/** On the public listing response: vendor contact for pickup coordination. */
@@ -427,11 +433,19 @@ export interface BuyerOrder {
 	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | null;
 	handoverCredentialUsedAt?: string | null;
 	vendorNoResponseExpiredAt?: string | null;
+	vendorRejectedAt?: string | null;
+	vendorRejectionReasonCode?: string | null;
+	vendorRejectionExplanation?: string | null;
+	cancellationReason?: string | null;
+	cancellationReasonCode?: string | null;
+	cancellationExplanation?: string | null;
+	cancelledBy?: "buyer" | "vendor" | "system" | null;
 	refundAmountKobo?: number | null;
 	refundReference?: string | null;
 	refundStatus?: "INITIATED" | "SENT_TO_PROVIDER" | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
+	updatedAt: string;
 }
 
 export interface OrderConversationMessage {

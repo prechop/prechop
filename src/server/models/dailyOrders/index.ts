@@ -44,6 +44,7 @@ const itemSchema = new mongoose.Schema(
 		},
 		category: { type: String },
 		snapshotName: { type: String, required: true },
+		snapshotDescription: { type: String },
 		snapshotPriceKobo: { type: Number, required: true, min: 0 },
 		snapshotVariants: {
 			type: [
@@ -56,6 +57,7 @@ const itemSchema = new mongoose.Schema(
 						name: { type: String, required: true },
 						priceKobo: { type: Number, required: true, min: 0 },
 						isDefault: { type: Boolean, default: false },
+						isActive: { type: Boolean, default: true },
 						displayOrder: { type: Number, default: 0 },
 					},
 					{ _id: true },
@@ -239,6 +241,7 @@ function mapItems(items: IDailyOrderItemInput[]) {
 			name: v.name,
 			priceKobo: v.priceKobo,
 			isDefault: v.isDefault ?? false,
+			isActive: v.isActive ?? true,
 			displayOrder: v.displayOrder ?? i,
 		})),
 		snapshotImageUrl: it.snapshotImageUrl,

@@ -41,6 +41,10 @@ import {
 	isBuyerHandoverEligible,
 	orderTimelineSteps,
 } from "@/constants/orderLifecycle";
+import {
+	orderOutcomeSummary,
+	refundOutcomeLabel,
+} from "@/constants/orderOutcome";
 import { readyEstimateNoteForTimelineStep } from "@/constants/orderReadyEstimate";
 import { useToast } from "@/hooks/useToast";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
@@ -465,6 +469,8 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const itemCount = data.items.reduce((s, it) => s + it.quantity, 0);
 	const statusCopy = currentStatusCopy(data.status, data.fulfillmentType);
 	const refundCopy = getRefundCopy(data);
+	const outcome = orderOutcomeSummary(data);
+	const refundLabel = refundOutcomeLabel(data);
 	const isLateActive =
 		!!data.lateMarkedAt &&
 		LATE_CANCELLABLE.includes(data.status) &&
@@ -695,6 +701,67 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				</FulfillmentCard>
 			</FadeIn>
 
+			{outcome && (
+				<FadeIn $delay={80}>
+					<Card $accent>
+						<Stack $gap={12}>
+							<Stack $gap={4}>
+								<Text $weight={900} $size={16}>
+									{outcome.title}
+								</Text>
+								{outcome.reason && (
+									<Text $muted $size={14}>
+										Reason: {outcome.reason}
+									</Text>
+								)}
+							</Stack>
+							<Stack $gap={6}>
+								<Line>
+									<Text $muted>Initiated by</Text>
+									<Text $weight={700}>
+										{outcome.actor === "vendor"
+											? "Kitchen"
+											: outcome.actor === "buyer"
+												? "You"
+												: "Prechop"}
+									</Text>
+								</Line>
+								{outcome.occurredAt && (
+									<Line>
+										<Text $muted>When</Text>
+										<Text $weight={700}>
+											{formatDateTime(outcome.occurredAt)}
+										</Text>
+									</Line>
+								)}
+								{refundLabel && (
+									<Line>
+										<Text $muted>Refund status</Text>
+										<Text $weight={700}>{refundLabel}</Text>
+									</Line>
+								)}
+								{data.refundAmountKobo != null && (
+									<Line>
+										<Text $muted>Refund amount</Text>
+										<Text $weight={700}>
+											{formatKobo(data.refundAmountKobo)}
+										</Text>
+									</Line>
+								)}
+							</Stack>
+							<Button
+								as={Link}
+								href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
+								$variant="secondary"
+								$size="sm"
+							>
+								Get help
+							</Button>
+						</Stack>
+					</Card>
+				</FadeIn>
+			)}
+
 			{shouldShowOrderChatEntry(data.status) && (
 				<FadeIn $delay={90}>
 					<OrderConversationPanel
@@ -924,7 +991,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					receiptStatus={data.receiptStatus}
 				/>
 			)}
-			{isVendorNoResponseRefund && (
+			{isVendorNoResponseRefund && !outcome && (
 				<Card $accent>
 					<Stack $gap={10}>
 						<Text $weight={800} $size={15}>
@@ -979,7 +1046,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Stack>
 				</Card>
 			)}
-			{isTerminalBad && !isVendorNoResponseRefund && (
+			{isTerminalBad && !isVendorNoResponseRefund && !outcome && (
 				<RefundNote refunded={data.status === "REFUNDED"} />
 			)}
 

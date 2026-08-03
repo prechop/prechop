@@ -41,6 +41,11 @@ import {
 } from "@/constants/orderChat";
 import { useToast } from "@/hooks/useToast";
 import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
+import {
+  OrderReasonModal,
+  type OrderReasonPayload,
+  VENDOR_REJECT_REASON_OPTIONS,
+} from "@/libs/OrderReasonModal";
 import type { DailyOrder, OrderStatus } from "@/types";
 
 interface IncomingOrder {
@@ -301,6 +306,8 @@ export default function VendorDailyOrderDetailWrapper({
   const [estimateByOrder, setEstimateByOrder] = useState<
     Record<string, string>
   >({});
+  const [rejectOrder, setRejectOrder] = useState<IncomingOrder | null>(null);
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const {
     data: order,
@@ -429,24 +436,15 @@ export default function VendorDailyOrderDetailWrapper({
     status: OrderStatus,
     label: string,
   ) {
-    const rejectionReason =
-      status === "VENDOR_REJECTED"
-        ? window.prompt(
-            `Why are you rejecting order ${buyerOrder.orderNumber}?`,
-          )
-        : null;
-    if (status === "VENDOR_REJECTED" && !rejectionReason?.trim()) return;
+    if (status === "VENDOR_REJECTED") {
+      setRejectError(null);
+      setRejectOrder(buyerOrder);
+      return;
+    }
     setBusyOrderId(buyerOrder.id);
     try {
       await api.patch(`/vendor/orders/${buyerOrder.id}/status`, {
         status,
-        ...(status === "VENDOR_REJECTED"
-          ? {
-              reason: rejectionReason?.trim(),
-              reasonCode: "VENDOR_REJECTED",
-              explanation: rejectionReason?.trim(),
-            }
-          : {}),
       });
       toast(label, "success");
       await Promise.all([
@@ -455,6 +453,32 @@ export default function VendorDailyOrderDetailWrapper({
       ]);
     } catch (error) {
       toast(actionErr(error), "error");
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  async function submitRejectReason(payload: OrderReasonPayload) {
+    if (!rejectOrder) return;
+    setBusyOrderId(rejectOrder.id);
+    setRejectError(null);
+    try {
+      await api.patch(`/vendor/orders/${rejectOrder.id}/status`, {
+        status: "VENDOR_REJECTED",
+        reason: payload.reason,
+        reasonCode: payload.reasonCode,
+        explanation: payload.explanation,
+      });
+      toast("Order rejected. Refund started.", "success");
+      setRejectOrder(null);
+      await Promise.all([
+        mutateIncoming(),
+        globalMutate(`/orders/${rejectOrder.id}`),
+      ]);
+    } catch (error) {
+      const message = actionErr(error);
+      setRejectError(message);
+      toast(message, "error");
     } finally {
       setBusyOrderId(null);
     }
@@ -581,6 +605,22 @@ export default function VendorDailyOrderDetailWrapper({
 
   return (
     <FadeIn>
+      <OrderReasonModal
+        open={!!rejectOrder}
+        title="Reject order"
+        description={`Choose why you cannot accept order ${rejectOrder?.orderNumber ?? ""}.`}
+        consequence="The buyer will be told the kitchen rejected the order and refund handling will start."
+        confirmLabel="Reject order"
+        options={VENDOR_REJECT_REASON_OPTIONS}
+        loading={!!rejectOrder && busyOrderId === rejectOrder.id}
+        error={rejectError}
+        onCancel={() => {
+          if (busyOrderId) return;
+          setRejectOrder(null);
+          setRejectError(null);
+        }}
+        onConfirm={submitRejectReason}
+      />
       <Stack $gap={20}>
         <BackLink href="/dashboard">
           <span aria-hidden>←</span> Back to dashboard

@@ -70,6 +70,7 @@ async function activeListing({
 			name: string;
 			priceKobo: number;
 			isDefault?: boolean;
+			isActive?: boolean;
 			displayOrder?: number;
 		}>;
 	}>;
@@ -293,6 +294,9 @@ describe("placeOrder service", () => {
 		expect(order.items[0].snapshotPriceKobo).toBe(300000);
 		expect(order.items[0].selectedVariantName).toBe("Large");
 		expect(order.items[0].selectedVariantPriceKobo).toBe(300000);
+		expect(
+			order.items[0].selectedVariantDailyOrderVariantId?.toString(),
+		).toBe(largeId);
 	});
 
 	it("rejects a variant item without a valid selected variant", async () => {
@@ -340,6 +344,51 @@ describe("placeOrder service", () => {
 							dailyOrderItemId: itemId,
 							quantity: 1,
 							selectedVariantId: oid(),
+						},
+					],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
+	});
+
+	it("rejects a stale selection for an inactive listing variant", async () => {
+		const campusId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						isActive: true,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isActive: false,
+					},
+				],
+			},
+		});
+		const inactive = listing.items[0].snapshotVariants.find(
+			(variant) => variant.isActive === false,
+		);
+		const inactiveId = (inactive?.id ?? inactive?._id)?.toString();
+		if (!inactiveId) throw new Error("Expected inactive variant snapshot");
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [
+						{
+							dailyOrderItemId: itemId,
+							quantity: 1,
+							selectedVariantId: inactiveId,
 						},
 					],
 				},

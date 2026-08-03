@@ -20,7 +20,10 @@ import {
 	type PublicVendor,
 	toPublicVendor,
 } from "../vendors/publicVendor";
-import { marketplaceCampusIds } from "./queries";
+import {
+	marketplaceCampusIds,
+	orderMarketplaceListingsForVendor,
+} from "./queries";
 
 // `PublicVendor` / `toPublicVendor` now live in services/vendors/publicVendor so
 // the storefront, marketplace and search payloads share one mapper — and one
@@ -165,7 +168,9 @@ export async function searchMarketplace({
 			if (!vendor || vendor.status !== VendorStatus.ACTIVE) return null;
 			return {
 				vendor: toPublicVendor(vendor),
-				listings: listingsByVendor.get(id) ?? [],
+				listings: orderMarketplaceListingsForVendor(
+					listingsByVendor.get(id) ?? [],
+				),
 				matchedOn: [...(matched.get(id) ?? [])],
 			} satisfies VendorSearchHit;
 		})
