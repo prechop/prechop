@@ -4,87 +4,87 @@ import Link from "next/link";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-	FiCheckCircle,
-	FiChevronRight,
-	FiClock,
-	FiGrid,
-	FiMapPin,
-	FiSearch,
-	FiShoppingBag,
-	FiStar,
-	FiTruck,
+  FiCheckCircle,
+  FiChevronRight,
+  FiClock,
+  FiGrid,
+  FiMapPin,
+  FiSearch,
+  FiShoppingBag,
+  FiStar,
+  FiTruck,
 } from "react-icons/fi";
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
-	Badge,
-	Card,
-	EmptyState,
-	FadeIn,
-	Grid,
-	Input,
-	PageHeader,
-	Row,
-	Skeleton,
-	Stack,
-	Text,
-	Title,
-	useVendorStatus,
-	VendorStatusBadge,
+  Badge,
+  Card,
+  EmptyState,
+  FadeIn,
+  Grid,
+  Input,
+  PageHeader,
+  Row,
+  Skeleton,
+  Stack,
+  Text,
+  Title,
+  useVendorStatus,
+  VendorStatusBadge,
 } from "@/components";
 import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
 import {
-	MENU_CATEGORIES,
-	type MenuCategoryValue,
-	normalizeMenuCategory,
+  MENU_CATEGORIES,
+  type MenuCategoryValue,
+  normalizeMenuCategory,
 } from "@/constants/menuCategories";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 import type {
-	Campus,
-	DailyOrder,
-	MarketplaceVendor,
-	PublicUser,
-	VendorSearchHit,
+  Campus,
+  DailyOrder,
+  MarketplaceVendor,
+  PublicUser,
+  VendorSearchHit,
 } from "@/types";
 
 interface MarketplaceAvailability {
-	marketplaceEnabled: boolean;
+  marketplaceEnabled: boolean;
 }
 
 type CategoryFilterValue = "ALL" | MenuCategoryValue;
 
 const MARKETPLACE_CATEGORY_LABELS: Record<MenuCategoryValue, string> = {
-	MEALS: "Meals",
-	FAST_FOOD_GRILLS: "Grills",
-	SNACKS_PASTRIES: "Snacks",
-	CAKES_DESSERTS: "Cakes",
-	DRINKS: "Drinks",
+  MEALS: "Meals",
+  FAST_FOOD_GRILLS: "Grills",
+  SNACKS_PASTRIES: "Snacks",
+  CAKES_DESSERTS: "Cakes",
+  DRINKS: "Drinks",
 };
 
 const CATEGORY_TABS: Array<{
-	value: CategoryFilterValue;
-	label: string;
-	icon: React.ReactNode;
+  value: CategoryFilterValue;
+  label: string;
+  icon: React.ReactNode;
 }> = [
-	{ value: "ALL", label: "All", icon: <FiGrid /> },
-	...MENU_CATEGORIES.map((category) => ({
-		value: category.value,
-		label: MARKETPLACE_CATEGORY_LABELS[category.value],
-		icon: category.icon,
-	})),
+  { value: "ALL", label: "All", icon: <FiGrid /> },
+  ...MENU_CATEGORIES.map((category) => ({
+    value: category.value,
+    label: MARKETPLACE_CATEGORY_LABELS[category.value],
+    icon: category.icon,
+  })),
 ];
 
 const KNOWN_CAMPUS_COORDS: Record<
-	string,
-	{ latitude: number; longitude: number }
+  string,
+  { latitude: number; longitude: number }
 > = {
-	UI: { latitude: 7.443, longitude: 3.9 },
-	"UNIVERSITY OF IBADAN": { latitude: 7.443, longitude: 3.9 },
-	UNILAG: { latitude: 6.5158, longitude: 3.3899 },
-	"UNIVERSITY OF LAGOS": { latitude: 6.5158, longitude: 3.3899 },
+  UI: { latitude: 7.443, longitude: 3.9 },
+  "UNIVERSITY OF IBADAN": { latitude: 7.443, longitude: 3.9 },
+  UNILAG: { latitude: 6.5158, longitude: 3.3899 },
+  "UNIVERSITY OF LAGOS": { latitude: 6.5158, longitude: 3.3899 },
 };
 
 const MAX_LOCATION_ACCURACY_METERS = 5_000;
@@ -163,15 +163,15 @@ const Media = styled.div`
 const Thumbs = styled.div`
   display: flex;
   height: 100%;
-    background: #110c08;
+  background: #110c08;
 `;
 const Thumb = styled.div<{ $src?: string | null }>`
   position: relative;
   flex: 1;
   background: ${(p) =>
-		p.$src
-			? `center / cover no-repeat url(${p.$src})`
-			: "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 22px, transparent 23px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
+    p.$src
+      ? `center / cover no-repeat url(${p.$src})`
+      : "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 22px, transparent 23px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -346,11 +346,11 @@ const CategoryTab = styled.button<{ $active: boolean }>`
   border-radius: 13px;
   border: 1px solid
     ${(p) =>
-		p.$active ? "var(--pc-color-primary)" : "rgba(255, 90, 31, 0.16)"};
+      p.$active ? "var(--pc-color-primary)" : "rgba(255, 90, 31, 0.16)"};
   background: ${(p) =>
-		p.$active
-			? "linear-gradient(135deg, #ff642b 0%, #ff4c11 100%)"
-			: "color-mix(in srgb, var(--pc-surface) 82%, #070503)"};
+    p.$active
+      ? "linear-gradient(135deg, #ff642b 0%, #ff4c11 100%)"
+      : "color-mix(in srgb, var(--pc-surface) 82%, #070503)"};
   color: ${(p) => (p.$active ? "#fff" : "var(--pc-text)")};
   font: inherit;
   font-size: 14px;
@@ -550,9 +550,9 @@ const VendorLogo = styled.div<{ $src?: string | null }>`
   border-radius: 50%;
   border: 2px solid rgba(255, 244, 225, 0.75);
   background: ${(p) =>
-		p.$src
-			? `center / cover no-repeat url(${p.$src})`
-			: "linear-gradient(135deg, #3b2416, #ff5a1f)"};
+    p.$src
+      ? `center / cover no-repeat url(${p.$src})`
+      : "linear-gradient(135deg, #3b2416, #ff5a1f)"};
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 
   @media (max-width: 759px) {
@@ -574,7 +574,7 @@ const VendorName = styled(Title)`
 
   @media (max-width: 360px) {
     font-size: 16px;
-	font-weight: 600;
+    font-weight: 600;
   }
 
   > span {
@@ -607,7 +607,7 @@ const MenuName = styled.p`
   white-space: nowrap;
 
   @media (max-width: 759px) {
-    font-size: 140px;
+    font-size: 14px;
   }
 
   @media (max-width: 360px) {
@@ -622,7 +622,8 @@ const PriceText = styled.div`
   line-height: 1;
 
   @media (max-width: 759px) {
-    font-size: 21px;
+    font-size: 16px;
+    font-weight: 600;
   }
 
   @media (max-width: 360px) {
@@ -651,13 +652,12 @@ const LocationLine = styled.div`
   }
 
   @media (max-width: 759px) {
-    font-size: 14px;
+    font-size: 12px;
     gap: 5px;
   }
 
   @media (max-width: 360px) {
     font-size: 12px;
-
   }
 `;
 const MetaRow = styled.div`
@@ -683,7 +683,9 @@ const MetaItem = styled.span`
   gap: 6px;
   color: var(--pc-text);
   font-size: 12.5px;
-  font-weight: 800;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-wrap: nowrap;
   white-space: nowrap;
 
   svg {
@@ -704,7 +706,7 @@ const MetaItem = styled.span`
   @media (max-width: 360px) {
     gap: 4px;
     font-size: 12px;
-	font-weight: 600;
+    font-weight: 600;
 
     svg {
       font-size: 14px;
@@ -721,496 +723,481 @@ const ListGrid = styled.div`
 `;
 
 function isMarketplaceUnavailable(error: unknown): boolean {
-	const err = error as {
-		response?: { status?: number; data?: { appCode?: string } };
-	};
-	return (
-		err?.response?.status === 503 ||
-		err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
-	);
+  const err = error as {
+    response?: { status?: number; data?: { appCode?: string } };
+  };
+  return (
+    err?.response?.status === 503 ||
+    err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
+  );
 }
 
 function menuSummary(total: number): string {
-	if (total <= 0) return "Menu available";
-	if (total > 2) return `2 of ${total} menus`;
-	return `${total} menu${total === 1 ? "" : "s"} available`;
+  if (total <= 0) return "Menu available";
+  if (total > 2) return `2 of ${total} menus`;
+  return `${total} menu${total === 1 ? "" : "s"} available`;
 }
 
 function fulfillmentLabel(listings: DailyOrder[]): string {
-	if (listings.length === 0) return "Menu, prices and ratings";
-	const pickupAvailable = listings.some((listing) => listing.pickupAvailable);
-	const deliveryAvailable = listings.some(
-		(listing) => listing.deliveryAvailable,
-	);
-	return [
-		pickupAvailable ? "Pickup" : null,
-		deliveryAvailable ? "Delivery" : null,
-	]
-		.filter(Boolean)
-		.join(" / ");
+  if (listings.length === 0) return "Menu, prices and ratings";
+  const pickupAvailable = listings.some((listing) => listing.pickupAvailable);
+  const deliveryAvailable = listings.some(
+    (listing) => listing.deliveryAvailable,
+  );
+  return [
+    pickupAvailable ? "Pickup" : null,
+    deliveryAvailable ? "Delivery" : null,
+  ]
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function primaryListingItem(row: MarketplaceVendor) {
-	const listing = row.listings[0];
-	return { listing };
+  const listing = row.listings[0];
+  return { listing };
 }
 
 function listingItems(listing: DailyOrder | undefined): DailyOrder["items"] {
-	return listing?.items ?? [];
+  return listing?.items ?? [];
 }
 
 function itemSoldOut(item: DailyOrder["items"][number] | undefined): boolean {
-	if (!item) return false;
-	if (item.remainingQuantity != null) return item.remainingQuantity <= 0;
-	if (item.maxQuantity != null) {
-		return (
-			(item.orderedQuantity ?? 0) + (item.reservedQuantity ?? 0) >=
-			item.maxQuantity
-		);
-	}
-	return false;
+  if (!item) return false;
+  if (item.remainingQuantity != null) return item.remainingQuantity <= 0;
+  if (item.maxQuantity != null) {
+    return (
+      (item.orderedQuantity ?? 0) + (item.reservedQuantity ?? 0) >=
+      item.maxQuantity
+    );
+  }
+  return false;
 }
 
 function listingSoldOut(listing: DailyOrder | undefined): boolean {
-	const items = listingItems(listing);
-	return items.length > 0 && items.every((item) => itemSoldOut(item));
+  const items = listingItems(listing);
+  return items.length > 0 && items.every((item) => itemSoldOut(item));
 }
 
 function listingPrice(listing: DailyOrder | undefined): string {
-	const prices = listingItems(listing).flatMap((item) => {
-		const variantPrices = item.snapshotVariants
-			.filter((variant) => variant.isActive !== false)
-			.map((variant) => variant.priceKobo);
-		return variantPrices.length > 0
-			? variantPrices
-			: [item.snapshotPriceKobo];
-	});
-	if (prices.length === 0) return "View menu";
-	const min = Math.min(...prices);
-	const max = Math.max(...prices);
-	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+  const prices = listingItems(listing).flatMap((item) => {
+    const variantPrices = item.snapshotVariants
+      .filter((variant) => variant.isActive !== false)
+      .map((variant) => variant.priceKobo);
+    return variantPrices.length > 0 ? variantPrices : [item.snapshotPriceKobo];
+  });
+  if (prices.length === 0) return "View menu";
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
 }
 
 function previewListingItems(listing: DailyOrder | undefined) {
-	const items = listingItems(listing);
-	const available = items.filter((item) => !itemSoldOut(item));
-	return (available.length > 0 ? available : items).slice(0, 2);
+  const items = listingItems(listing);
+  const available = items.filter((item) => !itemSoldOut(item));
+  return (available.length > 0 ? available : items).slice(0, 2);
 }
 
 function locationLabel(row: MarketplaceVendor, listing?: DailyOrder): string {
-	return (
-		row.vendor.areaOrAddress ??
-		listing?.vendorPickupLocation ??
-		listing?.deliveryCoverage ??
-		"Campus pickup"
-	);
+  return (
+    row.vendor.areaOrAddress ??
+    listing?.vendorPickupLocation ??
+    listing?.deliveryCoverage ??
+    "Campus pickup"
+  );
 }
 
 function fulfillmentTime(listing?: DailyOrder): string {
-	if (!listing) return "Pickup";
-	if (listing.pickupAvailable && listing.deliveryAvailable) {
-		return "Pickup & Delivery";
-	}
-	if (listing.deliveryAvailable && listing.deliveryEstimateMinutes) {
-		return `Delivery ${listing.deliveryEstimateMinutes} min`;
-	}
-	if (listing.deliveryAvailable) return "Delivery";
-	if (listing.pickupAvailable) return "Pickup";
-	return fulfillmentLabel([listing]);
+  if (!listing) return "Pickup";
+  if (listing.pickupAvailable && listing.deliveryAvailable) {
+    return "Pickup & Delivery";
+  }
+  if (listing.deliveryAvailable && listing.deliveryEstimateMinutes) {
+    return `Delivery ${listing.deliveryEstimateMinutes} min`;
+  }
+  if (listing.deliveryAvailable) return "Delivery";
+  if (listing.pickupAvailable) return "Pickup";
+  return fulfillmentLabel([listing]);
 }
 
 function ratingText(rating: number | null | undefined): string {
-	return (rating ?? 0).toFixed(1);
+  return (rating ?? 0).toFixed(1);
 }
 
 function campusCoordinate(campus: Campus) {
-	return (
-		KNOWN_CAMPUS_COORDS[campus.shortCode?.toUpperCase()] ??
-		KNOWN_CAMPUS_COORDS[campus.name?.toUpperCase()]
-	);
+  return (
+    KNOWN_CAMPUS_COORDS[campus.shortCode?.toUpperCase()] ??
+    KNOWN_CAMPUS_COORDS[campus.name?.toUpperCase()]
+  );
 }
 
 function distanceMeters(
-	a: { latitude: number; longitude: number },
-	b: { latitude: number; longitude: number },
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
 ): number {
-	const radius = 6_371_000;
-	const toRad = (value: number) => (value * Math.PI) / 180;
-	const dLat = toRad(b.latitude - a.latitude);
-	const dLng = toRad(b.longitude - a.longitude);
-	const lat1 = toRad(a.latitude);
-	const lat2 = toRad(b.latitude);
-	const h =
-		Math.sin(dLat / 2) ** 2 +
-		Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-	return 2 * radius * Math.asin(Math.sqrt(h));
+  const radius = 6_371_000;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
 function nearestSupportedCampus(
-	campuses: Campus[],
-	position: GeolocationPosition,
+  campuses: Campus[],
+  position: GeolocationPosition,
 ): Campus | null {
-	if (position.coords.accuracy > MAX_LOCATION_ACCURACY_METERS) return null;
-	const here = {
-		latitude: position.coords.latitude,
-		longitude: position.coords.longitude,
-	};
-	const nearest = campuses
-		.map((campus) => {
-			const coords = campusCoordinate(campus);
-			return coords
-				? { campus, distance: distanceMeters(here, coords) }
-				: null;
-		})
-		.filter((item): item is { campus: Campus; distance: number } => !!item)
-		.sort((a, b) => a.distance - b.distance)[0];
-	return nearest?.distance <= NEARBY_CAMPUS_RADIUS_METERS
-		? nearest.campus
-		: null;
+  if (position.coords.accuracy > MAX_LOCATION_ACCURACY_METERS) return null;
+  const here = {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+  const nearest = campuses
+    .map((campus) => {
+      const coords = campusCoordinate(campus);
+      return coords ? { campus, distance: distanceMeters(here, coords) } : null;
+    })
+    .filter((item): item is { campus: Campus; distance: number } => !!item)
+    .sort((a, b) => a.distance - b.distance)[0];
+  return nearest?.distance <= NEARBY_CAMPUS_RADIUS_METERS
+    ? nearest.campus
+    : null;
 }
 
 function CampusFilter({
-	campuses,
-	value,
-	onChange,
-	disabled,
+  campuses,
+  value,
+  onChange,
+  disabled,
 }: {
-	campuses: Campus[];
-	value: string;
-	onChange: (value: string) => void;
-	disabled?: boolean;
+  campuses: Campus[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
-	return (
-		<CampusPickerWrap>
-			<CampusSelect
-				value={value}
-				disabled={disabled}
-				onChange={(event) => onChange(event.target.value)}
-				aria-label="Filter marketplace by campus"
-			>
-				<option value="">All campuses</option>
-				{campuses.map((campus) => (
-					<option key={campus.id} value={campus.id}>
-						{campus.name}
-					</option>
-				))}
-			</CampusSelect>
-		</CampusPickerWrap>
-	);
+  return (
+    <CampusPickerWrap>
+      <CampusSelect
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Filter marketplace by campus">
+        <option value="">All campuses</option>
+        {campuses.map((campus) => (
+          <option key={campus.id} value={campus.id}>
+            {campus.name}
+          </option>
+        ))}
+      </CampusSelect>
+    </CampusPickerWrap>
+  );
 }
 
 function CategoryFilter({
-	value,
-	onChange,
+  value,
+  onChange,
 }: {
-	value: CategoryFilterValue;
-	onChange: (value: CategoryFilterValue) => void;
+  value: CategoryFilterValue;
+  onChange: (value: CategoryFilterValue) => void;
 }) {
-	return (
-		<CategoryRail aria-label="Filter marketplace by category">
-			<CategoryTabs role="list">
-				{CATEGORY_TABS.map((tab) => (
-					<CategoryTab
-						key={tab.value}
-						type="button"
-						$active={value === tab.value}
-						aria-pressed={value === tab.value}
-						onClick={() => onChange(tab.value)}
-					>
-						<span className="category-icon" aria-hidden>
-							{tab.icon}
-						</span>
-						{tab.label}
-					</CategoryTab>
-				))}
-			</CategoryTabs>
-		</CategoryRail>
-	);
+  return (
+    <CategoryRail aria-label="Filter marketplace by category">
+      <CategoryTabs role="list">
+        {CATEGORY_TABS.map((tab) => (
+          <CategoryTab
+            key={tab.value}
+            type="button"
+            $active={value === tab.value}
+            aria-pressed={value === tab.value}
+            onClick={() => onChange(tab.value)}>
+            <span className="category-icon" aria-hidden>
+              {tab.icon}
+            </span>
+            {tab.label}
+          </CategoryTab>
+        ))}
+      </CategoryTabs>
+    </CategoryRail>
+  );
 }
 
 function filterMarketplaceRows<T extends MarketplaceVendor>(
-	rows: T[],
-	category: CategoryFilterValue,
+  rows: T[],
+  category: CategoryFilterValue,
 ): T[] {
-	if (category === "ALL") return rows;
-	return rows
-		.map((row) => {
-			const filteredListings = row.listings
-				.map((listing) => {
-					const itemCategories = listing.items
-						.map((item) =>
-							item.category
-								? normalizeMenuCategory(item.category)
-								: null,
-						)
-						.filter((value): value is MenuCategoryValue =>
-							Boolean(value),
-						);
-					if (itemCategories.length === 0) {
-						const vendorCategories = (row.vendor.categories ?? [])
-							.map(normalizeMenuCategory)
-							.filter(Boolean);
-						return vendorCategories.includes(category)
-							? listing
-							: null;
-					}
-					const items = listing.items.filter(
-						(item) =>
-							!!item.category &&
-							normalizeMenuCategory(item.category) === category,
-					);
-					return items.length > 0 ? { ...listing, items } : null;
-				})
-				.filter((listing): listing is T["listings"][number] =>
-					Boolean(listing),
-				);
-			return filteredListings.length > 0
-				? ({ ...row, listings: filteredListings } as T)
-				: null;
-		})
-		.filter((row): row is T => Boolean(row));
+  if (category === "ALL") return rows;
+  return rows
+    .map((row) => {
+      const filteredListings = row.listings
+        .map((listing) => {
+          const itemCategories = listing.items
+            .map((item) =>
+              item.category ? normalizeMenuCategory(item.category) : null,
+            )
+            .filter((value): value is MenuCategoryValue => Boolean(value));
+          if (itemCategories.length === 0) {
+            const vendorCategories = (row.vendor.categories ?? [])
+              .map(normalizeMenuCategory)
+              .filter(Boolean);
+            return vendorCategories.includes(category) ? listing : null;
+          }
+          const items = listing.items.filter(
+            (item) =>
+              !!item.category &&
+              normalizeMenuCategory(item.category) === category,
+          );
+          return items.length > 0 ? { ...listing, items } : null;
+        })
+        .filter((listing): listing is T["listings"][number] =>
+          Boolean(listing),
+        );
+      return filteredListings.length > 0
+        ? ({ ...row, listings: filteredListings } as T)
+        : null;
+    })
+    .filter((row): row is T => Boolean(row));
 }
 
 export default function MarketplaceWrapper() {
-	const { user, isLoading: authLoading, refresh } = useAuth();
-	const { toast } = useToast();
-	const { data: campuses, isLoading: campusesLoading } = useSWR<Campus[]>(
-		"/campuses",
-		fetcher,
-	);
-	const [selectedCampusId, setSelectedCampusId] = useState("");
-	const [savingCampusId, setSavingCampusId] = useState<string | null>(null);
-	const [selectedCategory, setSelectedCategory] =
-		useState<CategoryFilterValue>("ALL");
-	const [locationNotice, setLocationNotice] = useState("");
-	const manualCampusRef = useRef(false);
-	const locationRequestedRef = useRef(false);
-	const { data: availability, isLoading: availabilityLoading } =
-		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
-			refreshInterval: 10_000,
-		});
-	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
-	const campusQuery = selectedCampusId ? `campusId=${selectedCampusId}&` : "";
-	const { data, isLoading, error } = useSWR<MarketplaceVendor[]>(
-		marketplaceEnabled
-			? `/daily-orders/marketplace?${campusQuery}limit=50`
-			: null,
-		fetcher,
-		{ refreshInterval: 10_000 },
-	);
+  const { user, isLoading: authLoading, refresh } = useAuth();
+  const { toast } = useToast();
+  const { data: campuses, isLoading: campusesLoading } = useSWR<Campus[]>(
+    "/campuses",
+    fetcher,
+  );
+  const [selectedCampusId, setSelectedCampusId] = useState("");
+  const [savingCampusId, setSavingCampusId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryFilterValue>("ALL");
+  const [locationNotice, setLocationNotice] = useState("");
+  const manualCampusRef = useRef(false);
+  const locationRequestedRef = useRef(false);
+  const { data: availability, isLoading: availabilityLoading } =
+    useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
+      refreshInterval: 10_000,
+    });
+  const marketplaceEnabled = availability?.marketplaceEnabled !== false;
+  const campusQuery = selectedCampusId ? `campusId=${selectedCampusId}&` : "";
+  const { data, isLoading, error } = useSWR<MarketplaceVendor[]>(
+    marketplaceEnabled
+      ? `/daily-orders/marketplace?${campusQuery}limit=50`
+      : null,
+    fetcher,
+    { refreshInterval: 10_000 },
+  );
 
-	const [search, setSearch] = useState("");
-	const [debounced, setDebounced] = useState("");
-	useEffect(() => {
-		const t = setTimeout(() => setDebounced(search.trim()), 300);
-		return () => clearTimeout(t);
-	}, [search]);
-	const searching = debounced.length > 0;
-	const searchCampusQuery = selectedCampusId
-		? `campusId=${selectedCampusId}&`
-		: "";
-	const { data: hits, isLoading: hitsLoading } = useSWR<VendorSearchHit[]>(
-		marketplaceEnabled && searching
-			? `/daily-orders/marketplace/search?${searchCampusQuery}q=${encodeURIComponent(debounced)}`
-			: null,
-		fetcher,
-		{ refreshInterval: searching ? 10_000 : 0 },
-	);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  const searching = debounced.length > 0;
+  const searchCampusQuery = selectedCampusId
+    ? `campusId=${selectedCampusId}&`
+    : "";
+  const { data: hits, isLoading: hitsLoading } = useSWR<VendorSearchHit[]>(
+    marketplaceEnabled && searching
+      ? `/daily-orders/marketplace/search?${searchCampusQuery}q=${encodeURIComponent(debounced)}`
+      : null,
+    fetcher,
+    { refreshInterval: searching ? 10_000 : 0 },
+  );
 
-	const campusName = campuses?.find((c) => c.id === selectedCampusId)?.name;
-	const activeCampuses = campuses ?? [];
-	const vendors = useMemo(
-		() => filterMarketplaceRows(data ?? [], selectedCategory),
-		[data, selectedCategory],
-	);
-	const searchHits = useMemo(
-		() => filterMarketplaceRows(hits ?? [], selectedCategory),
-		[hits, selectedCategory],
-	);
-	const selectedCategoryLabel =
-		CATEGORY_TABS.find((tab) => tab.value === selectedCategory)?.label ??
-		"category";
+  const campusName = campuses?.find((c) => c.id === selectedCampusId)?.name;
+  const activeCampuses = campuses ?? [];
+  const vendors = useMemo(
+    () => filterMarketplaceRows(data ?? [], selectedCategory),
+    [data, selectedCategory],
+  );
+  const searchHits = useMemo(
+    () => filterMarketplaceRows(hits ?? [], selectedCategory),
+    [hits, selectedCategory],
+  );
+  const selectedCategoryLabel =
+    CATEGORY_TABS.find((tab) => tab.value === selectedCategory)?.label ??
+    "category";
 
-	useEffect(() => {
-		if (!user?.campusId || manualCampusRef.current) return;
-		setSelectedCampusId(user.campusId);
-	}, [user?.campusId]);
+  useEffect(() => {
+    if (!user?.campusId || manualCampusRef.current) return;
+    setSelectedCampusId(user.campusId);
+  }, [user?.campusId]);
 
-	useEffect(() => {
-		if (
-			user ||
-			locationRequestedRef.current ||
-			manualCampusRef.current ||
-			activeCampuses.length === 0 ||
-			!("geolocation" in navigator)
-		) {
-			return;
-		}
-		locationRequestedRef.current = true;
-		navigator.geolocation.getCurrentPosition(
-			(position) => {
-				if (manualCampusRef.current) return;
-				const campus = nearestSupportedCampus(activeCampuses, position);
-				if (!campus) return;
-				setSelectedCampusId(campus.id);
-				setLocationNotice(`Showing vendors near ${campus.name}.`);
-			},
-			() => {},
-			{
-				enableHighAccuracy: false,
-				timeout: 6_000,
-				maximumAge: 10 * 60 * 1000,
-			},
-		);
-	}, [activeCampuses, user]);
+  useEffect(() => {
+    if (
+      user ||
+      locationRequestedRef.current ||
+      manualCampusRef.current ||
+      activeCampuses.length === 0 ||
+      !("geolocation" in navigator)
+    ) {
+      return;
+    }
+    locationRequestedRef.current = true;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (manualCampusRef.current) return;
+        const campus = nearestSupportedCampus(activeCampuses, position);
+        if (!campus) return;
+        setSelectedCampusId(campus.id);
+        setLocationNotice(`Showing vendors near ${campus.name}.`);
+      },
+      () => {},
+      {
+        enableHighAccuracy: false,
+        timeout: 6_000,
+        maximumAge: 10 * 60 * 1000,
+      },
+    );
+  }, [activeCampuses, user]);
 
-	async function saveAccountCampus(campusId: string) {
-		if (!user || !campusId || campusId === user.campusId) return;
-		setSavingCampusId(campusId);
-		try {
-			const response = await api.patch("/users/me/campus", { campusId });
-			const updatedUser = response.data?.data as PublicUser | undefined;
-			if (updatedUser) {
-				await globalMutate("/users/me", updatedUser, {
-					revalidate: false,
-				});
-			} else {
-				refresh();
-			}
-			toast("Campus saved to your account.", "success");
-		} catch (error) {
-			toast(errMsg(error), "error");
-		} finally {
-			setSavingCampusId(null);
-		}
-	}
+  async function saveAccountCampus(campusId: string) {
+    if (!user || !campusId || campusId === user.campusId) return;
+    setSavingCampusId(campusId);
+    try {
+      const response = await api.patch("/users/me/campus", { campusId });
+      const updatedUser = response.data?.data as PublicUser | undefined;
+      if (updatedUser) {
+        await globalMutate("/users/me", updatedUser, {
+          revalidate: false,
+        });
+      } else {
+        refresh();
+      }
+      toast("Campus saved to your account.", "success");
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setSavingCampusId(null);
+    }
+  }
 
-	function handleCampusChange(value: string) {
-		manualCampusRef.current = true;
-		setLocationNotice("");
-		setSelectedCampusId(value);
-		void saveAccountCampus(value);
-	}
+  function handleCampusChange(value: string) {
+    manualCampusRef.current = true;
+    setLocationNotice("");
+    setSelectedCampusId(value);
+    void saveAccountCampus(value);
+  }
 
-	if (availabilityLoading || authLoading || campusesLoading || isLoading) {
-		return (
-			<MarketplaceSurface $gap={0}>
-				<PageHeader
-					eyebrow="Marketplace"
-					title="Campus kitchens"
-					subtitle="Browse food, prices, ratings and order windows."
-					actions={
-						<CampusFilter
-							campuses={activeCampuses}
-							value={selectedCampusId}
-							onChange={handleCampusChange}
-							disabled={!!savingCampusId}
-						/>
-					}
-				/>
-				<Grid $min={260} $gap={16}>
-					{[0, 1, 2, 3, 4, 5].map((n) => (
-						<Card key={n} $pad={0}>
-							<Skeleton $h={150} $radius="0" />
-							<Stack $gap={10} style={{ padding: 16 }}>
-								<Skeleton $w="70%" $h={18} />
-								<Skeleton $w="45%" $h={13} />
-								<Skeleton $w="55%" $h={13} />
-							</Stack>
-						</Card>
-					))}
-				</Grid>
-			</MarketplaceSurface>
-		);
-	}
+  if (availabilityLoading || authLoading || campusesLoading || isLoading) {
+    return (
+      <MarketplaceSurface $gap={0}>
+        <PageHeader
+          eyebrow="Marketplace"
+          title="Campus kitchens"
+          subtitle="Browse food, prices, ratings and order windows."
+          actions={
+            <CampusFilter
+              campuses={activeCampuses}
+              value={selectedCampusId}
+              onChange={handleCampusChange}
+              disabled={!!savingCampusId}
+            />
+          }
+        />
+        <Grid $min={260} $gap={16}>
+          {[0, 1, 2, 3, 4, 5].map((n) => (
+            <Card key={n} $pad={0}>
+              <Skeleton $h={150} $radius="0" />
+              <Stack $gap={10} style={{ padding: 16 }}>
+                <Skeleton $w="70%" $h={18} />
+                <Skeleton $w="45%" $h={13} />
+                <Skeleton $w="55%" $h={13} />
+              </Stack>
+            </Card>
+          ))}
+        </Grid>
+      </MarketplaceSurface>
+    );
+  }
 
-	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
-		return (
-			<MarketplaceSurface $gap={0}>
-				<PageHeader
-					eyebrow="Marketplace"
-					title="Marketplace unavailable"
-					subtitle="Ordering is temporarily paused. Existing paid orders are still being fulfilled."
-				/>
-				<EmptyState
-					icon="pause"
-					title="The marketplace is temporarily unavailable"
-					description="Please check back later."
-				/>
-			</MarketplaceSurface>
-		);
-	}
+  if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
+    return (
+      <MarketplaceSurface $gap={0}>
+        <PageHeader
+          eyebrow="Marketplace"
+          title="Marketplace unavailable"
+          subtitle="Ordering is temporarily paused. Existing paid orders are still being fulfilled."
+        />
+        <EmptyState
+          icon="pause"
+          title="The marketplace is temporarily unavailable"
+          description="Please check back later."
+        />
+      </MarketplaceSurface>
+    );
+  }
 
-	return (
-		<MarketplaceSurface $gap={0}>
-			<PageHeader
-				eyebrow="Marketplace"
-				title="Campus kitchens"
-				subtitle="Browse verified campus kitchens and fresh meals near you."
-				actions={
-					<CampusFilter
-						campuses={activeCampuses}
-						value={selectedCampusId}
-						onChange={handleCampusChange}
-						disabled={!!savingCampusId}
-					/>
-				}
-			/>
-			{locationNotice && <Notice>{locationNotice}</Notice>}
-			{campusName && !locationNotice && (
-				<Notice>Showing vendors near {campusName}.</Notice>
-			)}
+  return (
+    <MarketplaceSurface $gap={0}>
+      <PageHeader
+        eyebrow="Marketplace"
+        title="Campus kitchens"
+        subtitle="Browse verified campus kitchens and fresh meals near you."
+        actions={
+          <CampusFilter
+            campuses={activeCampuses}
+            value={selectedCampusId}
+            onChange={handleCampusChange}
+            disabled={!!savingCampusId}
+          />
+        }
+      />
+      {locationNotice && <Notice>{locationNotice}</Notice>}
+      {campusName && !locationNotice && (
+        <Notice>Showing vendors near {campusName}.</Notice>
+      )}
 
-			<SearchWrap>
-				<SearchIcon aria-hidden>
-					<FiSearch />
-				</SearchIcon>
-				<MarketplaceSearch
-					type="search"
-					value={search}
-					onChange={(e) => setSearch(e.target.value)}
-					placeholder="Search meals, snacks, drinks, kitchens..."
-					aria-label="Search vendors"
-				/>
-			</SearchWrap>
+      <SearchWrap>
+        <SearchIcon aria-hidden>
+          <FiSearch />
+        </SearchIcon>
+        <MarketplaceSearch
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search meals, snacks, drinks, kitchens..."
+          aria-label="Search vendors"
+        />
+      </SearchWrap>
 
-			<CategoryFilter
-				value={selectedCategory}
-				onChange={setSelectedCategory}
-			/>
+      <CategoryFilter value={selectedCategory} onChange={setSelectedCategory} />
 
-			{searching ? (
-				<SearchResults
-					hits={searchHits}
-					loading={hitsLoading}
-					q={debounced}
-					categoryLabel={selectedCategoryLabel}
-					categoryFiltered={selectedCategory !== "ALL"}
-				/>
-			) : vendors.length === 0 ? (
-				<EmptyState
-					icon={<MarketIllustration />}
-					title={
-						selectedCategory === "ALL"
-							? "No kitchens found here"
-							: `No ${selectedCategoryLabel.toLowerCase()} found here`
-					}
-					description={
-						selectedCategory === "ALL"
-							? "There are no eligible vendors in this location yet."
-							: "Try All categories or choose another campus."
-					}
-				/>
-			) : (
-				<VendorGrid vendors={vendors} />
-			)}
-		</MarketplaceSurface>
-	);
+      {searching ? (
+        <SearchResults
+          hits={searchHits}
+          loading={hitsLoading}
+          q={debounced}
+          categoryLabel={selectedCategoryLabel}
+          categoryFiltered={selectedCategory !== "ALL"}
+        />
+      ) : vendors.length === 0 ? (
+        <EmptyState
+          icon={<MarketIllustration />}
+          title={
+            selectedCategory === "ALL"
+              ? "No kitchens found here"
+              : `No ${selectedCategoryLabel.toLowerCase()} found here`
+          }
+          description={
+            selectedCategory === "ALL"
+              ? "There are no eligible vendors in this location yet."
+              : "Try All categories or choose another campus."
+          }
+        />
+      ) : (
+        <VendorGrid vendors={vendors} />
+      )}
+    </MarketplaceSurface>
+  );
 }
 
 function errMsg(error: unknown): string {
-	const err = error as { response?: { data?: { message?: string } } };
-	return err?.response?.data?.message ?? "Could not save campus.";
+  const err = error as { response?: { data?: { message?: string } } };
+  return err?.response?.data?.message ?? "Could not save campus.";
 }
 
 /**
@@ -1223,208 +1210,192 @@ function errMsg(error: unknown): string {
  * numeric rating together so the card scans like a marketplace listing.
  */
 function VendorGridCard({ row }: { row: MarketplaceVendor }) {
-	const { listing: primary } = primaryListingItem(row);
-	const menus = listingItems(primary);
-	const previewMenus = previewListingItems(primary);
-	const primaryItem = previewMenus[0] ?? primary?.items[0];
-	const vendorId = row.vendor.id || primary?.vendorId;
-	const status = useVendorStatus({
-		isOpenForOrders: row.vendor.isOpenForOrders,
-		listings: row.listings,
-	});
-	const soldOut = listingSoldOut(primary);
-	const statusBadge = soldOut ? (
-		<Badge $tone="danger">Sold out</Badge>
-	) : (
-		<VendorStatusBadge status={status} compact />
-	);
+  const { listing: primary } = primaryListingItem(row);
+  const menus = listingItems(primary);
+  const previewMenus = previewListingItems(primary);
+  const primaryItem = previewMenus[0] ?? primary?.items[0];
+  const vendorId = row.vendor.id || primary?.vendorId;
+  const status = useVendorStatus({
+    isOpenForOrders: row.vendor.isOpenForOrders,
+    listings: row.listings,
+  });
+  const soldOut = listingSoldOut(primary);
+  const statusBadge = soldOut ? (
+    <Badge $tone="danger">Sold out</Badge>
+  ) : (
+    <VendorStatusBadge status={status} compact />
+  );
 
-	return (
-		<VendorCard>
-			<CardLink href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
-				<Media>
-					<BadgeFloat>{statusBadge}</BadgeFloat>
-					<Thumbs>
-						{previewMenus.map((it) => (
-							<Thumb
-								key={it.id}
-								$src={it.snapshotImageUrl}
-								aria-label={
-									it.snapshotImageUrl
-										? it.snapshotName
-										: `${it.snapshotName} image placeholder`
-								}
-							>
-								<ThumbLabel>{it.snapshotName}</ThumbLabel>
-							</Thumb>
-						))}
-						{previewMenus.length === 0 && (
-							<Thumb
-								$src={row.vendor.profileImageUrl}
-								aria-label={
-									row.vendor.profileImageUrl
-										? (row.vendor.businessName ??
-											"Campus kitchen")
-										: "Kitchen image placeholder"
-								}
-							/>
-						)}
-					</Thumbs>
-					<MediaShade />
-				</Media>
-				<Body $gap={13}>
-					<VendorIdentity>
-						<VendorLogo
-							$src={
-								row.vendor.profileImageUrl ??
-								primaryItem?.snapshotImageUrl
-							}
-							aria-hidden
-						/>
-						<div>
-							<VendorName>
-								<span>
-									{row.vendor.businessName ??
-										"Campus kitchen"}
-								</span>
-								<VerifiedMark aria-label="Verified kitchen">
-									<FiCheckCircle aria-hidden />
-								</VerifiedMark>
-							</VendorName>
-							<MenuName>
-								{primary?.title ?? menuSummary(menus.length)}
-							</MenuName>
-							<PriceText>{listingPrice(primary)}</PriceText>
-							<LocationLine>
-								<FiMapPin aria-hidden />
-								<span>{locationLabel(row, primary)}</span>
-							</LocationLine>
-						</div>
-						<RatingPill
-							aria-label={`Rated ${ratingText(row.vendor.rating)} out of 5 from ${row.vendor.totalReviews} reviews`}
-						>
-							<RatingStar aria-hidden>
-								<FiStar />
-							</RatingStar>
-							{ratingText(row.vendor.rating)}
-							<RatingCount aria-hidden>
-								({row.vendor.totalReviews})
-							</RatingCount>
-						</RatingPill>
-					</VendorIdentity>
-					{menus.length > 1 && (
-						<Chips $gap={6}>
-							<Badge $tone="muted">
-								{menuSummary(menus.length)}
-							</Badge>
-						</Chips>
-					)}
-					<Foot $justify="space-between" $align="center">
-						<MetaRow>
-							{primaryItem && (
-								<MetaItem>
-									<FiClock aria-hidden />
-									Prep {primaryItem.snapshotPrepMin} min
-								</MetaItem>
-							)}
-							<MetaItem>
-								{primary?.deliveryAvailable ? (
-									<FiTruck aria-hidden />
-								) : (
-									<FiShoppingBag aria-hidden />
-								)}
-								{fulfillmentTime(primary)}
-							</MetaItem>
-						</MetaRow>
-						<Cta>
-							View kitchen
-							<FiChevronRight aria-hidden />
-						</Cta>
-					</Foot>
-				</Body>
-			</CardLink>
-		</VendorCard>
-	);
+  return (
+    <VendorCard>
+      <CardLink href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
+        <Media>
+          <BadgeFloat>{statusBadge}</BadgeFloat>
+          <Thumbs>
+            {previewMenus.map((it) => (
+              <Thumb
+                key={it.id}
+                $src={it.snapshotImageUrl}
+                aria-label={
+                  it.snapshotImageUrl
+                    ? it.snapshotName
+                    : `${it.snapshotName} image placeholder`
+                }>
+                <ThumbLabel>{it.snapshotName}</ThumbLabel>
+              </Thumb>
+            ))}
+            {previewMenus.length === 0 && (
+              <Thumb
+                $src={row.vendor.profileImageUrl}
+                aria-label={
+                  row.vendor.profileImageUrl
+                    ? (row.vendor.businessName ?? "Campus kitchen")
+                    : "Kitchen image placeholder"
+                }
+              />
+            )}
+          </Thumbs>
+          <MediaShade />
+        </Media>
+        <Body $gap={13}>
+          <VendorIdentity>
+            <VendorLogo
+              $src={row.vendor.profileImageUrl ?? primaryItem?.snapshotImageUrl}
+              aria-hidden
+            />
+            <div>
+              <VendorName>
+                <span>{row.vendor.businessName ?? "Campus kitchen"}</span>
+                <VerifiedMark aria-label="Verified kitchen">
+                  <FiCheckCircle aria-hidden />
+                </VerifiedMark>
+              </VendorName>
+              <MenuName>{primary?.title ?? menuSummary(menus.length)}</MenuName>
+              <PriceText>{listingPrice(primary)}</PriceText>
+              <LocationLine>
+                <FiMapPin aria-hidden />
+                <span>{locationLabel(row, primary)}</span>
+              </LocationLine>
+            </div>
+            <RatingPill
+              aria-label={`Rated ${ratingText(row.vendor.rating)} out of 5 from ${row.vendor.totalReviews} reviews`}>
+              <RatingStar aria-hidden>
+                <FiStar />
+              </RatingStar>
+              {ratingText(row.vendor.rating)}
+              <RatingCount aria-hidden>({row.vendor.totalReviews})</RatingCount>
+            </RatingPill>
+          </VendorIdentity>
+          {menus.length > 1 && (
+            <Chips $gap={6}>
+              <Badge $tone="muted">{menuSummary(menus.length)}</Badge>
+            </Chips>
+          )}
+          <Foot $justify="space-between" $align="center">
+            <MetaRow>
+              {primaryItem && (
+                <MetaItem>
+                  <FiClock aria-hidden />
+                  Prep {primaryItem.snapshotPrepMin} min
+                </MetaItem>
+              )}
+              <MetaItem>
+                {primary?.deliveryAvailable ? (
+                  <FiTruck aria-hidden />
+                ) : (
+                  <FiShoppingBag aria-hidden />
+                )}
+                {fulfillmentTime(primary)}
+              </MetaItem>
+            </MetaRow>
+            <Cta>
+              View kitchen
+              <FiChevronRight aria-hidden />
+            </Cta>
+          </Foot>
+        </Body>
+      </CardLink>
+    </VendorCard>
+  );
 }
 
 function VendorGrid({ vendors }: { vendors: MarketplaceVendor[] }) {
-	return (
-		<Stack $gap={0}>
-			<SectionIntro>
-				<SectionTitle>Available now</SectionTitle>
-				<LiveDot aria-hidden />
-				<SectionHint>Live orders from top kitchens</SectionHint>
-			</SectionIntro>
-			<ListGrid>
-				{vendors.map((row, i) => (
-					<FadeIn key={row.vendor.id} $delay={i * 45}>
-						<VendorGridCard row={row} />
-					</FadeIn>
-				))}
-			</ListGrid>
-		</Stack>
-	);
+  return (
+    <Stack $gap={0}>
+      <SectionIntro>
+        <SectionTitle>Available now</SectionTitle>
+        <LiveDot aria-hidden />
+        <SectionHint>Live orders from top kitchens</SectionHint>
+      </SectionIntro>
+      <ListGrid>
+        {vendors.map((row, i) => (
+          <FadeIn key={row.vendor.id} $delay={i * 45}>
+            <VendorGridCard row={row} />
+          </FadeIn>
+        ))}
+      </ListGrid>
+    </Stack>
+  );
 }
 
 function SearchResults({
-	hits,
-	loading,
-	q,
-	categoryLabel,
-	categoryFiltered,
+  hits,
+  loading,
+  q,
+  categoryLabel,
+  categoryFiltered,
 }: {
-	hits?: VendorSearchHit[];
-	loading: boolean;
-	q: string;
-	categoryLabel: string;
-	categoryFiltered: boolean;
+  hits?: VendorSearchHit[];
+  loading: boolean;
+  q: string;
+  categoryLabel: string;
+  categoryFiltered: boolean;
 }) {
-	if (loading) {
-		return (
-			<Stack $gap={12}>
-				{[0, 1, 2].map((n) => (
-					<Card key={n}>
-						<Stack $gap={10}>
-							<Skeleton $w="55%" $h={18} />
-							<Skeleton $w="35%" $h={13} />
-						</Stack>
-					</Card>
-				))}
-			</Stack>
-		);
-	}
-	const results = hits ?? [];
-	if (results.length === 0) {
-		return (
-			<EmptyState
-				icon="search"
-				title={
-					categoryFiltered
-						? `No ${categoryLabel.toLowerCase()} matches for "${q}"`
-						: `No matches for "${q}"`
-				}
-				description={
-					categoryFiltered
-						? "Try All categories or another search."
-						: "Try another shop name, dish or listing."
-				}
-			/>
-		);
-	}
-	return (
-		<Stack $gap={12}>
-			<Text $muted $size={13}>
-				{results.length} shop{results.length === 1 ? "" : "s"} match "
-				{q}"
-			</Text>
-			<Row $gap={6} $wrap>
-				{Array.from(
-					new Set(results.flatMap((hit) => hit.matchedOn)),
-				).map((match) => (
-					<MatchTag key={match}>{match}</MatchTag>
-				))}
-			</Row>
-			<VendorGrid vendors={results} />
-		</Stack>
-	);
+  if (loading) {
+    return (
+      <Stack $gap={12}>
+        {[0, 1, 2].map((n) => (
+          <Card key={n}>
+            <Stack $gap={10}>
+              <Skeleton $w="55%" $h={18} />
+              <Skeleton $w="35%" $h={13} />
+            </Stack>
+          </Card>
+        ))}
+      </Stack>
+    );
+  }
+  const results = hits ?? [];
+  if (results.length === 0) {
+    return (
+      <EmptyState
+        icon="search"
+        title={
+          categoryFiltered
+            ? `No ${categoryLabel.toLowerCase()} matches for "${q}"`
+            : `No matches for "${q}"`
+        }
+        description={
+          categoryFiltered
+            ? "Try All categories or another search."
+            : "Try another shop name, dish or listing."
+        }
+      />
+    );
+  }
+  return (
+    <Stack $gap={12}>
+      <Text $muted $size={13}>
+        {results.length} shop{results.length === 1 ? "" : "s"} match "{q}"
+      </Text>
+      <Row $gap={6} $wrap>
+        {Array.from(new Set(results.flatMap((hit) => hit.matchedOn))).map(
+          (match) => (
+            <MatchTag key={match}>{match}</MatchTag>
+          ),
+        )}
+      </Row>
+      <VendorGrid vendors={results} />
+    </Stack>
+  );
 }
