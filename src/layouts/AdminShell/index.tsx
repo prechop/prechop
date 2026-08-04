@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import styled from "styled-components";
+import useSWR from "swr";
 import { Avatar, PageLoader, ThemeToggle } from "@/components";
+import { fetcher } from "@/constants/fetcher";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
 /**
@@ -192,10 +194,33 @@ const NavList = styled.nav`
   flex: 1;
   overflow-y: auto;
 `;
+const NavItemContent = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  flex: 1;
+`;
+const NavItemBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pc-color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--pc-surface);
+`;
 const NavItem = styled(Link)<{ $active: boolean }>`
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: space-between;
+  gap: 8px;
   padding: 11px 13px;
   border-radius: var(--pc-radius-sm);
   font-size: 14px;
@@ -338,6 +363,41 @@ export default function AdminShell({
   // item is visible; the shell is accessible iff ≥1 item is visible.
   const visibleNav = nav.filter((n) => !n.permission || can(n.permission));
   const hasAdminAccess = visibleNav.some((n) => n.permission);
+  const { data: adminNotificationsData } = useSWR<Array<{ isRead: boolean }>>(
+    can("notification:send") ? "/admin/notifications?limit=50" : null,
+    fetcher,
+    { refreshInterval: 15000, shouldRetryOnError: false },
+  );
+  const { data: onboardingQueueData } = useSWR<Array<{ id: string }>>(
+    can("onboarding:read") ? "/admin/onboarding" : null,
+    fetcher,
+    { refreshInterval: 15000, shouldRetryOnError: false },
+  );
+  const { data: supportRequestData } = useSWR<Array<{ status: string }>>(
+    can("support:read") ? "/admin/support-requests" : null,
+    fetcher,
+    { refreshInterval: 15000, shouldRetryOnError: false },
+  );
+  const adminNotificationCount =
+    can("notification:send") && adminNotificationsData
+      ? adminNotificationsData.filter((item) => !item.isRead).length
+      : 0;
+  const onboardingCount =
+    can("onboarding:read") && onboardingQueueData
+      ? onboardingQueueData.length
+      : 0;
+  const supportCount =
+    can("support:read") && supportRequestData
+      ? supportRequestData.filter((request) => request.status === "OPEN").length
+      : 0;
+  const itemBadgeCount = (href: string) => {
+    if (href === "/admin/notifications") return adminNotificationCount;
+    if (href === "/admin/onboarding") return onboardingCount;
+    if (href === "/admin/support") return supportCount;
+    return 0;
+  };
+  const formatCompactCount = (count: number) =>
+    count >= 10 ? "9+" : String(count);
 
   useEffect(() => {
     if (isLoading) return;
@@ -378,12 +438,20 @@ export default function AdminShell({
         </Brand>
         <NavLabel>Management</NavLabel>
         <NavList>
-          {visibleNav.map((n) => (
-            <NavItem key={n.href} href={n.href} $active={isActive(n.href)}>
-              <span aria-hidden>{n.icon}</span>
-              <span>{n.label}</span>
-            </NavItem>
-          ))}
+          {visibleNav.map((n) => {
+            const badgeCount = itemBadgeCount(n.href);
+            return (
+              <NavItem key={n.href} href={n.href} $active={isActive(n.href)}>
+                <NavItemContent>
+                  <span aria-hidden>{n.icon}</span>
+                  <span>{n.label}</span>
+                </NavItemContent>
+                {badgeCount > 0 && (
+                  <NavItemBadge>{formatCompactCount(badgeCount)}</NavItemBadge>
+                )}
+              </NavItem>
+            );
+          })}
         </NavList>
         <SideFooter>
           <UserRow>
