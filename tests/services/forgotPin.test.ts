@@ -8,12 +8,16 @@ import { hash } from "@/server/constants";
 import { updateSecurityOnboarding } from "@/server/services/vendors/securityOnboarding";
 import {
 	authorizePinResetByAdmin,
+	consumePinResetAuthorization,
+	createPinResetAuthorization,
 	generateOtp,
+	getPinResetAuthorization,
 	hashOtp,
 	invalidateVendorPinSessions,
 	requestAdminPinReset,
 	requestPinReset,
 	resetPinWithResetToken,
+	revokePinResetAuthorization,
 	verifyPinResetOtp,
 } from "@/server/services/vendors/forgotPin";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
@@ -76,17 +80,25 @@ describe("forgotPin", () => {
 
 		it("rate limits repeated requests", async () => {
 			const ip = "5.6.7.8";
-			const rateKey = `vendor:pin-reset:rate:${hash(ip)}`;
+			const { userId, vendorId } = await makeVendor();
+			const vendor = await getVendorProfileByIdDB({ id: vendorId });
+			const rateKey = `vendor:pin-reset:rate:${vendorId}:${hash(ip)}`;
 			await Redis.del(rateKey);
 			for (let i = 0; i < 5; i++) {
-				const { userId, vendorId } = await makeVendor();
-				const vendor = await getVendorProfileByIdDB({ id: vendorId });
-				await requestPinReset({ userId, email: vendor!.email, ip });
+				const before = await Redis.get(rateKey);
+				console.error(`Iteration ${i + 1} - rate key before: ${before}`);
+				try {
+					const result = await requestPinReset({ userId, email: vendor!.email, ip });
+					const after = await Redis.get(rateKey);
+					console.error(`Iteration ${i + 1} - succeeded, rate key after: ${after}`);
+				} catch (e) {
+					const after = await Redis.get(rateKey);
+					console.error(`Iteration ${i + 1} - FAILED: ${(e as Error).message}, rate key after: ${after}`);
+					throw e;
+				}
 			}
-			const { userId: extraUserId } = await makeVendor();
-			const extraVendor = await getVendorProfileByUserIdDB({ userId: extraUserId });
 			await expect(
-				requestPinReset({ userId: extraUserId, email: extraVendor!.email, ip }),
+				requestPinReset({ userId, email: vendor!.email, ip }),
 			).rejects.toThrow(/too many/i);
 		});
 	});
@@ -264,7 +276,7 @@ describe("forgotPin", () => {
 	});
 
 	describe("authorizePinResetByAdmin", () => {
-		it("resets the PIN after admin authorization", async () => {
+		it("issues an authorization token after admin approval", async () => {
 			const { userId, vendorId } = await makeVendor();
 			await updateSecurityOnboarding({
 				userId,
@@ -274,11 +286,12 @@ describe("forgotPin", () => {
 
 			const result = await authorizePinResetByAdmin({
 				vendorId,
-				newPin: "7777",
 				adminUserId: "admin-1",
 				ip: "1.2.3.31",
 			});
 			expect(result.success).toBe(true);
+			expect(result.token).toBeDefined();
+			expect(typeof result.token).toBe("string");
 		});
 	});
 
@@ -293,6 +306,134 @@ describe("forgotPin", () => {
 			await invalidateVendorPinSessions(vendorId);
 			const raw = await Redis.get(`vendor:pin-reset:request:${vendorId}`);
 			expect(raw).toBeNull();
+		});
+	});
+
+	describe("createPinResetAuthorization", () => {
+		it("creates a short-lived authorization token", async () => {
+			const { vendorId } = await makeVendor();
+			const result = await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+			expect(result.token).toBeDefined();
+			expect(typeof result.token).toBe("string");
+			expect(result.token.length).toBeGreaterThan(0);
+		});
+
+		it("stores authorization in Redis with TTL", async () => {
+			const { vendorId } = await makeVendor();
+			const { token } = await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+				ttlMinutes: 30,
+			});
+			const tokenHash = hash(token);
+			const raw = await Redis.get(`vendor:pin-reset:authorization:${vendorId}`);
+			expect(raw).toBeTruthy();
+			const data = JSON.parse(raw as string);
+			expect(data.tokenHash).toBe(tokenHash);
+			expect(data.adminUserId).toBe("admin-1");
+		});
+	});
+
+	describe("consumePinResetAuthorization", () => {
+		it("consumes a valid authorization and returns a reset token", async () => {
+			const { vendorId } = await makeVendor();
+			const { token } = await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+
+			const result = await consumePinResetAuthorization({
+				vendorId,
+				token,
+				ip: "1.2.3.4",
+			});
+			expect(result.resetToken).toBeDefined();
+			expect(typeof result.resetToken).toBe("string");
+		});
+
+		it("rejects an invalid token", async () => {
+			const { vendorId } = await makeVendor();
+			await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+
+			await expect(
+				consumePinResetAuthorization({
+					vendorId,
+					token: "wrong-token",
+				}),
+			).rejects.toThrow();
+		});
+
+		it("rejects consumption of an expired authorization", async () => {
+			const { vendorId } = await makeVendor();
+			const { token } = await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+				ttlMinutes: 0.033,
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+			await expect(
+				consumePinResetAuthorization({
+					vendorId,
+					token,
+				}),
+			).rejects.toThrow(/verify your account|support/i);
+		});
+
+		it("is single-use", async () => {
+			const { vendorId } = await makeVendor();
+			const { token } = await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+
+			await consumePinResetAuthorization({ vendorId, token });
+			await expect(
+				consumePinResetAuthorization({ vendorId, token }),
+			).rejects.toThrow();
+		});
+	});
+
+	describe("revokePinResetAuthorization", () => {
+		it("revokes an active authorization", async () => {
+			const { vendorId } = await makeVendor();
+			await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+
+			await revokePinResetAuthorization(vendorId);
+
+			const info = await getPinResetAuthorization(vendorId);
+			expect(info.exists).toBe(false);
+		});
+	});
+
+	describe("getPinResetAuthorization", () => {
+		it("returns authorization info when active", async () => {
+			const { vendorId } = await makeVendor();
+			await createPinResetAuthorization({
+				vendorId,
+				adminUserId: "admin-1",
+			});
+
+			const info = await getPinResetAuthorization(vendorId);
+			expect(info.exists).toBe(true);
+			expect(info.adminUserId).toBe("admin-1");
+			expect(info.createdAt).toBeDefined();
+			expect(info.expiresAt).toBeDefined();
+		});
+
+		it("returns exists false when no authorization", async () => {
+			const { vendorId } = await makeVendor();
+			const info = await getPinResetAuthorization(vendorId);
+			expect(info.exists).toBe(false);
 		});
 	});
 });

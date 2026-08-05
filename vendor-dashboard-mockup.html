@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vendor Dashboard — Visual Mockup</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #0f0c08;
+    color: #fbf3e9;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .phone {
+    width: 100%;
+    max-width: 430px;
+    margin: 24px auto;
+    background: #110e0a;
+    border-radius: 28px;
+    border: 1px solid #342b21;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: 64px;
+    padding: 0 14px;
+    background: color-mix(in srgb, #1a1510 82%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #342b21;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: -0.03em;
+    color: #fbf3e9;
+    text-decoration: none;
+  }
+  .logo {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #c83f0a, #a62f07);
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    box-shadow: 0 10px 28px rgba(255,90,31,0.30);
+  }
+  .mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: #242019;
+    border: 1px solid #342b21;
+    border-radius: 999px;
+  }
+  .mode button {
+    border: none;
+    background: transparent;
+    color: #b6a491;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .mode button.active {
+    background: #1a1510;
+    color: #ff5a1f;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .icon-btn {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: #1a1510;
+    border: 1px solid #342b21;
+    display: grid;
+    place-items: center;
+    position: relative;
+    color: #fbf3e9;
+    font-size: 16px;
+  }
+  .dot {
+    position: absolute;
+    top: -4px; right: -4px;
+    min-width: 17px; height: 17px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ff5a1f;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 0 0 2px #1a1510;
+  }
+  .content {
+    padding: 14px 14px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero {
+    background: #1a1510;
+    border: 1px solid #342b21;
+    border-radius: 16px;
+    padding: 14px 14px 10px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .hero-text { flex: 1; min-width: 0; }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #ff5a1f;
+    margin-bottom: 4px;
+  }
+  .kitchen {
+    font-family: system-ui;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #fbf3e9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .badge-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    background: #16281d;
+    color: #2fbe6c;
+    border: 1px solid #1f3d2b;
+  }
+  .sub {
+    margin-top: 6px;
+    font-size: 13.5px;
+    color: #b6a491;
+  }
+  .hero-img {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ff7a3d, #ff5a1f);
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    box-shadow: 0 10px 28px rgba(255,90,31,0.30);
+    flex-shrink: 0;
+  }
+  .open-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: radial-gradient(circle at 88% 12%, rgba(244,180,0,0.34), transparent 34%), linear-gradient(135deg, #8f2f08, #b44809 47%, #8a4d04);
+    border: 1px solid #b44809;
+    border-left: 3px solid #ff5a1f;
+    color: #fff;
+    border-radius: 16px;
+    padding: 14px 14px;
+  }
+  .open-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .open-text { flex: 1; }
+  .open-title {
+    font-family: system-ui;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .open-sub {
+    margin-top: 2px;
+    font-size: 12.5px;
+    font-weight: 600;
+    opacity: 0.9;
+  }
+  .toggle {
+    width: 52px; height: 28px;
+    border-radius: 999px;
+    background: #2fbe6c;
+    border: none;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .section-title {
+    font-family: system-ui;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #fbf3e9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .stat {
+    background: #1a1510;
+    border: 1px solid #342b21;
+    border-radius: 14px;
+    padding: 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #b6a491;
+  }
+  .stat-icon { font-size: 14px; }
+  .stat-value {
+    font-family: system-ui;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #fbf3e9;
+    line-height: 1.1;
+  }
+  .stat-hint {
+    font-size: 11px;
+    font-weight: 600;
+    color: #857766;
+  }
+  .new-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    border-radius: 16px;
+    background: radial-gradient(circle at 88% 12%, rgba(244,180,0,0.34), transparent 34%), linear-gradient(135deg, #8f2f08, #b44809 47%, #8a4d04);
+    color: #fff;
+    font-family: system-ui;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    box-shadow: 0 22px 52px rgba(111,35,4,0.24);
+    border: none;
+    cursor: pointer;
+  }
+  .orders-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .orders-title {
+    font-family: system-ui;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .view-all {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ff5a1f;
+  }
+  .order {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #1a1510;
+    border: 1px solid #342b21;
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+  .thumb {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: #242019;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .order-body { flex: 1; min-width: 0; }
+  .order-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .order-title {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #fbf3e9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pill {
+    display: inline-flex;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .pill.green { background: #16281d; color: #2fbe6c; border: 1px solid #1f3d2b; }
+  .pill.orange { background: #2a1810; color: #ff5a1f; border: 1px solid #3d2218; }
+  .order-meta {
+    margin-top: 3px;
+    font-size: 11.5px;
+    color: #b6a491;
+    font-weight: 600;
+  }
+  .order-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .order-actions a { color: #b6a491; text-decoration: none; }
+  .order-actions button {
+    background: none;
+    border: none;
+    color: #b6a491;
+    cursor: pointer;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .chevron {
+    color: #857766;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .bottom-nav {
+    position: sticky;
+    bottom: 0;
+    background: color-mix(in srgb, #1a1510 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid #342b21;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  }
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #857766;
+    text-decoration: none;
+  }
+  .nav-item.active { color: #ff5a1f; }
+  .nav-icon {
+    position: relative;
+    font-size: 21px;
+  }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="topbar">
+      <a href="#" class="brand">
+        <div class="logo">🍲</div>
+        Prechop
+      </a>
+      <div class="mode">
+        <button class="active">🧑‍🍳 Selling</button>
+        <button>🛒 Buying</button>
+      </div>
+      <div class="icon-btn">
+        🔔
+        <span class="dot">3</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="hero">
+        <div class="hero-text">
+          <div class="eyebrow">Vendor dashboard</div>
+          <div class="kitchen">Aramide’s Kitchen</div>
+          <div class="badge-row">
+            <span class="badge">● Open</span>
+          </div>
+          <div class="sub">You’re open — buyers can order from you right now.</div>
+        </div>
+        <div class="hero-img" aria-hidden>🍲</div>
+      </div>
+
+      <div class="open-card">
+        <div class="open-icon">🏪</div>
+        <div class="open-text">
+          <div class="open-title">Open for orders</div>
+          <div class="open-sub">Your store is visible to buyers.</div>
+        </div>
+        <div class="toggle" aria-label="Toggle open for orders"></div>
+      </div>
+
+      <div class="section-title">Dashboard overview</div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-top">
+            <span class="stat-label">Orders</span>
+            <span class="stat-icon">🧾</span>
+          </div>
+          <div class="stat-value">142</div>
+          <div class="stat-hint">Lifetime</div>
+        </div>
+        <div class="stat">
+          <div class="stat-top">
+            <span class="stat-label">Revenue</span>
+            <span class="stat-icon">💰</span>
+          </div>
+          <div class="stat-value">₦1.2M</div>
+          <div class="stat-hint">Lifetime</div>
+        </div>
+        <div class="stat">
+          <div class="stat-top">
+            <span class="stat-label">Avg order</span>
+            <span class="stat-icon">📊</span>
+          </div>
+          <div class="stat-value">₦2,450</div>
+          <div class="stat-hint">Per order</div>
+        </div>
+      </div>
+
+      <button class="new-btn">
+        <span aria-hidden>＋</span> New daily order
+      </button>
+
+      <div class="orders-header">
+        <div class="orders-title">
+          <span aria-hidden>📋</span> Today's orders
+        </div>
+        <a href="#" class="view-all">View all ›</a>
+      </div>
+
+      <div class="order">
+        <div class="thumb">🍲</div>
+        <div class="order-body">
+          <div class="order-top">
+            <div class="order-title">Jollof Rice & Chicken</div>
+            <span class="pill green">Active</span>
+          </div>
+          <div class="order-meta">Today · 2 items</div>
+          <div class="order-meta">Cutoff passed</div>
+          <div class="order-actions">
+            <a href="#">Edit ✏️</a>
+            <button>Close</button>
+          </div>
+        </div>
+        <div class="chevron">›</div>
+      </div>
+
+      <div class="order">
+        <div class="thumb">🍲</div>
+        <div class="order-body">
+          <div class="order-top">
+            <div class="order-title">Fried Rice Special</div>
+            <span class="pill orange">Draft</span>
+          </div>
+          <div class="order-meta">Today · 3 items</div>
+          <div class="order-actions">
+            <a href="#">Edit ✏️</a>
+          </div>
+        </div>
+        <div class="chevron">›</div>
+      </div>
+    </div>
+
+    <nav class="bottom-nav">
+      <a href="#" class="nav-item active">
+        <span class="nav-icon">🏠</span>
+        <span>Home</span>
+      </a>
+      <a href="#" class="nav-item">
+        <span class="nav-icon">🔥</span>
+        <span>Orders</span>
+      </a>
+      <a href="#" class="nav-item">
+        <span class="nav-icon">📋</span>
+        <span>Menu</span>
+      </a>
+      <a href="#" class="nav-item">
+        <span class="nav-icon">💰</span>
+        <span>Earnings</span>
+      </a>
+      <a href="#" class="nav-item">
+        <span class="nav-icon">⋯</span>
+        <span>More</span>
+      </a>
+    </nav>
+  </div>
+</body>
+</html>

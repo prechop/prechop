@@ -29,6 +29,7 @@ const PIN_RESET_RATE_LIMIT_MAX = 5;
 const PIN_RESET_VERIFY_RATE_LIMIT_MAX = 10;
 const PIN_RESET_OTP_LENGTH = 6;
 const PIN_RESET_HOLD_HOURS = 24;
+const PIN_RESET_AUTH_TTL_MINUTES = 30;
 
 type PinResetSession = {
 	vendorId: string;
@@ -51,16 +52,24 @@ function otpKey(otpHash: string): string {
 	return `vendor:pin-reset:otp:${otpHash}`;
 }
 
-function rateLimitKey(ip: string): string {
-	return `vendor:pin-reset:rate:${hash(ip)}`;
+function requestRateLimitKey(vendorId: string, ip: string): string {
+	return `vendor:pin-reset:rate:${vendorId}:${hash(ip)}`;
 }
 
-function verifyRateLimitKey(ip: string): string {
-	return `vendor:pin-reset:verify:rate:${hash(ip)}`;
+function verifyRateLimitKey(vendorId: string, ip: string): string {
+	return `vendor:pin-reset:verify:rate:${vendorId}:${hash(ip)}`;
+}
+
+function supportRateLimitKey(vendorId: string, ip: string): string {
+	return `vendor:pin-reset:support:rate:${vendorId}:${hash(ip)}`;
 }
 
 export function generateOtp(): string {
-	return randomBytes(PIN_RESET_OTP_LENGTH).toString("hex").slice(0, PIN_RESET_OTP_LENGTH);
+	let result = "";
+	for (let i = 0; i < PIN_RESET_OTP_LENGTH; i++) {
+		result += Math.floor(Math.random() * 10).toString();
+	}
+	return result;
 }
 
 export async function hashOtp(otp: string): Promise<string> {
@@ -83,7 +92,8 @@ export async function requestPinReset({
 		throw ErrPinResetUnauthorized;
 	}
 
-	const rateKey = rateLimitKey(ip ?? "unknown");
+	const vendorId = vendorIdOf(vendor);
+	const rateKey = requestRateLimitKey(vendorId, ip ?? "unknown");
 	const current = await Redis.incr(rateKey);
 	if (current === 1) {
 		await Redis.expire(rateKey, PIN_RESET_RATE_LIMIT_WINDOW);
@@ -92,19 +102,19 @@ export async function requestPinReset({
 		throw ErrPinResetRateLimited;
 	}
 
-	const existingRequestRaw = await Redis.get(requestKey(vendorIdOf(vendor)));
+	const existingRequestRaw = await Redis.get(requestKey(vendorId));
 	if (existingRequestRaw) {
 		const existing = JSON.parse(existingRequestRaw) as PinResetSession;
 		if (Date.now() - existing.createdAt < PIN_RESET_TTL_SECONDS * 1000) {
-			throw ErrPinResetRateLimited;
+			await invalidateVendorPinSessions(vendorId);
 		}
-		await Redis.del(requestKey(vendorIdOf(vendor)));
+		await Redis.del(requestKey(vendorId));
 	}
 
 	const otp = generateOtp();
 	const otpHash = await hashOtp(otp);
 	const session: PinResetOtpRecord = {
-		vendorId: vendorIdOf(vendor),
+		vendorId,
 		email: vendor.email,
 		ip,
 		userAgent,
@@ -119,10 +129,10 @@ export async function requestPinReset({
 		JSON.stringify(session),
 	);
 	await Redis.setex(
-		requestKey(vendorIdOf(vendor)),
+		requestKey(vendorId),
 		PIN_RESET_TTL_SECONDS,
 		JSON.stringify({
-			vendorId: vendorIdOf(vendor),
+			vendorId,
 			email: vendor.email,
 			ip,
 			userAgent,
@@ -137,8 +147,8 @@ export async function requestPinReset({
 		subject: "Reset your PreChop security PIN",
 		title: "Reset your security PIN",
 		body:
-			"Use the verification code below to reset your PreChop security PIN. This code expires in 10 minutes.",
-		preheader: "Your PIN reset code is valid for 10 minutes.",
+			"Use the 6-digit verification code below to reset your PreChop security PIN. This code expires in 10 minutes and can only be used once.",
+		preheader: "Your PIN reset verification code is valid for 10 minutes.",
 		actionLabel: "Reset PIN",
 		actionUrl: resetUrl,
 		rows: [["Verification code", otp]],
@@ -149,7 +159,7 @@ export async function requestPinReset({
 		role: "Vendor",
 		action: "VENDOR_PIN_RESET_REQUESTED",
 		resourceType: "vendorProfiles",
-		resourceId: vendorIdOf(vendor),
+		resourceId: vendorId,
 		ipAddress: ip,
 		userAgent,
 	});
@@ -178,7 +188,8 @@ export async function verifyPinResetOtp({
 		throw ErrPinResetUnauthorized;
 	}
 
-	const rateKey = verifyRateLimitKey(ip ?? "unknown");
+	const vendorId = vendorIdOf(vendor);
+	const rateKey = verifyRateLimitKey(vendorId, ip ?? "unknown");
 	const current = await Redis.incr(rateKey);
 	if (current === 1) {
 		await Redis.expire(rateKey, PIN_RESET_RATE_LIMIT_WINDOW);
@@ -187,7 +198,7 @@ export async function verifyPinResetOtp({
 		throw ErrPinResetRateLimited;
 	}
 
-	const requestRaw = await Redis.get(requestKey(vendorIdOf(vendor)));
+	const requestRaw = await Redis.get(requestKey(vendorId));
 	if (!requestRaw) {
 		throw ErrPinResetOtpExpired;
 	}
@@ -195,7 +206,7 @@ export async function verifyPinResetOtp({
 	const request = JSON.parse(requestRaw) as PinResetSession;
 	request.attempts += 1;
 	await Redis.setex(
-		requestKey(vendorIdOf(vendor)),
+		requestKey(vendorId),
 		Math.max(1, Math.floor((PIN_RESET_TTL_SECONDS * 1000 - (Date.now() - request.createdAt)) / 1000)),
 		JSON.stringify(request),
 	);
@@ -209,7 +220,7 @@ export async function verifyPinResetOtp({
 		const raw = await Redis.get(key);
 		if (!raw) continue;
 		const session = JSON.parse(raw) as PinResetOtpRecord;
-		if (session.vendorId !== vendorIdOf(vendor)) continue;
+		if (session.vendorId !== vendorId) continue;
 		const ok = await bcrypt.compare(otp, session.otpHash);
 		if (ok) {
 			matchedOtpKey = key;
@@ -223,7 +234,7 @@ export async function verifyPinResetOtp({
 	}
 
 	await Redis.del(matchedOtpKey);
-	await Redis.del(requestKey(vendorIdOf(vendor)));
+	await Redis.del(requestKey(vendorId));
 
 	const resetToken = randomBytes(32).toString("base64url");
 	const resetTokenHash = hash(resetToken);
@@ -244,7 +255,7 @@ export async function verifyPinResetOtp({
 		role: "Vendor",
 		action: "VENDOR_PIN_RESET_OTP_VERIFIED",
 		resourceType: "vendorProfiles",
-		resourceId: vendorIdOf(vendor),
+		resourceId: vendorId,
 		ipAddress: ip,
 		userAgent,
 	});
@@ -362,6 +373,16 @@ export async function requestAdminPinReset({
 	const vendor = await resolveVendorByUserId({ userId });
 	if (!vendor) throw ErrVendorNotFound;
 
+	const vendorId = vendorIdOf(vendor);
+	const rateKey = supportRateLimitKey(vendorId, ip ?? "unknown");
+	const current = await Redis.incr(rateKey);
+	if (current === 1) {
+		await Redis.expire(rateKey, PIN_RESET_RATE_LIMIT_WINDOW);
+	}
+	if (current > 3) {
+		throw ErrPinResetRateLimited;
+	}
+
 	const request = await createSupportRequest({
 		auth: {
 			userId: auth.userId,
@@ -376,7 +397,7 @@ export async function requestAdminPinReset({
 		payload: {
 			category: "VENDOR_ACCOUNT",
 			subject: "Vendor PIN reset request",
-			message: `The vendor (${vendor.email}) cannot access their verified email to reset their security PIN. Reason: ${reason}. Admin review and manual identity verification is required.`,
+			message: `Vendor ID: ${vendorId}\nKitchen: ${vendor.businessName ?? "N/A"}\nVerified email: ${vendor.email}\n\nReason: ${reason}\n\nAdmin review and manual identity verification is required.`,
 			relatedOrderRef: undefined,
 			relatedPaymentRef: undefined,
 		},
@@ -397,38 +418,56 @@ export async function requestAdminPinReset({
 
 export async function authorizePinResetByAdmin({
 	vendorId,
-	newPin,
 	adminUserId,
 	ip,
 	userAgent,
 }: {
 	vendorId: string;
-	newPin: string;
 	adminUserId: string;
 	ip?: string;
 	userAgent?: string;
-}): Promise<{ success: boolean }> {
-	if (!/^\d{4,6}$/.test(newPin.trim())) {
-		throw validationError("PIN must be 4-6 digits.");
-	}
-
+}): Promise<{ success: boolean; token?: string }> {
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor) throw ErrVendorNotFound;
 
-	const holdUntil = new Date(Date.now() + PIN_RESET_HOLD_HOURS * 60 * 60 * 1000);
-	const newPinHash = await bcrypt.hash(newPin.trim(), 12);
-
-	const updated = await updateVendorProfileDB({
-		id: vendorId,
-		payload: {
-			securityPinHash: newPinHash,
-			securityOnboardingCompletedAt: new Date(),
-			pinResetHoldUntil: holdUntil,
-			lastPinResetAt: new Date(),
-		},
+	const { token } = await createPinResetAuthorization({
+		vendorId,
+		adminUserId,
 	});
 
-	await invalidateVendorPinSessions(vendorId);
+	const appUrl = process.env.APP_URL?.replace(/\/$/, "") ?? "";
+	const resetUrl = `${appUrl}/vendor/settings?pinResetAuth=${encodeURIComponent(token)}`;
+
+	try {
+		await createUserNotification({
+			userId: vendor.userId,
+			title: "Identity verified for PIN reset",
+			body: "An admin has verified your identity. You may now reset your security PIN.",
+			type: "SECURITY_PIN_RESET",
+			dedupeKey: `pin-reset-admin-auth:${vendorId}:${Date.now()}`,
+			data: {
+				vendorId,
+				resetMethod: "admin_authorized",
+			},
+		});
+	} catch {
+		// notification must not fail the authorization
+	}
+
+	try {
+		await resendProvider.sendTransactionalEmail({
+			to: vendor.email,
+			subject: "Your identity has been verified",
+			title: "Identity verified",
+			body:
+				"An admin has verified your identity. You may now reset your security PIN using the link below.",
+			preheader: "Click the button below to reset your security PIN.",
+			actionLabel: "Reset PIN",
+			actionUrl: resetUrl,
+		});
+	} catch {
+		// email must not fail the authorization
+	}
 
 	recordAudit({
 		userId: adminUserId,
@@ -440,33 +479,145 @@ export async function authorizePinResetByAdmin({
 		userAgent,
 	});
 
-	try {
-		await createUserNotification({
-			userId: vendor.userId,
-			title: "Security PIN reset by support",
-			body: `An admin reset your security PIN after identity verification. A ${PIN_RESET_HOLD_HOURS}-hour security hold is now active.`,
-			type: "SECURITY_PIN_RESET",
-			dedupeKey: `pin-reset-admin:${vendorId}:${Date.now()}`,
-			data: {
-				vendorId,
-				holdUntil: holdUntil.toISOString(),
-				resetMethod: "admin_authorized",
-			},
-		});
-	} catch {
-		// notification must not fail the reset
-	}
-
-	return { success: true };
+	return { success: true, token };
 }
 
-export async function assertPinResetHoldNotActive(vendor: {
-	pinResetHoldUntil?: Date;
-}): Promise<void> {
-	if (!vendor.pinResetHoldUntil) return;
-	if (vendor.pinResetHoldUntil > new Date()) {
-		throw ErrPinResetHoldActive;
+function authorizationKey(vendorId: string): string {
+	return `vendor:pin-reset:authorization:${vendorId}`;
+}
+
+export async function createPinResetAuthorization({
+	vendorId,
+	adminUserId,
+	ttlMinutes = PIN_RESET_AUTH_TTL_MINUTES,
+}: {
+	vendorId: string;
+	adminUserId: string;
+	ttlMinutes?: number;
+}): Promise<{ token: string }> {
+	const token = randomBytes(32).toString("base64url");
+	const tokenHash = hash(token);
+	const authorization = {
+		tokenHash,
+		vendorId,
+		adminUserId,
+		createdAt: Date.now(),
+		expiresAt: Date.now() + ttlMinutes * 60 * 1000,
+	};
+
+	await Redis.setex(
+		authorizationKey(vendorId),
+		Math.max(1, Math.ceil(ttlMinutes * 60)),
+		JSON.stringify(authorization),
+	);
+
+	recordAudit({
+		userId: adminUserId,
+		role: "Administrators",
+		action: "VENDOR_PIN_RESET_AUTHORIZATION_CREATED",
+		resourceType: "vendorProfiles",
+		resourceId: vendorId,
+	});
+
+	return { token };
+}
+
+export async function consumePinResetAuthorization({
+	vendorId,
+	token,
+	ip,
+	userAgent,
+}: {
+	vendorId: string;
+	token: string;
+	ip?: string;
+	userAgent?: string;
+}): Promise<{ resetToken: string }> {
+	const raw = await Redis.get(authorizationKey(vendorId));
+	if (!raw) {
+		throw ErrPinResetSupportRequired;
 	}
+
+	const authorization = JSON.parse(raw) as {
+		tokenHash: string;
+		vendorId: string;
+		adminUserId: string;
+		createdAt: number;
+		expiresAt: number;
+	};
+
+	if (authorization.vendorId !== vendorId) {
+		throw ErrPinResetUnauthorized;
+	}
+
+	if (Date.now() > authorization.expiresAt) {
+		await Redis.del(authorizationKey(vendorId));
+		throw ErrPinResetOtpExpired;
+	}
+
+	const inputTokenHash = hash(token);
+	if (inputTokenHash !== authorization.tokenHash) {
+		throw ErrPinResetOtpInvalid;
+	}
+
+	await Redis.del(authorizationKey(vendorId));
+
+	const resetToken = randomBytes(32).toString("base64url");
+	const resetTokenHash = hash(resetToken);
+	await Redis.setex(
+		`vendor:pin-reset:token:${resetTokenHash}`,
+		PIN_RESET_TTL_SECONDS,
+		JSON.stringify({
+			vendorId,
+			email: "",
+			ip,
+			userAgent,
+			createdAt: Date.now(),
+		}),
+	);
+
+	recordAudit({
+		userId: vendorId,
+		role: "Vendor",
+		action: "VENDOR_PIN_RESET_AUTHORIZATION_CONSUMED",
+		resourceType: "vendorProfiles",
+		resourceId: vendorId,
+		ipAddress: ip,
+		userAgent,
+	});
+
+	return { resetToken };
+}
+
+export async function revokePinResetAuthorization(
+	vendorId: string,
+): Promise<void> {
+	await Redis.del(authorizationKey(vendorId));
+}
+
+export async function getPinResetAuthorization(vendorId: string): Promise<{
+	exists: boolean;
+	adminUserId?: string;
+	createdAt?: number;
+	expiresAt?: number;
+}> {
+	const raw = await Redis.get(authorizationKey(vendorId));
+	if (!raw) return { exists: false };
+
+	const authorization = JSON.parse(raw) as {
+		tokenHash: string;
+		vendorId: string;
+		adminUserId: string;
+		createdAt: number;
+		expiresAt: number;
+	};
+
+	return {
+		exists: true,
+		adminUserId: authorization.adminUserId,
+		createdAt: authorization.createdAt,
+		expiresAt: authorization.expiresAt,
+	};
 }
 
 export async function invalidateVendorPinSessions(vendorId: string): Promise<void> {
@@ -483,5 +634,14 @@ export async function invalidateVendorPinSessions(vendorId: string): Promise<voi
 		} catch {
 			// skip malformed entries
 		}
+	}
+}
+
+export async function assertPinResetHoldNotActive(vendor: {
+	pinResetHoldUntil?: Date;
+}): Promise<void> {
+	if (!vendor.pinResetHoldUntil) return;
+	if (vendor.pinResetHoldUntil > new Date()) {
+		throw ErrPinResetHoldActive;
 	}
 }

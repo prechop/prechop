@@ -205,7 +205,10 @@ export const forgotPinRequestSchema = zod
 export const forgotPinVerifySchema = zod
 	.object({
 		email: zod.string().trim().email(),
-		otp: zod.string().trim().min(6).max(6),
+		otp: zod
+			.string()
+			.trim()
+			.regex(/^\d{6}$/, "Enter a valid 6-digit verification code"),
 	})
 	.strict();
 

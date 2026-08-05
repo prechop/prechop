@@ -63,6 +63,9 @@ export default function AdminSupportWrapper() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pinAction, setPinAction] = useState("");
+  const [pinReason, setPinReason] = useState("");
+  const [pinMessage, setPinMessage] = useState("");
   const key = status
     ? `/admin/support-requests?status=${status}`
     : "/admin/support-requests";
@@ -71,6 +74,15 @@ export default function AdminSupportWrapper() {
   });
   const requests = data ?? [];
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
+
+  function isPinResetRequest(request: SupportRequest) {
+    return (
+      request.category === "VENDOR_ACCOUNT" &&
+      request.subject === "Vendor PIN reset request"
+    );
+  }
+
+  const pinReset = selected && isPinResetRequest(selected);
 
   async function refreshSupportLists() {
     await Promise.all([mutate(), mutate("/admin/support-requests" as any)]);
@@ -120,6 +132,35 @@ export default function AdminSupportWrapper() {
       await refreshSupportLists();
     } catch {
       toast("Could not assign request", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPinAction() {
+    if (!selected || !pinAction) return;
+    setBusy(true);
+    try {
+      const payload: Record<string, unknown> = { action: pinAction };
+      if (pinAction === "reject") {
+        payload.reason = pinReason;
+        payload.supportRequestId = selected.id;
+      }
+      if (pinAction === "request-info") {
+        payload.message = pinMessage;
+        payload.supportRequestId = selected.id;
+      }
+      await api.post(
+        `/admin/vendors/pin-reset/${encodeURIComponent(selected.userId)}`,
+        payload,
+      );
+      setPinAction("");
+      setPinReason("");
+      setPinMessage("");
+      toast("Action completed", "success");
+      await refreshSupportLists();
+    } catch {
+      toast("Action failed", "error");
     } finally {
       setBusy(false);
     }
@@ -242,6 +283,49 @@ export default function AdminSupportWrapper() {
                   Assign to me
                 </Button>
               </Row>
+
+              {pinReset && (
+                <Card>
+                  <Stack $gap={10}>
+                    <Text $weight={700}>PIN reset actions</Text>
+                    <Text $muted $size={13}>
+                      This is a manual PIN recovery request. Verify the
+                      vendor's identity before taking action.
+                    </Text>
+                    <Select
+                      value={pinAction}
+                      onChange={(e) => setPinAction(e.target.value)}>
+                      <option value="">Select action...</option>
+                      <option value="approve">Approve identity</option>
+                      <option value="request-info">Request more info</option>
+                      <option value="reject">Reject request</option>
+                      <option value="revoke">Revoke authorization</option>
+                    </Select>
+                    {pinAction === "reject" && (
+                      <Textarea
+                        value={pinReason}
+                        onChange={(e) => setPinReason(e.target.value)}
+                        placeholder="Reason for rejection (visible to vendor)"
+                        rows={3}
+                      />
+                    )}
+                    {pinAction === "request-info" && (
+                      <Textarea
+                        value={pinMessage}
+                        onChange={(e) => setPinMessage(e.target.value)}
+                        placeholder="What additional information do you need?"
+                        rows={3}
+                      />
+                    )}
+                    <Button
+                      onClick={submitPinAction}
+                      $loading={busy}
+                      disabled={busy || !pinAction}>
+                      Submit action
+                    </Button>
+                  </Stack>
+                </Card>
+              )}
             </Stack>
           ) : (
             <Text $muted>Select a support request.</Text>

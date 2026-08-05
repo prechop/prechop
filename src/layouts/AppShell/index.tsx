@@ -39,7 +39,9 @@ const vendorDesktopNav = [
   { href: "/menu", label: "Menu", icon: "📋" },
   { href: "/timetable", label: "Timetable", icon: "🗓️" },
   { href: "/earnings", label: "Earnings", icon: "💰" },
+
   { href: "/notifications", label: "Notifications", icon: "🔔" },
+  { href: "/settings", label: "Settings", icon: "⚙️" },
   { href: "/help?audience=vendor", label: "Support", icon: "💬" },
 ];
 const vendorNav = vendorMobileNav;
@@ -277,6 +279,7 @@ const Main = styled.main`
   padding: var(--pc-space-6) 0 var(--pc-space-10);
   @media (min-width: 760px) {
     min-height: calc(100dvh - 64px);
+    padding-left: 220px;
     padding-bottom: var(--pc-space-8);
   }
 `;
@@ -374,7 +377,7 @@ const CountBubble = styled.span`
   line-height: 1;
   box-shadow: 0 0 0 2px var(--pc-surface);
 
-@media (max-width: 420px) {
+  @media (max-width: 420px) {
     top: -5px;
     right: -8px;
     min-width: 10px;
@@ -382,7 +385,7 @@ const CountBubble = styled.span`
     padding: 0 4px;
     font-size: 5px;
     font-weight: 500;
-  }   
+  }
 
   @media (max-width: 360px) {
     top: -4px;
@@ -392,6 +395,69 @@ const CountBubble = styled.span`
     padding: 0 3px;
     font-size: 8px;
   }
+`;
+
+const Sidebar = styled.nav`
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  z-index: 40;
+  background: var(--pc-surface);
+  border-right: 1px solid var(--pc-border);
+  padding: 16px 10px;
+  overflow-y: auto;
+  @media (min-width: 760px) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+`;
+const SidebarBrand = styled(Brand)`
+  padding: 4px 10px 14px;
+  border-bottom: 1px solid var(--pc-border);
+  margin-bottom: 6px;
+`;
+const SidebarLink = styled(Link)<{ $active: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--pc-radius);
+  font-size: 14px;
+  font-weight: 700;
+  color: ${(p) =>
+    p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+  background: ${(p) =>
+    p.$active ? "var(--pc-color-primary-50)" : "transparent"};
+  transition:
+    background var(--pc-dur) var(--pc-ease),
+    color var(--pc-dur) var(--pc-ease);
+  &:hover {
+    color: var(--pc-text);
+    background: var(--pc-surface-2);
+  }
+  text-decoration: none;
+`;
+const SidebarFooter = styled.div`
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--pc-border);
+`;
+const SidebarCount = styled.span`
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pc-color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
 `;
 
 function compactCount(count: number) {
@@ -495,30 +561,6 @@ export default function AppShell({
             </Logo>
             Prechop
           </Brand>
-          <NavRow>
-            {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
-              <TopLink
-                key={n.href}
-                href={n.href}
-                $active={isNavActive(n.href, n.label)}
-                onClick={() => {
-                  if (n.href.startsWith("/marketplace")) {
-                    setIsSavedQuery(n.label === "Saved");
-                  }
-                }}>
-                <NavIcon aria-hidden>
-                  {n.icon}
-                  {n.label === "Saved" && savedCount > 0 && (
-                    <CountBubble>{compactCount(savedCount)}</CountBubble>
-                  )}
-                  {(n.label === "Alerts" || n.label === "More" || n.label === "Notifications") && alertCount > 0 && (
-                    <CountBubble>{compactCount(alertCount)}</CountBubble>
-                  )}
-                </NavIcon>
-                {n.label}
-              </TopLink>
-            ))}
-          </NavRow>
           <Right>
             {isAuthenticated && canSell && (
               <ModeSwitch role="tablist" aria-label="Selling or buying mode">
@@ -542,16 +584,13 @@ export default function AppShell({
             )}
             <ThemeToggle />
             {isAuthenticated ? (
-              <>
-                <ProfileAvatar>
-                  <Avatar
-                    name={fullName}
-                    src={isVendor ? vendor?.profileImageUrl : undefined}
-                    size={34}
-                  />
-                </ProfileAvatar>
-                <LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
-              </>
+              <ProfileAvatar>
+                <Avatar
+                  name={fullName}
+                  src={isVendor ? vendor?.profileImageUrl : undefined}
+                  size={34}
+                />
+              </ProfileAvatar>
             ) : (
               <GuestAction href={`/login?next=${encodeURIComponent(pathname)}`}>
                 Log in
@@ -560,6 +599,42 @@ export default function AppShell({
           </Right>
         </BarInner>
       </Bar>
+      <Sidebar>
+        <SidebarBrand href={isVendor ? "/dashboard" : "/marketplace"}>
+          <Logo aria-hidden>
+            <Image src="/dark.png" alt="Prechop" width={30} height={30} />
+          </Logo>
+          Prechop
+        </SidebarBrand>
+        {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
+          <SidebarLink
+            key={n.href}
+            href={n.href}
+            $active={isNavActive(n.href, n.label)}
+            onClick={() => {
+              if (n.href.startsWith("/marketplace")) {
+                setIsSavedQuery(n.label === "Saved");
+              }
+            }}>
+            <NavIcon aria-hidden>{n.icon}</NavIcon>
+            {n.label}
+            {n.label === "Saved" && savedCount > 0 && (
+              <SidebarCount>{compactCount(savedCount)}</SidebarCount>
+            )}
+            {(n.label === "Alerts" ||
+              n.label === "More" ||
+              n.label === "Notifications") &&
+              alertCount > 0 && (
+                <SidebarCount>{compactCount(alertCount)}</SidebarCount>
+              )}
+          </SidebarLink>
+        ))}
+        {isAuthenticated && (
+          <SidebarFooter>
+            <LogoutBtn onClick={() => logout()}>Log out</LogoutBtn>
+          </SidebarFooter>
+        )}
+      </Sidebar>
       <Main>
         <MainInner>
           {children}
@@ -589,15 +664,16 @@ export default function AppShell({
                 setIsSavedQuery(n.label === "Saved");
               }
             }}>
-              <NavIcon aria-hidden>
-                {n.icon}
-                {n.label === "Saved" && savedCount > 0 && (
-                  <CountBubble>{compactCount(savedCount)}</CountBubble>
-                )}
-                {(n.label === "Alerts" || n.label === "More") && alertCount > 0 && (
+            <NavIcon aria-hidden>
+              {n.icon}
+              {n.label === "Saved" && savedCount > 0 && (
+                <CountBubble>{compactCount(savedCount)}</CountBubble>
+              )}
+              {(n.label === "Alerts" || n.label === "More") &&
+                alertCount > 0 && (
                   <CountBubble>{compactCount(alertCount)}</CountBubble>
                 )}
-              </NavIcon>
+            </NavIcon>
             <span>{n.label}</span>
           </NavLink>
         ))}
