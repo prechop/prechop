@@ -5,63 +5,63 @@ import { useEffect, useMemo, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import useSWR from "swr";
 import {
-	Badge,
-	Button,
-	Card,
-	EmptyState,
-	FadeIn,
-	Input,
-	PageHeader,
-	Row,
-	SectionHeader,
-	Skeleton,
-	Stack,
-	StatCard,
-	Text,
-	Title,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FadeIn,
+  Input,
+  PageHeader,
+  Row,
+  SectionHeader,
+  Skeleton,
+  Stack,
+  StatCard,
+  Text,
+  Title,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import {
-	formatDate,
-	formatKobo,
-	statusLabel,
-	timeUntil,
+  formatDate,
+  formatKobo,
+  statusLabel,
+  timeUntil,
 } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
 import VendorOnboardingWrapper, {
-	type VendorMe,
+  type VendorMe,
 } from "@/libs/VendorOnboardingWrapper";
 import type { DailyOrder, OrderStatus } from "@/types";
 
 interface IncomingOrder {
-	id: string;
-	orderNumber: string;
-	status: OrderStatus;
-	fulfillmentType: "PICKUP" | "DELIVERY";
-	totalKobo: number;
-	createdAt?: string;
-	items: Array<{ snapshotName: string; quantity: number }>;
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  fulfillmentType: "PICKUP" | "DELIVERY";
+  totalKobo: number;
+  createdAt?: string;
+  items: Array<{ snapshotName: string; quantity: number }>;
 }
 
 interface VendorAnalyticsLifetime {
-	totalOrders: number;
-	completedOrders: number;
-	cancelledOrders: number;
-	totalRevenueKobo: number;
-	totalFoodSubtotalKobo: number;
-	totalCommissionKobo: number;
-	totalDeliveryEarningsKobo: number;
-	totalVendorSettlementKobo: number;
-	avgOrderValueKobo: number;
-	rating: number;
-	totalReviews: number;
-	completionRate: number;
+  totalOrders: number;
+  completedOrders: number;
+  cancelledOrders: number;
+  totalRevenueKobo: number;
+  totalFoodSubtotalKobo: number;
+  totalCommissionKobo: number;
+  totalDeliveryEarningsKobo: number;
+  totalVendorSettlementKobo: number;
+  avgOrderValueKobo: number;
+  rating: number;
+  totalReviews: number;
+  completionRate: number;
 }
 
 interface VendorAnalytics {
-	lifetime: VendorAnalyticsLifetime;
+  lifetime: VendorAnalyticsLifetime;
 }
 
 const OpenCard = styled(Card)`
@@ -77,60 +77,60 @@ const OpenCard = styled(Card)`
   margin-bottom: var(--pc-space-3);
 `;
 const CompactStatsGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 8px;
-	width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
 
-	@media (max-width: 340px) {
-		grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-	}
+  @media (max-width: 340px) {
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  }
 
-	> div {
-		min-width: 0;
-		padding: 12px 10px;
-		gap: 6px;
-	}
+  > div {
+    min-width: 0;
+    padding: 12px 10px;
+    gap: 6px;
+  }
 
-	> div > div:first-child {
-		min-width: 0;
-		gap: 6px;
-	}
+  > div > div:first-child {
+    min-width: 0;
+    gap: 6px;
+  }
 
-	> div > div:first-child > span:first-child {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: 11.5px;
-		font-weight: 800;
-		line-height: 1.15;
-	}
+  > div > div:first-child > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
 
-	> div > div:first-child > span:last-child {
-		flex: 0 0 auto;
-		font-size: 15px;
-	}
+  > div > div:first-child > span:last-child {
+    flex: 0 0 auto;
+    font-size: 15px;
+  }
 
-	> div > div:nth-child(2) {
-		min-width: 0;
-		overflow-wrap: anywhere;
-		font-size: 20px;
-		font-weight: 900;
-		letter-spacing: 0;
-		line-height: 1.05;
-	}
+  > div > div:nth-child(2) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 0;
+    line-height: 1.05;
+  }
 
-	> div > span {
-		font-size: 11.5px;
-		line-height: 1.15;
-	}
+  > div > span {
+    font-size: 11.5px;
+    line-height: 1.15;
+  }
 
-	@media (min-width: 390px) {
-		> div > div:nth-child(2) {
-			font-size: 22px;
-		}
-	}
+  @media (min-width: 390px) {
+    > div > div:nth-child(2) {
+      font-size: 22px;
+    }
+  }
 `;
 const OpenText = styled.div`
   display: flex;
@@ -267,7 +267,7 @@ const Toggle = styled.button<{ $on: boolean }>`
   cursor: pointer;
   flex-shrink: 0;
   background: ${(p) =>
-		p.$on ? "rgba(255, 255, 255, 0.92)" : "rgba(0, 0, 0, 0.18)"};
+    p.$on ? "rgba(255, 255, 255, 0.92)" : "rgba(0, 0, 0, 0.18)"};
   transition: background var(--pc-dur) var(--pc-ease);
   &::after {
     content: "";
@@ -285,42 +285,42 @@ const Toggle = styled.button<{ $on: boolean }>`
   }
 `;
 const ModalBackdrop = styled.div`
-	position: fixed;
-	inset: 0;
-	z-index: 50;
-	display: grid;
-	place-items: center;
-	padding: 18px;
-	background: rgba(17, 24, 39, 0.58);
-	backdrop-filter: blur(6px);
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(17, 24, 39, 0.58);
+  backdrop-filter: blur(6px);
 `;
 const SecurityModal = styled.div`
-	width: min(100%, 460px);
-	max-height: calc(100vh - 36px);
-	overflow: auto;
-	border-radius: var(--pc-radius);
-	background: var(--pc-surface);
-	border: 1px solid var(--pc-border);
-	box-shadow: var(--pc-shadow-lg);
-	padding: 22px;
+  width: min(100%, 460px);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border-radius: var(--pc-radius);
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow-lg);
+  padding: 22px;
 `;
 const SecurityMark = styled.div`
-	width: 46px;
-	height: 46px;
-	display: grid;
-	place-items: center;
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-color-primary-50);
-	color: var(--pc-color-primary-ink);
-	font-size: 23px;
-	font-weight: 900;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-color-primary-50);
+  color: var(--pc-color-primary-ink);
+  font-size: 23px;
+  font-weight: 900;
 `;
 const SecurityList = styled.ul`
-	margin: 0;
-	padding-left: 18px;
-	color: var(--pc-text-muted);
-	font-size: 14px;
-	line-height: 1.55;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--pc-text-muted);
+  font-size: 14px;
+  line-height: 1.55;
 `;
 
 const FilterChips = styled.div`
@@ -338,7 +338,7 @@ const Chip = styled.button<{ $on: boolean }>`
   border: 1.5px solid
     ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
   background: ${(p) =>
-		p.$on ? "var(--pc-color-primary)" : "var(--pc-surface)"};
+    p.$on ? "var(--pc-color-primary)" : "var(--pc-surface)"};
   color: ${(p) => (p.$on ? "var(--pc-text-inverse)" : "var(--pc-text-muted)")};
   &:hover {
     border-color: var(--pc-color-primary);
@@ -479,7 +479,9 @@ const QuickActionLink = styled(Link)`
   color: var(--pc-text);
   font-size: 12px;
   font-weight: 700;
-  transition: border-color var(--pc-dur) var(--pc-ease), background var(--pc-dur) var(--pc-ease);
+  transition:
+    border-color var(--pc-dur) var(--pc-ease),
+    background var(--pc-dur) var(--pc-ease);
   &:hover {
     border-color: var(--pc-color-primary);
     background: var(--pc-vendor-surface-2);
@@ -727,840 +729,720 @@ const CompactStatHint = styled.span`
 `;
 
 const STATUS_FILTERS: Array<{
-	label: string;
-	value: "" | DailyOrder["status"];
+  label: string;
+  value: "" | DailyOrder["status"];
 }> = [
-	{ label: "All", value: "" },
-	{ label: "Draft", value: "DRAFT" },
-	{ label: "Active", value: "ACTIVE" },
-	{ label: "Closed", value: "CLOSED" },
-	{ label: "Cancelled", value: "CANCELLED" },
+  { label: "All", value: "" },
+  { label: "Draft", value: "DRAFT" },
+  { label: "Active", value: "ACTIVE" },
+  { label: "Closed", value: "CLOSED" },
+  { label: "Cancelled", value: "CANCELLED" },
 ];
 
 const SECURITY_ONBOARDING_STORAGE_PREFIX =
-	"prechop:vendor-security-onboarding:";
+  "prechop:vendor-security-onboarding:";
 
 function statusTone(
-	s: DailyOrder["status"],
+  s: DailyOrder["status"],
 ): "primary" | "success" | "warning" | "danger" | "muted" {
-	switch (s) {
-		case "ACTIVE":
-			return "success";
-		case "DRAFT":
-			return "warning";
-		case "CANCELLED":
-			return "danger";
-		default:
-			return "muted";
-	}
+  switch (s) {
+    case "ACTIVE":
+      return "success";
+    case "DRAFT":
+      return "warning";
+    case "CANCELLED":
+      return "danger";
+    default:
+      return "muted";
+  }
 }
 
 function orderTone(
-	s: OrderStatus,
+  s: OrderStatus,
 ): "primary" | "success" | "warning" | "danger" | "muted" {
-	switch (s) {
-		case "PAID":
-			return "warning";
-		case "READY":
-		case "COMPLETED":
-			return "success";
-		case "CANCELLED":
-		case "REFUNDED":
-			return "danger";
-		default:
-			return "primary";
-	}
+  switch (s) {
+    case "PAID":
+      return "warning";
+    case "READY":
+    case "COMPLETED":
+      return "success";
+    case "CANCELLED":
+    case "REFUNDED":
+      return "danger";
+    default:
+      return "primary";
+  }
 }
 
 function errMsg(e: unknown): string {
-	const m = (e as { response?: { data?: { message?: string } } })?.response
-		?.data?.message;
-	return m ?? "Something went wrong. Please try again.";
+  const m = (e as { response?: { data?: { message?: string } } })?.response
+    ?.data?.message;
+  return m ?? "Something went wrong. Please try again.";
 }
 
 export default function VendorDashboardWrapper() {
-	const { toast } = useToast();
-	const {
-		data: vendor,
-		isLoading,
-		mutate: mutateVendor,
-	} = useSWR<VendorMe>("/vendors/me", fetcher);
+  const { toast } = useToast();
+  const {
+    data: vendor,
+    isLoading,
+    mutate: mutateVendor,
+  } = useSWR<VendorMe>("/vendors/me", fetcher);
 
-	// Approved vendors see the live dashboard; the onboarding wrapper is only for
-	// not-yet-approved statuses. Gate on status alone (matching the server's
-	// `assertActiveVendor`) — completeness is a marketplace metric, not an
-	// access gate, and requiring it here would strand a just-approved vendor on
-	// the onboarding screen with no way to add menu items.
-	const isActive = vendor?.status === "ACTIVE";
+  // Approved vendors see the live dashboard; the onboarding wrapper is only for
+  // not-yet-approved statuses. Gate on status alone (matching the server's
+  // `assertActiveVendor`) — completeness is a marketplace metric, not an
+  // access gate, and requiring it here would strand a just-approved vendor on
+  // the onboarding screen with no way to add menu items.
+  const isActive = vendor?.status === "ACTIVE";
 
-	// Unfiltered fetch backs the stat cards + the "current active order" incoming
-	// panel, so those summaries stay stable regardless of the list filter below.
-	const {
-		data: orders,
-		isLoading: ordersLoading,
-		mutate: mutateOrders,
-	} = useSWR<DailyOrder[]>(
-		isActive ? "/daily-orders/my-orders?limit=50" : null,
-		fetcher,
-		// Poll so newly-placed/paid orders and counts stay live (#17).
-		{ refreshInterval: 15_000 },
-	);
+  // Unfiltered fetch backs the stat cards + the "current active order" incoming
+  // panel, so those summaries stay stable regardless of the list filter below.
+  const {
+    data: orders,
+    isLoading: ordersLoading,
+    mutate: mutateOrders,
+  } = useSWR<DailyOrder[]>(
+    isActive ? "/daily-orders/my-orders?limit=50" : null,
+    fetcher,
+    // Poll so newly-placed/paid orders and counts stay live (#17).
+    { refreshInterval: 15_000 },
+  );
 
-	// List filter state. Status/date filter server-side; the search box is
-	// debounced so typing doesn't fire a request per keystroke.
-	const [statusFilter, setStatusFilter] = useState<"" | DailyOrder["status"]>(
-		"",
-	);
-	const [search, setSearch] = useState("");
-	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const [fromDate, setFromDate] = useState("");
-	const [toDate, setToDate] = useState("");
+  // List filter state. Status/date filter server-side; the search box is
+  // debounced so typing doesn't fire a request per keystroke.
+  const [statusFilter, setStatusFilter] = useState<"" | DailyOrder["status"]>(
+    "",
+  );
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
-	useEffect(() => {
-		const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
-		return () => clearTimeout(t);
-	}, [search]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-	const hasFilters = !!(
-		statusFilter ||
-		debouncedSearch ||
-		fromDate ||
-		toDate
-	);
-	const filterQuery = useMemo(() => {
-		const p = new URLSearchParams({ limit: "50" });
-		if (statusFilter) p.set("status", statusFilter);
-		if (debouncedSearch) p.set("q", debouncedSearch);
-		if (fromDate) p.set("from", new Date(fromDate).toISOString());
-		// Inclusive of the whole `to` day.
-		if (toDate)
-			p.set("to", new Date(`${toDate}T23:59:59.999`).toISOString());
-		return p.toString();
-	}, [statusFilter, debouncedSearch, fromDate, toDate]);
+  const hasFilters = !!(statusFilter || debouncedSearch || fromDate || toDate);
+  const filterQuery = useMemo(() => {
+    const p = new URLSearchParams({ limit: "50" });
+    if (statusFilter) p.set("status", statusFilter);
+    if (debouncedSearch) p.set("q", debouncedSearch);
+    if (fromDate) p.set("from", new Date(fromDate).toISOString());
+    // Inclusive of the whole `to` day.
+    if (toDate) p.set("to", new Date(`${toDate}T23:59:59.999`).toISOString());
+    return p.toString();
+  }, [statusFilter, debouncedSearch, fromDate, toDate]);
 
-	// Only hit the server for a filtered set when a filter is actually active;
-	// otherwise reuse the unfiltered `orders` above.
-	const {
-		data: filtered,
-		isLoading: filteredLoading,
-		mutate: mutateFiltered,
-	} = useSWR<DailyOrder[]>(
-		isActive && hasFilters
-			? `/daily-orders/my-orders?${filterQuery}`
-			: null,
-		fetcher,
-		{ refreshInterval: 15_000 },
-	);
+  // Only hit the server for a filtered set when a filter is actually active;
+  // otherwise reuse the unfiltered `orders` above.
+  const {
+    data: filtered,
+    isLoading: filteredLoading,
+    mutate: mutateFiltered,
+  } = useSWR<DailyOrder[]>(
+    isActive && hasFilters ? `/daily-orders/my-orders?${filterQuery}` : null,
+    fetcher,
+    { refreshInterval: 15_000 },
+  );
 
-	// Live incoming buyer orders that still need vendor attention, across every
-	// paid payment path and daily order.
-	const { data: incoming, mutate: mutateIncoming } = useSWR<IncomingOrder[]>(
-		isActive ? "/vendor/orders/incoming" : null,
-		fetcher,
-		{ refreshInterval: 5_000 },
-	);
+  // Live incoming buyer orders that still need vendor attention, across every
+  // paid payment path and daily order.
+  const { data: incoming, mutate: mutateIncoming } = useSWR<IncomingOrder[]>(
+    isActive ? "/vendor/orders/incoming" : null,
+    fetcher,
+    { refreshInterval: 5_000 },
+  );
 
-	const { data: analytics } = useSWR<VendorAnalytics>(
-		isActive ? "/api/vendor/analytics" : null,
-		fetcher,
-		{ refreshInterval: 60_000, shouldRetryOnError: false },
-	);
+  const { data: analytics } = useSWR<VendorAnalytics>(
+    isActive ? "/api/vendor/analytics" : null,
+    fetcher,
+    { refreshInterval: 60_000, shouldRetryOnError: false },
+  );
 
-	const { data: alertData } = useSWR<{ unread?: number }>(
-		"/notifications?limit=50",
-		fetcher,
-		{ refreshInterval: 15_000, shouldRetryOnError: false },
-	);
-	const alertCount = alertData?.unread ?? 0;
+  const { data: alertData } = useSWR<{ unread?: number }>(
+    "/notifications?limit=50",
+    fetcher,
+    { refreshInterval: 15_000, shouldRetryOnError: false },
+  );
+  const alertCount = alertData?.unread ?? 0;
 
-	function compactCount(count: number) {
-		return count >= 10 ? "9+" : String(count);
-	}
+  function compactCount(count: number) {
+    return count >= 10 ? "9+" : String(count);
+  }
 
-	const [toggling, setToggling] = useState(false);
-	const [securityBusy, setSecurityBusy] = useState<
-		"dismiss" | "complete" | null
-	>(null);
-	const [securityOnboardingResolved, setSecurityOnboardingResolved] =
-		useState(false);
-	const [securityStep, setSecurityStep] = useState<"welcome" | "pin">(
-		"welcome",
-	);
-	const [securityPin, setSecurityPin] = useState("");
-	const [securityPinConfirm, setSecurityPinConfirm] = useState("");
+  const [toggling, setToggling] = useState(false);
+  const [securityBusy, setSecurityBusy] = useState<
+    "dismiss" | "complete" | null
+  >(null);
+  const [securityOnboardingResolved, setSecurityOnboardingResolved] =
+    useState(false);
+  const [securityStep, setSecurityStep] = useState<"welcome" | "pin">(
+    "welcome",
+  );
+  const [securityPin, setSecurityPin] = useState("");
+  const [securityPinConfirm, setSecurityPinConfirm] = useState("");
 
-	useEffect(() => {
-		if (!vendor?.id) {
-			setSecurityOnboardingResolved(false);
-			return;
-		}
-		const serverResolved =
-			!!vendor.securityOnboardingDismissedAt ||
-			!!vendor.securityOnboardingCompletedAt;
-		if (serverResolved) {
-			setSecurityOnboardingResolved(true);
-			return;
-		}
-		try {
-			setSecurityOnboardingResolved(
-				window.localStorage.getItem(
-					`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
-				) === "resolved",
-			);
-		} catch {
-			setSecurityOnboardingResolved(false);
-		}
-	}, [
-		vendor?.id,
-		vendor?.securityOnboardingDismissedAt,
-		vendor?.securityOnboardingCompletedAt,
-	]);
+  useEffect(() => {
+    if (!vendor?.id) {
+      setSecurityOnboardingResolved(false);
+      return;
+    }
+    const serverResolved =
+      !!vendor.securityOnboardingDismissedAt ||
+      !!vendor.securityOnboardingCompletedAt;
+    if (serverResolved) {
+      setSecurityOnboardingResolved(true);
+      return;
+    }
+    try {
+      setSecurityOnboardingResolved(
+        window.localStorage.getItem(
+          `${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+        ) === "resolved",
+      );
+    } catch {
+      setSecurityOnboardingResolved(false);
+    }
+  }, [
+    vendor?.id,
+    vendor?.securityOnboardingDismissedAt,
+    vendor?.securityOnboardingCompletedAt,
+  ]);
 
-	function clearFilters() {
-		setStatusFilter("");
-		setSearch("");
-		setDebouncedSearch("");
-		setFromDate("");
-		setToDate("");
-	}
+  function clearFilters() {
+    setStatusFilter("");
+    setSearch("");
+    setDebouncedSearch("");
+    setFromDate("");
+    setToDate("");
+  }
 
-	if (isLoading || !vendor) return <PageLoader />;
+  if (isLoading || !vendor) return <PageLoader />;
 
-	if (!isActive) {
-		return (
-			<VendorOnboardingWrapper
-				vendor={vendor}
-				onChanged={() => mutateVendor()}
-			/>
-		);
-	}
+  if (!isActive) {
+    return (
+      <VendorOnboardingWrapper
+        vendor={vendor}
+        onChanged={() => mutateVendor()}
+      />
+    );
+  }
 
-	async function toggleOpen() {
-		if (!vendor) return;
-		setToggling(true);
-		try {
-			await api.patch("/vendors/me/open-status", {
-				isOpenForOrders: !vendor.isOpenForOrders,
-			});
-			await mutateVendor();
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setToggling(false);
-		}
-	}
+  async function toggleOpen() {
+    if (!vendor) return;
+    setToggling(true);
+    try {
+      await api.patch("/vendors/me/open-status", {
+        isOpenForOrders: !vendor.isOpenForOrders,
+      });
+      await mutateVendor();
+    } catch (e) {
+      toast(errMsg(e), "error");
+    } finally {
+      setToggling(false);
+    }
+  }
 
-	async function updateSecurityOnboarding(action: "DISMISS" | "COMPLETE") {
-		if (!vendor) return;
-		if (action === "COMPLETE") {
-			if (!/^\d{4,6}$/.test(securityPin.trim())) {
-				toast("Enter a 4-6 digit security PIN", "error");
-				return;
-			}
-			if (securityPin.trim() !== securityPinConfirm.trim()) {
-				toast("Security PINs do not match", "error");
-				return;
-			}
-		}
-		setSecurityBusy(action === "COMPLETE" ? "complete" : "dismiss");
-		const now = new Date().toISOString();
-		if (action === "DISMISS") {
-			setSecurityOnboardingResolved(true);
-			try {
-				window.localStorage.setItem(
-					`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
-					"resolved",
-				);
-			} catch {}
-			await mutateVendor(
-				{ ...vendor, securityOnboardingDismissedAt: now },
-				false,
-			);
-		}
-		try {
-			const updated = await apiData<VendorMe>(
-				api.patch("/vendors/me", {
-					action,
-					...(action === "COMPLETE"
-						? { pin: securityPin.trim() }
-						: {}),
-				}),
-			);
-			if (action === "COMPLETE") {
-				setSecurityOnboardingResolved(true);
-				try {
-					window.localStorage.setItem(
-						`${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
-						"resolved",
-					);
-				} catch {}
-			}
-			await mutateVendor(updated, false);
-			toast(
-				action === "COMPLETE"
-					? "Security verification completed"
-					: "Security setup saved for later",
-				"success",
-			);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setSecurityBusy(null);
-		}
-	}
+  async function updateSecurityOnboarding(action: "DISMISS" | "COMPLETE") {
+    if (!vendor) return;
+    if (action === "COMPLETE") {
+      if (!/^\d{4,6}$/.test(securityPin.trim())) {
+        toast("Enter a 4-6 digit security PIN", "error");
+        return;
+      }
+      if (securityPin.trim() !== securityPinConfirm.trim()) {
+        toast("Security PINs do not match", "error");
+        return;
+      }
+    }
+    setSecurityBusy(action === "COMPLETE" ? "complete" : "dismiss");
+    const now = new Date().toISOString();
+    if (action === "DISMISS") {
+      setSecurityOnboardingResolved(true);
+      try {
+        window.localStorage.setItem(
+          `${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+          "resolved",
+        );
+      } catch {}
+      await mutateVendor(
+        { ...vendor, securityOnboardingDismissedAt: now },
+        false,
+      );
+    }
+    try {
+      const updated = await apiData<VendorMe>(
+        api.patch("/vendors/me", {
+          action,
+          ...(action === "COMPLETE" ? { pin: securityPin.trim() } : {}),
+        }),
+      );
+      if (action === "COMPLETE") {
+        setSecurityOnboardingResolved(true);
+        try {
+          window.localStorage.setItem(
+            `${SECURITY_ONBOARDING_STORAGE_PREFIX}${vendor.id}`,
+            "resolved",
+          );
+        } catch {}
+      }
+      await mutateVendor(updated, false);
+      toast(
+        action === "COMPLETE"
+          ? "Security verification completed"
+          : "Security setup saved for later",
+        "success",
+      );
+    } catch (e) {
+      toast(errMsg(e), "error");
+    } finally {
+      setSecurityBusy(null);
+    }
+  }
 
-	async function closeListing(order: DailyOrder) {
-		const reason =
-			(order.totalOrdersCount ?? 0) > 0
-				? window.prompt(
-						"Enter the cancellation reason buyers should receive:",
-					)
-				: "";
-		if ((order.totalOrdersCount ?? 0) > 0 && !reason?.trim()) return;
-		try {
-			await api.patch(`/daily-orders/${order.id}/close`, {
-				...(reason?.trim() ? { reason: reason.trim() } : {}),
-			});
-			toast("Daily order closed", "success");
-			await Promise.all([
-				mutateOrders(),
-				mutateFiltered(),
-				mutateIncoming(),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		}
-	}
+  async function closeListing(order: DailyOrder) {
+    const reason =
+      (order.totalOrdersCount ?? 0) > 0
+        ? window.prompt("Enter the cancellation reason buyers should receive:")
+        : "";
+    if ((order.totalOrdersCount ?? 0) > 0 && !reason?.trim()) return;
+    try {
+      await api.patch(`/daily-orders/${order.id}/close`, {
+        ...(reason?.trim() ? { reason: reason.trim() } : {}),
+      });
+      toast("Daily order closed", "success");
+      await Promise.all([mutateOrders(), mutateFiltered(), mutateIncoming()]);
+    } catch (e) {
+      toast(errMsg(e), "error");
+    }
+  }
 
-	// Stats summarise the whole kitchen (unfiltered); the list below reflects the
-	// active filter.
-	const statList = orders ?? [];
-	const activeCount = statList.filter((o) => o.status === "ACTIVE").length;
-	const ordersPlaced = statList.reduce(
-		(sum, o) => sum + (o.totalOrdersCount ?? 0),
-		0,
-	);
-	const list = hasFilters ? (filtered ?? []) : statList;
-	const listLoading = hasFilters ? filteredLoading : ordersLoading;
-	const showSecurityModal =
-		vendor.status === "ACTIVE" &&
-		!securityOnboardingResolved &&
-		!vendor.securityOnboardingDismissedAt &&
-		!vendor.securityOnboardingCompletedAt;
+  // Stats summarise the whole kitchen (unfiltered); the list below reflects the
+  // active filter.
+  const statList = orders ?? [];
+  const activeCount = statList.filter((o) => o.status === "ACTIVE").length;
+  const ordersPlaced = statList.reduce(
+    (sum, o) => sum + (o.totalOrdersCount ?? 0),
+    0,
+  );
+  const list = hasFilters ? (filtered ?? []) : statList;
+  const listLoading = hasFilters ? filteredLoading : ordersLoading;
+  const showSecurityModal =
+    vendor.status === "ACTIVE" &&
+    !securityOnboardingResolved &&
+    !vendor.securityOnboardingDismissedAt &&
+    !vendor.securityOnboardingCompletedAt;
 
-	return (
-		<FadeIn>
-			{showSecurityModal && (
-				<ModalBackdrop role="presentation">
-					<SecurityModal
-						role="dialog"
-						aria-modal="true"
-						aria-labelledby="vendor-security-title"
-					>
-						<Stack $gap={16}>
-							<SecurityMark aria-hidden>!</SecurityMark>
-							{securityStep === "welcome" ? (
-								<>
-									<Stack $gap={8}>
-										<Title
-											id="vendor-security-title"
-											$size={23}
-										>
-											Welcome to Selling on Prechop
-										</Title>
-										<Text $muted>
-											Before you handle paid orders, set
-											up vendor security verification. It
-											protects your orders, earnings,
-											customer information, and payout
-											settings.
-										</Text>
-									</Stack>
-									<SecurityList>
-										<li>
-											Protect payout changes and bank
-											details.
-										</li>
-										<li>
-											Keep customer and order information
-											safer.
-										</li>
-										<li>
-											Reduce the risk of unauthorized
-											account changes.
-										</li>
-									</SecurityList>
-									<Row $gap={10} $wrap>
-										<Button
-											disabled={!!securityBusy}
-											onClick={() =>
-												setSecurityStep("pin")
-											}
-										>
-											Secure my account
-										</Button>
-										<Button
-											$variant="secondary"
-											$loading={
-												securityBusy === "dismiss"
-											}
-											disabled={!!securityBusy}
-											onClick={() =>
-												updateSecurityOnboarding(
-													"DISMISS",
-												)
-											}
-										>
-											Do this later
-										</Button>
-									</Row>
-								</>
-							) : (
-								<>
-									<Stack $gap={8}>
-										<Title
-											id="vendor-security-title"
-											$size={23}
-										>
-											Create your security PIN
-										</Title>
-										<Text $muted>
-											Use a 4-6 digit PIN. You will need
-											this before sensitive vendor actions
-											such as changing payout details.
-										</Text>
-									</Stack>
-									<Input
-										label="Security PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPin}
-										onChange={(e) =>
-											setSecurityPin(e.target.value)
-										}
-										placeholder="4-6 digits"
-									/>
-									<Input
-										label="Confirm PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPinConfirm}
-										onChange={(e) =>
-											setSecurityPinConfirm(
-												e.target.value,
-											)
-										}
-										placeholder="Re-enter PIN"
-									/>
-									<Row $gap={10} $wrap>
-										<Button
-											$loading={
-												securityBusy === "complete"
-											}
-											disabled={!!securityBusy}
-											onClick={() =>
-												updateSecurityOnboarding(
-													"COMPLETE",
-												)
-											}
-										>
-											Save security PIN
-										</Button>
-										<Button
-											$variant="secondary"
-											disabled={!!securityBusy}
-											onClick={() =>
-												setSecurityStep("welcome")
-											}
-										>
-											Back
-										</Button>
-									</Row>
-								</>
-							)}
-						</Stack>
-					</SecurityModal>
-				</ModalBackdrop>
-			)}
-			<DashboardShell>
-				<Stack $gap={14}>
-					<HeroSection>
-						<HeroText>
-							<HeroEyebrow>Vendor dashboard</HeroEyebrow>
-							<HeroNameRow>
-								<HeroName>
-									{vendor.businessName ?? "Your kitchen"}
-								</HeroName>
-								{vendor.status === "ACTIVE" && (
-									<VerifiedMark aria-label="Verified">
-										✓
-									</VerifiedMark>
-								)}
-							</HeroNameRow>
-							<HeroSub>
-								{vendor.isOpenForOrders
-									? "You're open — buyers can order from you right now."
-									: "You're currently closed for new orders."}
-							</HeroSub>
-						</HeroText>
-					</HeroSection>
+  return (
+    <FadeIn>
+      {showSecurityModal && (
+        <ModalBackdrop role="presentation">
+          <SecurityModal
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vendor-security-title">
+            <Stack $gap={16}>
+              <SecurityMark aria-hidden>!</SecurityMark>
+              {securityStep === "welcome" ? (
+                <>
+                  <Stack $gap={8}>
+                    <Title id="vendor-security-title" $size={23}>
+                      Welcome to Selling on Prechop
+                    </Title>
+                    <Text $muted>
+                      Before you handle paid orders, set up vendor security
+                      verification. It protects your orders, earnings, customer
+                      information, and payout settings.
+                    </Text>
+                  </Stack>
+                  <SecurityList>
+                    <li>Protect payout changes and bank details.</li>
+                    <li>Keep customer and order information safer.</li>
+                    <li>Reduce the risk of unauthorized account changes.</li>
+                  </SecurityList>
+                  <Row $gap={10} $wrap>
+                    <Button
+                      disabled={!!securityBusy}
+                      onClick={() => setSecurityStep("pin")}>
+                      Secure my account
+                    </Button>
+                    <Button
+                      $variant="secondary"
+                      $loading={securityBusy === "dismiss"}
+                      disabled={!!securityBusy}
+                      onClick={() => updateSecurityOnboarding("DISMISS")}>
+                      Do this later
+                    </Button>
+                  </Row>
+                </>
+              ) : (
+                <>
+                  <Stack $gap={8}>
+                    <Title id="vendor-security-title" $size={23}>
+                      Create your security PIN
+                    </Title>
+                    <Text $muted>
+                      Use a 4-6 digit PIN. You will need this before sensitive
+                      vendor actions such as changing payout details.
+                    </Text>
+                  </Stack>
+                  <Input
+                    label="Security PIN"
+                    type="password"
+                    inputMode="numeric"
+                    value={securityPin}
+                    onChange={(e) => setSecurityPin(e.target.value)}
+                    placeholder="4-6 digits"
+                  />
+                  <Input
+                    label="Confirm PIN"
+                    type="password"
+                    inputMode="numeric"
+                    value={securityPinConfirm}
+                    onChange={(e) => setSecurityPinConfirm(e.target.value)}
+                    placeholder="Re-enter PIN"
+                  />
+                  <Row $gap={10} $wrap>
+                    <Button
+                      $loading={securityBusy === "complete"}
+                      disabled={!!securityBusy}
+                      onClick={() => updateSecurityOnboarding("COMPLETE")}>
+                      Save security PIN
+                    </Button>
+                    <Button
+                      $variant="secondary"
+                      disabled={!!securityBusy}
+                      onClick={() => setSecurityStep("welcome")}>
+                      Back
+                    </Button>
+                  </Row>
+                </>
+              )}
+            </Stack>
+          </SecurityModal>
+        </ModalBackdrop>
+      )}
+      <DashboardShell>
+        <Stack $gap={14}>
+          <HeroSection>
+            <HeroText>
+              <HeroEyebrow>Vendor dashboard</HeroEyebrow>
+              <HeroNameRow>
+                <HeroName>{vendor.businessName ?? "Your kitchen"}</HeroName>
+                {vendor.status === "ACTIVE" && (
+                  <VerifiedMark aria-label="Verified">✓</VerifiedMark>
+                )}
+              </HeroNameRow>
+              <HeroSub>
+                {vendor.isOpenForOrders
+                  ? "You're open — buyers can order from you right now."
+                  : "You're currently closed for new orders."}
+              </HeroSub>
+            </HeroText>
+          </HeroSection>
 
-				<OpenCard>
-					<OpenIcon aria-hidden>🏪</OpenIcon>
-					<OpenTextCol>
-						<OpenTitleSm>
-							{vendor.isOpenForOrders
-								? "Open for orders"
-								: "Closed"}
-						</OpenTitleSm>
-						<OpenSubSm>
-							{vendor.isOpenForOrders
-								? "Your store is visible to buyers."
-								: "Your store is hidden from new buyers."}
-						</OpenSubSm>
-					</OpenTextCol>
-					<Toggle
-						type="button"
-						role="switch"
-						aria-checked={vendor.isOpenForOrders}
-						$on={vendor.isOpenForOrders}
-						onClick={toggleOpen}
-						disabled={toggling}
-						aria-label="Toggle open for orders"
-					/>
-				</OpenCard>
+          <OpenCard>
+            <OpenIcon aria-hidden>🏪</OpenIcon>
+            <OpenTextCol>
+              <OpenTitleSm>
+                {vendor.isOpenForOrders ? "Open for orders" : "Closed"}
+              </OpenTitleSm>
+              <OpenSubSm>
+                {vendor.isOpenForOrders
+                  ? "Your store is visible to buyers."
+                  : "Your store is hidden from new buyers."}
+              </OpenSubSm>
+            </OpenTextCol>
+            <Toggle
+              type="button"
+              role="switch"
+              aria-checked={vendor.isOpenForOrders}
+              $on={vendor.isOpenForOrders}
+              onClick={toggleOpen}
+              disabled={toggling}
+              aria-label="Toggle open for orders"
+            />
+          </OpenCard>
 
-				<SectionHeader title="Dashboard overview" />
-				<CompactStatsGrid>
-					<StatCard
-						label="Menus"
-						value={statList.length}
-						icon="🍲"
-						hint="Posted this period"
-					/>
-					<StatCard
-						label="Live"
-						value={activeCount}
-						icon="🔥"
-						tone="var(--pc-color-accent)"
-						hint="Active daily orders"
-					/>
-					<StatCard
-						label="Orders"
-						value={ordersPlaced}
-						icon="🧾"
-						tone="var(--pc-color-gold)"
-						hint="Across all your posts"
-					/>
-				</CompactStatsGrid>
+          <SectionHeader title="Dashboard overview" />
+          <CompactStatsGrid>
+            <StatCard
+              label="Menus"
+              value={statList.length}
+              icon="🍲"
+              hint="Posted this period"
+            />
+            <StatCard
+              label="Live"
+              value={activeCount}
+              icon="🔥"
+              tone="var(--pc-color-accent)"
+              hint="Active daily orders"
+            />
+            <StatCard
+              label="Orders"
+              value={ordersPlaced}
+              icon="🧾"
+              tone="var(--pc-color-gold)"
+              hint="Across all your posts"
+            />
+          </CompactStatsGrid>
 
+          <NewButton href="/dashboard/new">
+            <span aria-hidden>＋</span> New daily order
+          </NewButton>
 
-				<NewButton href="/dashboard/new">
-					<span aria-hidden>＋</span> New daily order
-				</NewButton>
+          <SectionHeader title="Quick actions" />
+          <QuickActionsGrid>
+            <QuickActionLink href="/menu">
+              <QuickIcon aria-hidden>📋</QuickIcon>
+              Menu
+            </QuickActionLink>
+            <QuickActionLink href="/timetable">
+              <QuickIcon aria-hidden>🗓️</QuickIcon>
+              Timetable
+            </QuickActionLink>
+            <QuickActionLink href="/earnings">
+              <QuickIcon aria-hidden>💰</QuickIcon>
+              Earnings
+            </QuickActionLink>
+            <QuickActionLink href="/notifications">
+              <QuickIcon aria-hidden>
+                🔔
+                {alertCount > 0 && (
+                  <CompactCountBubble>
+                    {compactCount(alertCount)}
+                  </CompactCountBubble>
+                )}
+              </QuickIcon>
+              Notifications
+            </QuickActionLink>
+            <QuickActionLink href="/vendor/settings">
+              <QuickIcon aria-hidden>⋯</QuickIcon>
+              More
+            </QuickActionLink>
+          </QuickActionsGrid>
 
-					<SectionHeader title="Quick actions" />
-					<QuickActionsGrid>
-						<QuickActionLink href="/menu">
-							<QuickIcon aria-hidden>📋</QuickIcon>
-							Menu
-						</QuickActionLink>
-						<QuickActionLink href="/timetable">
-							<QuickIcon aria-hidden>🗓️</QuickIcon>
-							Timetable
-						</QuickActionLink>
-						<QuickActionLink href="/earnings">
-							<QuickIcon aria-hidden>💰</QuickIcon>
-							Earnings
-						</QuickActionLink>
-						<QuickActionLink href="/notifications">
-							<QuickIcon aria-hidden>
-								🔔
-								{alertCount > 0 && (
-									<CompactCountBubble>
-										{compactCount(alertCount)}
-									</CompactCountBubble>
-								)}
-							</QuickIcon>
-							Notifications
-						</QuickActionLink>
-						<QuickActionLink href="/vendor/settings">
-							<QuickIcon aria-hidden>⋯</QuickIcon>
-							More
-						</QuickActionLink>
-					</QuickActionsGrid>
+          {(incoming?.length ?? 0) > 0 && (
+            <IncomingSection>
+              <IncomingHeader>
+                <IncomingTitle>
+                  <span aria-hidden>🔔</span>
+                  Incoming orders
+                </IncomingTitle>
+                <LivePulse>Live</LivePulse>
+              </IncomingHeader>
+              <div>
+                {(incoming ?? []).slice(0, 6).map((o) => (
+                  <IncomingRow key={o.id}>
+                    <IncomingLeft>
+                      <Row $gap={8} $align="center">
+                        <Text $weight={700} $size={14}>
+                          #{o.orderNumber}
+                        </Text>
+                        <Badge $tone={orderTone(o.status)}>
+                          {statusLabel(o.status)}
+                        </Badge>
+                      </Row>
+                      <IncomingMeta>
+                        {o.fulfillmentType === "DELIVERY"
+                          ? "🛵 Delivery"
+                          : "🥡 Pickup"}{" "}
+                        · {o.items.reduce((n, it) => n + it.quantity, 0)} item
+                        {o.items.reduce((n, it) => n + it.quantity, 0) === 1
+                          ? ""
+                          : "s"}
+                      </IncomingMeta>
+                    </IncomingLeft>
+                    <IncomingRight>
+                      <IncomingAmount>{formatKobo(o.totalKobo)}</IncomingAmount>
+                      <CookLink href={`/dashboard/${o.id}`}>
+                        View <span aria-hidden>→</span>
+                      </CookLink>
+                    </IncomingRight>
+                  </IncomingRow>
+                ))}
+              </div>
+            </IncomingSection>
+          )}
 
-					{(incoming?.length ?? 0) > 0 && (
-						<IncomingSection>
-							<IncomingHeader>
-								<IncomingTitle>
-									<span aria-hidden>🔔</span>
-									Incoming orders
-								</IncomingTitle>
-								<LivePulse>Live</LivePulse>
-							</IncomingHeader>
-							<div>
-								{(incoming ?? []).slice(0, 6).map((o) => (
-									<IncomingRow key={o.id}>
-										<IncomingLeft>
-											<Row $gap={8} $align="center">
-												<Text $weight={700} $size={14}>
-													#{o.orderNumber}
-												</Text>
-												<Badge $tone={orderTone(o.status)}>
-													{statusLabel(o.status)}
-												</Badge>
-											</Row>
-											<IncomingMeta>
-												{o.fulfillmentType === "DELIVERY"
-													? "🛵 Delivery"
-													: "🥡 Pickup"}{" "}
-												·{" "}
-												{o.items.reduce(
-													(n, it) => n + it.quantity,
-													0,
-												)}{" "}
-												item
-												{o.items.reduce(
-													(n, it) => n + it.quantity,
-													0,
-												) === 1
-													? ""
-													: "s"}
-											</IncomingMeta>
-										</IncomingLeft>
-										<IncomingRight>
-											<IncomingAmount>
-												{formatKobo(o.totalKobo)}
-											</IncomingAmount>
-											<CookLink href={`/dashboard/${o.id}`}>
-												View{" "}
-												<span aria-hidden>
-													→
-												</span>
-											</CookLink>
-										</IncomingRight>
-									</IncomingRow>
-								))}
-							</div>
-						</IncomingSection>
-					)}
+          <div>
+            <OrdersHeader>
+              <OrdersTitle>
+                <span aria-hidden>📋</span>
+                Today's orders
+              </OrdersTitle>
+              <ViewAllLink href="/dashboard">
+                View all <span aria-hidden>›</span>
+              </ViewAllLink>
+            </OrdersHeader>
 
-					<div>
-						<OrdersHeader>
-							<OrdersTitle>
-								<span aria-hidden>📋</span>
-								Today's orders
-							</OrdersTitle>
-							<ViewAllLink href="/dashboard">
-								View all <span aria-hidden>›</span>
-							</ViewAllLink>
-						</OrdersHeader>
+            <Stack $gap={10} style={{ marginBottom: 14 }}>
+              <FilterChips role="group" aria-label="Filter by status">
+                {STATUS_FILTERS.map((s) => (
+                  <Chip
+                    key={s.label}
+                    type="button"
+                    $on={statusFilter === s.value}
+                    aria-pressed={statusFilter === s.value}
+                    onClick={() => setStatusFilter(s.value)}>
+                    {s.label}
+                  </Chip>
+                ))}
+              </FilterChips>
+              <Input
+                type="search"
+                placeholder="Search by title…"
+                aria-label="Search daily orders by title"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <DateRange>
+                <Input
+                  type="date"
+                  label="From"
+                  aria-label="Scheduled from date"
+                  value={fromDate}
+                  max={toDate || undefined}
+                  onChange={(e) => setFromDate(e.target.value)}
+                />
+                <Input
+                  type="date"
+                  label="To"
+                  aria-label="Scheduled to date"
+                  value={toDate}
+                  min={fromDate || undefined}
+                  onChange={(e) => setToDate(e.target.value)}
+                />
+              </DateRange>
+              {hasFilters && (
+                <Row $justify="flex-end">
+                  <Button
+                    $size="sm"
+                    $variant="secondary"
+                    onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </Row>
+              )}
+            </Stack>
 
-						<Stack $gap={10} style={{ marginBottom: 14 }}>
-							<FilterChips role="group" aria-label="Filter by status">
-								{STATUS_FILTERS.map((s) => (
-									<Chip
-										key={s.label}
-										type="button"
-										$on={statusFilter === s.value}
-										aria-pressed={statusFilter === s.value}
-										onClick={() => setStatusFilter(s.value)}
-									>
-										{s.label}
-									</Chip>
-								))}
-							</FilterChips>
-							<Input
-								type="search"
-								placeholder="Search by title…"
-								aria-label="Search daily orders by title"
-								value={search}
-								onChange={(e) => setSearch(e.target.value)}
-							/>
-							<DateRange>
-								<Input
-									type="date"
-									label="From"
-									aria-label="Scheduled from date"
-									value={fromDate}
-									max={toDate || undefined}
-									onChange={(e) => setFromDate(e.target.value)}
-								/>
-								<Input
-									type="date"
-									label="To"
-									aria-label="Scheduled to date"
-									value={toDate}
-									min={fromDate || undefined}
-									onChange={(e) => setToDate(e.target.value)}
-								/>
-							</DateRange>
-							{hasFilters && (
-								<Row $justify="flex-end">
-									<Button
-										$size="sm"
-										$variant="secondary"
-										onClick={clearFilters}
-									>
-										Clear filters
-									</Button>
-								</Row>
-							)}
-						</Stack>
-
-						{listLoading ? (
-							<Stack $gap={12}>
-								{[0, 1, 2].map((i) => (
-									<Card key={i}>
-										<Stack $gap={10}>
-											<Skeleton $w="55%" $h={20} />
-											<Skeleton $w="80%" $h={14} />
-											<Skeleton $w="40%" $h={14} />
-										</Stack>
-									</Card>
-								))}
-							</Stack>
-						) : list.length === 0 ? (
-							<EmptyState
-								icon="🍲"
-								title={
-									hasFilters
-										? "No matching daily orders"
-										: "No daily orders yet"
-								}
-								description={
-									hasFilters
-										? "No listings match these filters. Try widening your search."
-										: "Post your first daily order to start selling today."
-								}
-								action={
-									hasFilters ? (
-										<Button
-											$variant="secondary"
-											onClick={clearFilters}
-										>
-											Clear filters
-										</Button>
-									) : undefined
-								}
-							/>
-						) : (
-							<Stack $gap={10}>
-								{list.map((o, i) => {
-									const closed =
-										timeUntil(o.cutoffTime) === "closed";
-									const comingSoon = o.availableFrom
-										? new Date(o.availableFrom).getTime() >
-											Date.now()
-										: false;
-									const editable =
-										comingSoon &&
-										o.status !== "CLOSED" &&
-										o.status !== "CANCELLED";
-									const thumb = o.items.find(
-										(it) => it.snapshotImageUrl,
-									);
-								return (
-									<FadeIn key={o.id} $delay={i * 40}>
-										<OrderRowWrap href={`/dashboard/${o.id}`}>
-											<OrderThumb>
-												{thumb?.snapshotImageUrl ? (
-													<OrderThumbImg
-														src={thumb.snapshotImageUrl}
-														alt=""
-														loading="lazy"
-													/>
-												) : (
-													<span aria-hidden>
-														🍲
-													</span>
-												)}
-											</OrderThumb>
-											<OrderBody>
-												<OrderTopRow>
-													<OrderTitle>
-														{o.title}
-													</OrderTitle>
-													<OrderStatusPill
-														$tone={statusTone(
-															o.status,
-														)}
-													>
-														{statusLabel(
-															o.status,
-														)}
-													</OrderStatusPill>
-												</OrderTopRow>
-												<Row $gap={8} $align="center">
-													<OrderMeta>
-														{formatDate(
-															o.scheduledDate,
-														)}{" "}
-														· {o.items.length}{" "}
-														item
-														{o.items.length ===
-														1
-															? ""
-															: "s"}
-													</OrderMeta>
-													{o.status === "ACTIVE" &&
-														!comingSoon &&
-														!closed && (
-															<OrderMeta>
-																•
-																{timeUntil(
-																	o.cutoffTime,
-																)}
-															</OrderMeta>
-														)}
-													{o.status === "ACTIVE" &&
-														closed && (
-															<Badge $tone="danger">
-																Cutoff
-																passed
-															</Badge>
-														)}
-												</Row>
-												{(editable || o.status === "ACTIVE") && (
-													<OrderActions>
-														{editable && (
-															<OrderActionLink
-																href={`/dashboard/${o.id}/edit`}
-															>
-																<span aria-hidden>
-																	✏️
-																</span>{" "}
-																Edit
-															</OrderActionLink>
-														)}
-														{o.status === "ACTIVE" && (
-															<OrderCloseBtn
-																type="button"
-																onClick={(e) => {
-																	e.preventDefault();
-																	e.stopPropagation();
-																	closeListing(o);
-																}}
-															>
-																Close
-															</OrderCloseBtn>
-														)}
-													</OrderActions>
-												)}
-											</OrderBody>
-											<OrderChevron aria-hidden>
-												›
-											</OrderChevron>
-										</OrderRowWrap>
-									</FadeIn>
-								);
-								})}
-							</Stack>
-						)}
-					</div>
-				</Stack>
-			</DashboardShell>
-		</FadeIn>
-	);
+            {listLoading ? (
+              <Stack $gap={12}>
+                {[0, 1, 2].map((i) => (
+                  <Card key={i}>
+                    <Stack $gap={10}>
+                      <Skeleton $w="55%" $h={20} />
+                      <Skeleton $w="80%" $h={14} />
+                      <Skeleton $w="40%" $h={14} />
+                    </Stack>
+                  </Card>
+                ))}
+              </Stack>
+            ) : list.length === 0 ? (
+              <EmptyState
+                icon="🍲"
+                title={
+                  hasFilters
+                    ? "No matching daily orders"
+                    : "No daily orders yet"
+                }
+                description={
+                  hasFilters
+                    ? "No listings match these filters. Try widening your search."
+                    : "Post your first daily order to start selling today."
+                }
+                action={
+                  hasFilters ? (
+                    <Button $variant="secondary" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <Stack $gap={10}>
+                {list.map((o, i) => {
+                  const closed = timeUntil(o.cutoffTime) === "closed";
+                  const comingSoon = o.availableFrom
+                    ? new Date(o.availableFrom).getTime() > Date.now()
+                    : false;
+                  const editable =
+                    comingSoon &&
+                    o.status !== "CLOSED" &&
+                    o.status !== "CANCELLED";
+                  const thumb = o.items.find((it) => it.snapshotImageUrl);
+                  return (
+                    <FadeIn key={o.id} $delay={i * 40}>
+                      <OrderRowWrap href={`/dashboard/${o.id}`}>
+                        <OrderThumb>
+                          {thumb?.snapshotImageUrl ? (
+                            <OrderThumbImg
+                              src={thumb.snapshotImageUrl}
+                              alt=""
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span aria-hidden>🍲</span>
+                          )}
+                        </OrderThumb>
+                        <OrderBody>
+                          <OrderTopRow>
+                            <OrderTitle>{o.title}</OrderTitle>
+                            <OrderStatusPill $tone={statusTone(o.status)}>
+                              {statusLabel(o.status)}
+                            </OrderStatusPill>
+                          </OrderTopRow>
+                          <Row $gap={8} $align="center">
+                            <OrderMeta>
+                              {formatDate(o.scheduledDate)} · {o.items.length}{" "}
+                              item
+                              {o.items.length === 1 ? "" : "s"}
+                            </OrderMeta>
+                            {o.status === "ACTIVE" &&
+                              !comingSoon &&
+                              !closed && (
+                                <OrderMeta>
+                                  •{timeUntil(o.cutoffTime)}
+                                </OrderMeta>
+                              )}
+                            {o.status === "ACTIVE" && closed && (
+                              <Badge $tone="danger">Cutoff passed</Badge>
+                            )}
+                          </Row>
+                          {(editable || o.status === "ACTIVE") && (
+                            <OrderActions>
+                              {editable && (
+                                <OrderActionLink
+                                  href={`/dashboard/${o.id}/edit`}>
+                                  <span aria-hidden>✏️</span> Edit
+                                </OrderActionLink>
+                              )}
+                              {o.status === "ACTIVE" && (
+                                <OrderCloseBtn
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    closeListing(o);
+                                  }}>
+                                  Close
+                                </OrderCloseBtn>
+                              )}
+                            </OrderActions>
+                          )}
+                        </OrderBody>
+                        <OrderChevron aria-hidden>›</OrderChevron>
+                      </OrderRowWrap>
+                    </FadeIn>
+                  );
+                })}
+              </Stack>
+            )}
+          </div>
+        </Stack>
+      </DashboardShell>
+    </FadeIn>
+  );
 }

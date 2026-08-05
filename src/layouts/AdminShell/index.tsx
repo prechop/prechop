@@ -379,15 +379,15 @@ export default function AdminShell({
     { refreshInterval: 15000, shouldRetryOnError: false },
   );
   const adminNotificationCount =
-    can("notification:send") && adminNotificationsData
+    can("notification:send") && Array.isArray(adminNotificationsData)
       ? adminNotificationsData.filter((item) => !item.isRead).length
       : 0;
   const onboardingCount =
-    can("onboarding:read") && onboardingQueueData
+    can("onboarding:read") && Array.isArray(onboardingQueueData)
       ? onboardingQueueData.length
       : 0;
   const supportCount =
-    can("support:read") && supportRequestData
+    can("support:read") && Array.isArray(supportRequestData)
       ? supportRequestData.filter((request) => request.status === "OPEN").length
       : 0;
   const itemBadgeCount = (href: string) => {

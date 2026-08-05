@@ -41,7 +41,7 @@ const vendorDesktopNav = [
   { href: "/earnings", label: "Earnings", icon: "💰" },
 
   { href: "/notifications", label: "Notifications", icon: "🔔" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
   { href: "/help?audience=vendor", label: "Support", icon: "💬" },
 ];
 const vendorNav = vendorMobileNav;
