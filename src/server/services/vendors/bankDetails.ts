@@ -6,6 +6,7 @@ import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
 import {
 	assertFreshVendorSecurityPinForSensitiveAction,
 	assertVendorSecurityPinReady,
+	assertPinResetHoldNotActive,
 } from "./securityOnboarding";
 
 export async function setBankDetails({
@@ -24,6 +25,7 @@ export async function setBankDetails({
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
 	assertVendorSecurityPinReady(vendor);
+	await assertPinResetHoldNotActive(vendor);
 	await assertFreshVendorSecurityPinForSensitiveAction({
 		userId,
 		pin: securityPin,

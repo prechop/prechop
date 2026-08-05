@@ -190,12 +190,37 @@ export const startVendorApplicationSchema = zod.object({}).strict();
 
 export const earningsQuerySchema = zod
 	.object({
-		// Defaulted rather than required so `?` with no query string is a valid
-		// request for today, and an unknown range is rejected outright instead
-		// of silently falling back to "all" (which would leak a wider window
-		// than the caller asked for).
 		range: zod.enum(["today", "week", "month", "all"]).default("today"),
 	})
 	.strict();
 
 export type EarningsQueryInput = zod.infer<typeof earningsQuerySchema>;
+
+export const forgotPinRequestSchema = zod
+	.object({
+		email: zod.string().trim().email(),
+	})
+	.strict();
+
+export const forgotPinVerifySchema = zod
+	.object({
+		email: zod.string().trim().email(),
+		otp: zod.string().trim().min(6).max(6),
+	})
+	.strict();
+
+export const forgotPinResetSchema = zod
+	.object({
+		resetToken: zod.string().trim().min(1),
+		newPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/, "PIN must be 4-6 digits"),
+	})
+	.strict();
+
+export const forgotPinSupportSchema = zod
+	.object({
+		reason: zod.string().trim().min(10).max(1000),
+	})
+	.strict();

@@ -175,3 +175,40 @@ export function serviceUnavailable(
 ): AppError {
 	return new AppError(message, 503, appCode);
 }
+
+// ── 403 Forgot PIN flow ──────────────────────────────────────────────────
+export const ErrPinResetUnauthorized = new AppError(
+	"Unauthorized to reset security PIN.",
+	403,
+	"PIN_RESET_UNAUTHORIZED",
+);
+
+export const ErrPinResetOtpExpired = new AppError(
+	"The verification code has expired. Request a new code.",
+	403,
+	"PIN_RESET_OTP_EXPIRED",
+);
+
+export const ErrPinResetOtpInvalid = new AppError(
+	"Incorrect verification code. Please try again.",
+	403,
+	"PIN_RESET_OTP_INVALID",
+);
+
+export const ErrPinResetRateLimited = new AppError(
+	"Too many reset attempts. Please wait before trying again.",
+	429,
+	"PIN_RESET_RATE_LIMITED",
+);
+
+export const ErrPinResetSupportRequired = new AppError(
+	"We couldn't verify your account. Contact support for help.",
+	403,
+	"PIN_RESET_SUPPORT_REQUIRED",
+);
+
+export const ErrPinResetHoldActive = new AppError(
+	"A security hold is active. Bank details and payouts are temporarily restricted.",
+	403,
+	"PIN_RESET_HOLD_ACTIVE",
+);

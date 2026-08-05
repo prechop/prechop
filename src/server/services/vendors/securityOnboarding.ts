@@ -93,3 +93,5 @@ export async function assertFreshVendorSecurityPinForSensitiveAction({
 		pin: pin.trim(),
 	});
 }
+
+export { assertPinResetHoldNotActive, invalidateVendorPinSessions } from "./forgotPin";

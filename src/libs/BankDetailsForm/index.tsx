@@ -8,6 +8,7 @@ import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { useToast } from "@/hooks/useToast";
 import type { VendorProfile } from "@/types";
+import ForgotPinFlow from "@/libs/ForgotPinFlow";
 
 interface Bank {
 	name: string;
@@ -75,6 +76,7 @@ function errMsg(e: unknown): string {
 export default function BankDetailsForm({
 	initialBankCode,
 	initialAccountName,
+	initialEmail,
 	onSaved,
 	saveLabel = "Save bank details",
 	readOnly = false,
@@ -83,6 +85,7 @@ export default function BankDetailsForm({
 }: {
 	initialBankCode?: string;
 	initialAccountName?: string;
+	initialEmail?: string;
 	onSaved?: (vendor: VendorProfile) => void;
 	saveLabel?: string;
 	readOnly?: boolean;
@@ -100,6 +103,7 @@ export default function BankDetailsForm({
 	const [editing, setEditing] = useState(false);
 	const [pin, setPin] = useState("");
 	const [verifiedPin, setVerifiedPin] = useState("");
+	const [showForgotPin, setShowForgotPin] = useState(false);
 	const locked = readOnly || !securityVerified || !editing;
 
 	// A verification is only valid for the exact bank + account it was made for.
@@ -118,6 +122,7 @@ export default function BankDetailsForm({
 		setVerifiedPin("");
 		setAccountNumber("");
 		setResolved(null);
+		setShowForgotPin(false);
 	}
 
 	async function verifyPin() {
@@ -257,6 +262,20 @@ export default function BankDetailsForm({
 							? "Edit bank details"
 							: "Add bank details"}
 					</Button>
+					<Button
+						$variant="ghost"
+						$size="sm"
+						onClick={() => setShowForgotPin((v) => !v)}
+					>
+						{showForgotPin ? "Hide reset options" : "Forgot PIN?"}
+					</Button>
+					{showForgotPin && (
+						<ForgotPinFlow
+							email={initialEmail ?? ""}
+							onDone={() => setShowForgotPin(false)}
+							onCancel={() => setShowForgotPin(false)}
+						/>
+					)}
 				</LockedPanel>
 			)}
 

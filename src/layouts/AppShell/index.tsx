@@ -26,18 +26,26 @@ const buyerNavWithSaved = [
   { href: "/marketplace?saved=1", label: "Saved", icon: "♡" },
   ...buyerNav.slice(2),
 ];
-const vendorNav = [
+const vendorMobileNav = [
   { href: "/dashboard", label: "Home", icon: "🏠" },
-  { href: "/notifications", label: "Alerts", icon: "🔔" },
+  { href: "/pipeline", label: "Orders", icon: "🔥" },
   { href: "/menu", label: "Menu", icon: "📋" },
+  { href: "/earnings", label: "Earnings", icon: "💰" },
+  { href: "/vendor/more", label: "More", icon: "⋯" },
+];
+const vendorDesktopNav = [
+  { href: "/dashboard", label: "Home", icon: "🏠" },
   { href: "/pipeline", label: "Cooking", icon: "🔥" },
+  { href: "/menu", label: "Menu", icon: "📋" },
   { href: "/timetable", label: "Timetable", icon: "🗓️" },
   { href: "/earnings", label: "Earnings", icon: "💰" },
-  { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
+  { href: "/notifications", label: "Notifications", icon: "🔔" },
+  { href: "/help?audience=vendor", label: "Support", icon: "💬" },
 ];
+const vendorNav = vendorMobileNav;
 const vendorSetupNav = [
   { href: "/dashboard", label: "Home", icon: "🏠" },
-  { href: "/notifications", label: "Alerts", icon: "🔔" },
+  { href: "/vendor/more", label: "More", icon: "⋯" },
   { href: "/vendor/onboarding", label: "Setup", icon: "✅" },
   { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
@@ -90,7 +98,7 @@ const BarInner = styled(Container)`
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 62px;
+  height: 64px;
   min-width: 0;
   max-width: min(var(--pc-maxw), 100%);
   @media (max-width: 420px) {
@@ -100,47 +108,43 @@ const BarInner = styled(Container)`
 const Brand = styled(Link)`
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   font-family: var(--pc-font-display);
   font-weight: 800;
-  font-size: 21px;
+  font-size: 20px;
   letter-spacing: -0.03em;
   color: var(--pc-text);
   min-width: max-content;
   flex: 0 0 auto;
   @media (max-width: 420px) {
-    gap: 7px;
+    gap: 6px;
     font-size: 19px;
   }
 `;
 const Logo = styled.span`
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  //   background: var(--pc-gradient-warm);
+  border-radius: 8px;
   box-shadow: var(--pc-shadow-primary);
-  font-size: 16px;
+  font-size: 15px;
   flex-shrink: 0;
   @media (max-width: 420px) {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    font-size: 15px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    font-size: 14px;
   }
 `;
 const Right = styled.div`
   display: flex;
   align-items: center;
-  gap: 12px;
-  /* Keep the right cluster a constant width pinned to the edge so its
-	   contents (incl. the mode switcher) never shift when the middle nav
-	   changes width between Selling (6 items) and Buying (3 items) pages. */
+  gap: 10px;
   flex-shrink: 1;
   min-width: 0;
   @media (max-width: 759px) {
-    gap: 8px;
+    gap: 6px;
   }
 `;
 const ModeSwitch = styled.div`
@@ -158,13 +162,13 @@ const ModeBtn = styled.button<{ $active: boolean }>`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   white-space: nowrap;
   border: none;
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;
-  padding: 6px 11px;
+  padding: 5px 10px;
   border-radius: var(--pc-radius-pill);
   color: ${(p) =>
     p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
@@ -178,12 +182,12 @@ const ModeBtn = styled.button<{ $active: boolean }>`
   }
   @media (max-width: 420px) {
     gap: 3px;
-    padding: 6px 7px;
-    font-size: 12px;
+    padding: 5px 8px;
+    font-size: 12.5px;
   }
   @media (max-width: 360px) {
-    padding: 6px 6px;
-    font-size: 11.5px;
+    padding: 5px 6px;
+    font-size: 12px;
     .mode-icon {
       display: none;
     }
@@ -269,10 +273,10 @@ const Main = styled.main`
   max-width: 100%;
   box-sizing: border-box;
   overflow-x: clip;
-  min-height: calc(100dvh - 62px - 70px);
+  min-height: calc(100dvh - 64px - 70px);
   padding: var(--pc-space-6) 0 var(--pc-space-10);
   @media (min-width: 760px) {
-    min-height: calc(100dvh - 62px);
+    min-height: calc(100dvh - 64px);
     padding-bottom: var(--pc-space-8);
   }
 `;
@@ -448,9 +452,14 @@ export default function AppShell({
   const isActiveVendor = vendor?.status === "ACTIVE";
   const nav = isVendor
     ? isActiveVendor
-      ? vendorNav
+      ? vendorDesktopNav
       : vendorSetupNav
     : buyerNavWithSaved;
+  const mobileNav = isVendor
+    ? isActiveVendor
+      ? vendorMobileNav
+      : vendorSetupNav
+    : buyerNav;
   // Vendors can also shop as buyers (from other kitchens). The mode switcher
   // lets them cross between their selling area and the buyer marketplace; it is
   // hidden from plain buyers. Its state is derived from the current area, so it
@@ -468,6 +477,9 @@ export default function AppShell({
   const savedCount = savedKitchens.count + savedListings.count;
   const isNavActive = (href: string, label: string) => {
     if (label === "Saved") return savedView;
+    if (label === "More") return pathname === "/vendor/more";
+    if (label === "Notifications") return pathname === "/notifications";
+    if (label === "Support") return pathname === "/help";
     if (href === "/marketplace") return pathname === href && !savedView;
     return pathname.startsWith(href);
   };
@@ -476,7 +488,7 @@ export default function AppShell({
     <>
       <Bar>
         <BarInner>
-          <Brand href={nav === vendorNav ? "/dashboard" : "/marketplace"}>
+          <Brand href={isVendor ? "/dashboard" : "/marketplace"}>
             {/* <Logo aria-hidden>🍲</Logo> */}
             <Logo aria-hidden>
               <Image src="/dark.png" alt="Prechop" width={30} height={30} />
@@ -499,7 +511,7 @@ export default function AppShell({
                   {n.label === "Saved" && savedCount > 0 && (
                     <CountBubble>{compactCount(savedCount)}</CountBubble>
                   )}
-                  {n.label === "Alerts" && alertCount > 0 && (
+                  {(n.label === "Alerts" || n.label === "More" || n.label === "Notifications") && alertCount > 0 && (
                     <CountBubble>{compactCount(alertCount)}</CountBubble>
                   )}
                 </NavIcon>
@@ -567,7 +579,7 @@ export default function AppShell({
         </MainInner>
       </Main>
       <BottomNav>
-        {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
+        {(isAuthenticated ? mobileNav : [buyerNav[0]]).map((n) => (
           <NavLink
             key={n.href}
             href={n.href}
@@ -577,15 +589,15 @@ export default function AppShell({
                 setIsSavedQuery(n.label === "Saved");
               }
             }}>
-            <NavIcon aria-hidden>
-              {n.icon}
-              {n.label === "Saved" && savedCount > 0 && (
-                <CountBubble>{compactCount(savedCount)}</CountBubble>
-              )}
-              {n.label === "Alerts" && alertCount > 0 && (
-                <CountBubble>{compactCount(alertCount)}</CountBubble>
-              )}
-            </NavIcon>
+              <NavIcon aria-hidden>
+                {n.icon}
+                {n.label === "Saved" && savedCount > 0 && (
+                  <CountBubble>{compactCount(savedCount)}</CountBubble>
+                )}
+                {(n.label === "Alerts" || n.label === "More") && alertCount > 0 && (
+                  <CountBubble>{compactCount(alertCount)}</CountBubble>
+                )}
+              </NavIcon>
             <span>{n.label}</span>
           </NavLink>
         ))}

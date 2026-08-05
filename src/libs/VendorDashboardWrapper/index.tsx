@@ -45,29 +45,36 @@ interface IncomingOrder {
 	items: Array<{ snapshotName: string; quantity: number }>;
 }
 
+interface VendorAnalyticsLifetime {
+	totalOrders: number;
+	completedOrders: number;
+	cancelledOrders: number;
+	totalRevenueKobo: number;
+	totalFoodSubtotalKobo: number;
+	totalCommissionKobo: number;
+	totalDeliveryEarningsKobo: number;
+	totalVendorSettlementKobo: number;
+	avgOrderValueKobo: number;
+	rating: number;
+	totalReviews: number;
+	completionRate: number;
+}
+
+interface VendorAnalytics {
+	lifetime: VendorAnalyticsLifetime;
+}
+
 const OpenCard = styled(Card)`
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--pc-space-4);
   background: var(--pc-gradient-calm-orange);
-  border: none;
-  color: var(--pc-text-inverse);
-  box-shadow: var(--pc-shadow-calm-orange);
-  position: relative;
-  overflow: hidden;
-  &::after {
-    content: "";
-    position: absolute;
-    right: -30px;
-    top: -30px;
-    width: 140px;
-    height: 140px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
-    /* Decorative only — must never swallow clicks on the toggle beneath it. */
-    pointer-events: none;
-  }
+  border: 1px solid var(--pc-vendor-border);
+  border-left: 3px solid var(--pc-color-primary);
+  lor: var(--pc-text-inverse);
+  box-shadow: none;
+  padding: var(--pc-space-4) var(--pc-space-5);
+  margin-bottom: var(--pc-space-3);
 `;
 const CompactStatsGrid = styled.div`
 	display: grid;
@@ -126,22 +133,23 @@ const CompactStatsGrid = styled.div`
 	}
 `;
 const OpenText = styled.div`
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
 `;
 const OpenTitle = styled.span`
   font-family: var(--pc-font-display);
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 800;
-  letter-spacing: -0.02em;
-  color: #fff;
+  letter-spacing: -0.01em;
+  color: var(--pc-text);
 `;
 const OpenSub = styled.span`
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--pc-text-muted);
 `;
 const NewButton = styled(Link)`
   display: flex;
@@ -149,13 +157,13 @@ const NewButton = styled(Link)`
   justify-content: center;
   gap: 10px;
   width: 100%;
-  padding: 16px;
+  padding: 14px;
   border-radius: var(--pc-radius);
   background: var(--pc-gradient-calm-orange);
   color: var(--pc-text-inverse);
   font-family: var(--pc-font-display);
   font-weight: 800;
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: -0.01em;
   box-shadow: var(--pc-shadow-calm-orange);
   transition:
@@ -164,6 +172,7 @@ const NewButton = styled(Link)`
   &:hover {
     transform: translateY(-2px);
   }
+  margin-bottom: var(--pc-space-4);
 `;
 const OrderCard = styled(Card)`
   display: block;
@@ -214,6 +223,24 @@ const IncomingItem = styled.div`
 const pulse = keyframes`
 	0%, 100% { opacity: 1; transform: scale(1); }
 	50% { opacity: 0.4; transform: scale(0.7); }
+`;
+const CompactCountBubble = styled.span`
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pc-color-primary);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--pc-vendor-surface);
 `;
 const LivePulse = styled.span`
   display: inline-flex;
@@ -325,6 +352,378 @@ const DateRange = styled.div`
   @media (min-width: 600px) {
     grid-template-columns: 1fr 1fr;
   }
+`;
+
+const DashboardShell = styled.div`
+  background: var(--pc-vendor-bg);
+  min-height: 100%;
+`;
+const HeroSection = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-4);
+  padding: var(--pc-space-5) var(--pc-space-5) var(--pc-space-4);
+  background: var(--pc-vendor-surface);
+  border: 1px solid var(--pc-vendor-border);
+  border-radius: var(--pc-radius);
+  margin-bottom: var(--pc-space-3);
+`;
+const HeroText = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+`;
+const HeroEyebrow = styled.span`
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pc-color-primary);
+`;
+const HeroNameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+`;
+const HeroName = styled.h1`
+  font-family: var(--pc-font-display);
+  font-size: clamp(26px, 5vw, 32px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--pc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+const VerifiedMark = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--pc-color-accent-50);
+  color: var(--pc-color-accent);
+  font-size: 12px;
+  font-weight: 900;
+  flex-shrink: 0;
+`;
+const HeroSub = styled.p`
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--pc-text-muted);
+  line-height: 1.4;
+`;
+const HeroImage = styled.div`
+  width: 56px;
+  height: 56px;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-gradient-warm);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  box-shadow: var(--pc-shadow-primary);
+`;
+const OpenIcon = styled.span`
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-color-primary-50);
+  font-size: 18px;
+  flex-shrink: 0;
+`;
+const OpenTextCol = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+`;
+const OpenTitleSm = styled.span`
+  font-family: var(--pc-font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--pc-text);
+`;
+const OpenSubSm = styled.span`
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pc-text-muted);
+`;
+const QuickActionsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: var(--pc-space-4);
+  @media (max-width: 380px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+`;
+const QuickActionLink = styled(Link)`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--pc-space-3) var(--pc-space-2);
+  background: var(--pc-vendor-surface);
+  border: 1px solid var(--pc-vendor-border);
+  border-radius: var(--pc-radius);
+  color: var(--pc-text);
+  font-size: 12px;
+  font-weight: 700;
+  transition: border-color var(--pc-dur) var(--pc-ease), background var(--pc-dur) var(--pc-ease);
+  &:hover {
+    border-color: var(--pc-color-primary);
+    background: var(--pc-vendor-surface-2);
+  }
+`;
+const QuickIcon = styled.span`
+  position: relative;
+  display: inline-flex;
+  font-size: 20px;
+  line-height: 1;
+`;
+const SectionCard = styled(Card)`
+  background: var(--pc-vendor-surface);
+  border: 1px solid var(--pc-vendor-border);
+  margin-bottom: var(--pc-space-3);
+`;
+const OrdersHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+  margin-bottom: var(--pc-space-3);
+`;
+const OrdersTitle = styled.h2`
+  font-family: var(--pc-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--pc-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+const ViewAllLink = styled(Link)`
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pc-color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+`;
+const IncomingSection = styled(SectionCard)`
+  margin-bottom: var(--pc-space-3);
+`;
+const IncomingHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--pc-space-2);
+`;
+const IncomingTitle = styled.h2`
+  font-family: var(--pc-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--pc-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+const IncomingRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pc-vendor-border);
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+const IncomingLeft = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+`;
+const IncomingRight = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+`;
+const IncomingAmount = styled.span`
+  font-family: var(--pc-font-display);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--pc-text);
+`;
+const IncomingMeta = styled.span`
+  font-size: 11.5px;
+  color: var(--pc-text-muted);
+  font-weight: 600;
+`;
+const OrderRowWrap = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: var(--pc-space-3);
+  padding: var(--pc-space-3) var(--pc-space-4);
+  background: var(--pc-vendor-surface);
+  border: 1px solid var(--pc-vendor-border);
+  border-radius: var(--pc-radius);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--pc-dur) var(--pc-ease);
+  &:hover {
+    border-color: var(--pc-color-primary);
+  }
+`;
+const OrderThumb = styled.div`
+  width: 40px;
+  height: 40px;
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-vendor-surface-2);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  overflow: hidden;
+`;
+const OrderThumbImg = styled.img`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+`;
+const OrderBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+`;
+const OrderTopRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+`;
+const OrderTitle = styled.span`
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--pc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+const OrderMeta = styled.span`
+  font-size: 11.5px;
+  color: var(--pc-text-muted);
+  font-weight: 600;
+`;
+const OrderStatusPill = styled(Badge)`
+  flex-shrink: 0;
+`;
+const OrderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+`;
+const OrderActionLink = styled(Link)`
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pc-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  &:hover {
+    color: var(--pc-text);
+  }
+`;
+const OrderCloseBtn = styled.button`
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pc-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  &:hover {
+    color: var(--pc-text);
+  }
+`;
+const OrderChevron = styled.span`
+  font-size: 16px;
+  color: var(--pc-text-muted);
+  flex-shrink: 0;
+`;
+const CompactStatGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-bottom: var(--pc-space-3);
+  @media (max-width: 340px) {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  }
+`;
+const CompactStatCard = styled(Card)`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 10px;
+  background: var(--pc-vendor-surface);
+  border: 1px solid var(--pc-vendor-border);
+  box-shadow: none;
+`;
+const CompactStatTop = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+`;
+const CompactStatLabel = styled.span`
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pc-text-muted);
+`;
+const CompactStatIcon = styled.span`
+  font-size: 15px;
+  line-height: 1;
+`;
+const CompactStatValue = styled.div`
+  font-family: var(--pc-font-display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--pc-text);
+  line-height: 1.1;
+`;
+const CompactStatHint = styled.span`
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pc-text-faint);
 `;
 
 const STATUS_FILTERS: Array<{
@@ -460,6 +859,23 @@ export default function VendorDashboardWrapper() {
 		fetcher,
 		{ refreshInterval: 5_000 },
 	);
+
+	const { data: analytics } = useSWR<VendorAnalytics>(
+		isActive ? "/api/vendor/analytics" : null,
+		fetcher,
+		{ refreshInterval: 60_000, shouldRetryOnError: false },
+	);
+
+	const { data: alertData } = useSWR<{ unread?: number }>(
+		"/notifications?limit=50",
+		fetcher,
+		{ refreshInterval: 15_000, shouldRetryOnError: false },
+	);
+	const alertCount = alertData?.unread ?? 0;
+
+	function compactCount(count: number) {
+		return count >= 10 ? "9+" : String(count);
+	}
 
 	const [toggling, setToggling] = useState(false);
 	const [securityBusy, setSecurityBusy] = useState<
@@ -766,30 +1182,43 @@ export default function VendorDashboardWrapper() {
 					</SecurityModal>
 				</ModalBackdrop>
 			)}
-			<Stack $gap={20}>
-				<PageHeader
-					eyebrow="Vendor dashboard"
-					title={vendor.businessName ?? "Your kitchen"}
-					subtitle={
-						vendor.isOpenForOrders
-							? "You're open — buyers can order from you right now."
-							: "You're currently closed for new orders."
-					}
-				/>
+			<DashboardShell>
+				<Stack $gap={14}>
+					<HeroSection>
+						<HeroText>
+							<HeroEyebrow>Vendor dashboard</HeroEyebrow>
+							<HeroNameRow>
+								<HeroName>
+									{vendor.businessName ?? "Your kitchen"}
+								</HeroName>
+								{vendor.status === "ACTIVE" && (
+									<VerifiedMark aria-label="Verified">
+										✓
+									</VerifiedMark>
+								)}
+							</HeroNameRow>
+							<HeroSub>
+								{vendor.isOpenForOrders
+									? "You're open — buyers can order from you right now."
+									: "You're currently closed for new orders."}
+							</HeroSub>
+						</HeroText>
+					</HeroSection>
 
 				<OpenCard>
-					<OpenText>
-						<OpenTitle>
+					<OpenIcon aria-hidden>🏪</OpenIcon>
+					<OpenTextCol>
+						<OpenTitleSm>
 							{vendor.isOpenForOrders
 								? "Open for orders"
 								: "Closed"}
-						</OpenTitle>
-						<OpenSub>
+						</OpenTitleSm>
+						<OpenSubSm>
 							{vendor.isOpenForOrders
-								? "Buyers can order from you"
-								: "You're not accepting orders"}
-						</OpenSub>
-					</OpenText>
+								? "Your store is visible to buyers."
+								: "Your store is hidden from new buyers."}
+						</OpenSubSm>
+					</OpenTextCol>
 					<Toggle
 						type="button"
 						role="switch"
@@ -801,6 +1230,7 @@ export default function VendorDashboardWrapper() {
 					/>
 				</OpenCard>
 
+				<SectionHeader title="Dashboard overview" />
 				<CompactStatsGrid>
 					<StatCard
 						label="Menus"
@@ -824,292 +1254,313 @@ export default function VendorDashboardWrapper() {
 					/>
 				</CompactStatsGrid>
 
+
 				<NewButton href="/dashboard/new">
 					<span aria-hidden>＋</span> New daily order
 				</NewButton>
 
-				{(incoming?.length ?? 0) > 0 && (
-					<Card>
-						<SectionHeader
-							title="Incoming orders"
-							icon="🔔"
-							action={<LivePulse>Live</LivePulse>}
-						/>
-						<div>
-							{(incoming ?? []).slice(0, 6).map((o) => (
-								<IncomingItem key={o.id}>
-									<Stack $gap={3}>
-										<Row $gap={8} $align="center">
-											<Text $weight={700} $size={14}>
-												#{o.orderNumber}
-											</Text>
-											<Badge $tone={orderTone(o.status)}>
-												{statusLabel(o.status)}
-											</Badge>
-										</Row>
-										<Text $muted $size={12}>
-											{o.fulfillmentType === "DELIVERY"
-												? "🛵 Delivery"
-												: "🥡 Pickup"}{" "}
-											·{" "}
-											{o.items.reduce(
-												(n, it) => n + it.quantity,
-												0,
-											)}{" "}
-											item(s)
-										</Text>
-									</Stack>
-									<Text $weight={800} $size={14}>
-										{formatKobo(o.totalKobo)}
-									</Text>
-								</IncomingItem>
-							))}
-						</div>
-						<Row $justify="flex-end" style={{ marginTop: 12 }}>
-							<CookLink href="/pipeline">
-								Open kitchen <span aria-hidden>→</span>
-							</CookLink>
-						</Row>
-					</Card>
-				)}
+					<SectionHeader title="Quick actions" />
+					<QuickActionsGrid>
+						<QuickActionLink href="/menu">
+							<QuickIcon aria-hidden>📋</QuickIcon>
+							Menu
+						</QuickActionLink>
+						<QuickActionLink href="/timetable">
+							<QuickIcon aria-hidden>🗓️</QuickIcon>
+							Timetable
+						</QuickActionLink>
+						<QuickActionLink href="/earnings">
+							<QuickIcon aria-hidden>💰</QuickIcon>
+							Earnings
+						</QuickActionLink>
+						<QuickActionLink href="/notifications">
+							<QuickIcon aria-hidden>
+								🔔
+								{alertCount > 0 && (
+									<CompactCountBubble>
+										{compactCount(alertCount)}
+									</CompactCountBubble>
+								)}
+							</QuickIcon>
+							Notifications
+						</QuickActionLink>
+						<QuickActionLink href="/vendor/settings">
+							<QuickIcon aria-hidden>⋯</QuickIcon>
+							More
+						</QuickActionLink>
+					</QuickActionsGrid>
 
-				<div>
-					<SectionHeader title="Today's orders" icon="📋" />
+					{(incoming?.length ?? 0) > 0 && (
+						<IncomingSection>
+							<IncomingHeader>
+								<IncomingTitle>
+									<span aria-hidden>🔔</span>
+									Incoming orders
+								</IncomingTitle>
+								<LivePulse>Live</LivePulse>
+							</IncomingHeader>
+							<div>
+								{(incoming ?? []).slice(0, 6).map((o) => (
+									<IncomingRow key={o.id}>
+										<IncomingLeft>
+											<Row $gap={8} $align="center">
+												<Text $weight={700} $size={14}>
+													#{o.orderNumber}
+												</Text>
+												<Badge $tone={orderTone(o.status)}>
+													{statusLabel(o.status)}
+												</Badge>
+											</Row>
+											<IncomingMeta>
+												{o.fulfillmentType === "DELIVERY"
+													? "🛵 Delivery"
+													: "🥡 Pickup"}{" "}
+												·{" "}
+												{o.items.reduce(
+													(n, it) => n + it.quantity,
+													0,
+												)}{" "}
+												item
+												{o.items.reduce(
+													(n, it) => n + it.quantity,
+													0,
+												) === 1
+													? ""
+													: "s"}
+											</IncomingMeta>
+										</IncomingLeft>
+										<IncomingRight>
+											<IncomingAmount>
+												{formatKobo(o.totalKobo)}
+											</IncomingAmount>
+											<CookLink href={`/dashboard/${o.id}`}>
+												View{" "}
+												<span aria-hidden>
+													→
+												</span>
+											</CookLink>
+										</IncomingRight>
+									</IncomingRow>
+								))}
+							</div>
+						</IncomingSection>
+					)}
 
-					<Stack $gap={10} style={{ marginBottom: 14 }}>
-						<FilterChips role="group" aria-label="Filter by status">
-							{STATUS_FILTERS.map((s) => (
-								<Chip
-									key={s.label}
-									type="button"
-									$on={statusFilter === s.value}
-									aria-pressed={statusFilter === s.value}
-									onClick={() => setStatusFilter(s.value)}
-								>
-									{s.label}
-								</Chip>
-							))}
-						</FilterChips>
-						<Input
-							type="search"
-							placeholder="Search by title…"
-							aria-label="Search daily orders by title"
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-						/>
-						<DateRange>
+					<div>
+						<OrdersHeader>
+							<OrdersTitle>
+								<span aria-hidden>📋</span>
+								Today's orders
+							</OrdersTitle>
+							<ViewAllLink href="/dashboard">
+								View all <span aria-hidden>›</span>
+							</ViewAllLink>
+						</OrdersHeader>
+
+						<Stack $gap={10} style={{ marginBottom: 14 }}>
+							<FilterChips role="group" aria-label="Filter by status">
+								{STATUS_FILTERS.map((s) => (
+									<Chip
+										key={s.label}
+										type="button"
+										$on={statusFilter === s.value}
+										aria-pressed={statusFilter === s.value}
+										onClick={() => setStatusFilter(s.value)}
+									>
+										{s.label}
+									</Chip>
+								))}
+							</FilterChips>
 							<Input
-								type="date"
-								label="From"
-								aria-label="Scheduled from date"
-								value={fromDate}
-								max={toDate || undefined}
-								onChange={(e) => setFromDate(e.target.value)}
+								type="search"
+								placeholder="Search by title…"
+								aria-label="Search daily orders by title"
+								value={search}
+								onChange={(e) => setSearch(e.target.value)}
 							/>
-							<Input
-								type="date"
-								label="To"
-								aria-label="Scheduled to date"
-								value={toDate}
-								min={fromDate || undefined}
-								onChange={(e) => setToDate(e.target.value)}
-							/>
-						</DateRange>
-						{hasFilters && (
-							<Row $justify="flex-end">
-								<Button
-									$size="sm"
-									$variant="secondary"
-									onClick={clearFilters}
-								>
-									Clear filters
-								</Button>
-							</Row>
-						)}
-					</Stack>
-
-					{listLoading ? (
-						<Stack $gap={12}>
-							{[0, 1, 2].map((i) => (
-								<Card key={i}>
-									<Stack $gap={10}>
-										<Skeleton $w="55%" $h={20} />
-										<Skeleton $w="80%" $h={14} />
-										<Skeleton $w="40%" $h={14} />
-									</Stack>
-								</Card>
-							))}
-						</Stack>
-					) : list.length === 0 ? (
-						<EmptyState
-							icon="🍲"
-							title={
-								hasFilters
-									? "No matching daily orders"
-									: "No daily orders yet"
-							}
-							description={
-								hasFilters
-									? "No listings match these filters. Try widening your search."
-									: "Post your first daily order to start selling today."
-							}
-							action={
-								hasFilters ? (
+							<DateRange>
+								<Input
+									type="date"
+									label="From"
+									aria-label="Scheduled from date"
+									value={fromDate}
+									max={toDate || undefined}
+									onChange={(e) => setFromDate(e.target.value)}
+								/>
+								<Input
+									type="date"
+									label="To"
+									aria-label="Scheduled to date"
+									value={toDate}
+									min={fromDate || undefined}
+									onChange={(e) => setToDate(e.target.value)}
+								/>
+							</DateRange>
+							{hasFilters && (
+								<Row $justify="flex-end">
 									<Button
+										$size="sm"
 										$variant="secondary"
 										onClick={clearFilters}
 									>
 										Clear filters
 									</Button>
-								) : undefined
-							}
-						/>
-					) : (
-						<Stack $gap={12}>
-							{list.map((o, i) => {
-								const closed =
-									timeUntil(o.cutoffTime) === "closed";
-								const comingSoon = o.availableFrom
-									? new Date(o.availableFrom).getTime() >
-										Date.now()
-									: false;
-								// Editable only until orders open (mirrors the
-								// server lock): a future `availableFrom`, not
-								// closed/cancelled.
-								const editable =
-									comingSoon &&
-									o.status !== "CLOSED" &&
-									o.status !== "CANCELLED";
+								</Row>
+							)}
+						</Stack>
+
+						{listLoading ? (
+							<Stack $gap={12}>
+								{[0, 1, 2].map((i) => (
+									<Card key={i}>
+										<Stack $gap={10}>
+											<Skeleton $w="55%" $h={20} />
+											<Skeleton $w="80%" $h={14} />
+											<Skeleton $w="40%" $h={14} />
+										</Stack>
+									</Card>
+								))}
+							</Stack>
+						) : list.length === 0 ? (
+							<EmptyState
+								icon="🍲"
+								title={
+									hasFilters
+										? "No matching daily orders"
+										: "No daily orders yet"
+								}
+								description={
+									hasFilters
+										? "No listings match these filters. Try widening your search."
+										: "Post your first daily order to start selling today."
+								}
+								action={
+									hasFilters ? (
+										<Button
+											$variant="secondary"
+											onClick={clearFilters}
+										>
+											Clear filters
+										</Button>
+									) : undefined
+								}
+							/>
+						) : (
+							<Stack $gap={10}>
+								{list.map((o, i) => {
+									const closed =
+										timeUntil(o.cutoffTime) === "closed";
+									const comingSoon = o.availableFrom
+										? new Date(o.availableFrom).getTime() >
+											Date.now()
+										: false;
+									const editable =
+										comingSoon &&
+										o.status !== "CLOSED" &&
+										o.status !== "CANCELLED";
+									const thumb = o.items.find(
+										(it) => it.snapshotImageUrl,
+									);
 								return (
 									<FadeIn key={o.id} $delay={i * 40}>
-										<OrderCard>
-											<Stack $gap={12}>
-												<Row
-													$justify="space-between"
-													$align="flex-start"
-													$gap={8}
-												>
-													<TitleLink
-														href={`/dashboard/${o.id}`}
-													>
-														<Title $size={17}>
-															{o.title}
-														</Title>
-													</TitleLink>
-													<Badge
+										<OrderRowWrap href={`/dashboard/${o.id}`}>
+											<OrderThumb>
+												{thumb?.snapshotImageUrl ? (
+													<OrderThumbImg
+														src={thumb.snapshotImageUrl}
+														alt=""
+														loading="lazy"
+													/>
+												) : (
+													<span aria-hidden>
+														🍲
+													</span>
+												)}
+											</OrderThumb>
+											<OrderBody>
+												<OrderTopRow>
+													<OrderTitle>
+														{o.title}
+													</OrderTitle>
+													<OrderStatusPill
 														$tone={statusTone(
 															o.status,
 														)}
 													>
-														{statusLabel(o.status)}
-													</Badge>
-												</Row>
-												<Row
-													$justify="space-between"
-													$align="center"
-													$wrap
-													$gap={8}
-												>
-													<Text $muted $size={13}>
+														{statusLabel(
+															o.status,
+														)}
+													</OrderStatusPill>
+												</OrderTopRow>
+												<Row $gap={8} $align="center">
+													<OrderMeta>
 														{formatDate(
 															o.scheduledDate,
 														)}{" "}
-														· {o.items.length} item
-														{o.items.length === 1
-															? ""
-															: "s"}
-													</Text>
-													<Badge
-														$tone={
-															o.status !==
-															"ACTIVE"
-																? "muted"
-																: comingSoon
-																	? "primary"
-																	: closed
-																		? "danger"
-																		: "warning"
-														}
-													>
-														{o.status !== "ACTIVE"
-															? statusLabel(
-																	o.status,
-																)
-															: comingSoon
-																? `🔜 ${formatDate(o.availableFrom as string)}`
-																: closed
-																	? "Cutoff passed"
-																	: timeUntil(
-																			o.cutoffTime,
-																		)}
-													</Badge>
-												</Row>
-												<Row
-													$justify="space-between"
-													$align="center"
-													$gap={8}
-												>
-													<Text
-														$size={13}
-														$weight={700}
-													>
-														{o.totalOrdersCount}{" "}
-														order
-														{o.totalOrdersCount ===
+														· {o.items.length}{" "}
+														item
+														{o.items.length ===
 														1
 															? ""
-															: "s"}{" "}
-														placed
-													</Text>
-													<Row
-														$gap={14}
-														$align="center"
-													>
+															: "s"}
+													</OrderMeta>
+													{o.status === "ACTIVE" &&
+														!comingSoon &&
+														!closed && (
+															<OrderMeta>
+																•
+																{timeUntil(
+																	o.cutoffTime,
+																)}
+															</OrderMeta>
+														)}
+													{o.status === "ACTIVE" &&
+														closed && (
+															<Badge $tone="danger">
+																Cutoff
+																passed
+															</Badge>
+														)}
+												</Row>
+												{(editable || o.status === "ACTIVE") && (
+													<OrderActions>
 														{editable && (
-															<EditLink
+															<OrderActionLink
 																href={`/dashboard/${o.id}/edit`}
 															>
-																<span
-																	aria-hidden
-																>
+																<span aria-hidden>
 																	✏️
 																</span>{" "}
 																Edit
-															</EditLink>
+															</OrderActionLink>
 														)}
-														{o.status ===
-															"ACTIVE" && (
-															<Button
-																$size="sm"
-																$variant="secondary"
-																onClick={() =>
-																	closeListing(
-																		o,
-																	)
-																}
+														{o.status === "ACTIVE" && (
+															<OrderCloseBtn
+																type="button"
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	closeListing(o);
+																}}
 															>
 																Close
-															</Button>
+															</OrderCloseBtn>
 														)}
-														<CookLink
-															href={`/dashboard/${o.id}`}
-														>
-															View{" "}
-															<span aria-hidden>
-																→
-															</span>
-														</CookLink>
-													</Row>
-												</Row>
-											</Stack>
-										</OrderCard>
+													</OrderActions>
+												)}
+											</OrderBody>
+											<OrderChevron aria-hidden>
+												›
+											</OrderChevron>
+										</OrderRowWrap>
 									</FadeIn>
 								);
-							})}
-						</Stack>
-					)}
-				</div>
-			</Stack>
+								})}
+							</Stack>
+						)}
+					</div>
+				</Stack>
+			</DashboardShell>
 		</FadeIn>
 	);
 }

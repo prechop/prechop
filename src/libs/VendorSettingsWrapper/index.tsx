@@ -902,6 +902,7 @@ export default function VendorSettingsWrapper() {
 						<BankDetailsForm
 							initialBankCode={vendor.bankCode}
 							initialAccountName={vendor.accountName}
+							initialEmail={vendor.email}
 							saveLabel="Update bank details"
 							onSaved={() => mutate()}
 							securityVerified={securityPinReady}

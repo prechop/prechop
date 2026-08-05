@@ -73,7 +73,7 @@ export default function AdminSupportWrapper() {
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
 
   async function refreshSupportLists() {
-    await Promise.all([mutate(), mutate("/admin/support-requests")]);
+    await Promise.all([mutate(), mutate("/admin/support-requests" as any)]);
   }
 
   async function sendReply() {

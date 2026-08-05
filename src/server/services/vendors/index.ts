@@ -3,6 +3,7 @@ export * from "./banks";
 export * from "./businessIdentity";
 export * from "./categories";
 export * from "./deliveryDefaults";
+export * from "./forgotPin";
 export * from "./getMyVendor";
 export * from "./location";
 export * from "./notificationPrefs";

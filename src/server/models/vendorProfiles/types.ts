@@ -82,6 +82,8 @@ export interface IVendorProfile {
 	securityOnboardingCompletedAt?: Date;
 	securityPinHash?: string;
 	securityPinSet?: boolean;
+	pinResetHoldUntil?: Date;
+	lastPinResetAt?: Date;
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

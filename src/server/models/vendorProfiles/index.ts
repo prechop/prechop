@@ -123,6 +123,8 @@ const schema = new mongoose.Schema<any>(
 		securityOnboardingDismissedAt: { type: Date },
 		securityOnboardingCompletedAt: { type: Date },
 		securityPinHash: { type: String, select: false },
+		pinResetHoldUntil: { type: Date },
+		lastPinResetAt: { type: Date },
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
