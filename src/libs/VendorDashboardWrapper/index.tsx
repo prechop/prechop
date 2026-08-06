@@ -1257,7 +1257,7 @@ export default function VendorDashboardWrapper() {
                     </IncomingLeft>
                     <IncomingRight>
                       <IncomingAmount>{formatKobo(o.totalKobo)}</IncomingAmount>
-                      <CookLink href={`/dashboard/${o.id}`}>
+                      <CookLink href="/pipeline">
                         View <span aria-hidden>→</span>
                       </CookLink>
                     </IncomingRight>
