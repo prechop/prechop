@@ -601,7 +601,7 @@ function dailyItemPriceLabel(item: DailyOrderItem): string {
 	if (prices.length === 0) return formatKobo(item.snapshotPriceKobo);
 	const min = Math.min(...prices);
 	const max = Math.max(...prices);
-	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+	return min === max ? formatKobo(min) : `${formatKobo(min)}`;
 }
 
 function lineSubtotal(item: DailyOrderItem, line: Line): number {

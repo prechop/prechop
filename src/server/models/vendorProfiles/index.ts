@@ -94,6 +94,7 @@ const schema = new mongoose.Schema<any>(
 		totalReviews: { type: Number, default: 0 },
 		totalOrders: { type: Number, default: 0 },
 		completionRate: { type: Number, default: 0 },
+		completedOrders: { type: Number, default: 0 },
 		lateOrderCount: { type: Number, default: 0 },
 		unfulfilledOrderCount: { type: Number, default: 0 },
 		avgPrepDelayMin: { type: Number, default: 0 },

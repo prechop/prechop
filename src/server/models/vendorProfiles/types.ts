@@ -54,6 +54,7 @@ export interface IVendorProfile {
 	totalReviews: number;
 	totalOrders: number;
 	completionRate: number;
+	completedOrders: number;
 	lateOrderCount?: number;
 	unfulfilledOrderCount?: number;
 	avgPrepDelayMin?: number;

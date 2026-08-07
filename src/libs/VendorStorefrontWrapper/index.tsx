@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import {
 	FiArrowLeft,
 	FiArrowRight,
-	FiAward,
 	FiCheckCircle,
 	FiChevronRight,
 	FiClock,
 	FiHeart,
+	FiMapPin,
 	FiShare2,
 	FiShoppingBag,
 	FiStar,
 	FiTruck,
+	FiUserPlus,
 } from "react-icons/fi";
 import styled from "styled-components";
 import useSWR from "swr";
@@ -29,7 +30,6 @@ import {
 	Text,
 	Title,
 	useListingStatus,
-	useVendorStatus,
 	VendorStatusBadge,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
@@ -130,12 +130,6 @@ function listingFulfillment(listing: DailyOrder): string {
 	return "Order details";
 }
 
-function categoryLabel(category: string) {
-	return category
-		.replace(/[_-]+/g, " ")
-		.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function isMarketplaceUnavailable(error: unknown): boolean {
 	const err = error as {
 		response?: { status?: number; data?: { appCode?: string } };
@@ -163,8 +157,16 @@ const StorefrontSurface = styled(Stack)`
     pointer-events: none;
     z-index: -1;
     background:
-      radial-gradient(720px 420px at 86% 8%, rgba(255, 90, 31, 0.1), transparent 66%),
-      radial-gradient(540px 300px at 5% 22%, rgba(244, 180, 0, 0.06), transparent 64%);
+      radial-gradient(
+        720px 420px at 86% 8%,
+        rgba(255, 90, 31, 0.1),
+        transparent 66%
+      ),
+      radial-gradient(
+        540px 300px at 5% 22%,
+        rgba(244, 180, 0, 0.06),
+        transparent 64%
+      );
   }
 `;
 
@@ -191,8 +193,8 @@ const HeroShade = styled.div`
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.92) 78%),
-    radial-gradient(520px 240px at 50% 48%, transparent, rgba(0, 0, 0, 0.52));
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.78) 78%),
+    radial-gradient(520px 240px at 50% 48%, transparent, rgba(0, 0, 0, 0.35));
 `;
 
 const HeroActions = styled.div`
@@ -244,44 +246,69 @@ const HeroContent = styled.div`
 
 const HeroPanel = styled.div`
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "avatar info"
-    "stats stats";
-  gap: 12px 14px;
+    "identity"
+    "stats"
+    "actions";
+  gap: 12px;
   padding: 14px;
   border-radius: 20px;
   border: 1px solid rgba(255, 90, 31, 0.22);
   background:
-    linear-gradient(135deg, rgba(31, 20, 13, 0.92), rgba(10, 7, 5, 0.9)),
+    linear-gradient(
+      135deg,
+      rgba(31, 20, 13, 0.92),
+      rgba(10, 7, 5, 0.9)
+    ),
     color-mix(in srgb, var(--pc-surface) 80%, #000);
   box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(18px);
 
+  /* Tablet and smaller desktop */
   @media (min-width: 900px) {
-    grid-template-columns: 112px minmax(0, 1fr) 170px 150px;
-    grid-template-areas: "avatar info rating orders";
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "identity actions"
+      "stats stats";
     align-items: center;
-    gap: 24px;
-    padding: 18px 28px;
+    gap: 14px 24px;
+    padding: 18px 24px;
+  }
+
+  /* Wide desktop */
+  @media (min-width: 1200px) {
+    grid-template-columns: minmax(360px, 1fr) auto auto;
+    grid-template-areas: "identity stats actions";
+    gap: 24px 32px;
   }
 `;
 
 const HeroIdentity = styled.div`
-  grid-area: info;
+  grid-area: identity;
   display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
   min-width: 0;
+
+  > div:last-child {
+    min-width: 0;
+  }
+
+  @media (min-width: 900px) {
+    grid-template-columns: 90px minmax(0, 1fr);
+  }
 `;
 
 const AvatarWrap = styled.div`
-  grid-area: avatar;
   position: relative;
   width: 78px;
   height: 78px;
 
   @media (min-width: 900px) {
-    width: 112px;
-    height: 112px;
+    width: 90px;
+    height: 90px;
   }
 `;
 
@@ -308,19 +335,16 @@ const NameRow = styled.div`
 const VendorName = styled.h1`
   margin: 0;
   color: #fff;
-  font-size: clamp(20px, 5.6vw, 23px);
-  line-height: 1.05;
+  font-size: clamp(18px, 4.8vw, 22px);
+  line-height: 1.1;
   font-weight: 900;
   letter-spacing: 0;
   min-width: 0;
-  flex: 1 1 auto;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
+  word-break: break-word;
 
   @media (min-width: 900px) {
-    font-size: 34px;
+    font-size: 26px;
   }
 `;
 
@@ -339,134 +363,151 @@ const Verified = styled.span`
   box-shadow: 0 0 0 3px rgba(18, 12, 8, 0.92);
 
   @media (min-width: 900px) {
-    width: 30px;
-    height: 30px;
-    font-size: 16px;
-  }
-`;
-
-const CategoryRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 9px;
-
-  @media (min-width: 900px) {
-    flex-wrap: nowrap;
-    overflow: hidden;
-  }
-`;
-
-const CategoryPill = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 11.5px;
-  font-weight: 800;
-  white-space: nowrap;
-
-  svg {
-    color: var(--pc-color-primary);
-  }
-
-  @media (min-width: 900px) {
-    font-size: 13px;
-    padding: 6px 11px;
+    width: 28px;
+    height: 28px;
+    font-size: 15px;
   }
 `;
 
 const Description = styled.p`
-  margin: 6px 0 0;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 13px;
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12.5px;
   line-height: 1.35;
   max-width: 56ch;
 
   @media (min-width: 900px) {
-    font-size: 15.5px;
+    font-size: 14px;
   }
 `;
 
 const MetaItem = styled.span`
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
   color: rgba(255, 255, 255, 0.82);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  white-space: nowrap;
+  line-height: 1.3;
+  min-width: 0;
 
   svg {
     color: var(--pc-color-primary);
-    font-size: 17px;
+    font-size: 15px;
+    flex: 0 0 auto;
+  }
+
+  @media (min-width: 900px) {
+    font-size: 13px;
   }
 `;
 
-const StatsGrid = styled.div`
+const MetaDot = styled.span`
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  flex: 0 0 auto;
+`;
+
+const HeroStatsRow = styled.div`
   grid-area: stats;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-
-  @media (min-width: 900px) {
-    display: contents;
-  }
-`;
-
-const StatCell = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 10px 6px 0;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 11.5px;
-  font-weight: 700;
+  gap: 6px 10px;
+  min-width: 0;
 
-  & + & {
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  @media (min-width: 900px) {
-    display: grid;
-    justify-items: center;
-    padding: 10px 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.12);
-
-    & + & {
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
-    }
-
-    &:first-child {
-      grid-area: rating;
-    }
-
-    &:last-child {
-      grid-area: orders;
-    }
+  @media (min-width: 1200px) {
+    justify-content: center;
+    flex-wrap: nowrap;
   }
 `;
 
-const StatValue = styled.span`
+const HeroStat = styled.span`
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  color: #fff;
-  font-size: 19px;
-  font-weight: 900;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11.5px;
+  font-weight: 700;
   white-space: nowrap;
 
   svg {
     color: var(--pc-color-gold);
+    font-size: 13px;
   }
 
   @media (min-width: 900px) {
-    font-size: 24px;
+    font-size: 12px;
+  }
+`;
+
+const StatSep = styled.span`
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  flex: 0 0 auto;
+`;
+
+const VendorActions = styled.div`
+  grid-area: actions;
+  display: flex;
+  gap: 8px;
+  min-width: max-content;
+
+  @media (max-width: 899px) {
+    width: 100%;
+
+    button {
+      width: 100%;
+    }
+  }
+`;
+
+const FollowButton = styled.button<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--pc-radius-pill);
+  border: 1px solid
+    ${(p) =>
+		p.$active ? "rgba(255, 244, 225, 0.4)" : "rgba(255, 244, 225, 0.22)"};
+  background: ${(p) =>
+		p.$active ? "rgba(255, 90, 31, 0.22)" : "rgba(255, 255, 255, 0.08)"};
+  color: ${(p) =>
+		p.$active ? "var(--pc-color-primary)" : "rgba(255, 255, 255, 0.9)"};
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--pc-dur) var(--pc-ease),
+    border-color var(--pc-dur) var(--pc-ease),
+    color var(--pc-dur) var(--pc-ease);
+
+  &:hover {
+    border-color: rgba(255, 90, 31, 0.6);
+    color: var(--pc-color-primary);
+  }
+
+  svg {
+    font-size: 14px;
+    flex: 0 0 auto;
+  }
+
+  @media (min-width: 900px) {
+    min-height: 40px;
+    font-size: 13px;
   }
 `;
 
@@ -667,7 +708,8 @@ const OrderCta = styled(Link)<{ $disabled?: boolean }>`
   justify-content: center;
   gap: 7px;
   border-radius: 11px;
-  border: 1px solid ${(p) =>
+  border: 1px solid
+    ${(p) =>
 		p.$disabled ? "rgba(255,255,255,0.08)" : "rgba(255, 90, 31, 0.55)"};
   background: ${(p) =>
 		p.$disabled
@@ -936,10 +978,6 @@ export default function VendorStorefrontWrapper({
 		marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
 		fetcher,
 	);
-	const vendorStatus = useVendorStatus({
-		isOpenForOrders: data?.vendor.isOpenForOrders,
-		listings: data?.listings,
-	});
 
 	if (availabilityLoading || isLoading) return <PageLoader />;
 	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
@@ -989,14 +1027,46 @@ export default function VendorStorefrontWrapper({
 	);
 	const vendorName = vendor.businessName ?? "Campus kitchen";
 	const reviews = reviewData?.reviews ?? [];
-	const heroReviewCount = reviewData?.aggregate.count ?? vendor.totalReviews;
-	const heroRating =
-		vendor.rating ??
-		(heroReviewCount > 0 ? (reviewData?.aggregate.avg ?? null) : null);
+	const isVerified = vendor.hasVerificationDocuments;
+
 	const kitchenSaved = savedKitchens.saved.has(vendor.id);
 	const fallbackDescription =
 		vendor.description ||
 		"Fresh campus meals, prepared with care and served hot.";
+	const heroReviewCount = reviewData?.aggregate.count ?? vendor.totalReviews;
+	const heroRating =
+		vendor.rating ??
+		(heroReviewCount > 0 ? (reviewData?.aggregate.avg ?? null) : null);
+
+	function fulfilmentLabel(
+		listings: DailyOrder[],
+		vendor: VendorStorefront["vendor"],
+	): string {
+		if (listings.length > 0) {
+			const pickupAvailable = listings.some((l) => l.pickupAvailable);
+			const deliveryAvailable = listings.some((l) => l.deliveryAvailable);
+			if (pickupAvailable && deliveryAvailable)
+				return "Pickup & delivery";
+			if (deliveryAvailable) return "Delivery";
+			if (pickupAvailable) return "Pickup";
+		}
+		if (vendor.defaultPickupAvailable && vendor.defaultDeliveryAvailable)
+			return "Pickup & delivery";
+		if (vendor.defaultDeliveryAvailable) return "Delivery";
+		if (vendor.defaultPickupAvailable) return "Pickup";
+		return "Order details";
+	}
+
+	function locationLabel(
+		listings: DailyOrder[],
+		vendor: VendorStorefront["vendor"],
+	): string {
+		const listingLocation =
+			listings.find((l) => l.vendorPickupLocation)
+				?.vendorPickupLocation ??
+			listings.find((l) => l.deliveryCoverage)?.deliveryCoverage;
+		return listingLocation ?? vendor.areaOrAddress ?? "Campus pickup";
+	}
 
 	function shareKitchen() {
 		const url =
@@ -1050,63 +1120,77 @@ export default function VendorStorefrontWrapper({
 						</HeroActions>
 						<HeroContent>
 							<HeroPanel>
-								<AvatarWrap>
-									<Avatar
-										$src={vendor.profileImageUrl}
-										aria-hidden
-									/>
-									<Verified aria-label="Verified kitchen">
-										<FiCheckCircle aria-hidden />
-									</Verified>
-								</AvatarWrap>
 								<HeroIdentity>
-									<NameRow>
-										<VendorName>{vendorName}</VendorName>
-										<VendorStatusBadge
-											status={vendorStatus}
-											compact
-											live
+									<AvatarWrap>
+										<Avatar
+											$src={vendor.profileImageUrl}
+											aria-hidden
 										/>
-									</NameRow>
-									<Description>
-										{fallbackDescription}
-									</Description>
-									{vendor.categories.length > 0 && (
-										<CategoryRow>
-											{vendor.categories.map(
-												(category) => (
-													<CategoryPill
-														key={category}
-													>
-														<FiAward aria-hidden />
-														{categoryLabel(
-															category,
-														)}
-													</CategoryPill>
-												),
-											)}
-										</CategoryRow>
-									)}
+										{isVerified && (
+											<Verified aria-label="Verified kitchen">
+												<FiCheckCircle aria-hidden />
+											</Verified>
+										)}
+									</AvatarWrap>
+									<div>
+										<NameRow>
+											<VendorName>
+												{vendorName}
+											</VendorName>
+										</NameRow>
+										<Description>
+											{fallbackDescription}
+										</Description>
+										<MetaItem>
+											<FiMapPin aria-hidden />
+											{locationLabel(listings, vendor)}
+											<MetaDot aria-hidden />
+											{fulfilmentLabel(listings, vendor)}
+										</MetaItem>
+									</div>
 								</HeroIdentity>
-								<StatsGrid>
-									<StatCell>
-										<StatValue>
-											<FiStar aria-hidden />
-											{heroRating == null
-												? "New"
-												: heroRating.toFixed(1)}
-										</StatValue>
+								<HeroStatsRow>
+									<HeroStat>
+										<FiStar aria-hidden />
+										{heroRating == null
+											? "New"
+											: heroRating.toFixed(1)}
+									</HeroStat>
+									<StatSep aria-hidden />
+									<HeroStat>
 										({heroReviewCount} review
 										{heroReviewCount === 1 ? "" : "s"})
-									</StatCell>
-									<StatCell>
-										<StatValue>
-											<FiShoppingBag aria-hidden />
-											{vendor.totalOrders}
-										</StatValue>
-										Total orders
-									</StatCell>
-								</StatsGrid>
+									</HeroStat>
+									<StatSep aria-hidden />
+									<HeroStat>
+										<FiShoppingBag aria-hidden />
+										{vendor.completedOrders} completed
+									</HeroStat>
+									<StatSep aria-hidden />
+									<HeroStat>
+										{menu.length} active menu
+										{menu.length === 1 ? "" : "s"}
+									</HeroStat>
+								</HeroStatsRow>
+								<VendorActions>
+									<FollowButton
+										type="button"
+										$active={kitchenSaved}
+										aria-label={
+											kitchenSaved
+												? "Unfollow kitchen"
+												: "Follow kitchen"
+										}
+										onClick={() =>
+											savedKitchens.toggle(vendor.id)
+										}
+									>
+										<FiUserPlus aria-hidden />
+										{kitchenSaved
+											? "Following"
+											: "Follow kitchen"}
+									</FollowButton>
+								</VendorActions>
 							</HeroPanel>
 						</HeroContent>
 					</Hero>
@@ -1124,7 +1208,7 @@ export default function VendorStorefrontWrapper({
 					</SectionTop>
 					{cookingItems.length === 0 ? (
 						<EmptyState
-							icon="pause"
+							icon="⏸️"
 							title="Nothing cooking right now"
 							description="This kitchen has no open listings at the moment. Check back later."
 						/>

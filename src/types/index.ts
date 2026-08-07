@@ -229,7 +229,16 @@ export interface PublicVendor {
 	rating: number | null;
 	totalReviews: number;
 	totalOrders: number;
+	/**
+	 * Count of orders that reached a terminal success state: picked up,
+	 * delivered, or fully completed. Failed, cancelled, refunded, unpaid
+	 * and still-in-progress orders are excluded.
+	 */
+	completedOrders: number;
 	isOpenForOrders: boolean;
+	hasVerificationDocuments: boolean;
+	defaultPickupAvailable: boolean;
+	defaultDeliveryAvailable: boolean;
 }
 
 export interface VendorStorefront {

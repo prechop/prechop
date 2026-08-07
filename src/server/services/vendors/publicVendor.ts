@@ -34,7 +34,25 @@ export interface PublicVendor {
 	rating: number | null;
 	totalReviews: number;
 	totalOrders: number;
+	/**
+	 * Count of orders that reached a terminal success state (picked up,
+	 * delivered or completed). Failed, cancelled, unpaid and in-progress
+	 * orders are excluded.
+	 */
+	completedOrders: number;
 	isOpenForOrders: boolean;
+	/**
+	 * Whether the vendor has submitted identity verification documents.
+	 * Present so the storefront banner can render the checkmark without
+	 * leaking document details.
+	 */
+	hasVerificationDocuments: boolean;
+	/**
+	 * Default fulfilment options for this vendor. Used by the storefront
+	 * banner when no active listing is available to derive them from.
+	 */
+	defaultPickupAvailable: boolean;
+	defaultDeliveryAvailable: boolean;
 }
 
 /**
@@ -69,7 +87,11 @@ export function toPublicVendor(v: IVendorProfile): PublicVendor {
 		rating: publicRating(v.rating, totalReviews),
 		totalReviews,
 		totalOrders: v.totalOrders ?? 0,
+		completedOrders: v.completedOrders ?? 0,
 		isOpenForOrders: v.isOpenForOrders ?? false,
+		hasVerificationDocuments: (v.verificationDocuments?.length ?? 0) > 0,
+		defaultPickupAvailable: v.defaultPickupAvailable ?? false,
+		defaultDeliveryAvailable: v.defaultDeliveryAvailable ?? false,
 	};
 }
 

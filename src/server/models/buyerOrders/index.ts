@@ -1815,6 +1815,28 @@ export async function countBuyerOrdersDB({
 	}
 }
 
+const COMPLETED_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.PICKED_UP,
+	OrderStatus.DELIVERED,
+	OrderStatus.COMPLETED,
+];
+
+export async function countCompletedBuyerOrdersByVendorDB({
+	vendorId,
+}: {
+	vendorId: string;
+}): Promise<number> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(vendorId)) return 0;
+		return await BuyerOrder.countDocuments({
+			vendorId: new mongoose.Types.ObjectId(vendorId),
+			status: { $in: COMPLETED_ORDER_STATUSES },
+		});
+	} catch {
+		return 0;
+	}
+}
+
 /** Admin: list orders across the platform, newest first, with optional filter. */
 export async function listBuyerOrdersDB({
 	filter,

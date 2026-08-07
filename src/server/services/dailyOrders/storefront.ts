@@ -1,3 +1,4 @@
+import { countCompletedBuyerOrdersByVendorDB } from "@/server/models/buyerOrders";
 import { ErrVendorNotFound } from "../../constants";
 import {
 	DailyOrderStatus,
@@ -78,12 +79,16 @@ export async function getVendorStorefront({
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor || vendor.status !== VendorStatus.ACTIVE)
 		throw ErrVendorNotFound;
-	const [listings, menu] = await Promise.all([
+	const [listings, menu, completedOrders] = await Promise.all([
 		activeListingsForVendor(vendorId),
 		listMenuItemsByVendorDB({ vendorId, availableOnly: true }),
+		countCompletedBuyerOrdersByVendorDB({ vendorId }),
 	]);
 	return {
-		vendor: toPublicVendor(vendor),
+		vendor: {
+			...toPublicVendor(vendor),
+			completedOrders,
+		},
 		listings: await withSlotAvailabilityForListings(
 			withMenuImages(listings, menu),
 		),
