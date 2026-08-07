@@ -5,10 +5,10 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiCheckCircle,
+  FiChevronLeft,
   FiChevronRight,
   FiClock,
   FiGrid,
-  FiMapPin,
   FiSearch,
   FiShoppingBag,
   FiStar,
@@ -17,7 +17,6 @@ import {
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
-  Badge,
   Card,
   EmptyState,
   FadeIn,
@@ -145,135 +144,288 @@ const VendorCard = styled(Card)`
     transform: translateY(-2px);
   }
 `;
-const CardLink = styled(Link)`
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  color: inherit;
-`;
 const Media = styled.div`
   position: relative;
-  height: 190px;
+  height: 270px;
   overflow: hidden;
+  background: #110c08;
+  touch-action: pan-y;
 
   @media (min-width: 760px) {
-    height: 198px;
+    height: 300px;
   }
 `;
-const Thumbs = styled.div`
-  display: flex;
-  height: 100%;
-  background: #110c08;
-`;
-const Thumb = styled.div<{ $src?: string | null }>`
-  position: relative;
-  flex: 1;
+const SlideImage = styled.div<{ $src?: string | null }>`
+  position: absolute;
+  inset: 0;
   background: ${(p) =>
     p.$src
       ? `center / cover no-repeat url(${p.$src})`
-      : "radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72) 0 22px, transparent 23px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+      : "radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.76) 0 42px, transparent 43px), linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)"};
+
   &::before {
     content: "";
     position: absolute;
-    width: 54px;
-    height: 54px;
-    border-radius: 50%;
-    background: var(--pc-surface);
-    box-shadow:
-      inset 0 0 0 7px rgba(255, 255, 255, 0.68),
-      0 10px 24px rgba(0, 0, 0, 0.18);
-    opacity: ${(p) => (p.$src ? 0 : 1)};
+    inset: 0;
+    background:
+      linear-gradient(to top, rgba(8, 5, 3, 0.94) 0%, rgba(8, 5, 3, 0.42) 45%, transparent 72%),
+      linear-gradient(to right, rgba(0, 0, 0, 0.24), transparent 58%);
   }
-  &::after {
-    content: "";
-    position: absolute;
-    width: 30px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--pc-color-primary);
-    box-shadow:
-      12px -8px 0 -4px var(--pc-color-gold),
-      -10px 7px 0 -5px var(--pc-color-gold-ink);
-    opacity: ${(p) => (p.$src ? 0 : 1)};
-  }
-`;
-const MediaShade = styled.div`
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      to top,
-      rgba(13, 9, 6, 0.44),
-      rgba(13, 9, 6, 0.08) 38%,
-      transparent 68%
-    ),
-    linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent 42%);
-`;
-const ThumbLabel = styled.span`
-  position: absolute;
-  left: 14px;
-  bottom: 10px;
-  z-index: 2;
-  max-width: calc(100% - 28px);
-  padding: 5px 9px;
-  border-radius: var(--pc-radius-pill);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.15;
-  backdrop-filter: blur(10px);
 `;
 const BadgeFloat = styled.div`
   position: absolute;
   top: 14px;
   right: 14px;
-  z-index: 1;
+  z-index: 4;
 `;
-const Body = styled(Stack)`
-  position: relative;
-  padding: 10px 16px 15px;
-  flex: 1;
-  z-index: 2;
+const SlideCopy = styled.div`
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 46px;
+  z-index: 3;
+  color: #fff;
 `;
-const Foot = styled(Row)`
-  padding-top: 11px;
-  border-top: 1px solid rgba(255, 90, 31, 0.16);
-  gap: 10px;
-
-  @media (max-width: 759px) {
-    flex-wrap: nowrap;
-    align-items: center;
-  }
-`;
-const Cta = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+const SlideMenuName = styled.h3`
+  margin: 0;
+  max-width: 82%;
+  font-size: 23px;
+  line-height: 1.08;
   font-weight: 900;
-  font-size: 12.5px;
-  color: var(--pc-color-primary);
-
-  white-space: nowrap;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 
   @media (max-width: 759px) {
-    margin-left: auto;
-    flex: 0 0 auto;
-    font-size: 13px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.12;
   }
 
   @media (max-width: 360px) {
-    font-size: 12px;
-    gap: 3px;
+    font-size: 17px;
   }
 `;
-const Chips = styled(Row)`
+const SlidePrice = styled.div`
+  margin-top: 7px;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 900;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
+
+  @media (max-width: 759px) {
+    margin-top: 6px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  @media (max-width: 360px) {
+    font-size: 19px;
+  }
+`;
+const SlideMeta = styled.div`
+  display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+`;
+const SlideMetaPill = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 10px;
+  border-radius: var(--pc-radius-pill);
+  background: rgba(16, 11, 8, 0.78);
+  border: 1px solid rgba(255, 90, 31, 0.28);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+
+  svg {
+    color: var(--pc-color-primary);
+    flex: 0 0 auto;
+  }
+`;
+const CarouselNav = styled.button<{ $side: "left" | "right" }>`
+  position: absolute;
+  top: 50%;
+  ${(p) => (p.$side === "left" ? "left: 10px;" : "right: 10px;")}
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(10, 7, 5, 0.72);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pc-dur) var(--pc-ease), background var(--pc-dur) var(--pc-ease);
+  backdrop-filter: blur(10px);
+
+  ${VendorCard}:hover &,
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: rgba(255, 90, 31, 0.9);
+  }
+
+  @media (max-width: 759px) {
+    display: none;
+  }
+`;
+const CarouselFooter = styled.div`
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+`;
+const CarouselDots = styled.div`
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+`;
+const CarouselDot = styled.button<{ $active: boolean }>`
+  width: ${(p) => (p.$active ? "18px" : "7px")};
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pc-radius-pill);
+  background: ${(p) =>
+    p.$active ? "var(--pc-color-primary)" : "rgba(255, 255, 255, 0.52)"};
+  cursor: pointer;
+  transition: width var(--pc-dur) var(--pc-ease), background var(--pc-dur) var(--pc-ease);
+`;
+const CarouselCount = styled.span`
+  grid-column: 3;
+  justify-self: end;
+  padding: 5px 9px;
+  border-radius: var(--pc-radius-pill);
+  background: rgba(10, 7, 5, 0.74);
+  border: 1px solid rgba(255, 90, 31, 0.24);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+`;
+const Body = styled(Stack)`
+  position: relative;
+  padding: 15px 16px 16px;
+  flex: 1;
+  z-index: 2;
+`;
+const VendorInfoStrip = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 90, 31, 0.16);
+`;
+const VendorInfoItem = styled.div`
+  min-width: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--pc-text);
+
+  small {
+    display: block;
+    margin-top: 5px;
+    color: var(--pc-text-muted);
+    font-size: 11px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 759px) {
+    padding: 9px 8px;
+
+    small {
+      font-size: 10.5px;
+    }
+  }
+`;
+const VendorInfoHeading = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  svg {
+    color: var(--pc-color-primary);
+    flex: 0 0 auto;
+    font-size: 16px;
+  }
+
+  h4 {
+    min-width: 0;
+    margin: 0;
+    color: var(--pc-text);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  @media (max-width: 759px) {
+    gap: 5px;
+
+    svg {
+      font-size: 15px;
+    }
+
+    h4 {
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+  }
+
+  @media (max-width: 360px) {
+    h4 {
+      font-size: 10.5px;
+    }
+  }
+`;
+const ViewKitchenLink = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  width: 100%;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #ff642b 0%, #ff4c11 100%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(255, 90, 31, 0.2);
+  transition: transform var(--pc-dur) var(--pc-ease), box-shadow var(--pc-dur) var(--pc-ease);
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 34px rgba(255, 90, 31, 0.28);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--pc-color-primary-50);
+  }
 `;
 const SearchWrap = styled.div`
   position: relative;
@@ -614,105 +766,6 @@ const MenuName = styled.p`
     font-size: 13px;
   }
 `;
-const PriceText = styled.div`
-  margin-top: 7px;
-  color: var(--pc-text);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-
-  @media (max-width: 759px) {
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  @media (max-width: 360px) {
-    font-size: 16px;
-  }
-`;
-const LocationLine = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  color: var(--pc-text-muted);
-  font-size: 12.5px;
-  font-weight: 700;
-  max-width: 100%;
-
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  svg {
-    color: var(--pc-color-primary);
-    flex: 0 0 auto;
-  }
-
-  @media (max-width: 759px) {
-    font-size: 12px;
-    gap: 5px;
-  }
-
-  @media (max-width: 360px) {
-    font-size: 12px;
-  }
-`;
-const MetaRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-  flex-wrap: wrap;
-
-  @media (max-width: 759px) {
-    flex: 1 1 auto;
-    flex-wrap: nowrap;
-    gap: 10px;
-  }
-
-  @media (max-width: 360px) {
-    gap: 7px;
-  }
-`;
-const MetaItem = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--pc-text);
-  font-size: 12.5px;
-  font-weight: 700;
-  white-space: nowrap;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-
-  svg {
-    color: var(--pc-color-primary);
-    font-size: 16px;
-    flex: 0 0 auto;
-  }
-
-  @media (max-width: 759px) {
-    gap: 5px;
-    font-size: 13px;
-
-    svg {
-      font-size: 15px;
-    }
-  }
-
-  @media (max-width: 360px) {
-    gap: 4px;
-    font-size: 12px;
-    font-weight: 600;
-
-    svg {
-      font-size: 14px;
-    }
-  }
-`;
 const ListGrid = styled.div`
   display: grid;
   gap: 14px;
@@ -733,8 +786,7 @@ function isMarketplaceUnavailable(error: unknown): boolean {
 }
 
 function menuSummary(total: number): string {
-  if (total <= 0) return "Menu available";
-  if (total > 2) return `2 of ${total} menus`;
+  if (total <= 0) return "No menus available";
   return `${total} menu${total === 1 ? "" : "s"} available`;
 }
 
@@ -750,11 +802,6 @@ function fulfillmentLabel(listings: DailyOrder[]): string {
   ]
     .filter(Boolean)
     .join(" / ");
-}
-
-function primaryListingItem(row: MarketplaceVendor) {
-  const listing = row.listings[0];
-  return { listing };
 }
 
 function listingItems(listing: DailyOrder | undefined): DailyOrder["items"] {
@@ -773,28 +820,46 @@ function itemSoldOut(item: DailyOrder["items"][number] | undefined): boolean {
   return false;
 }
 
-function listingSoldOut(listing: DailyOrder | undefined): boolean {
-  const items = listingItems(listing);
-  return items.length > 0 && items.every((item) => itemSoldOut(item));
+type MarketplaceMenuSlide = {
+  listing: DailyOrder;
+  item: DailyOrder["items"][number];
+};
+
+function marketplaceMenuSlides(row: MarketplaceVendor): MarketplaceMenuSlide[] {
+  return row.listings.flatMap((listing) =>
+    listing.items
+      .filter((item) => !itemSoldOut(item))
+      .map((item) => ({ listing, item })),
+  );
 }
 
-function listingPrice(listing: DailyOrder | undefined): string {
-  const prices = listingItems(listing).flatMap((item) => {
-    const variantPrices = item.snapshotVariants
-      .filter((variant) => variant.isActive !== false)
-      .map((variant) => variant.priceKobo);
-    return variantPrices.length > 0 ? variantPrices : [item.snapshotPriceKobo];
-  });
-  if (prices.length === 0) return "View menu";
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+function itemPrice(item: DailyOrder["items"][number]): string {
+  const activeVariantPrices = item.snapshotVariants
+    .filter((variant) => variant.isActive !== false)
+    .map((variant) => variant.priceKobo);
+  if (activeVariantPrices.length === 0) {
+    return formatKobo(item.snapshotPriceKobo);
+  }
+  const min = Math.min(...activeVariantPrices);
+  const max = Math.max(...activeVariantPrices);
+  return min === max ? formatKobo(min) : `${formatKobo(min)}`;
 }
 
-function previewListingItems(listing: DailyOrder | undefined) {
-  const items = listingItems(listing);
-  const available = items.filter((item) => !itemSoldOut(item));
-  return (available.length > 0 ? available : items).slice(0, 2);
+function remainingQuantityLabel(
+  item: DailyOrder["items"][number],
+): string | null {
+  const remaining =
+    item.remainingQuantity ??
+    (item.maxQuantity != null
+      ? Math.max(
+          0,
+          item.maxQuantity -
+            (item.orderedQuantity ?? 0) -
+            (item.reservedQuantity ?? 0),
+        )
+      : null);
+  if (remaining == null) return null;
+  return `${remaining} left`;
 }
 
 function locationLabel(row: MarketplaceVendor, listing?: DailyOrder): string {
@@ -809,13 +874,13 @@ function locationLabel(row: MarketplaceVendor, listing?: DailyOrder): string {
 function fulfillmentTime(listing?: DailyOrder): string {
   if (!listing) return "Pickup";
   if (listing.pickupAvailable && listing.deliveryAvailable) {
-    return "Pickup & Delivery";
+    return "Pickup & delivery";
   }
   if (listing.deliveryAvailable && listing.deliveryEstimateMinutes) {
     return `Delivery ${listing.deliveryEstimateMinutes} min`;
   }
   if (listing.deliveryAvailable) return "Delivery";
-  if (listing.pickupAvailable) return "Pickup";
+  if (listing.pickupAvailable) return "Campus pickup";
   return fulfillmentLabel([listing]);
 }
 
@@ -1200,121 +1265,242 @@ function errMsg(error: unknown): string {
   return err?.response?.data?.message ?? "Could not save campus.";
 }
 
-/**
- * One marketplace card. Split out of `VendorGrid` so each row can hold its own
- * live `useVendorStatus` subscription — the badge re-derives on a 30s tick, so
- * a card that says "Closing soon · 12m" decays to "Closed today" on its own
- * rather than lying until the next refetch.
- *
- * Availability lives in the media corner; the body keeps the shop name and
- * numeric rating together so the card scans like a marketplace listing.
- */
-function VendorGridCard({ row }: { row: MarketplaceVendor }) {
-  const { listing: primary } = primaryListingItem(row);
-  const menus = listingItems(primary);
-  const previewMenus = previewListingItems(primary);
-  const primaryItem = previewMenus[0] ?? primary?.items[0];
-  const vendorId = row.vendor.id || primary?.vendorId;
+function MarketplaceSlideStatus({
+  row,
+  listing,
+}: {
+  row: MarketplaceVendor;
+  listing: DailyOrder;
+}) {
   const status = useVendorStatus({
     isOpenForOrders: row.vendor.isOpenForOrders,
-    listings: row.listings,
+    listings: [listing],
   });
-  const soldOut = listingSoldOut(primary);
-  const statusBadge = soldOut ? (
-    <Badge $tone="danger">Sold out</Badge>
-  ) : (
-    <VendorStatusBadge status={status} compact />
-  );
+  return <VendorStatusBadge status={status} compact />;
+}
+
+/**
+ * One vendor per card, with every currently available menu represented as a
+ * carousel slide. Menu-specific facts move with the slide; vendor identity,
+ * rating, fulfilment and the kitchen link stay fixed.
+ */
+function VendorGridCard({ row }: { row: MarketplaceVendor }) {
+  const slides = useMemo(() => marketplaceMenuSlides(row), [row]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [carouselPaused, setCarouselPaused] = useState(false);
+  const [manualPauseUntil, setManualPauseUntil] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const vendorId = row.vendor.id || row.listings[0]?.vendorId;
+  const activeSlide = slides[activeIndex] ?? slides[0];
+  const fallbackListing = row.listings[0];
+  const fallbackItem = fallbackListing?.items[0];
+  const menuCount = slides.length;
+  const hasMultipleMenus = menuCount > 1;
+
+  useEffect(() => {
+    if (activeIndex < menuCount) return;
+    setActiveIndex(Math.max(0, menuCount - 1));
+  }, [activeIndex, menuCount]);
+
+  useEffect(() => {
+    if (!hasMultipleMenus || carouselPaused) return;
+
+    const reducedMotionQuery = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
+    if (reducedMotionQuery.matches) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.hidden || Date.now() < manualPauseUntil) return;
+      setActiveIndex((current) => (current + 1) % menuCount);
+    }, 6_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [carouselPaused, hasMultipleMenus, manualPauseUntil, menuCount]);
+
+  function pauseAfterManualInteraction() {
+    setManualPauseUntil(Date.now() + 10_000);
+  }
+
+  function showPrevious() {
+    if (!hasMultipleMenus) return;
+    pauseAfterManualInteraction();
+    setActiveIndex((current) => (current - 1 + menuCount) % menuCount);
+  }
+
+  function showNext() {
+    if (!hasMultipleMenus) return;
+    pauseAfterManualInteraction();
+    setActiveIndex((current) => (current + 1) % menuCount);
+  }
+
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    setCarouselPaused(true);
+    pauseAfterManualInteraction();
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  }
+
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    setCarouselPaused(false);
+    const startX = touchStartX.current;
+    const endX = event.changedTouches[0]?.clientX;
+    touchStartX.current = null;
+    if (startX == null || endX == null) return;
+    const distance = endX - startX;
+    if (Math.abs(distance) < 42) return;
+    if (distance > 0) showPrevious();
+    else showNext();
+  }
+
+  const selectedListing = activeSlide?.listing ?? fallbackListing;
+  const selectedItem = activeSlide?.item ?? fallbackItem;
+  const totalReviews = row.vendor.totalReviews ?? 0;
 
   return (
     <VendorCard>
-      <CardLink href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
-        <Media>
-          <BadgeFloat>{statusBadge}</BadgeFloat>
-          <Thumbs>
-            {previewMenus.map((it) => (
-              <Thumb
-                key={it.id}
-                $src={it.snapshotImageUrl}
-                aria-label={
-                  it.snapshotImageUrl
-                    ? it.snapshotName
-                    : `${it.snapshotName} image placeholder`
-                }>
-                <ThumbLabel>{it.snapshotName}</ThumbLabel>
-              </Thumb>
-            ))}
-            {previewMenus.length === 0 && (
-              <Thumb
-                $src={row.vendor.profileImageUrl}
-                aria-label={
-                  row.vendor.profileImageUrl
-                    ? (row.vendor.businessName ?? "Campus kitchen")
-                    : "Kitchen image placeholder"
-                }
-              />
-            )}
-          </Thumbs>
-          <MediaShade />
-        </Media>
-        <Body $gap={13}>
-          <VendorIdentity>
-            <VendorLogo
-              $src={row.vendor.profileImageUrl ?? primaryItem?.snapshotImageUrl}
-              aria-hidden
-            />
-            <div>
-              <VendorName>
-                <span>{row.vendor.businessName ?? "Campus kitchen"}</span>
-                <VerifiedMark aria-label="Verified kitchen">
-                  <FiCheckCircle aria-hidden />
-                </VerifiedMark>
-              </VendorName>
-              <MenuName>{primary?.title ?? menuSummary(menus.length)}</MenuName>
-              <PriceText>{listingPrice(primary)}</PriceText>
-              <LocationLine>
-                <FiMapPin aria-hidden />
-                <span>{locationLabel(row, primary)}</span>
-              </LocationLine>
-            </div>
+      <Media
+        onMouseEnter={() => setCarouselPaused(true)}
+        onMouseLeave={() => setCarouselPaused(false)}
+        onFocusCapture={() => setCarouselPaused(true)}
+        onBlurCapture={() => setCarouselPaused(false)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        aria-roledescription={hasMultipleMenus ? "carousel" : undefined}
+        aria-label={`${row.vendor.businessName ?? "Campus kitchen"} menus`}>
+        <SlideImage
+          $src={selectedItem?.snapshotImageUrl ?? row.vendor.profileImageUrl}
+          role="img"
+          aria-label={
+            selectedItem?.snapshotImageUrl
+              ? selectedItem.snapshotName
+              : `${selectedItem?.snapshotName ?? row.vendor.businessName ?? "Kitchen"} image placeholder`
+          }
+        />
+
+        {selectedListing && (
+          <BadgeFloat>
+            <MarketplaceSlideStatus row={row} listing={selectedListing} />
+          </BadgeFloat>
+        )}
+
+        {selectedItem && (
+          <SlideCopy aria-live="polite">
+            <SlideMenuName>{selectedItem.snapshotName}</SlideMenuName>
+            <SlidePrice>{itemPrice(selectedItem)}</SlidePrice>
+            <SlideMeta>
+              {selectedItem.snapshotPrepMin != null && (
+                <SlideMetaPill>
+                  <FiClock aria-hidden />
+                  Ready in {selectedItem.snapshotPrepMin} min
+                </SlideMetaPill>
+              )}
+              {remainingQuantityLabel(selectedItem) && (
+                <SlideMetaPill>
+                  <FiShoppingBag aria-hidden />
+                  {remainingQuantityLabel(selectedItem)}
+                </SlideMetaPill>
+              )}
+            </SlideMeta>
+          </SlideCopy>
+        )}
+
+        {hasMultipleMenus && (
+          <>
+            <CarouselNav
+              type="button"
+              $side="left"
+              onClick={showPrevious}
+              aria-label="Show previous menu">
+              <FiChevronLeft aria-hidden />
+            </CarouselNav>
+            <CarouselNav
+              type="button"
+              $side="right"
+              onClick={showNext}
+              aria-label="Show next menu">
+              <FiChevronRight aria-hidden />
+            </CarouselNav>
+            <CarouselFooter>
+              <CarouselDots aria-label="Choose menu slide">
+                {slides.map((slide, index) => (
+                  <CarouselDot
+                    key={`${slide.listing.id}-${slide.item.id}`}
+                    type="button"
+                    $active={index === activeIndex}
+                    onClick={() => {
+                      pauseAfterManualInteraction();
+                      setActiveIndex(index);
+                    }}
+                    aria-label={`Show menu ${index + 1}: ${slide.item.snapshotName}`}
+                    aria-current={index === activeIndex ? "true" : undefined}
+                  />
+                ))}
+              </CarouselDots>
+              <CarouselCount>
+                {activeIndex + 1} of {menuCount}
+              </CarouselCount>
+            </CarouselFooter>
+          </>
+        )}
+      </Media>
+
+      <Body $gap={13}>
+        <VendorIdentity>
+          <VendorLogo
+            $src={row.vendor.profileImageUrl ?? selectedItem?.snapshotImageUrl}
+            aria-hidden
+          />
+          <div>
+            <VendorName>
+              <span>{row.vendor.businessName ?? "Campus kitchen"}</span>
+              <VerifiedMark aria-label="Verified kitchen">
+                <FiCheckCircle aria-hidden />
+              </VerifiedMark>
+            </VendorName>
+            <MenuName>{menuSummary(menuCount)}</MenuName>
+          </div>
+          {totalReviews > 0 ? (
             <RatingPill
-              aria-label={`Rated ${ratingText(row.vendor.rating)} out of 5 from ${row.vendor.totalReviews} reviews`}>
+              aria-label={`Rated ${ratingText(row.vendor.rating)} out of 5 from ${totalReviews} reviews`}>
               <RatingStar aria-hidden>
                 <FiStar />
               </RatingStar>
               {ratingText(row.vendor.rating)}
-              <RatingCount aria-hidden>({row.vendor.totalReviews})</RatingCount>
+              <RatingCount aria-hidden>({totalReviews})</RatingCount>
             </RatingPill>
-          </VendorIdentity>
-          {menus.length > 1 && (
-            <Chips $gap={6}>
-              <Badge $tone="muted">{menuSummary(menus.length)}</Badge>
-            </Chips>
+          ) : (
+            <RatingPill aria-label="New vendor with no ratings yet">
+              New vendor
+            </RatingPill>
           )}
-          <Foot $justify="space-between" $align="center">
-            <MetaRow>
-              {primaryItem && (
-                <MetaItem>
-                  <FiClock aria-hidden />
-                  Prep {primaryItem.snapshotPrepMin} min
-                </MetaItem>
+        </VendorIdentity>
+
+        <VendorInfoStrip>
+          <VendorInfoItem>
+            <VendorInfoHeading>
+              {selectedListing?.deliveryAvailable ? (
+                <FiTruck aria-hidden />
+              ) : (
+                <FiShoppingBag aria-hidden />
               )}
-              <MetaItem>
-                {primary?.deliveryAvailable ? (
-                  <FiTruck aria-hidden />
-                ) : (
-                  <FiShoppingBag aria-hidden />
-                )}
-                {fulfillmentTime(primary)}
-              </MetaItem>
-            </MetaRow>
-            <Cta>
-              View kitchen
-              <FiChevronRight aria-hidden />
-            </Cta>
-          </Foot>
-        </Body>
-      </CardLink>
+              <h4>{fulfillmentTime(selectedListing)}</h4>
+            </VendorInfoHeading>
+            <small>{locationLabel(row, selectedListing)}</small>
+          </VendorInfoItem>
+          <VendorInfoItem>
+            <VendorInfoHeading>
+              <FiGrid aria-hidden />
+              <h4>{menuSummary(menuCount)}</h4>
+            </VendorInfoHeading>
+            <small>Swipe to explore</small>
+          </VendorInfoItem>
+        </VendorInfoStrip>
+
+        <ViewKitchenLink href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
+          View kitchen
+          <FiChevronRight aria-hidden />
+        </ViewKitchenLink>
+      </Body>
     </VendorCard>
   );
 }
