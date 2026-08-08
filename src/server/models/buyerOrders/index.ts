@@ -507,6 +507,23 @@ export async function listBuyerOrdersByBuyerDB({
 				{ $sort: { createdAt: -1 } },
 				{ $skip: offset },
 				{ $limit: Math.min(limit, MAX_LIMIT) },
+				{
+					$lookup: {
+						from: "vendorProfiles",
+						localField: "vendorId",
+						foreignField: "_id",
+						as: "_vendor",
+					},
+				},
+				{
+					$addFields: {
+						id: { $toString: "$_id" },
+						vendorName: {
+							$arrayElemAt: ["$_vendor.businessName", 0],
+						},
+					},
+				},
+				{ $unset: "_vendor" },
 			],
 			{ session },
 		);

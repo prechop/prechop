@@ -395,6 +395,7 @@ export interface BuyerOrder {
 	orderNumber: string;
 	dailyOrderId: string;
 	vendorId: string;
+	vendorName?: string | null;
 	buyerId: string;
 	status: OrderStatus;
 	fulfillmentType: "PICKUP" | "DELIVERY";

@@ -204,6 +204,98 @@ const OutcomeNotice = styled(LateNotice)`
 	color: var(--pc-text);
 `;
 
+const ItemTitle = styled(Text)`
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--pc-text);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+
+	@media (max-width: 740px) {
+		font-size: 12.5px;
+	}
+`;
+
+const VendorRow = styled(Row)`
+  flex-wrap: wrap;
+  row-gap: 4px;
+`;
+
+const VendorSubtext = styled(Text)`
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pc-text-muted);
+  line-height: 1.3;
+`;
+
+const DesktopOrderId = styled.span`
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--pc-font-mono, monospace);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+
+  @media (max-width: 640px) {
+    display: none;
+  }
+`;
+
+function getItemTitle(order: BuyerOrder): string {
+  if (!order.items || order.items.length === 0) {
+    return order.orderNumber;
+  }
+  const firstItemName = order.items[0].snapshotName;
+  if (order.items.length === 1) {
+    return firstItemName;
+  }
+  const extraCount = order.items.length - 1;
+  return `${firstItemName} + ${extraCount} item${extraCount === 1 ? "" : "s"}`;
+}
+
+function getShortOrderId(orderNumber: string): string {
+  if (!orderNumber) return "";
+  const parts = orderNumber.split("-");
+  const lastPart = parts[parts.length - 1];
+  if (lastPart && lastPart.length >= 4) {
+    return lastPart.toUpperCase();
+  }
+  return orderNumber.slice(-6).toUpperCase();
+}
+
+function getTotalItemCount(order: BuyerOrder): number {
+  if (!order.items || order.items.length === 0) return 0;
+  return order.items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
+}
+
+/**
+ * Compact labels used only on the My Orders card pill on mobile.
+ * The full wording is preserved in Order Details via `statusLabel`.
+ * Only the two statuses that cause problematic line-wrapping on narrow
+ * cards are shortened here; everything else falls back to statusLabel.
+ */
+function cardStatusLabel(status: string): string {
+  if (status === "AWAITING_EXTERNAL_PAYMENT") return "Awaiting payment";
+  if (status === "AWAITING_VENDOR_ACCEPTANCE") return "Awaiting vendor";
+  return statusLabel(status);
+}
+
+/** Prevents the pill group from growing and squeezing the title column. */
+const StatusPillWrap = styled(Row)`
+  flex-shrink: 0;
+  align-items: center;
+
+  > span {
+    white-space: nowrap;
+  }
+`;
+
 const ModalOverlay = styled.div`
   position: fixed;
   inset: 0;
@@ -484,20 +576,28 @@ export default function MyOrdersWrapper() {
 											$align="flex-start"
 											$gap={12}
 										>
-											<Row $gap={12} $align="center">
+											<Row $gap={12} $align="flex-start" style={{ minWidth: 0 }}>
 												<Thumb aria-hidden>🍱</Thumb>
-												<Stack $gap={2}>
-													<Text $weight={800}>
-														{o.orderNumber}
-													</Text>
-													<Text $muted $size={13}>
+												<Stack $gap={2} style={{ minWidth: 0, flex: 1 }}>
+													<ItemTitle $weight={800}>
+														{getItemTitle(o)}
+													</ItemTitle>
+													<VendorRow $gap={6} $align="center">
+														<VendorSubtext $muted $size={13}>
+															{o.vendorName || "Prechop kitchen"}
+														</VendorSubtext>
+														<DesktopOrderId aria-label={`Order ID ${getShortOrderId(o.orderNumber)}`}>
+															#{getShortOrderId(o.orderNumber)}
+														</DesktopOrderId>
+													</VendorRow>
+													<Text $muted $size={12.5}>
 														{formatDateTime(
 															o.createdAt,
 														)}
 													</Text>
 												</Stack>
 											</Row>
-											<Row $gap={8} $align="center">
+											<StatusPillWrap $gap={8}>
 												{(unreadByOrder.get(o.id) ??
 													0) > 0 && (
 													<Badge $tone="primary">
@@ -508,9 +608,9 @@ export default function MyOrdersWrapper() {
 													</Badge>
 												)}
 												<Badge $tone={tone[o.status]}>
-													{statusLabel(o.status)}
+													{cardStatusLabel(o.status)}
 												</Badge>
-											</Row>
+											</StatusPillWrap>
 										</Row>
 										<Divider />
 										{isLateActiveOrder(o) && (
@@ -549,8 +649,8 @@ export default function MyOrdersWrapper() {
 											$gap={10}
 										>
 											<Text $muted $size={13}>
-												{o.items.length} item
-												{o.items.length === 1
+												{getTotalItemCount(o)} item
+												{getTotalItemCount(o) === 1
 													? ""
 													: "s"}{" "}
 												·{" "}

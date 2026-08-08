@@ -84,6 +84,7 @@ export interface IBuyerOrder {
 	orderNumber: string;
 	dailyOrderId: string;
 	vendorId: string;
+	vendorName?: string | null;
 	buyerId: string;
 	campusId: string;
 	status: OrderStatus;

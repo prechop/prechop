@@ -84,6 +84,7 @@ export async function getOrderById({
 			: null;
 		return {
 			...order,
+			vendorName: vendor?.businessName ?? null,
 			vendorPickupLocation: pickupLocation(vendor),
 			refundAmountKobo: refund?.amountKobo ?? null,
 			refundReference: refund?.paystackRefundId ?? null,
