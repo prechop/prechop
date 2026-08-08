@@ -123,6 +123,8 @@ export const notificationPrefsSchema = zod
 		notifyNewOrders: zod.boolean().optional(),
 		notifyPayouts: zod.boolean().optional(),
 		notifyReviews: zod.boolean().optional(),
+		notifyFollowers: zod.boolean().optional(),
+		notifyFollowerMilestones: zod.boolean().optional(),
 	})
 	.strict()
 	.refine((v) => Object.keys(v).length > 0, {

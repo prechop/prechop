@@ -304,6 +304,16 @@ export default function VendorMoreWrapper() {
 							<MenuChevron aria-hidden>›</MenuChevron>
 						</MenuRight>
 					</MenuRow>
+					<MenuRow href="/vendor/followers">
+						<MenuIcon aria-hidden>👥</MenuIcon>
+						<MenuText>
+							<MenuTitle>Followers & Growth</MenuTitle>
+							<MenuDesc>See who follows you and milestone progress</MenuDesc>
+						</MenuText>
+						<MenuRight>
+							<MenuChevron aria-hidden>›</MenuChevron>
+						</MenuRight>
+					</MenuRow>
 				</MenuCard>
 
 				<SectionTitle>Manage account</SectionTitle>

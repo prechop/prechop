@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import {
 	FiArrowLeft,
 	FiArrowRight,
@@ -17,7 +18,7 @@ import {
 	FiUserPlus,
 } from "react-icons/fi";
 import styled from "styled-components";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
 	Badge,
 	Button,
@@ -33,12 +34,15 @@ import {
 	VendorStatusBadge,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
+import { api } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatDate, formatKobo } from "@/constants/formatters";
+import { useAuth } from "@/hooks/Auth/useAuth";
 import {
 	useSavedKitchens,
 	useSavedListings,
 } from "@/hooks/useSavedCollections";
+import { useToast } from "@/hooks/useToast";
 import type { DailyOrder, VendorStorefront } from "@/types";
 
 interface ReviewResponse {
@@ -963,8 +967,11 @@ export default function VendorStorefrontWrapper({
 	vendorId: string;
 }) {
 	const router = useRouter();
+	const { toast } = useToast();
+	const { isAuthenticated, isLoading: authLoading } = useAuth();
 	const savedKitchens = useSavedKitchens();
 	const savedListings = useSavedListings();
+	const [followLoading, setFollowLoading] = useState(false);
 	const { data: availability, isLoading: availabilityLoading } =
 		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
 			refreshInterval: 10_000,
@@ -976,6 +983,11 @@ export default function VendorStorefrontWrapper({
 	);
 	const { data: reviewData } = useSWR<ReviewResponse>(
 		marketplaceEnabled ? `/vendors/${vendorId}/reviews` : null,
+		fetcher,
+	);
+	const followKey = `/vendors/${vendorId}/follow`;
+	const { data: followStatus } = useSWR<{ followed: boolean }>(
+		isAuthenticated && !authLoading && vendorId ? followKey : null,
 		fetcher,
 	);
 
@@ -1030,6 +1042,7 @@ export default function VendorStorefrontWrapper({
 	const isVerified = vendor.hasVerificationDocuments;
 
 	const kitchenSaved = savedKitchens.saved.has(vendor.id);
+	const isFollowing = !!followStatus?.followed;
 	const fallbackDescription =
 		vendor.description ||
 		"Fresh campus meals, prepared with care and served hot.";
@@ -1078,6 +1091,48 @@ export default function VendorStorefrontWrapper({
 			return;
 		}
 		void navigator.clipboard?.writeText(url).catch(() => {});
+	}
+
+	async function toggleFollow() {
+		if (followLoading) return;
+		if (!isAuthenticated) {
+			window.location.href = `/login?next=${encodeURIComponent(`/v/${vendorId}`)}`;
+			return;
+		}
+		setFollowLoading(true);
+		try {
+			const targetFollowed = !isFollowing;
+			if (targetFollowed) {
+				const res = await api.post(`/vendors/${vendorId}/follow`);
+				const data = res.data?.data;
+				if (data?.followed) {
+					await globalMutate(followKey);
+					await globalMutate("buyers/me/feed");
+					await globalMutate("vendors/me/following");
+					await globalMutate("vendors/me/followers");
+					await globalMutate(`/vendors/${vendorId}/followers/count`);
+				}
+			} else {
+				const res = await api.delete(`/vendors/${vendorId}/follow`);
+				const data = res.data?.data;
+				if (data?.unfollowed) {
+					await globalMutate(followKey);
+					await globalMutate("buyers/me/feed");
+					await globalMutate("vendors/me/following");
+					await globalMutate("vendors/me/followers");
+					await globalMutate(`/vendors/${vendorId}/followers/count`);
+				}
+			}
+		} catch (e: unknown) {
+			toast(
+				(e as { response?: { data?: { message?: string } } })?.response
+					?.data?.message ??
+					"Something went wrong. Please try again.",
+				"error",
+			);
+		} finally {
+			setFollowLoading(false);
+		}
 	}
 
 	return (
@@ -1175,20 +1230,15 @@ export default function VendorStorefrontWrapper({
 								<VendorActions>
 									<FollowButton
 										type="button"
-										$active={kitchenSaved}
+										$active={isFollowing}
 										aria-label={
-											kitchenSaved
-												? "Unfollow kitchen"
-												: "Follow kitchen"
+											isFollowing ? "Unfollow kitchen" : "Follow kitchen"
 										}
-										onClick={() =>
-											savedKitchens.toggle(vendor.id)
-										}
+										onClick={toggleFollow}
+										disabled={followLoading}
 									>
 										<FiUserPlus aria-hidden />
-										{kitchenSaved
-											? "Following"
-											: "Follow kitchen"}
+										{isFollowing ? "Following" : "Follow kitchen"}
 									</FollowButton>
 								</VendorActions>
 							</HeroPanel>

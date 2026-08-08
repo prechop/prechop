@@ -5,6 +5,8 @@ export interface NotificationPrefsInput {
 	notifyNewOrders?: boolean;
 	notifyPayouts?: boolean;
 	notifyReviews?: boolean;
+	notifyFollowers?: boolean;
+	notifyFollowerMilestones?: boolean;
 }
 
 /**
@@ -28,6 +30,10 @@ export async function updateNotificationPrefs({
 		payload.notifyPayouts = prefs.notifyPayouts;
 	if (typeof prefs.notifyReviews === "boolean")
 		payload.notifyReviews = prefs.notifyReviews;
+	if (typeof prefs.notifyFollowers === "boolean")
+		payload.notifyFollowers = prefs.notifyFollowers;
+	if (typeof prefs.notifyFollowerMilestones === "boolean")
+		payload.notifyFollowerMilestones = prefs.notifyFollowerMilestones;
 
 	return updateVendorProfileDB({ id: vendorId, payload });
 }

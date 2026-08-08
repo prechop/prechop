@@ -4,31 +4,31 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
-	FiArrowRight,
-	FiCheck,
-	FiHeart,
-	FiImage,
-	FiMapPin,
-	FiMinus,
-	FiPlus,
-	FiShoppingBag,
-	FiStar,
-	FiTruck,
+  FiArrowRight,
+  FiCheck,
+  FiHeart,
+  FiImage,
+  FiMapPin,
+  FiMinus,
+  FiPlus,
+  FiShoppingBag,
+  FiStar,
+  FiTruck,
 } from "react-icons/fi";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
-	Badge,
-	Button,
-	Card,
-	FadeIn,
-	Input,
-	Row,
-	Stack,
-	Text,
-	Textarea,
-	Title,
-	useListingStatus,
+  Badge,
+  Button,
+  Card,
+  FadeIn,
+  Input,
+  Row,
+  Stack,
+  Text,
+  Textarea,
+  Title,
+  useListingStatus,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
@@ -39,32 +39,32 @@ import { useAuth } from "@/hooks/Auth/useAuth";
 import { describeBuyerFeeExplainer, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import type {
-	DailyOrder,
-	DailyOrderItem,
-	DailyOrderOptionGroup,
+  DailyOrder,
+  DailyOrderItem,
+  DailyOrderOptionGroup,
 } from "@/types";
 
 type Fulfillment = "PICKUP" | "DELIVERY";
 type PaymentMode = "SELF" | "PAY_FOR_ME";
 type Line = {
-	quantity: number;
-	selectedVariantId?: string;
-	optionQuantities: Record<string, number>;
+  quantity: number;
+  selectedVariantId?: string;
+  optionQuantities: Record<string, number>;
 };
 type SavedLine = {
-	quantity: number;
-	selectedVariantId?: string;
-	optionQuantities?: Record<string, number>;
-	optionIds?: string[];
+  quantity: number;
+  selectedVariantId?: string;
+  optionQuantities?: Record<string, number>;
+  optionIds?: string[];
 };
 interface ExternalPaymentResult {
-	buyerOrderId: string;
-	orderNumber: string;
-	externalPaymentUrl: string;
-	externalPaymentExpiresAt?: string;
+  buyerOrderId: string;
+  orderNumber: string;
+  externalPaymentUrl: string;
+  externalPaymentExpiresAt?: string;
 }
 interface MarketplaceAvailability {
-	marketplaceEnabled: boolean;
+  marketplaceEnabled: boolean;
 }
 
 // Per-order server limit — placeOrderBodySchema caps each item's quantity at 50.
@@ -97,64 +97,73 @@ const MAX_PER_ORDER = 50;
  *  listing capacity (maxQuantity − orderedQuantity) and the per-order limit.
  *  Infinite-capacity items (null maxQuantity) are bounded only by the limit. */
 function remainingCap(item: DailyOrderItem): number {
-	if (item.maxQuantity == null) return MAX_PER_ORDER;
-	if (typeof item.remainingQuantity === "number") {
-		return Math.max(0, Math.min(MAX_PER_ORDER, item.remainingQuantity));
-	}
-	return Math.max(
-		0,
-		Math.min(
-			MAX_PER_ORDER,
-			item.maxQuantity -
-				item.orderedQuantity -
-				(item.reservedQuantity ?? 0),
-		),
-	);
+  if (item.maxQuantity == null) return MAX_PER_ORDER;
+  if (typeof item.remainingQuantity === "number") {
+    return Math.max(0, Math.min(MAX_PER_ORDER, item.remainingQuantity));
+  }
+  return Math.max(
+    0,
+    Math.min(
+      MAX_PER_ORDER,
+      item.maxQuantity - item.orderedQuantity - (item.reservedQuantity ?? 0),
+    ),
+  );
 }
 
 const Wrap = styled(Stack)`
-	width: 100%;
-	max-width: 760px;
+  width: 100%;
+  max-width: 760px;
   margin: 0 auto;
 `;
 const Hero = styled(Card)`
   padding: 0;
   overflow: hidden;
-	position: relative;
-	border-radius: 22px;
-	border-color: #302a22;
+  position: relative;
+  border-radius: 22px;
+  border-color: #302a22;
 `;
 const Cover = styled.div<{ $src?: string }>`
   position: relative;
-	min-height: 240px;
-	aspect-ratio: 16 / 8.4;
+  min-height: 240px;
+  aspect-ratio: 16 / 8.4;
   background: ${(p) =>
-		p.$src
-			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-gradient-calm-orange)"};
+    p.$src
+      ? `center / cover no-repeat url(${p.$src})`
+      : "var(--pc-gradient-calm-orange)"};
   display: flex;
   align-items: center;
   justify-content: center;
-	font-size: 64px;
+  font-size: 64px;
   &::after {
     content: "";
     position: absolute;
     inset: 0;
-		background: linear-gradient(180deg, rgba(0, 0, 0, 0.04) 35%, rgba(0, 0, 0, 0.58));
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.04) 35%,
+      rgba(0, 0, 0, 0.58)
+    );
   }
-	@media (max-width: 520px) { min-height: 210px; aspect-ratio: 4 / 2.35; }
+  @media (max-width: 520px) {
+    min-height: 210px;
+    aspect-ratio: 4 / 2.35;
+  }
 `;
 const ShopLink = styled(Link)`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-	margin-left: auto;
-	font-size: 13px;
-	font-weight: 850;
-	color: #ff6a2a;
-	white-space: nowrap;
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 850;
+  color: #ff6a2a;
+  white-space: nowrap;
   transition: border-color var(--pc-dur) var(--pc-ease);
-	@media (max-width: 430px) { span { display: none; } }
+  @media (max-width: 430px) {
+    span {
+      display: none;
+    }
+  }
 `;
 const PickupLocation = styled.div`
   display: flex;
@@ -169,10 +178,10 @@ const PickupLocation = styled.div`
   line-height: 1.45;
 `;
 const ItemCard = styled(Card)`
-	padding: 14px;
-	background: linear-gradient(145deg, #1d1a16, #151310);
-	border-color: var(--pc-border);
-	border-radius: 16px;
+  padding: 14px;
+  background: linear-gradient(145deg, #1d1a16, #151310);
+  border-color: var(--pc-border);
+  border-radius: 16px;
   transition: border-color var(--pc-dur) var(--pc-ease);
   &:hover {
     border-color: var(--pc-surface-3);
@@ -187,9 +196,9 @@ const Thumb = styled.div<{ $src?: string }>`
   flex: 0 0 auto;
   border-radius: var(--pc-radius-sm);
   background: ${(p) =>
-		p.$src
-			? `center / cover no-repeat url(${p.$src})`
-			: "var(--pc-color-primary-50)"};
+    p.$src
+      ? `center / cover no-repeat url(${p.$src})`
+      : "var(--pc-color-primary-50)"};
   display: grid;
   place-items: center;
   font-size: 24px;
@@ -200,11 +209,17 @@ const AddonRow = styled.div`
   gap: 8px;
   font-size: 14px;
   color: var(--pc-text-muted);
-	padding: 9px 0;
-	border-bottom: 1px solid #2d2821;
-	min-width: 0;
-	&:last-child { border-bottom: 0; }
-	input { accent-color: #ff5a1f; width: 16px; height: 16px; }
+  padding: 9px 0;
+  border-bottom: 1px solid #2d2821;
+  min-width: 0;
+  &:last-child {
+    border-bottom: 0;
+  }
+  input {
+    accent-color: #ff5a1f;
+    width: 16px;
+    height: 16px;
+  }
 `;
 const AddonQty = styled.div`
   display: inline-flex;
@@ -250,7 +265,7 @@ const GroupRule = styled.span<{ $unmet?: boolean }>`
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: ${(p) =>
-		p.$unmet ? "var(--pc-color-danger)" : "var(--pc-text-muted)"};
+    p.$unmet ? "var(--pc-color-danger)" : "var(--pc-text-muted)"};
 `;
 const Qty = styled(Row)`
   background: var(--pc-surface-2);
@@ -281,1854 +296,1716 @@ const InfoButton = styled.button`
 `;
 const Sticky = styled.div`
   position: sticky;
-	bottom: 10px;
-	z-index: 10;
-	margin-top: 9px;
-	padding: 14px;
-	background: rgba(25, 22, 18, 0.96);
-	border: 1px solid var(--pc-border);
-	border-radius: 18px;
-	box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.34);
-	backdrop-filter: blur(14px);
-	@media (max-width: 759px) { bottom: 78px; }
+  bottom: 10px;
+  z-index: 10;
+  margin-top: 9px;
+  padding: 14px;
+  background: rgba(25, 22, 18, 0.96);
+  border: 1px solid var(--pc-border);
+  border-radius: 18px;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+  @media (max-width: 759px) {
+    bottom: 78px;
+  }
 `;
 const Toggle = styled.button<{ $active: boolean }>`
   flex: 1;
   border: 1.5px solid
     ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
   background: ${(p) =>
-		p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+    p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
   color: ${(p) =>
-		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
+    p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
   font-weight: 700;
   padding: 12px;
   border-radius: var(--pc-radius-sm);
   cursor: pointer;
-	transition: all var(--pc-dur) var(--pc-ease);
-	&:disabled { opacity: 0.45; cursor: not-allowed; }
+  transition: all var(--pc-dur) var(--pc-ease);
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 `;
 
 const OrderSurface = styled.div`
-	--pc-surface: #171511;
-	--pc-surface-2: #211e18;
-	--pc-surface-3: #2a261f;
-	--pc-border: #393329;
-	--pc-input-border: #6f6557;
-	--pc-text: #fffaf2;
-	--pc-text-muted: #b8aea0;
-	--pc-text-faint: #81776a;
-	--pc-color-primary-50: #32180d;
-	--pc-color-primary-ink: #ff6a2a;
-	--pc-color-accent-50: #0d2b1b;
-	--pc-color-success-ink: #35cf78;
-	color: var(--pc-text);
-	background: radial-gradient(circle at 85% 4%, rgba(255, 90, 31, 0.1), transparent 28%), #0f0e0c;
-	border: 1px solid #25211b;
-	border-radius: 28px;
-	box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
-	overflow: clip;
-	padding: 16px;
-	@media (max-width: 759px) {
-		margin: 0 calc(-1 * var(--pc-space-4));
-		width: calc(100% + 2 * var(--pc-space-4));
-		border-radius: 0;
-		border-left: 0;
-		border-right: 0;
-		padding: 10px;
-	}
+  --pc-surface: #171511;
+  --pc-surface-2: #211e18;
+  --pc-surface-3: #2a261f;
+  --pc-border: #393329;
+  --pc-input-border: #6f6557;
+  --pc-text: #fffaf2;
+  --pc-text-muted: #b8aea0;
+  --pc-text-faint: #81776a;
+  --pc-color-primary-50: #32180d;
+  --pc-color-primary-ink: #ff6a2a;
+  --pc-color-accent-50: #0d2b1b;
+  --pc-color-success-ink: #35cf78;
+  color: var(--pc-text);
+  background:
+    radial-gradient(circle at 85% 4%, rgba(255, 90, 31, 0.1), transparent 28%),
+    #0f0e0c;
+  border: 1px solid #25211b;
+  border-radius: 28px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
+  overflow: clip;
+  padding: 16px;
+  @media (max-width: 759px) {
+    margin: 0 calc(-1 * var(--pc-space-4));
+    width: calc(100% + 2 * var(--pc-space-4));
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    padding: 10px;
+  }
 `;
 const ImageCount = styled.span`
-	position: absolute;
-	left: 16px;
-	bottom: 14px;
-	z-index: 2;
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 6px 11px;
-	border-radius: 999px;
-	background: rgba(12, 11, 9, 0.82);
-	border: 1px solid rgba(255, 255, 255, 0.16);
-	color: #fff;
-	font-size: 12px;
-	font-weight: 800;
-	backdrop-filter: blur(8px);
+  position: absolute;
+  left: 16px;
+  bottom: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: rgba(12, 11, 9, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
 `;
 const FavouriteButton = styled.button<{ $saved: boolean }>`
-	position: absolute;
-	top: 14px;
-	right: 14px;
-	z-index: 2;
-	width: 44px;
-	height: 44px;
-	display: grid;
-	place-items: center;
-	border-radius: 50%;
-	border: 1px solid rgba(255, 255, 255, 0.5);
-	background: rgba(13, 12, 10, 0.58);
-	color: ${(p) => (p.$saved ? "#ff6a2a" : "#fff")};
-	font-size: 21px;
-	cursor: pointer;
-	backdrop-filter: blur(8px);
-	&:hover { transform: scale(1.05); background: rgba(13, 12, 10, 0.82); }
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(13, 12, 10, 0.58);
+  color: ${(p) => (p.$saved ? "#ff6a2a" : "#fff")};
+  font-size: 21px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  &:hover {
+    transform: scale(1.05);
+    background: rgba(13, 12, 10, 0.82);
+  }
 `;
 const Panel = styled.div`
-	background: linear-gradient(145deg, rgba(31, 28, 23, 0.98), rgba(20, 18, 15, 0.98));
-	border: 1px solid var(--pc-border);
-	border-radius: 18px;
+  background: linear-gradient(
+    145deg,
+    rgba(31, 28, 23, 0.98),
+    rgba(20, 18, 15, 0.98)
+  );
+  border: 1px solid var(--pc-border);
+  border-radius: 18px;
 `;
 const ProductPanel = styled(Panel)`
-	position: relative;
-	z-index: 3;
-	margin: -28px 16px 0;
-	padding: 18px 20px;
-	box-shadow: 0 14px 34px rgba(0, 0, 0, 0.25);
-	@media (max-width: 520px) { margin-inline: 8px; padding: 16px; }
+  position: relative;
+  z-index: 3;
+  margin: -28px 16px 0;
+  padding: 18px 20px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.25);
+  @media (max-width: 520px) {
+    margin-inline: 8px;
+    padding: 16px;
+  }
 `;
 const ProductTop = styled.div`
-	display: flex;
-	justify-content: space-between;
-	align-items: flex-start;
-	gap: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
 `;
 const ProductHeading = styled.h1`
-	margin: 0;
-	font-size: clamp(22px, 4vw, 30px);
-	font-weight: 850;
-	letter-spacing: -0.035em;
-	color: var(--pc-text);
+  margin: 0;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 850;
+  letter-spacing: -0.035em;
+  color: var(--pc-text);
 `;
 const ProductPrice = styled.div`
-	margin-top: 3px;
-	color: #ff5a1f;
-	font-size: clamp(19px, 3vw, 24px);
-	font-weight: 850;
+  margin-top: 3px;
+  color: #ff5a1f;
+  font-size: clamp(19px, 3vw, 24px);
+  font-weight: 850;
 `;
 const ProductDescription = styled.p`
-	margin: 8px 0 0;
-	color: var(--pc-text-muted);
-	font-size: 13.5px;
-	line-height: 1.55;
+  margin: 8px 0 0;
+  color: var(--pc-text-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
 `;
 const StatusPill = styled.span<{ $open: boolean }>`
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	white-space: nowrap;
-	padding: 7px 12px;
-	border: 1px solid ${(p) => (p.$open ? "#165e34" : "#673128")};
-	border-radius: 999px;
-	background: ${(p) => (p.$open ? "#0d2b1b" : "#341813")};
-	color: ${(p) => (p.$open ? "#36d279" : "#ff8a73")};
-	font-size: 12px;
-	font-weight: 800;
-	&::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-	@media (max-width: 520px) { padding: 6px 9px; font-size: 10.5px; }
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  padding: 7px 12px;
+  border: 1px solid ${(p) => (p.$open ? "#165e34" : "#673128")};
+  border-radius: 999px;
+  background: ${(p) => (p.$open ? "#0d2b1b" : "#341813")};
+  color: ${(p) => (p.$open ? "#36d279" : "#ff8a73")};
+  font-size: 12px;
+  font-weight: 800;
+  &::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  @media (max-width: 520px) {
+    padding: 6px 9px;
+    font-size: 10.5px;
+  }
 `;
 const VendorPanel = styled(Panel)`
-	margin-top: 8px;
-	padding: 12px 16px;
-	display: flex;
-	align-items: center;
-	gap: 12px;
+  margin-top: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 `;
 const VendorAvatar = styled.div<{ $src?: string | null }>`
-	width: 50px;
-	height: 50px;
-	flex: 0 0 auto;
-	border-radius: 50%;
-	border: 1px solid #6a5b49;
-	background: ${(p) => (p.$src ? `center / cover no-repeat url(${p.$src})` : "linear-gradient(135deg, #4b2617, #241d16)")};
-	display: grid;
-	place-items: center;
-	color: #ff7a3d;
-	font-weight: 900;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid #6a5b49;
+  background: ${(p) =>
+    p.$src
+      ? `center / cover no-repeat url(${p.$src})`
+      : "linear-gradient(135deg, #4b2617, #241d16)"};
+  display: grid;
+  place-items: center;
+  color: #ff7a3d;
+  font-weight: 900;
 `;
-const VendorInfo = styled.div`min-width: 0; flex: 1;`;
+const VendorInfo = styled.div`
+  min-width: 0;
+  flex: 1;
+`;
 const VendorName = styled.div`
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 15px;
-	font-weight: 850;
-	color: var(--pc-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 850;
+  color: var(--pc-text);
 `;
 const Verified = styled.span`
-	width: 17px;
-	height: 17px;
-	display: inline-grid;
-	place-items: center;
-	border-radius: 50%;
-	background: #ff5a1f;
-	color: #fff;
-	font-size: 11px;
+  width: 17px;
+  height: 17px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ff5a1f;
+  color: #fff;
+  font-size: 11px;
 `;
 const RatingLine = styled.div`
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	margin-top: 2px;
-	color: var(--pc-text-muted);
-	font-size: 12px;
-	span { color: var(--pc-text); font-weight: 750; }
-	svg { color: #f4b400; fill: #f4b400; }
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--pc-text-muted);
+  font-size: 12px;
+  span {
+    color: var(--pc-text);
+    font-weight: 750;
+  }
+  svg {
+    color: #f4b400;
+    fill: #f4b400;
+  }
 `;
 const Content = styled.div`
-	padding: 0 16px 16px;
-	@media (max-width: 520px) { padding-inline: 8px; }
+  padding: 0 16px 16px;
+  @media (max-width: 520px) {
+    padding-inline: 8px;
+  }
 `;
 const SectionTitle = styled.h2`
-	margin: 14px 0 7px;
-	display: flex;
-	align-items: center;
-	gap: 7px;
-	color: var(--pc-text);
-	font-size: 16px;
-	font-weight: 850;
-	svg { color: #ff5a1f; }
+  margin: 14px 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pc-text);
+  font-size: 16px;
+  font-weight: 850;
+  svg {
+    color: #ff5a1f;
+  }
 `;
 const FulfillmentGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 9px;
-	@media (max-width: 430px) { grid-template-columns: 1fr; }
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  @media (max-width: 430px) {
+    grid-template-columns: 1fr;
+  }
 `;
 const FulfillmentCard = styled.button<{ $active: boolean }>`
-	position: relative;
-	min-height: 82px;
-	display: flex;
-	align-items: center;
-	gap: 12px;
-	padding: 12px;
-	text-align: left;
-	border-radius: 16px;
-	border: 1.5px solid ${(p) => (p.$active ? "#ff5a1f" : "var(--pc-border)")};
-	background: ${(p) => (p.$active ? "linear-gradient(135deg, #2b1b13, #201b16)" : "var(--pc-surface)")};
-	color: var(--pc-text);
-	cursor: pointer;
-	&:disabled { opacity: 0.42; cursor: not-allowed; }
+  position: relative;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  text-align: left;
+  border-radius: 16px;
+  border: 1.5px solid ${(p) => (p.$active ? "#ff5a1f" : "var(--pc-border)")};
+  background: ${(p) =>
+    p.$active
+      ? "linear-gradient(135deg, #2b1b13, #201b16)"
+      : "var(--pc-surface)"};
+  color: var(--pc-text);
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+  }
 `;
 const ChoiceIcon = styled.span<{ $active?: boolean }>`
-	width: 44px;
-	height: 44px;
-	flex: 0 0 auto;
-	display: grid;
-	place-items: center;
-	border-radius: 50%;
-	border: 1px solid ${(p) => (p.$active ? "#7d3a1d" : "var(--pc-border)")};
-	background: ${(p) => (p.$active ? "#3a2115" : "var(--pc-surface-2)")};
-	color: #ff6a2a;
-	font-size: 20px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid ${(p) => (p.$active ? "#7d3a1d" : "var(--pc-border)")};
+  background: ${(p) => (p.$active ? "#3a2115" : "var(--pc-surface-2)")};
+  color: #ff6a2a;
+  font-size: 20px;
 `;
 const ChoiceCopy = styled.span`
-	display: flex;
-	min-width: 0;
-	flex-direction: column;
-	gap: 2px;
-	strong { font-size: 14px; }
-	small { color: var(--pc-text-muted); font-size: 11.5px; line-height: 1.3; }
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  strong {
+    font-size: 14px;
+  }
+  small {
+    color: var(--pc-text-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+  }
 `;
 const ChoiceFee = styled.span`
-	margin-left: auto;
-	padding: 4px 8px;
-	border-radius: 999px;
-	background: var(--pc-surface-2);
-	color: var(--pc-text-muted);
-	font-size: 11px;
-	font-weight: 800;
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--pc-surface-2);
+  color: var(--pc-text-muted);
+  font-size: 11px;
+  font-weight: 800;
 `;
 const CheckDot = styled.span`
-	position: absolute;
-	top: 7px;
-	right: 7px;
-	width: 19px;
-	height: 19px;
-	display: grid;
-	place-items: center;
-	border-radius: 50%;
-	background: #ff5a1f;
-	color: #fff;
-	font-size: 12px;
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ff5a1f;
+  color: #fff;
+  font-size: 12px;
 `;
-const FormCard = styled(Panel)`margin-top: 9px; padding: 14px;`;
+const FormCard = styled(Panel)`
+  margin-top: 9px;
+  padding: 14px;
+`;
+const AddMoreBlock = styled.div`
+  margin-top: 14px;
+`;
+const AddMoreHeading = styled.div`
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+`;
+const AddMoreCopy = styled.div`
+  min-width: 0;
+`;
+const AddMoreTitle = styled.h3`
+  margin: 0;
+  color: var(--pc-text);
+  font-size: 16px;
+  font-weight: 850;
+`;
+const AddMoreHint = styled.p`
+  margin: 3px 0 0;
+  color: var(--pc-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+`;
 const PaymentButton = styled(Button)`
-	background: linear-gradient(100deg, #d94108, #f15a1a);
-	border: 0;
-	box-shadow: 0 9px 24px rgba(201, 60, 6, 0.25);
+  background: linear-gradient(100deg, #d94108, #f15a1a);
+  border: 0;
+  box-shadow: 0 9px 24px rgba(201, 60, 6, 0.25);
 `;
 
 function isMarketplaceUnavailable(error: unknown): boolean {
-	const err = error as {
-		response?: { status?: number; data?: { appCode?: string } };
-	};
-	return (
-		err?.response?.status === 503 ||
-		err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
-	);
+  const err = error as {
+    response?: { status?: number; data?: { appCode?: string } };
+  };
+  return (
+    err?.response?.status === 503 ||
+    err?.response?.data?.appCode === "MARKETPLACE_UNAVAILABLE"
+  );
 }
 
 function allOptions(item: DailyOrderItem) {
-	return (item.optionGroups ?? []).flatMap((g) => g.options);
+  return (item.optionGroups ?? []).flatMap((g) => g.options);
 }
 
 function activeVariants(item: DailyOrderItem) {
-	return (item.snapshotVariants ?? []).filter(
-		(variant) => variant.isActive !== false,
-	);
+  return (item.snapshotVariants ?? []).filter(
+    (variant) => variant.isActive !== false,
+  );
 }
 
 function defaultVariantId(item: DailyOrderItem): string | undefined {
-	const variants = activeVariants(item);
-	return variants.find((variant) => variant.isDefault)?.id ?? variants[0]?.id;
+  const variants = activeVariants(item);
+  return variants.find((variant) => variant.isDefault)?.id ?? variants[0]?.id;
 }
 
 function selectedVariant(item: DailyOrderItem, line: Line | undefined) {
-	const variants = activeVariants(item);
-	if (variants.length === 0) return undefined;
-	return (
-		variants.find((variant) => variant.id === line?.selectedVariantId) ??
-		variants.find((variant) => variant.isDefault) ??
-		variants[0]
-	);
+  const variants = activeVariants(item);
+  if (variants.length === 0) return undefined;
+  return (
+    variants.find((variant) => variant.id === line?.selectedVariantId) ??
+    variants.find((variant) => variant.isDefault) ??
+    variants[0]
+  );
 }
 
 function itemBasePrice(item: DailyOrderItem, line: Line): number {
-	return selectedVariant(item, line)?.priceKobo ?? item.snapshotPriceKobo;
+  return selectedVariant(item, line)?.priceKobo ?? item.snapshotPriceKobo;
 }
 
 function dailyItemPriceLabel(item: DailyOrderItem): string {
-	const prices = activeVariants(item).map((variant) => variant.priceKobo);
-	if (prices.length === 0) return formatKobo(item.snapshotPriceKobo);
-	const min = Math.min(...prices);
-	const max = Math.max(...prices);
-	return min === max ? formatKobo(min) : `${formatKobo(min)}`;
+  const prices = activeVariants(item).map((variant) => variant.priceKobo);
+  if (prices.length === 0) return formatKobo(item.snapshotPriceKobo);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? formatKobo(min) : `${formatKobo(min)}`;
 }
 
 function lineSubtotal(item: DailyOrderItem, line: Line): number {
-	const optionSum = allOptions(item).reduce(
-		(s, o) => s + o.priceKobo * (line.optionQuantities[o.id] ?? 0),
-		0,
-	);
-	return itemBasePrice(item, line) * line.quantity + optionSum;
+  const optionSum = allOptions(item).reduce(
+    (s, o) => s + o.priceKobo * (line.optionQuantities[o.id] ?? 0),
+    0,
+  );
+  return itemBasePrice(item, line) * line.quantity + optionSum;
 }
 
 /** Effective minimum selections for a group (required ⇒ at least 1). */
 function groupMin(group: DailyOrderOptionGroup): number {
-	return group.required
-		? Math.max(1, group.minSelect ?? 0)
-		: (group.minSelect ?? 0);
+  return group.required
+    ? Math.max(1, group.minSelect ?? 0)
+    : (group.minSelect ?? 0);
 }
 
 function groupSelectedCount(group: DailyOrderOptionGroup, line: Line): number {
-	return group.options.filter((o) => (line.optionQuantities[o.id] ?? 0) > 0)
-		.length;
+  return group.options.filter((o) => (line.optionQuantities[o.id] ?? 0) > 0)
+    .length;
 }
 
 /** A group is satisfied when its selection count is within [min, max]. */
 function groupSatisfied(group: DailyOrderOptionGroup, line: Line): boolean {
-	const count = groupSelectedCount(group, line);
-	if (count < groupMin(group)) return false;
-	if (group.maxSelect != null && count > group.maxSelect) return false;
-	return true;
+  const count = groupSelectedCount(group, line);
+  if (count < groupMin(group)) return false;
+  if (group.maxSelect != null && count > group.maxSelect) return false;
+  return true;
 }
 
 /** Every selected item must satisfy all of its required/bounded groups. */
 function itemOptionsValid(item: DailyOrderItem, line: Line): boolean {
-	if (activeVariants(item).length > 0 && !selectedVariant(item, line)) {
-		return false;
-	}
-	return (item.optionGroups ?? []).every((g) => groupSatisfied(g, line));
+  if (activeVariants(item).length > 0 && !selectedVariant(item, line)) {
+    return false;
+  }
+  return (item.optionGroups ?? []).every((g) => groupSatisfied(g, line));
 }
 
 function availableFulfillment(
-	order: DailyOrder | null | undefined,
-	requested: Fulfillment,
+  order: DailyOrder | null | undefined,
+  requested: Fulfillment,
 ): Fulfillment {
-	if (!order) return requested;
-	if (order.deliveryAvailable && !order.pickupAvailable) return "DELIVERY";
-	if (order.pickupAvailable && !order.deliveryAvailable) return "PICKUP";
-	if (requested === "DELIVERY" && !order.deliveryAvailable) return "PICKUP";
-	if (requested === "PICKUP" && !order.pickupAvailable) return "DELIVERY";
-	return requested;
+  if (!order) return requested;
+  if (order.deliveryAvailable && !order.pickupAvailable) return "DELIVERY";
+  if (order.pickupAvailable && !order.deliveryAvailable) return "PICKUP";
+  if (requested === "DELIVERY" && !order.deliveryAvailable) return "PICKUP";
+  if (requested === "PICKUP" && !order.pickupAvailable) return "DELIVERY";
+  return requested;
 }
 
 /** Short human hint describing a group's selection rule. */
 function ruleLabel(group: DailyOrderOptionGroup, min: number): string {
-	if (min > 0 && group.maxSelect === min)
-		return min === 1 ? "Required · pick 1" : `Required · pick ${min}`;
-	if (min > 0 && group.maxSelect != null)
-		return `Required · pick ${min}–${group.maxSelect}`;
-	if (min > 0) return `Required · pick at least ${min}`;
-	if (group.maxSelect != null) return `Optional · up to ${group.maxSelect}`;
-	return "Optional";
+  if (min > 0 && group.maxSelect === min)
+    return min === 1 ? "Required · pick 1" : `Required · pick ${min}`;
+  if (min > 0 && group.maxSelect != null)
+    return `Required · pick ${min}–${group.maxSelect}`;
+  if (min > 0) return `Required · pick at least ${min}`;
+  if (group.maxSelect != null) return `Optional · up to ${group.maxSelect}`;
+  return "Optional";
 }
 
 export default function OrderDetailWrapper({ token }: { token: string }) {
-	const router = useRouter();
-	const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-	const { toast } = useToast();
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
 
-	const { data: availability, isLoading: availabilityLoading } =
-		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
-			refreshInterval: 10_000,
-		});
-	const marketplaceEnabled = availability?.marketplaceEnabled !== false;
-	// Same SWR key as `availability` above, so this is the same cached request —
-	// the fee policy rides along on the poll that was already happening.
-	const { policy: feePolicy } = useFeePolicy();
-	const { data, isLoading, error } = useSWR<DailyOrder>(
-		marketplaceEnabled ? `/daily-orders/public/${token}` : null,
-		fetcher,
-	);
+  const { data: availability, isLoading: availabilityLoading } =
+    useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
+      refreshInterval: 10_000,
+    });
+  const marketplaceEnabled = availability?.marketplaceEnabled !== false;
+  // Same SWR key as `availability` above, so this is the same cached request —
+  // the fee policy rides along on the poll that was already happening.
+  const { policy: feePolicy } = useFeePolicy();
+  const { data, isLoading, error } = useSWR<DailyOrder>(
+    marketplaceEnabled ? `/daily-orders/public/${token}` : null,
+    fetcher,
+  );
+  const { data: storefront, isLoading: storefrontLoading } = useSWR<{
+    listings: DailyOrder[];
+  }>(
+    marketplaceEnabled && data?.vendorId
+      ? `/vendors/${data.vendorId}/storefront`
+      : null,
+    fetcher,
+  );
 
-	const [lines, setLines] = useState<Record<string, Line>>({});
-	const [fulfillment, setFulfillment] = useState<Fulfillment>("PICKUP");
-	const [fulfillmentTouched, setFulfillmentTouched] = useState(false);
-	const [hostel, setHostel] = useState("");
-	const [room, setRoom] = useState("");
-	const [extra, setExtra] = useState("");
-	const [deliveryPhone, setDeliveryPhone] = useState("");
-	const [customerMessage, setCustomerMessage] = useState("");
-	const [paymentMode, setPaymentMode] = useState<PaymentMode>("SELF");
-	const [isFavourite, setIsFavourite] = useState(false);
-	const [externalPayment, setExternalPayment] =
-		useState<ExternalPaymentResult | null>(null);
-	const [placing, setPlacing] = useState(false);
-	const cartStorageKey = `pch-cart-${token}`;
-	const favouritesStorageKey = "pch-favourite-listings";
+  // The storefront endpoint is buyer-facing and is the source used by the
+  // kitchen page. Reuse those listings here so checkout can offer the same
+  // vendor's other currently visible menus without creating a second menu feed.
+  const otherListingItems = useMemo(() => {
+    if (!data || !storefront?.listings) return [];
+    return storefront.listings.flatMap((listing) => {
+      if (listing.id === data.id) return [];
+      return listing.items
+        .filter((item) => remainingCap(item) > 0)
+        .map((item) => ({ item, listing }));
+    });
+  }, [data, storefront]);
 
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		try {
-			const saved = JSON.parse(
-				window.localStorage.getItem(favouritesStorageKey) ?? "[]",
-			) as string[];
-			setIsFavourite(Array.isArray(saved) && saved.includes(token));
-		} catch {
-			setIsFavourite(false);
-		}
-	}, [token]);
+  const allCheckoutItems = useMemo(() => {
+    if (!data) return [] as DailyOrderItem[];
+    const seen = new Set<string>();
+    const combined = [
+      ...data.items,
+      ...otherListingItems.map(({ item }) => item),
+    ];
+    return combined.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [data, otherListingItems]);
 
-	// Single source of truth for availability, shared with the marketplace and
-	// the storefront, and re-derived on a 30s tick. This replaces three inline
-	// booleans (closed/inactive/notStarted) that never consulted the vendor's
-	// `vendorOpen` kill switch and never re-evaluated after mount — so a kitchen
-	// that had switched itself off still rendered a live "2h left" countdown.
-	const status = useListingStatus(data, { vendorOpen: data?.vendorOpen });
-	// `orderable` is true only when a buyer can actually add to cart right now:
-	// false for a closed kitchen, an inactive/past-cutoff listing, AND for a
-	// listing that is visible but hasn't opened yet ("Opens 11:30am").
-	const orderable = status?.orderable ?? false;
+  const [lines, setLines] = useState<Record<string, Line>>({});
+  const [fulfillment, setFulfillment] = useState<Fulfillment>("PICKUP");
+  const [fulfillmentTouched, setFulfillmentTouched] = useState(false);
+  const [hostel, setHostel] = useState("");
+  const [room, setRoom] = useState("");
+  const [extra, setExtra] = useState("");
+  const [deliveryPhone, setDeliveryPhone] = useState("");
+  const [customerMessage, setCustomerMessage] = useState("");
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>("SELF");
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [externalPayment, setExternalPayment] =
+    useState<ExternalPaymentResult | null>(null);
+  const [placing, setPlacing] = useState(false);
+  const cartStorageKey = `pch-cart-${token}`;
+  const favouritesStorageKey = "pch-favourite-listings";
 
-	useEffect(() => {
-		if (!data) return;
-		setFulfillment((current) => availableFulfillment(data, current));
-		if (data.pickupAvailable !== data.deliveryAvailable) {
-			setFulfillmentTouched(true);
-		}
-	}, [data]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(favouritesStorageKey) ?? "[]",
+      ) as string[];
+      setIsFavourite(Array.isArray(saved) && saved.includes(token));
+    } catch {
+      setIsFavourite(false);
+    }
+  }, [token]);
 
-	useEffect(() => {
-		if (!user?.phone || deliveryPhone.trim()) return;
-		setDeliveryPhone(user.phone);
-	}, [deliveryPhone, user?.phone]);
+  // Single source of truth for availability, shared with the marketplace and
+  // the storefront, and re-derived on a 30s tick. This replaces three inline
+  // booleans (closed/inactive/notStarted) that never consulted the vendor's
+  // `vendorOpen` kill switch and never re-evaluated after mount — so a kitchen
+  // that had switched itself off still rendered a live "2h left" countdown.
+  const status = useListingStatus(data, { vendorOpen: data?.vendorOpen });
+  // `orderable` is true only when a buyer can actually add to cart right now:
+  // false for a closed kitchen, an inactive/past-cutoff listing, AND for a
+  // listing that is visible but hasn't opened yet ("Opens 11:30am").
+  const orderable = status?.orderable ?? false;
 
-	const { subtotal, itemCount, optionsValid } = useMemo(() => {
-		if (!data) return { subtotal: 0, itemCount: 0, optionsValid: true };
-		let sub = 0;
-		let count = 0;
-		let valid = true;
-		for (const item of data.items) {
-			const line = lines[item.id];
-			if (!line || line.quantity <= 0) continue;
-			sub += lineSubtotal(item, line);
-			count += line.quantity;
-			if (!itemOptionsValid(item, line)) valid = false;
-		}
-		return { subtotal: sub, itemCount: count, optionsValid: valid };
-	}, [data, lines]);
+  useEffect(() => {
+    if (!data) return;
+    setFulfillment((current) => availableFulfillment(data, current));
+    if (data.pickupAvailable !== data.deliveryAvailable) {
+      setFulfillmentTouched(true);
+    }
+  }, [data]);
 
-	useEffect(() => {
-		if (!data || typeof window === "undefined") return;
-		const saved = window.sessionStorage.getItem(cartStorageKey);
-		if (!saved) return;
-		try {
-			const parsed = JSON.parse(saved) as {
-				lines?: Record<string, SavedLine>;
-				fulfillment?: Fulfillment;
-				hostel?: string;
-				room?: string;
-				extra?: string;
-				deliveryPhone?: string;
-				customerMessage?: string;
-				paymentMode?: PaymentMode;
-			};
-			if (parsed.lines) {
-				const byId = new Map(data.items.map((item) => [item.id, item]));
-				const restored: Array<[string, Line]> = [];
-				for (const [id, line] of Object.entries(parsed.lines)) {
-					const item = byId.get(id);
-					if (!item) continue;
-					const liveVariants = new Set(
-						activeVariants(item).map((variant) => variant.id),
-					);
-					restored.push([
-						id,
-						{
-							quantity: Math.min(
-								Math.max(0, Math.floor(line.quantity)),
-								remainingCap(item),
-							),
-							selectedVariantId:
-								line.selectedVariantId &&
-								liveVariants.has(line.selectedVariantId)
-									? line.selectedVariantId
-									: defaultVariantId(item),
-							optionQuantities:
-								line.optionQuantities ??
-								Object.fromEntries(
-									(line.optionIds ?? []).map((id) => [
-										id,
-										line.quantity,
-									]),
-								),
-						},
-					]);
-				}
-				setLines(Object.fromEntries(restored));
-			}
-			if (parsed.fulfillment) {
-				setFulfillment(availableFulfillment(data, parsed.fulfillment));
-				setFulfillmentTouched(true);
-			}
-			setHostel(parsed.hostel ?? "");
-			setRoom(parsed.room ?? "");
-			setExtra(parsed.extra ?? "");
-			setDeliveryPhone(parsed.deliveryPhone ?? user?.phone ?? "");
-			setCustomerMessage(parsed.customerMessage ?? "");
-			if (parsed.paymentMode) setPaymentMode(parsed.paymentMode);
-			window.sessionStorage.removeItem(cartStorageKey);
-		} catch {
-			window.sessionStorage.removeItem(cartStorageKey);
-		}
-	}, [cartStorageKey, data, user?.phone]);
+  useEffect(() => {
+    if (!user?.phone || deliveryPhone.trim()) return;
+    setDeliveryPhone(user.phone);
+  }, [deliveryPhone, user?.phone]);
 
-	/**
-	 * "Order again" prefill. ReorderSheet writes the resolvable lines under
-	 * `pch-reorder-{dailyOrderId}` and sends the buyer here.
-	 *
-	 * Declared after the login-cart effect so a fresh reorder intent wins over a
-	 * stale saved cart. The key is cleared the moment it is read: the seed is a
-	 * one-shot handoff, not cart state, so a refresh must not resurrect it.
-	 *
-	 * Everything is re-validated against the listing we actually loaded — the
-	 * preview was computed server-side moments ago, but an item can sell out in
-	 * between, so quantities are clamped to what's still available and unknown
-	 * items are dropped rather than trusted.
-	 */
-	useEffect(() => {
-		if (!data || typeof window === "undefined") return;
-		const key = `pch-reorder-${data.id}`;
-		const saved = window.sessionStorage.getItem(key);
-		if (!saved) return;
-		window.sessionStorage.removeItem(key);
-		try {
-			const seed = JSON.parse(saved) as Array<{
-				dailyOrderItemId: string;
-				quantity: number;
-				selectedVariantId?: string;
-				selectedOptionIds?: string[];
-			}>;
-			if (!Array.isArray(seed) || seed.length === 0) return;
-			const byId = new Map(data.items.map((it) => [it.id, it]));
-			const next: Record<string, Line> = {};
-			for (const row of seed) {
-				const item = byId.get(row.dailyOrderItemId);
-				if (!item) continue;
-				const quantity = Math.min(
-					Math.max(1, Math.floor(row.quantity)),
-					remainingCap(item),
-				);
-				if (quantity <= 0) continue;
-				// Only keep options that still exist on today's snapshot.
-				const live = new Set(allOptions(item).map((o) => o.id));
-				const liveVariants = new Set(
-					activeVariants(item).map((variant) => variant.id),
-				);
-				next[item.id] = {
-					quantity,
-					selectedVariantId:
-						row.selectedVariantId &&
-						liveVariants.has(row.selectedVariantId)
-							? row.selectedVariantId
-							: defaultVariantId(item),
-					optionQuantities: Object.fromEntries(
-						(row.selectedOptionIds ?? [])
-							.filter((id) => live.has(id))
-							.map((id) => [id, quantity]),
-					),
-				};
-			}
-			if (Object.keys(next).length > 0) setLines(next);
-		} catch {
-			// Malformed seed — already cleared above; fall through to an empty cart.
-		}
-	}, [data]);
+  const { subtotal, itemCount, optionsValid } = useMemo(() => {
+    if (!data) return { subtotal: 0, itemCount: 0, optionsValid: true };
+    let sub = 0;
+    let count = 0;
+    let valid = true;
+    for (const item of allCheckoutItems) {
+      const line = lines[item.id];
+      if (!line || line.quantity <= 0) continue;
+      sub += lineSubtotal(item, line);
+      count += line.quantity;
+      if (!itemOptionsValid(item, line)) valid = false;
+    }
+    return { subtotal: sub, itemCount: count, optionsValid: valid };
+  }, [allCheckoutItems, data, lines]);
 
-	useEffect(() => {
-		if (!data || typeof window === "undefined") return;
-		const itemId = new URLSearchParams(window.location.search).get("item");
-		if (!itemId) return;
-		const item = data.items.find((candidate) => candidate.id === itemId);
-		if (!item || remainingCap(item) <= 0) return;
-		setLines((current) => {
-			if (Object.values(current).some((line) => line.quantity > 0)) {
-				return current;
-			}
-			return {
-				...current,
-				[item.id]: {
-					quantity: 1,
-					selectedVariantId: defaultVariantId(item),
-					optionQuantities: {},
-				},
-			};
-		});
-	}, [data]);
+  useEffect(() => {
+    if (!data || storefrontLoading || typeof window === "undefined") return;
+    const saved = window.sessionStorage.getItem(cartStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as {
+        lines?: Record<string, SavedLine>;
+        fulfillment?: Fulfillment;
+        hostel?: string;
+        room?: string;
+        extra?: string;
+        deliveryPhone?: string;
+        customerMessage?: string;
+        paymentMode?: PaymentMode;
+      };
+      if (parsed.lines) {
+        const byId = new Map(allCheckoutItems.map((item) => [item.id, item]));
+        const restored: Array<[string, Line]> = [];
+        for (const [id, line] of Object.entries(parsed.lines)) {
+          const item = byId.get(id);
+          if (!item) continue;
+          const liveVariants = new Set(
+            activeVariants(item).map((variant) => variant.id),
+          );
+          restored.push([
+            id,
+            {
+              quantity: Math.min(
+                Math.max(0, Math.floor(line.quantity)),
+                remainingCap(item),
+              ),
+              selectedVariantId:
+                line.selectedVariantId &&
+                liveVariants.has(line.selectedVariantId)
+                  ? line.selectedVariantId
+                  : defaultVariantId(item),
+              optionQuantities:
+                line.optionQuantities ??
+                Object.fromEntries(
+                  (line.optionIds ?? []).map((id) => [id, line.quantity]),
+                ),
+            },
+          ]);
+        }
+        setLines(Object.fromEntries(restored));
+      }
+      if (parsed.fulfillment) {
+        setFulfillment(availableFulfillment(data, parsed.fulfillment));
+        setFulfillmentTouched(true);
+      }
+      setHostel(parsed.hostel ?? "");
+      setRoom(parsed.room ?? "");
+      setExtra(parsed.extra ?? "");
+      setDeliveryPhone(parsed.deliveryPhone ?? user?.phone ?? "");
+      setCustomerMessage(parsed.customerMessage ?? "");
+      if (parsed.paymentMode) setPaymentMode(parsed.paymentMode);
+      window.sessionStorage.removeItem(cartStorageKey);
+    } catch {
+      window.sessionStorage.removeItem(cartStorageKey);
+    }
+  }, [allCheckoutItems, cartStorageKey, data, storefrontLoading, user?.phone]);
 
-	if (availabilityLoading || isLoading || authLoading) return <PageLoader />;
-	if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
-		return (
-			<Wrap>
-				<Card $accent>
-					<Stack $gap={10}>
-						<Title $size={20}>Marketplace unavailable</Title>
-						<Text $muted>
-							The marketplace is temporarily unavailable. Existing
-							paid orders are still being fulfilled.
-						</Text>
-						<Row>
-							<Button onClick={() => router.push("/my-orders")}>
-								View my orders
-							</Button>
-						</Row>
-					</Stack>
-				</Card>
-			</Wrap>
-		);
-	}
-	if (!data) {
-		return (
-			<Wrap>
-				<Card $accent>
-					<Stack $gap={6}>
-						<Title $size={18}>Listing not found</Title>
-						<Text $muted>
-							This listing may have closed or the link is invalid.
-						</Text>
-					</Stack>
-				</Card>
-			</Wrap>
-		);
-	}
-	// A seller can't order from their own kitchen. The server flags this on the
-	// listing response and enforces it in placeOrder; here we simply refuse to
-	// render the cart/checkout and point them at their vendor tools instead.
-	if (data.isOwnListing) {
-		return (
-			<Wrap>
-				<Card $accent>
-					<Stack $gap={10}>
-						<Title $size={20}>This is your listing</Title>
-						<Text $muted>
-							You can't place an order from your own kitchen.
-							Manage this listing from your dashboard, or head to
-							the marketplace to order from other vendors.
-						</Text>
-						<Row $gap={10}>
-							<Button onClick={() => router.push("/dashboard")}>
-								Go to dashboard
-							</Button>
-							<Button
-								$variant="secondary"
-								onClick={() => router.push("/marketplace")}
-							>
-								Browse marketplace
-							</Button>
-						</Row>
-					</Stack>
-				</Card>
-			</Wrap>
-		);
-	}
-	// The vendor has closed their kitchen — no new orders until they reopen. The
-	// server enforces this in placeOrder; here we refuse to render checkout.
-	if (data.vendorOpen === false) {
-		return (
-			<Wrap>
-				<Card $accent>
-					<Stack $gap={10}>
-						<Title $size={20}>{data.title}</Title>
-						<Badge $tone="danger">Kitchen closed</Badge>
-						<Text $muted>
-							This kitchen isn't accepting orders right now. Check
-							back later, or browse other campus kitchens cooking
-							today.
-						</Text>
-						<Row>
-							<Button onClick={() => router.push("/marketplace")}>
-								Browse marketplace
-							</Button>
-						</Row>
-					</Stack>
-				</Card>
-			</Wrap>
-		);
-	}
+  /**
+   * "Order again" prefill. ReorderSheet writes the resolvable lines under
+   * `pch-reorder-{dailyOrderId}` and sends the buyer here.
+   *
+   * Declared after the login-cart effect so a fresh reorder intent wins over a
+   * stale saved cart. The key is cleared the moment it is read: the seed is a
+   * one-shot handoff, not cart state, so a refresh must not resurrect it.
+   *
+   * Everything is re-validated against the listing we actually loaded — the
+   * preview was computed server-side moments ago, but an item can sell out in
+   * between, so quantities are clamped to what's still available and unknown
+   * items are dropped rather than trusted.
+   */
+  useEffect(() => {
+    if (!data || typeof window === "undefined") return;
+    const key = `pch-reorder-${data.id}`;
+    const saved = window.sessionStorage.getItem(key);
+    if (!saved) return;
+    window.sessionStorage.removeItem(key);
+    try {
+      const seed = JSON.parse(saved) as Array<{
+        dailyOrderItemId: string;
+        quantity: number;
+        selectedVariantId?: string;
+        selectedOptionIds?: string[];
+      }>;
+      if (!Array.isArray(seed) || seed.length === 0) return;
+      const byId = new Map(data.items.map((it) => [it.id, it]));
+      const next: Record<string, Line> = {};
+      for (const row of seed) {
+        const item = byId.get(row.dailyOrderItemId);
+        if (!item) continue;
+        const quantity = Math.min(
+          Math.max(1, Math.floor(row.quantity)),
+          remainingCap(item),
+        );
+        if (quantity <= 0) continue;
+        // Only keep options that still exist on today's snapshot.
+        const live = new Set(allOptions(item).map((o) => o.id));
+        const liveVariants = new Set(
+          activeVariants(item).map((variant) => variant.id),
+        );
+        next[item.id] = {
+          quantity,
+          selectedVariantId:
+            row.selectedVariantId && liveVariants.has(row.selectedVariantId)
+              ? row.selectedVariantId
+              : defaultVariantId(item),
+          optionQuantities: Object.fromEntries(
+            (row.selectedOptionIds ?? [])
+              .filter((id) => live.has(id))
+              .map((id) => [id, quantity]),
+          ),
+        };
+      }
+      if (Object.keys(next).length > 0) setLines(next);
+    } catch {
+      // Malformed seed — already cleared above; fall through to an empty cart.
+    }
+  }, [data]);
 
-	// A fee can only be quoted against a policy the server actually sent. Without
-	// one we deliberately do NOT fall back to a default: quoting ₦0 (or a stale
-	// 3%) understates the total the buyer is about to be charged.
-	const canQuoteFee = !!feePolicy;
-	const processingFee =
-		itemCount > 0 && feePolicy
-			? calculateBuyerServiceFeeKobo(subtotal, feePolicy)
-			: 0;
-	const deliveryFee =
-		fulfillmentTouched &&
-		fulfillment === "DELIVERY" &&
-		data.deliveryAvailable
-			? data.deliveryFeeKobo
-			: 0;
-	const requiresFulfillmentChoice =
-		data.pickupAvailable && data.deliveryAvailable;
-	const fulfillmentChosen = !requiresFulfillmentChoice || fulfillmentTouched;
-	const checkoutTotal = subtotal + deliveryFee + processingFee;
-	const feeExplainer = describeBuyerFeeExplainer(feePolicy);
-	const fulfillmentAvailable =
-		(fulfillment === "PICKUP" && data.pickupAvailable) ||
-		(fulfillment === "DELIVERY" && data.deliveryAvailable);
-	const hasBuyerCampus = !!user?.campusId;
-	const hasAvailableItem = data.items.some((item) => remainingCap(item) > 0);
-	const itemAvailable = orderable && hasAvailableItem;
-	const canOrder =
-		itemAvailable &&
-		itemCount > 0 &&
-		optionsValid &&
-		canQuoteFee &&
-		fulfillmentAvailable &&
-		fulfillmentChosen;
-	const primaryItem = data.items[0];
-	const imageCount = Math.max(
-		1,
-		new Set(data.items.map((item) => item.snapshotImageUrl).filter(Boolean))
-			.size,
-	);
-	const productTitle =
-		data.items.length === 1 && primaryItem
-			? primaryItem.snapshotName
-			: data.title;
-	const productPrice = primaryItem
-		? dailyItemPriceLabel(primaryItem)
-		: formatKobo(0);
-	const productDescription =
-		primaryItem?.snapshotDescription ??
-		(data.items.length > 1
-			? `${data.items.length} freshly prepared choices available from this kitchen.`
-			: primaryItem
-				? `Freshly prepared in about ${primaryItem.snapshotPrepMin} minutes.`
-				: "Fresh food prepared to order.");
+  useEffect(() => {
+    if (!data || typeof window === "undefined") return;
+    const itemId = new URLSearchParams(window.location.search).get("item");
+    if (!itemId) return;
+    const item = data.items.find((candidate) => candidate.id === itemId);
+    if (!item || remainingCap(item) <= 0) return;
+    setLines((current) => {
+      if (Object.values(current).some((line) => line.quantity > 0)) {
+        return current;
+      }
+      return {
+        ...current,
+        [item.id]: {
+          quantity: 1,
+          selectedVariantId: defaultVariantId(item),
+          optionQuantities: {},
+        },
+      };
+    });
+  }, [data]);
 
-	function toggleFavourite() {
-		if (typeof window === "undefined") return;
-		let saved: string[] = [];
-		try {
-			const parsed = JSON.parse(
-				window.localStorage.getItem(favouritesStorageKey) ?? "[]",
-			) as string[];
-			if (Array.isArray(parsed)) saved = parsed;
-		} catch {
-			// Replace malformed device-local state with a valid favourites list.
-		}
-		const next = saved.includes(token)
-			? saved.filter((savedToken) => savedToken !== token)
-			: [...saved, token];
-		window.localStorage.setItem(favouritesStorageKey, JSON.stringify(next));
-		setIsFavourite(next.includes(token));
-	}
+  if (availabilityLoading || isLoading || authLoading) return <PageLoader />;
+  if (!marketplaceEnabled || isMarketplaceUnavailable(error)) {
+    return (
+      <Wrap>
+        <Card $accent>
+          <Stack $gap={10}>
+            <Title $size={20}>Marketplace unavailable</Title>
+            <Text $muted>
+              The marketplace is temporarily unavailable. Existing paid orders
+              are still being fulfilled.
+            </Text>
+            <Row>
+              <Button onClick={() => router.push("/my-orders")}>
+                View my orders
+              </Button>
+            </Row>
+          </Stack>
+        </Card>
+      </Wrap>
+    );
+  }
+  if (!data) {
+    return (
+      <Wrap>
+        <Card $accent>
+          <Stack $gap={6}>
+            <Title $size={18}>Listing not found</Title>
+            <Text $muted>
+              This listing may have closed or the link is invalid.
+            </Text>
+          </Stack>
+        </Card>
+      </Wrap>
+    );
+  }
+  // A seller can't order from their own kitchen. The server flags this on the
+  // listing response and enforces it in placeOrder; here we simply refuse to
+  // render the cart/checkout and point them at their vendor tools instead.
+  if (data.isOwnListing) {
+    return (
+      <Wrap>
+        <Card $accent>
+          <Stack $gap={10}>
+            <Title $size={20}>This is your listing</Title>
+            <Text $muted>
+              You can't place an order from your own kitchen. Manage this
+              listing from your dashboard, or head to the marketplace to order
+              from other vendors.
+            </Text>
+            <Row $gap={10}>
+              <Button onClick={() => router.push("/dashboard")}>
+                Go to dashboard
+              </Button>
+              <Button
+                $variant="secondary"
+                onClick={() => router.push("/marketplace")}>
+                Browse marketplace
+              </Button>
+            </Row>
+          </Stack>
+        </Card>
+      </Wrap>
+    );
+  }
+  // The vendor has closed their kitchen — no new orders until they reopen. The
+  // server enforces this in placeOrder; here we refuse to render checkout.
+  if (data.vendorOpen === false) {
+    return (
+      <Wrap>
+        <Card $accent>
+          <Stack $gap={10}>
+            <Title $size={20}>{data.title}</Title>
+            <Badge $tone="danger">Kitchen closed</Badge>
+            <Text $muted>
+              This kitchen isn't accepting orders right now. Check back later,
+              or browse other campus kitchens cooking today.
+            </Text>
+            <Row>
+              <Button onClick={() => router.push("/marketplace")}>
+                Browse marketplace
+              </Button>
+            </Row>
+          </Stack>
+        </Card>
+      </Wrap>
+    );
+  }
 
-	function saveCartForLogin() {
-		if (typeof window === "undefined") return;
-		window.sessionStorage.setItem(
-			cartStorageKey,
-			JSON.stringify({
-				lines: Object.fromEntries(
-					Object.entries(lines).map(([id, line]) => [
-						id,
-						{
-							quantity: line.quantity,
-							selectedVariantId: line.selectedVariantId,
-							optionQuantities: line.optionQuantities,
-						},
-					]),
-				),
-				fulfillment: fulfillmentChosen ? fulfillment : undefined,
-				hostel,
-				room,
-				extra,
-				deliveryPhone,
-				customerMessage,
-				paymentMode,
-			}),
-		);
-	}
+  // A fee can only be quoted against a policy the server actually sent. Without
+  // one we deliberately do NOT fall back to a default: quoting ₦0 (or a stale
+  // 3%) understates the total the buyer is about to be charged.
+  const canQuoteFee = !!feePolicy;
+  const processingFee =
+    itemCount > 0 && feePolicy
+      ? calculateBuyerServiceFeeKobo(subtotal, feePolicy)
+      : 0;
+  const deliveryFee =
+    fulfillmentTouched && fulfillment === "DELIVERY" && data.deliveryAvailable
+      ? data.deliveryFeeKobo
+      : 0;
+  const requiresFulfillmentChoice =
+    data.pickupAvailable && data.deliveryAvailable;
+  const fulfillmentChosen = !requiresFulfillmentChoice || fulfillmentTouched;
+  const checkoutTotal = subtotal + deliveryFee + processingFee;
+  const feeExplainer = describeBuyerFeeExplainer(feePolicy);
+  const fulfillmentAvailable =
+    (fulfillment === "PICKUP" && data.pickupAvailable) ||
+    (fulfillment === "DELIVERY" && data.deliveryAvailable);
+  const hasBuyerCampus = !!user?.campusId;
+  const hasAvailableItem = data.items.some((item) => remainingCap(item) > 0);
+  const itemAvailable = orderable && hasAvailableItem;
+  const canOrder =
+    itemAvailable &&
+    itemCount > 0 &&
+    optionsValid &&
+    canQuoteFee &&
+    fulfillmentAvailable &&
+    fulfillmentChosen;
+  const primaryItem = data.items[0];
+  // const imageCount = Math.max(
+  // 	1,
+  // 	new Set(data.items.map((item) => item.snapshotImageUrl).filter(Boolean))
+  // 		.size,
+  // );
+  const productTitle =
+    data.items.length === 1 && primaryItem
+      ? primaryItem.snapshotName
+      : data.title;
+  const productPrice = primaryItem
+    ? dailyItemPriceLabel(primaryItem)
+    : formatKobo(0);
+  const productDescription =
+    primaryItem?.snapshotDescription ??
+    (data.items.length > 1
+      ? `${data.items.length} freshly prepared choices available from this kitchen.`
+      : primaryItem
+        ? `Freshly prepared in about ${primaryItem.snapshotPrepMin} minutes.`
+        : "Fresh food prepared to order.");
 
-	function setQty(item: DailyOrderItem, delta: number) {
-		setLines((prev) => {
-			const cur = prev[item.id] ?? {
-				quantity: 0,
-				selectedVariantId: defaultVariantId(item),
-				optionQuantities: {},
-			};
-			// Cap at what's actually still available (maxQuantity − already
-			// ordered), and never above the server's per-order limit of 50, so
-			// the buyer can't select more than checkout would accept.
-			const next = Math.max(
-				0,
-				Math.min(remainingCap(item), cur.quantity + delta),
-			);
-			return { ...prev, [item.id]: { ...cur, quantity: next } };
-		});
-	}
+  function toggleFavourite() {
+    if (typeof window === "undefined") return;
+    let saved: string[] = [];
+    try {
+      const parsed = JSON.parse(
+        window.localStorage.getItem(favouritesStorageKey) ?? "[]",
+      ) as string[];
+      if (Array.isArray(parsed)) saved = parsed;
+    } catch {
+      // Replace malformed device-local state with a valid favourites list.
+    }
+    const next = saved.includes(token)
+      ? saved.filter((savedToken) => savedToken !== token)
+      : [...saved, token];
+    window.localStorage.setItem(favouritesStorageKey, JSON.stringify(next));
+    setIsFavourite(next.includes(token));
+  }
 
-	/**
-	 * Toggle an option within a group. Single-select groups (maxSelect === 1)
-	 * behave like radios — picking one clears the group's other choices; picking
-	 * the current one again clears it only when the group is optional. Multi-
-	 * select groups honour `maxSelect` by ignoring picks past the cap.
-	 */
-	function toggleOption(
-		item: DailyOrderItem,
-		group: DailyOrderOptionGroup,
-		optionId: string,
-	) {
-		setLines((prev) => {
-			const cur = prev[item.id] ?? {
-				quantity: 1,
-				selectedVariantId: defaultVariantId(item),
-				optionQuantities: {},
-			};
-			const optionQuantities = { ...cur.optionQuantities };
-			const groupIds = group.options.map((o) => o.id);
-			const single = group.maxSelect === 1;
+  function saveCartForLogin() {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(
+      cartStorageKey,
+      JSON.stringify({
+        lines: Object.fromEntries(
+          Object.entries(lines).map(([id, line]) => [
+            id,
+            {
+              quantity: line.quantity,
+              selectedVariantId: line.selectedVariantId,
+              optionQuantities: line.optionQuantities,
+            },
+          ]),
+        ),
+        fulfillment: fulfillmentChosen ? fulfillment : undefined,
+        hostel,
+        room,
+        extra,
+        deliveryPhone,
+        customerMessage,
+        paymentMode,
+      }),
+    );
+  }
 
-			if ((optionQuantities[optionId] ?? 0) > 0) {
-				if (single && group.required) {
-					// keep it selected (radio can't be emptied when required)
-				} else {
-					delete optionQuantities[optionId];
-				}
-			} else if (single) {
-				for (const gid of groupIds) delete optionQuantities[gid];
-				optionQuantities[optionId] = 1;
-			} else {
-				const count = groupIds.filter(
-					(gid) => (optionQuantities[gid] ?? 0) > 0,
-				).length;
-				if (group.maxSelect == null || count < group.maxSelect)
-					optionQuantities[optionId] = 1;
-			}
-			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return {
-				...prev,
-				[item.id]: { ...cur, quantity, optionQuantities },
-			};
-		});
-	}
+  function setQty(item: DailyOrderItem, delta: number) {
+    setLines((prev) => {
+      const cur = prev[item.id] ?? {
+        quantity: 0,
+        selectedVariantId: defaultVariantId(item),
+        optionQuantities: {},
+      };
+      // Cap at what's actually still available (maxQuantity − already
+      // ordered), and never above the server's per-order limit of 50, so
+      // the buyer can't select more than checkout would accept.
+      const next = Math.max(
+        0,
+        Math.min(remainingCap(item), cur.quantity + delta),
+      );
+      return { ...prev, [item.id]: { ...cur, quantity: next } };
+    });
+  }
 
-	function setOptionQty(
-		item: DailyOrderItem,
-		optionId: string,
-		delta: number,
-	) {
-		setLines((prev) => {
-			const cur = prev[item.id] ?? {
-				quantity: 1,
-				selectedVariantId: defaultVariantId(item),
-				optionQuantities: {},
-			};
-			const current = cur.optionQuantities[optionId] ?? 0;
-			const next = Math.max(0, Math.min(MAX_PER_ORDER, current + delta));
-			const optionQuantities = { ...cur.optionQuantities };
-			if (next === 0) delete optionQuantities[optionId];
-			else optionQuantities[optionId] = next;
-			const quantity = cur.quantity === 0 ? 1 : cur.quantity;
-			return {
-				...prev,
-				[item.id]: { ...cur, quantity, optionQuantities },
-			};
-		});
-	}
+  /**
+   * Toggle an option within a group. Single-select groups (maxSelect === 1)
+   * behave like radios — picking one clears the group's other choices; picking
+   * the current one again clears it only when the group is optional. Multi-
+   * select groups honour `maxSelect` by ignoring picks past the cap.
+   */
+  function toggleOption(
+    item: DailyOrderItem,
+    group: DailyOrderOptionGroup,
+    optionId: string,
+  ) {
+    setLines((prev) => {
+      const cur = prev[item.id] ?? {
+        quantity: 1,
+        selectedVariantId: defaultVariantId(item),
+        optionQuantities: {},
+      };
+      const optionQuantities = { ...cur.optionQuantities };
+      const groupIds = group.options.map((o) => o.id);
+      const single = group.maxSelect === 1;
 
-	function selectVariant(item: DailyOrderItem, variantId: string) {
-		setLines((prev) => {
-			const cur = prev[item.id] ?? {
-				quantity: 1,
-				optionQuantities: {},
-			};
-			return {
-				...prev,
-				[item.id]: {
-					...cur,
-					quantity: cur.quantity === 0 ? 1 : cur.quantity,
-					selectedVariantId: variantId,
-				},
-			};
-		});
-	}
+      if ((optionQuantities[optionId] ?? 0) > 0) {
+        if (single && group.required) {
+          // keep it selected (radio can't be emptied when required)
+        } else {
+          delete optionQuantities[optionId];
+        }
+      } else if (single) {
+        for (const gid of groupIds) delete optionQuantities[gid];
+        optionQuantities[optionId] = 1;
+      } else {
+        const count = groupIds.filter(
+          (gid) => (optionQuantities[gid] ?? 0) > 0,
+        ).length;
+        if (group.maxSelect == null || count < group.maxSelect)
+          optionQuantities[optionId] = 1;
+      }
+      const quantity = cur.quantity === 0 ? 1 : cur.quantity;
+      return {
+        ...prev,
+        [item.id]: { ...cur, quantity, optionQuantities },
+      };
+    });
+  }
 
-	async function checkout() {
-		if (!data) return;
-		if (itemCount > 0 && !optionsValid) {
-			toast(
-				"Please complete the required options on your items.",
-				"error",
-			);
-			return;
-		}
-		if (!fulfillmentAvailable) {
-			toast("Choose an available pickup or delivery option.", "error");
-			return;
-		}
-		if (!fulfillmentChosen) {
-			toast("Choose pickup or delivery before payment.", "error");
-			return;
-		}
-		if (!isAuthenticated) {
-			saveCartForLogin();
-			const next =
-				typeof window !== "undefined"
-					? `${window.location.pathname}${window.location.search}`
-					: `/o/${token}`;
-			router.push(`/login?next=${encodeURIComponent(next)}`);
-			return;
-		}
-		if (!hasBuyerCampus) {
-			toast("Choose your campus in Account before checkout.", "error");
-			return;
-		}
-		if (!canOrder) return;
-		if (
-			fulfillment === "DELIVERY" &&
-			(!deliveryPhone.trim() || !hostel.trim())
-		) {
-			toast("Add your phone, hostel and room for delivery.", "error");
-			return;
-		}
-		const items = Object.entries(lines)
-			.filter(([, l]) => l.quantity > 0)
-			.map(([dailyOrderItemId, l]) => ({
-				dailyOrderItemId,
-				quantity: l.quantity,
-				selectedVariantId: l.selectedVariantId,
-				selectedOptions: Object.entries(l.optionQuantities)
-					.filter(([, quantity]) => quantity > 0)
-					.map(([optionId, quantity]) => ({
-						optionId,
-						quantity,
-					})),
-			}));
+  function setOptionQty(item: DailyOrderItem, optionId: string, delta: number) {
+    setLines((prev) => {
+      const cur = prev[item.id] ?? {
+        quantity: 1,
+        selectedVariantId: defaultVariantId(item),
+        optionQuantities: {},
+      };
+      const current = cur.optionQuantities[optionId] ?? 0;
+      const next = Math.max(0, Math.min(MAX_PER_ORDER, current + delta));
+      const optionQuantities = { ...cur.optionQuantities };
+      if (next === 0) delete optionQuantities[optionId];
+      else optionQuantities[optionId] = next;
+      const quantity = cur.quantity === 0 ? 1 : cur.quantity;
+      return {
+        ...prev,
+        [item.id]: { ...cur, quantity, optionQuantities },
+      };
+    });
+  }
 
-		setPlacing(true);
-		try {
-			const res = await api.post("/orders", {
-				dailyOrderId: data.id,
-				paymentMode,
-				fulfillmentType: fulfillment,
-				...(fulfillment === "DELIVERY"
-					? {
-							deliveryHostelName: hostel.trim(),
-							deliveryRoomNumber: room.trim(),
-							deliveryAdditionalInfo: extra.trim() || undefined,
-							deliveryPhone: deliveryPhone.trim(),
-						}
-					: {}),
-				customerMessage: customerMessage.trim() || undefined,
-				items,
-			});
-			const payload = res.data?.data as {
-				buyerOrderId: string;
-				orderNumber: string;
-				paymentUrl?: string;
-				paystackRef?: string;
-				externalPaymentUrl?: string;
-				externalPaymentExpiresAt?: string;
-			};
-			if (paymentMode === "PAY_FOR_ME") {
-				if (!payload.externalPaymentUrl) {
-					throw new Error("Missing payment request link");
-				}
-				setExternalPayment({
-					buyerOrderId: payload.buyerOrderId,
-					orderNumber: payload.orderNumber,
-					externalPaymentUrl: payload.externalPaymentUrl,
-					externalPaymentExpiresAt: payload.externalPaymentExpiresAt,
-				});
-				toast("Payment request created.", "success");
-				setPlacing(false);
-				return;
-			}
-			// Remember the mapping so the Paystack callback can resolve the order.
-			if (typeof window !== "undefined" && payload.paystackRef) {
-				window.localStorage.setItem(
-					`pch-pay-${payload.paystackRef}`,
-					JSON.stringify({
-						buyerOrderId: payload.buyerOrderId,
-						orderNumber: payload.orderNumber,
-					}),
-				);
-			}
-			if (!payload.paymentUrl) throw new Error("Missing payment URL");
-			window.location.href = payload.paymentUrl;
-		} catch (e) {
-			toast(errMsg(e), "error");
-			setPlacing(false);
-		}
-	}
+  function selectVariant(item: DailyOrderItem, variantId: string) {
+    setLines((prev) => {
+      const cur = prev[item.id] ?? {
+        quantity: 1,
+        optionQuantities: {},
+      };
+      return {
+        ...prev,
+        [item.id]: {
+          ...cur,
+          quantity: cur.quantity === 0 ? 1 : cur.quantity,
+          selectedVariantId: variantId,
+        },
+      };
+    });
+  }
 
-	async function copyExternalLink() {
-		if (!externalPayment) return;
-		await navigator.clipboard.writeText(externalPayment.externalPaymentUrl);
-		toast("Payment link copied.", "success");
-	}
+  function renderCheckoutItem(item: DailyOrderItem) {
+    const line = lines[item.id];
+    const qty = line?.quantity ?? 0;
+    const listingSoldOut = remainingCap(item) <= 0;
+    const Wrapper = listingSoldOut ? SoldOut : ItemCard;
+    return (
+      <Wrapper key={item.id}>
+        <Stack $gap={10}>
+          <Row $justify="space-between" $align="center" $gap={12}>
+            <Row $gap={12} $align="center">
+              <Thumb $src={item.snapshotImageUrl} aria-hidden>
+                {item.snapshotImageUrl ? "" : "🍛"}
+              </Thumb>
+              <Stack $gap={2}>
+                <Text $weight={700}>{item.snapshotName}</Text>
+                <Text $muted $size={13}>
+                  {dailyItemPriceLabel(item)} · {item.snapshotPrepMin}m prep
+                </Text>
+              </Stack>
+            </Row>
+            {listingSoldOut ? (
+              <Badge $tone="danger">Sold out</Badge>
+            ) : (
+              <Qty $gap={6}>
+                <Button
+                  $variant="secondary"
+                  $size="sm"
+                  onClick={() => setQty(item, -1)}
+                  aria-label={`Remove one ${item.snapshotName}`}
+                  disabled={qty === 0 || !orderable}>
+                  <FiMinus />
+                </Button>
+                <Text
+                  $weight={700}
+                  style={{ minWidth: 18, textAlign: "center" }}>
+                  {qty}
+                </Text>
+                <Button
+                  $variant="secondary"
+                  $size="sm"
+                  onClick={() => setQty(item, 1)}
+                  aria-label={`Add one ${item.snapshotName}`}
+                  disabled={!orderable || qty >= remainingCap(item)}>
+                  <FiPlus />
+                </Button>
+              </Qty>
+            )}
+          </Row>
+          {listingSoldOut && (
+            <Text $muted $size={13}>
+              This item is sold out.
+            </Text>
+          )}
+          {qty > 0 && activeVariants(item).length > 0 && (
+            <AddonBox>
+              <Stack $gap={8}>
+                <GroupHead>
+                  <Text $weight={700} $size={13.5}>
+                    Choose portion
+                  </Text>
+                  <GroupRule>Required · pick 1</GroupRule>
+                </GroupHead>
+                {activeVariants(item).map((variant) => (
+                  <AddonRow key={variant.id}>
+                    <input
+                      type="radio"
+                      name={`variant-${item.id}`}
+                      checked={selectedVariant(item, line)?.id === variant.id}
+                      onChange={() => selectVariant(item, variant.id)}
+                    />
+                    {variant.name} · {formatKobo(variant.priceKobo)}
+                  </AddonRow>
+                ))}
+              </Stack>
+            </AddonBox>
+          )}
+          {qty > 0 && (item.optionGroups ?? []).length > 0 && (
+            <AddonBox>
+              <Stack $gap={8}>
+                {item.optionGroups.map((group) => {
+                  const min = groupMin(group);
+                  const satisfied = !line || groupSatisfied(group, line);
+                  const single = group.maxSelect === 1;
+                  return (
+                    <Stack key={group.id} $gap={2}>
+                      <GroupHead>
+                        <Text $weight={700} $size={13.5}>
+                          {group.name}
+                        </Text>
+                        <GroupRule $unmet={!satisfied}>
+                          {ruleLabel(group, min)}
+                        </GroupRule>
+                      </GroupHead>
+                      {group.options.map((o) => {
+                        const optionQty = line?.optionQuantities[o.id] ?? 0;
+                        const checked = optionQty > 0;
+                        const count = line
+                          ? groupSelectedCount(group, line)
+                          : 0;
+                        const capHit =
+                          !single &&
+                          !checked &&
+                          group.maxSelect != null &&
+                          count >= group.maxSelect;
+                        return (
+                          <AddonRow key={o.id}>
+                            <input
+                              type={single ? "radio" : "checkbox"}
+                              name={`grp-${group.id}`}
+                              checked={checked}
+                              disabled={capHit}
+                              onChange={() => toggleOption(item, group, o.id)}
+                            />
+                            {o.name}
+                            {o.priceKobo > 0
+                              ? ` · ${formatKobo(o.priceKobo)}`
+                              : ""}
+                            {checked && !single && (
+                              <AddonQty>
+                                <AddonQtyBtn
+                                  type="button"
+                                  aria-label={`Remove one ${o.name}`}
+                                  onClick={() => setOptionQty(item, o.id, -1)}>
+                                  -
+                                </AddonQtyBtn>
+                                <AddonQtyValue>{optionQty}</AddonQtyValue>
+                                <AddonQtyBtn
+                                  type="button"
+                                  aria-label={`Add one ${o.name}`}
+                                  onClick={() => setOptionQty(item, o.id, 1)}
+                                  disabled={optionQty >= MAX_PER_ORDER}>
+                                  +
+                                </AddonQtyBtn>
+                              </AddonQty>
+                            )}
+                          </AddonRow>
+                        );
+                      })}
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </AddonBox>
+          )}
+        </Stack>
+      </Wrapper>
+    );
+  }
 
-	function shareExternalOnWhatsApp() {
-		if (!externalPayment) return;
-		const text = `Please help pay for my Prechop order ${externalPayment.orderNumber}: ${externalPayment.externalPaymentUrl}`;
-		window.open(
-			`https://wa.me/?text=${encodeURIComponent(text)}`,
-			"_blank",
-			"noopener,noreferrer",
-		);
-	}
+  async function checkout() {
+    if (!data) return;
+    if (itemCount > 0 && !optionsValid) {
+      toast("Please complete the required options on your items.", "error");
+      return;
+    }
+    if (!fulfillmentAvailable) {
+      toast("Choose an available pickup or delivery option.", "error");
+      return;
+    }
+    if (!fulfillmentChosen) {
+      toast("Choose pickup or delivery before payment.", "error");
+      return;
+    }
+    if (!isAuthenticated) {
+      saveCartForLogin();
+      const next =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : `/o/${token}`;
+      router.push(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+    if (!hasBuyerCampus) {
+      toast("Choose your campus in Account before checkout.", "error");
+      return;
+    }
+    if (!canOrder) return;
+    if (
+      fulfillment === "DELIVERY" &&
+      (!deliveryPhone.trim() || !hostel.trim())
+    ) {
+      toast("Add your phone, hostel and room for delivery.", "error");
+      return;
+    }
+    const items = Object.entries(lines)
+      .filter(([, l]) => l.quantity > 0)
+      .map(([dailyOrderItemId, l]) => ({
+        dailyOrderItemId,
+        quantity: l.quantity,
+        selectedVariantId: l.selectedVariantId,
+        selectedOptions: Object.entries(l.optionQuantities)
+          .filter(([, quantity]) => quantity > 0)
+          .map(([optionId, quantity]) => ({
+            optionId,
+            quantity,
+          })),
+      }));
 
-	async function cancelExternalRequest() {
-		if (!externalPayment) return;
-		setPlacing(true);
-		try {
-			await api.post(
-				`/orders/${externalPayment.buyerOrderId}/external-payment/cancel`,
-				{},
-			);
-			toast("Payment request cancelled.", "success");
-			setExternalPayment(null);
-		} catch (error) {
-			toast(errMsg(error), "error");
-		} finally {
-			setPlacing(false);
-		}
-	}
+    setPlacing(true);
+    try {
+      const res = await api.post("/orders", {
+        dailyOrderId: data.id,
+        paymentMode,
+        fulfillmentType: fulfillment,
+        ...(fulfillment === "DELIVERY"
+          ? {
+              deliveryHostelName: hostel.trim(),
+              deliveryRoomNumber: room.trim(),
+              deliveryAdditionalInfo: extra.trim() || undefined,
+              deliveryPhone: deliveryPhone.trim(),
+            }
+          : {}),
+        customerMessage: customerMessage.trim() || undefined,
+        items,
+      });
+      const payload = res.data?.data as {
+        buyerOrderId: string;
+        orderNumber: string;
+        paymentUrl?: string;
+        paystackRef?: string;
+        externalPaymentUrl?: string;
+        externalPaymentExpiresAt?: string;
+      };
+      if (paymentMode === "PAY_FOR_ME") {
+        if (!payload.externalPaymentUrl) {
+          throw new Error("Missing payment request link");
+        }
+        setExternalPayment({
+          buyerOrderId: payload.buyerOrderId,
+          orderNumber: payload.orderNumber,
+          externalPaymentUrl: payload.externalPaymentUrl,
+          externalPaymentExpiresAt: payload.externalPaymentExpiresAt,
+        });
+        toast("Payment request created.", "success");
+        setPlacing(false);
+        return;
+      }
+      // Remember the mapping so the Paystack callback can resolve the order.
+      if (typeof window !== "undefined" && payload.paystackRef) {
+        window.localStorage.setItem(
+          `pch-pay-${payload.paystackRef}`,
+          JSON.stringify({
+            buyerOrderId: payload.buyerOrderId,
+            orderNumber: payload.orderNumber,
+          }),
+        );
+      }
+      if (!payload.paymentUrl) throw new Error("Missing payment URL");
+      window.location.href = payload.paymentUrl;
+    } catch (e) {
+      toast(errMsg(e), "error");
+      setPlacing(false);
+    }
+  }
 
-	async function payExternalOrderNow() {
-		if (!externalPayment) return;
-		setPlacing(true);
-		try {
-			const res = await api.post(
-				`/orders/${externalPayment.buyerOrderId}/pay`,
-				{},
-			);
-			const payload = res.data?.data as {
-				buyerOrderId: string;
-				orderNumber: string;
-				paymentUrl?: string;
-				paystackRef?: string;
-			};
-			if (typeof window !== "undefined" && payload.paystackRef) {
-				window.localStorage.setItem(
-					`pch-pay-${payload.paystackRef}`,
-					JSON.stringify({
-						buyerOrderId: payload.buyerOrderId,
-						orderNumber: payload.orderNumber,
-					}),
-				);
-			}
-			if (!payload.paymentUrl) throw new Error("Missing payment URL");
-			setExternalPayment(null);
-			window.location.href = payload.paymentUrl;
-		} catch (error) {
-			toast(errMsg(error), "error");
-			setPlacing(false);
-		}
-	}
+  async function copyExternalLink() {
+    if (!externalPayment) return;
+    await navigator.clipboard.writeText(externalPayment.externalPaymentUrl);
+    toast("Payment link copied.", "success");
+  }
 
-	return (
-		<Wrap>
-			<FadeIn>
-				<OrderSurface>
-					<Hero>
-						<Cover $src={primaryItem?.snapshotImageUrl}>
-							{primaryItem?.snapshotImageUrl ? "" : "🍲"}
-						</Cover>
-						<ImageCount>
-							<FiImage aria-hidden /> 1 / {imageCount}
-						</ImageCount>
-						<FavouriteButton
-							type="button"
-							$saved={isFavourite}
-							onClick={toggleFavourite}
-							aria-pressed={isFavourite}
-							aria-label={
-								isFavourite
-									? "Remove from favourites"
-									: "Add to favourites"
-							}
-						>
-							<FiHeart
-								fill={isFavourite ? "currentColor" : "none"}
-							/>
-						</FavouriteButton>
-					</Hero>
-					<ProductPanel>
-						<ProductTop>
-							<div>
-								<ProductHeading>{productTitle}</ProductHeading>
-								<ProductPrice>{productPrice}</ProductPrice>
-							</div>
-							<StatusPill $open={itemAvailable}>
-								{itemAvailable
-									? "Open · Taking orders"
-									: hasAvailableItem
-										? (status?.label ?? "Ordering closed")
-										: "Sold out"}
-							</StatusPill>
-						</ProductTop>
-						<ProductDescription>
-							{productDescription}
-						</ProductDescription>
-					</ProductPanel>
-					<VendorPanel>
-						<VendorAvatar
-							$src={data.vendorProfileImageUrl}
-							aria-hidden
-						>
-							{data.vendorProfileImageUrl
-								? ""
-								: (data.vendorName?.slice(0, 1).toUpperCase() ??
-									"P")}
-						</VendorAvatar>
-						<VendorInfo>
-							<VendorName>
-								{data.vendorName ?? "Prechop kitchen"}
-								{data.vendorVerified && (
-									<Verified title="Verified vendor">
-										<FiCheck />
-									</Verified>
-								)}
-							</VendorName>
-							<RatingLine>
-								<FiStar aria-hidden />
-								{data.vendorRating != null ? (
-									<>
-										<span>
-											{data.vendorRating.toFixed(1)}
-										</span>{" "}
-										({data.vendorTotalReviews ?? 0} reviews)
-									</>
-								) : (
-									<>New kitchen</>
-								)}
-							</RatingLine>
-						</VendorInfo>
-						<ShopLink href={`/v/${data.vendorId}`}>
-							<span>See all listings</span>
-							<FiArrowRight aria-hidden />
-						</ShopLink>
-					</VendorPanel>
-					<Content>
-						<SectionTitle>
-							<FiMapPin aria-hidden /> Fulfilment
-						</SectionTitle>
-						<FulfillmentGrid>
-							{data.pickupAvailable && (
-								<FulfillmentCard
-									type="button"
-									$active={
-										fulfillmentChosen &&
-										fulfillment === "PICKUP"
-									}
-									onClick={() => {
-										setFulfillment("PICKUP");
-										setFulfillmentTouched(true);
-									}}
-									disabled={!itemAvailable}
-								>
-									<ChoiceIcon
-										$active={
-											fulfillmentChosen &&
-											fulfillment === "PICKUP"
-										}
-									>
-										<FiShoppingBag />
-									</ChoiceIcon>
-									<ChoiceCopy>
-										<strong>Pickup</strong>
-										<small>
-											{data.vendorPickupLocation ??
-												"Collect from vendor"}
-										</small>
-									</ChoiceCopy>
-									<ChoiceFee>Free</ChoiceFee>
-									{fulfillmentChosen &&
-										fulfillment === "PICKUP" && (
-											<CheckDot>
-												<FiCheck />
-											</CheckDot>
-										)}
-								</FulfillmentCard>
-							)}
-							{data.deliveryAvailable && (
-								<FulfillmentCard
-									type="button"
-									$active={
-										fulfillmentChosen &&
-										fulfillment === "DELIVERY"
-									}
-									onClick={() => {
-										setFulfillment("DELIVERY");
-										setFulfillmentTouched(true);
-									}}
-									disabled={!itemAvailable}
-								>
-									<ChoiceIcon
-										$active={
-											fulfillmentChosen &&
-											fulfillment === "DELIVERY"
-										}
-									>
-										<FiTruck />
-									</ChoiceIcon>
-									<ChoiceCopy>
-										<strong>Delivery</strong>
-										<small>
-											{data.deliveryCoverage ??
-												"Vendor delivery"}
-										</small>
-									</ChoiceCopy>
-									<ChoiceFee>
-										{data.deliveryFeeKobo === 0
-											? "Free"
-											: formatKobo(data.deliveryFeeKobo)}
-									</ChoiceFee>
-									{fulfillmentChosen &&
-										fulfillment === "DELIVERY" && (
-											<CheckDot>
-												<FiCheck />
-											</CheckDot>
-										)}
-								</FulfillmentCard>
-							)}
-						</FulfillmentGrid>
-						{fulfillmentChosen &&
-							fulfillment === "PICKUP" &&
-							data.vendorPickupLocation && (
-								<PickupLocation>
-									<FiMapPin aria-hidden /> Pick up at{" "}
-									<strong>{data.vendorPickupLocation}</strong>
-								</PickupLocation>
-							)}
-						<SectionTitle>
-							{data.items.length === 1
-								? "Choose quantity"
-								: "Choose items"}
-						</SectionTitle>
-						<Stack $gap={10}>
-							{data.items.map((item) => {
-								const line = lines[item.id];
-								const qty = line?.quantity ?? 0;
-								const listingSoldOut = remainingCap(item) <= 0;
-								const Wrapper = listingSoldOut
-									? SoldOut
-									: ItemCard;
-								return (
-									<Wrapper key={item.id}>
-										<Stack $gap={10}>
-											<Row
-												$justify="space-between"
-												$align="center"
-												$gap={12}
-											>
-												<Row $gap={12} $align="center">
-													<Thumb
-														$src={
-															item.snapshotImageUrl
-														}
-														aria-hidden
-													>
-														{item.snapshotImageUrl
-															? ""
-															: "🍛"}
-													</Thumb>
-													<Stack $gap={2}>
-														<Text $weight={700}>
-															{item.snapshotName}
-														</Text>
-														<Text $muted $size={13}>
-															{dailyItemPriceLabel(
-																item,
-															)}{" "}
-															·{" "}
-															{
-																item.snapshotPrepMin
-															}
-															m prep
-														</Text>
-													</Stack>
-												</Row>
-												{listingSoldOut ? (
-													<Badge $tone="danger">
-														Sold out
-													</Badge>
-												) : (
-													<Qty $gap={6}>
-														<Button
-															$variant="secondary"
-															$size="sm"
-															onClick={() =>
-																setQty(item, -1)
-															}
-															aria-label={`Remove one ${item.snapshotName}`}
-															disabled={
-																qty === 0 ||
-																!orderable
-															}
-														>
-															<FiMinus />
-														</Button>
-														<Text
-															$weight={700}
-															style={{
-																minWidth: 18,
-																textAlign:
-																	"center",
-															}}
-														>
-															{qty}
-														</Text>
-														<Button
-															$variant="secondary"
-															$size="sm"
-															onClick={() =>
-																setQty(item, 1)
-															}
-															aria-label={`Add one ${item.snapshotName}`}
-															disabled={
-																!orderable ||
-																qty >=
-																	remainingCap(
-																		item,
-																	)
-															}
-														>
-															<FiPlus />
-														</Button>
-													</Qty>
-												)}
-											</Row>
-											{listingSoldOut && (
-												<Text $muted $size={13}>
-													This item is sold out.
-												</Text>
-											)}
-											{qty > 0 &&
-												activeVariants(item).length >
-													0 && (
-													<AddonBox>
-														<Stack $gap={8}>
-															<GroupHead>
-																<Text
-																	$weight={
-																		700
-																	}
-																	$size={13.5}
-																>
-																	Choose
-																	portion
-																</Text>
-																<GroupRule>
-																	Required Â·
-																	pick 1
-																</GroupRule>
-															</GroupHead>
-															{activeVariants(
-																item,
-															).map((variant) => (
-																<AddonRow
-																	key={
-																		variant.id
-																	}
-																>
-																	<input
-																		type="radio"
-																		name={`variant-${item.id}`}
-																		checked={
-																			selectedVariant(
-																				item,
-																				line,
-																			)
-																				?.id ===
-																			variant.id
-																		}
-																		onChange={() =>
-																			selectVariant(
-																				item,
-																				variant.id,
-																			)
-																		}
-																	/>
-																	{
-																		variant.name
-																	}{" "}
-																	Â·{" "}
-																	{formatKobo(
-																		variant.priceKobo,
-																	)}
-																</AddonRow>
-															))}
-														</Stack>
-													</AddonBox>
-												)}
-											{qty > 0 &&
-												(item.optionGroups ?? [])
-													.length > 0 && (
-													<AddonBox>
-														<Stack $gap={8}>
-															{item.optionGroups.map(
-																(group) => {
-																	const min =
-																		groupMin(
-																			group,
-																		);
-																	const satisfied =
-																		!line ||
-																		groupSatisfied(
-																			group,
-																			line,
-																		);
-																	const single =
-																		group.maxSelect ===
-																		1;
-																	return (
-																		<Stack
-																			key={
-																				group.id
-																			}
-																			$gap={
-																				2
-																			}
-																		>
-																			<GroupHead>
-																				<Text
-																					$weight={
-																						700
-																					}
-																					$size={
-																						13.5
-																					}
-																				>
-																					{
-																						group.name
-																					}
-																				</Text>
-																				<GroupRule
-																					$unmet={
-																						!satisfied
-																					}
-																				>
-																					{ruleLabel(
-																						group,
-																						min,
-																					)}
-																				</GroupRule>
-																			</GroupHead>
-																			{group.options.map(
-																				(
-																					o,
-																				) => {
-																					const optionQty =
-																						line
-																							?.optionQuantities[
-																							o
-																								.id
-																						] ??
-																						0;
-																					const checked =
-																						optionQty >
-																						0;
-																					const count =
-																						line
-																							? groupSelectedCount(
-																									group,
-																									line,
-																								)
-																							: 0;
-																					const capHit =
-																						!single &&
-																						!checked &&
-																						group.maxSelect !=
-																							null &&
-																						count >=
-																							group.maxSelect;
-																					return (
-																						<AddonRow
-																							key={
-																								o.id
-																							}
-																						>
-																							<input
-																								type={
-																									single
-																										? "radio"
-																										: "checkbox"
-																								}
-																								name={`grp-${group.id}`}
-																								checked={
-																									checked
-																								}
-																								disabled={
-																									capHit
-																								}
-																								onChange={() =>
-																									toggleOption(
-																										item,
-																										group,
-																										o.id,
-																									)
-																								}
-																							/>
-																							{
-																								o.name
-																							}
-																							{o.priceKobo >
-																							0
-																								? ` · ${formatKobo(o.priceKobo)}`
-																								: ""}
-																							{checked &&
-																								!single && (
-																									<AddonQty>
-																										<AddonQtyBtn
-																											type="button"
-																											aria-label={`Remove one ${o.name}`}
-																											onClick={() =>
-																												setOptionQty(
-																													item,
-																													o.id,
-																													-1,
-																												)
-																											}
-																										>
-																											-
-																										</AddonQtyBtn>
-																										<AddonQtyValue>
-																											{
-																												optionQty
-																											}
-																										</AddonQtyValue>
-																										<AddonQtyBtn
-																											type="button"
-																											aria-label={`Add one ${o.name}`}
-																											onClick={() =>
-																												setOptionQty(
-																													item,
-																													o.id,
-																													1,
-																												)
-																											}
-																											disabled={
-																												optionQty >=
-																												MAX_PER_ORDER
-																											}
-																										>
-																											+
-																										</AddonQtyBtn>
-																									</AddonQty>
-																								)}
-																						</AddonRow>
-																					);
-																				},
-																			)}
-																		</Stack>
-																	);
-																},
-															)}
-														</Stack>
-													</AddonBox>
-												)}
-										</Stack>
-									</Wrapper>
-								);
-							})}
-						</Stack>
+  function shareExternalOnWhatsApp() {
+    if (!externalPayment) return;
+    const text = `Please help pay for my Prechop order ${externalPayment.orderNumber}: ${externalPayment.externalPaymentUrl}`;
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
 
-						{fulfillmentChosen && fulfillment === "DELIVERY" && (
-							<FormCard>
-								<Stack $gap={12}>
-									<Text $weight={700}>Delivery details</Text>
-									<Text $muted $size={13}>
-										Delivery fulfilled by the vendor.
-										Prechop manages payment and order
-										status, but this kitchen arranges the
-										rider or delivery method.
-									</Text>
-									{(data.deliveryCoverage ||
-										data.deliveryEstimateMinutes) && (
-										<Stack $gap={4}>
-											{data.deliveryCoverage && (
-												<Text $muted $size={12}>
-													Coverage:{" "}
-													{data.deliveryCoverage}
-												</Text>
-											)}
-											{data.deliveryEstimateMinutes && (
-												<Text $muted $size={12}>
-													Estimated delivery:{" "}
-													{
-														data.deliveryEstimateMinutes
-													}{" "}
-													minutes
-												</Text>
-											)}
-										</Stack>
-									)}
-									<Input
-										label="Phone number"
-										type="tel"
-										value={deliveryPhone}
-										onChange={(e) =>
-											setDeliveryPhone(e.target.value)
-										}
-										placeholder="+2348012345678"
-									/>
-									<Input
-										label="Hostel / hall"
-										value={hostel}
-										onChange={(e) =>
-											setHostel(e.target.value)
-										}
-										placeholder="Kofo Hall"
-									/>
-									<Input
-										label="Room number"
-										value={room}
-										onChange={(e) =>
-											setRoom(e.target.value)
-										}
-										placeholder="B12"
-									/>
-									<Textarea
-										label="Extra directions (optional)"
-										value={extra}
-										onChange={(e) =>
-											setExtra(e.target.value)
-										}
-										placeholder="Call when you reach the gate"
-									/>
-								</Stack>
-							</FormCard>
-						)}
+  async function cancelExternalRequest() {
+    if (!externalPayment) return;
+    setPlacing(true);
+    try {
+      await api.post(
+        `/orders/${externalPayment.buyerOrderId}/external-payment/cancel`,
+        {},
+      );
+      toast("Payment request cancelled.", "success");
+      setExternalPayment(null);
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setPlacing(false);
+    }
+  }
 
-						<FormCard>
-							<Stack $gap={8}>
-								<Textarea
-									label="Note to vendor (optional)"
-									value={customerMessage}
-									onChange={(e) =>
-										setCustomerMessage(
-											e.target.value.slice(0, 150),
-										)
-									}
-									maxLength={150}
-									placeholder="I don't like much pepper, thanks"
-								/>
-								<Text $muted $size={12}>
-									{customerMessage.length}/150 characters
-								</Text>
-							</Stack>
-						</FormCard>
+  async function payExternalOrderNow() {
+    if (!externalPayment) return;
+    setPlacing(true);
+    try {
+      const res = await api.post(
+        `/orders/${externalPayment.buyerOrderId}/pay`,
+        {},
+      );
+      const payload = res.data?.data as {
+        buyerOrderId: string;
+        orderNumber: string;
+        paymentUrl?: string;
+        paystackRef?: string;
+      };
+      if (typeof window !== "undefined" && payload.paystackRef) {
+        window.localStorage.setItem(
+          `pch-pay-${payload.paystackRef}`,
+          JSON.stringify({
+            buyerOrderId: payload.buyerOrderId,
+            orderNumber: payload.orderNumber,
+          }),
+        );
+      }
+      if (!payload.paymentUrl) throw new Error("Missing payment URL");
+      setExternalPayment(null);
+      window.location.href = payload.paymentUrl;
+    } catch (error) {
+      toast(errMsg(error), "error");
+      setPlacing(false);
+    }
+  }
 
-						{externalPayment && (
-							<FormCard>
-								<Stack $gap={12}>
-									<Stack $gap={4}>
-										<Text $weight={800}>
-											Pay for me link ready
-										</Text>
-										<Text $muted $size={13}>
-											Send this secure link to someone who
-											can pay for your order. It hides
-											your private account details.
-										</Text>
-										{externalPayment.externalPaymentExpiresAt && (
-											<Text $muted $size={12}>
-												Expires{" "}
-												{formatDate(
-													externalPayment.externalPaymentExpiresAt,
-												)}
-											</Text>
-										)}
-									</Stack>
-									<Row $gap={8} $wrap>
-										<Button onClick={copyExternalLink}>
-											Copy link
-										</Button>
-										<Button
-											$variant="secondary"
-											onClick={shareExternalOnWhatsApp}
-										>
-											Share on WhatsApp
-										</Button>
-										<Button
-											$variant="ghost"
-											$loading={placing}
-											onClick={payExternalOrderNow}
-											disabled={!itemAvailable}
-										>
-											Pay now instead
-										</Button>
-										<Button
-											$variant="danger"
-											$loading={placing}
-											onClick={cancelExternalRequest}
-										>
-											Cancel request
-										</Button>
-									</Row>
-								</Stack>
-							</FormCard>
-						)}
+  return (
+    <Wrap>
+      <FadeIn>
+        <OrderSurface>
+          <Hero>
+            <Cover $src={primaryItem?.snapshotImageUrl}>
+              {primaryItem?.snapshotImageUrl ? "" : "🍲"}
+            </Cover>
+            <ImageCount>
+              {/* <FiImage aria-hidden /> 1 / {imageCount} */}
+            </ImageCount>
+            <FavouriteButton
+              type="button"
+              $saved={isFavourite}
+              onClick={toggleFavourite}
+              aria-pressed={isFavourite}
+              aria-label={
+                isFavourite ? "Remove from favourites" : "Add to favourites"
+              }>
+              <FiHeart fill={isFavourite ? "currentColor" : "none"} />
+            </FavouriteButton>
+          </Hero>
+          <ProductPanel>
+            <ProductTop>
+              <div>
+                <ProductHeading>{productTitle}</ProductHeading>
+                <ProductPrice>{productPrice}</ProductPrice>
+              </div>
+              <StatusPill $open={itemAvailable}>
+                {itemAvailable
+                  ? "Open · Taking orders"
+                  : hasAvailableItem
+                    ? (status?.label ?? "Ordering closed")
+                    : "Sold out"}
+              </StatusPill>
+            </ProductTop>
+            <ProductDescription>{productDescription}</ProductDescription>
+          </ProductPanel>
+          <VendorPanel>
+            <VendorAvatar $src={data.vendorProfileImageUrl} aria-hidden>
+              {data.vendorProfileImageUrl
+                ? ""
+                : (data.vendorName?.slice(0, 1).toUpperCase() ?? "P")}
+            </VendorAvatar>
+            <VendorInfo>
+              <VendorName>
+                {data.vendorName ?? "Prechop kitchen"}
+                {data.vendorVerified && (
+                  <Verified title="Verified vendor">
+                    <FiCheck />
+                  </Verified>
+                )}
+              </VendorName>
+              <RatingLine>
+                <FiStar aria-hidden />
+                {data.vendorRating != null ? (
+                  <>
+                    <span>{data.vendorRating.toFixed(1)}</span> (
+                    {data.vendorTotalReviews ?? 0} reviews)
+                  </>
+                ) : (
+                  <>New kitchen</>
+                )}
+              </RatingLine>
+            </VendorInfo>
+            <ShopLink href={`/v/${data.vendorId}`}>
+              <span>See all listings</span>
+              <FiArrowRight aria-hidden />
+            </ShopLink>
+          </VendorPanel>
+          <Content>
+            <SectionTitle>
+              <FiMapPin aria-hidden /> Fulfilment
+            </SectionTitle>
+            <FulfillmentGrid>
+              {data.pickupAvailable && (
+                <FulfillmentCard
+                  type="button"
+                  $active={fulfillmentChosen && fulfillment === "PICKUP"}
+                  onClick={() => {
+                    setFulfillment("PICKUP");
+                    setFulfillmentTouched(true);
+                  }}
+                  disabled={!itemAvailable}>
+                  <ChoiceIcon
+                    $active={fulfillmentChosen && fulfillment === "PICKUP"}>
+                    <FiShoppingBag />
+                  </ChoiceIcon>
+                  <ChoiceCopy>
+                    <strong>Pickup</strong>
+                    <small>
+                      {data.vendorPickupLocation ?? "Collect from vendor"}
+                    </small>
+                  </ChoiceCopy>
+                  <ChoiceFee>Free</ChoiceFee>
+                  {fulfillmentChosen && fulfillment === "PICKUP" && (
+                    <CheckDot>
+                      <FiCheck />
+                    </CheckDot>
+                  )}
+                </FulfillmentCard>
+              )}
+              {data.deliveryAvailable && (
+                <FulfillmentCard
+                  type="button"
+                  $active={fulfillmentChosen && fulfillment === "DELIVERY"}
+                  onClick={() => {
+                    setFulfillment("DELIVERY");
+                    setFulfillmentTouched(true);
+                  }}
+                  disabled={!itemAvailable}>
+                  <ChoiceIcon
+                    $active={fulfillmentChosen && fulfillment === "DELIVERY"}>
+                    <FiTruck />
+                  </ChoiceIcon>
+                  <ChoiceCopy>
+                    <strong>Delivery</strong>
+                    <small>{data.deliveryCoverage ?? "Vendor delivery"}</small>
+                  </ChoiceCopy>
+                  <ChoiceFee>
+                    {data.deliveryFeeKobo === 0
+                      ? "Free"
+                      : formatKobo(data.deliveryFeeKobo)}
+                  </ChoiceFee>
+                  {fulfillmentChosen && fulfillment === "DELIVERY" && (
+                    <CheckDot>
+                      <FiCheck />
+                    </CheckDot>
+                  )}
+                </FulfillmentCard>
+              )}
+            </FulfillmentGrid>
+            {fulfillmentChosen &&
+              fulfillment === "PICKUP" &&
+              data.vendorPickupLocation && (
+                <PickupLocation>
+                  <FiMapPin aria-hidden /> Pick up at{" "}
+                  <strong>{data.vendorPickupLocation}</strong>
+                </PickupLocation>
+              )}
+            <SectionTitle>
+              {data.items.length === 1 ? "Choose quantity" : "Choose items"}
+            </SectionTitle>
+            <Stack $gap={10}>
+              {data.items.map((item) => renderCheckoutItem(item))}
+            </Stack>
 
-						<Sticky>
-							<Stack $gap={10}>
-								{itemCount > 0 && (
-									<Stack $gap={4}>
-										<FeeRow>
-											<Text $muted>Subtotal</Text>
-											<Text>{formatKobo(subtotal)}</Text>
-										</FeeRow>
-										{fulfillmentChosen &&
-											fulfillment === "DELIVERY" && (
-												<FeeRow>
-													<Text $muted>
-														Delivery fee
-													</Text>
-													<Text>
-														{deliveryFee === 0
-															? "Free"
-															: formatKobo(
-																	deliveryFee,
-																)}
-													</Text>
-												</FeeRow>
-											)}
-										<FeeRow>
-											<Row $gap={6} $align="center">
-												<Text $muted>Service fee</Text>
-												<InfoButton
-													type="button"
-													aria-label={`Service fee information — ${feeExplainer}`}
-													title={feeExplainer}
-													onClick={() =>
-														toast(
-															feeExplainer,
-															"info",
-														)
-													}
-												>
-													i
-												</InfoButton>
-											</Row>
-											<Text>
-												{canQuoteFee
-													? formatKobo(processingFee)
-													: "—"}
-											</Text>
-										</FeeRow>
-										<FeeRow>
-											<Text $weight={800}>Total</Text>
-											<Text $weight={800}>
-												{canQuoteFee
-													? formatKobo(checkoutTotal)
-													: "—"}
-											</Text>
-										</FeeRow>
-									</Stack>
-								)}
-								{itemCount > 0 && !externalPayment && (
-									<Row $gap={10}>
-										<Toggle
-											$active={paymentMode === "SELF"}
-											onClick={() =>
-												setPaymentMode("SELF")
-											}
-											disabled={!itemAvailable}
-										>
-											Pay now
-										</Toggle>
-										<Toggle
-											$active={
-												paymentMode === "PAY_FOR_ME"
-											}
-											onClick={() =>
-												setPaymentMode("PAY_FOR_ME")
-											}
-											disabled={!itemAvailable}
-										>
-											Pay for me
-										</Toggle>
-									</Row>
-								)}
-								<PaymentButton
-									$full
-									$size="lg"
-									$loading={placing}
-									onClick={checkout}
-									disabled={
-										!!externalPayment ||
-										!itemAvailable ||
-										(isAuthenticated && !canOrder)
-									}
-								>
-									{!isAuthenticated
-										? "Log in to order"
-										: !hasAvailableItem
-											? "Sold out"
-											: !orderable
-												? // "Opens 11:30am" for a not-yet-started listing (visible but
-													// not orderable); "Ordering closed" for every closed reason.
-													status?.kind === "OPENS_AT"
-													? status.label
-													: "Ordering closed"
-												: itemCount === 0
-													? "Select items"
-													: !hasBuyerCampus
-														? "Choose campus in Account"
-														: !optionsValid
-															? "Complete required options"
-															: // The buyer must never be sent to Paystack against a
-																// total we could not compute. See the fee note at the top.
-																!canQuoteFee
-																? "Fees unavailable — try again"
-																: `Pay ${formatKobo(checkoutTotal)} →`}
-								</PaymentButton>
-							</Stack>
-						</Sticky>
-					</Content>
-				</OrderSurface>
-			</FadeIn>
-		</Wrap>
-	);
+            {otherListingItems.length > 0 && (
+              <AddMoreBlock>
+                <AddMoreHeading>
+                  <AddMoreCopy>
+                    <AddMoreTitle>Add more from this kitchen</AddMoreTitle>
+                    <AddMoreHint>
+                      Other active menus you can add to this order
+                    </AddMoreHint>
+                  </AddMoreCopy>
+                  {/* <ShopLink href={`/v/${data.vendorId}`}>
+										<span>View kitchen</span>
+										<FiArrowRight aria-hidden />
+									</ShopLink> */}
+                </AddMoreHeading>
+                <Stack $gap={10}>
+                  {otherListingItems.map(({ item }) =>
+                    renderCheckoutItem(item),
+                  )}
+                </Stack>
+              </AddMoreBlock>
+            )}
+
+            {fulfillmentChosen && fulfillment === "DELIVERY" && (
+              <FormCard>
+                <Stack $gap={12}>
+                  <Text $weight={700}>Delivery details</Text>
+                  <Text $muted $size={13}>
+                    Delivery fulfilled by the vendor. Prechop manages payment
+                    and order status, but this kitchen arranges the rider or
+                    delivery method.
+                  </Text>
+                  {(data.deliveryCoverage || data.deliveryEstimateMinutes) && (
+                    <Stack $gap={4}>
+                      {data.deliveryCoverage && (
+                        <Text $muted $size={12}>
+                          Coverage: {data.deliveryCoverage}
+                        </Text>
+                      )}
+                      {data.deliveryEstimateMinutes && (
+                        <Text $muted $size={12}>
+                          Estimated delivery: {data.deliveryEstimateMinutes}{" "}
+                          minutes
+                        </Text>
+                      )}
+                    </Stack>
+                  )}
+                  <Input
+                    label="Phone number"
+                    type="tel"
+                    value={deliveryPhone}
+                    onChange={(e) => setDeliveryPhone(e.target.value)}
+                    placeholder="+2348012345678"
+                  />
+                  <Input
+                    label="Hostel / hall"
+                    value={hostel}
+                    onChange={(e) => setHostel(e.target.value)}
+                    placeholder="Kofo Hall"
+                  />
+                  <Input
+                    label="Room number"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    placeholder="B12"
+                  />
+                  <Textarea
+                    label="Extra directions (optional)"
+                    value={extra}
+                    onChange={(e) => setExtra(e.target.value)}
+                    placeholder="Call when you reach the gate"
+                  />
+                </Stack>
+              </FormCard>
+            )}
+
+            <FormCard>
+              <Stack $gap={8}>
+                <Textarea
+                  label="Note to vendor (optional)"
+                  value={customerMessage}
+                  onChange={(e) =>
+                    setCustomerMessage(e.target.value.slice(0, 150))
+                  }
+                  maxLength={150}
+                  placeholder="I don't like much pepper, thanks"
+                />
+                <Text $muted $size={12}>
+                  {customerMessage.length}/150 characters
+                </Text>
+              </Stack>
+            </FormCard>
+
+            {externalPayment && (
+              <FormCard>
+                <Stack $gap={12}>
+                  <Stack $gap={4}>
+                    <Text $weight={800}>Pay for me link ready</Text>
+                    <Text $muted $size={13}>
+                      Send this secure link to someone who can pay for your
+                      order. It hides your private account details.
+                    </Text>
+                    {externalPayment.externalPaymentExpiresAt && (
+                      <Text $muted $size={12}>
+                        Expires{" "}
+                        {formatDate(externalPayment.externalPaymentExpiresAt)}
+                      </Text>
+                    )}
+                  </Stack>
+                  <Row $gap={8} $wrap>
+                    <Button onClick={copyExternalLink}>Copy link</Button>
+                    <Button
+                      $variant="secondary"
+                      onClick={shareExternalOnWhatsApp}>
+                      Share on WhatsApp
+                    </Button>
+                    <Button
+                      $variant="ghost"
+                      $loading={placing}
+                      onClick={payExternalOrderNow}
+                      disabled={!itemAvailable}>
+                      Pay now instead
+                    </Button>
+                    <Button
+                      $variant="danger"
+                      $loading={placing}
+                      onClick={cancelExternalRequest}>
+                      Cancel request
+                    </Button>
+                  </Row>
+                </Stack>
+              </FormCard>
+            )}
+
+            <Sticky>
+              <Stack $gap={10}>
+                {itemCount > 0 && (
+                  <Stack $gap={4}>
+                    <FeeRow>
+                      <Text $muted>Subtotal</Text>
+                      <Text>{formatKobo(subtotal)}</Text>
+                    </FeeRow>
+                    {fulfillmentChosen && fulfillment === "DELIVERY" && (
+                      <FeeRow>
+                        <Text $muted>Delivery fee</Text>
+                        <Text>
+                          {deliveryFee === 0 ? "Free" : formatKobo(deliveryFee)}
+                        </Text>
+                      </FeeRow>
+                    )}
+                    <FeeRow>
+                      <Row $gap={6} $align="center">
+                        <Text $muted>Service fee</Text>
+                        <InfoButton
+                          type="button"
+                          aria-label={`Service fee information — ${feeExplainer}`}
+                          title={feeExplainer}
+                          onClick={() => toast(feeExplainer, "info")}>
+                          i
+                        </InfoButton>
+                      </Row>
+                      <Text>
+                        {canQuoteFee ? formatKobo(processingFee) : "—"}
+                      </Text>
+                    </FeeRow>
+                    <FeeRow>
+                      <Text $weight={800}>Total</Text>
+                      <Text $weight={800}>
+                        {canQuoteFee ? formatKobo(checkoutTotal) : "—"}
+                      </Text>
+                    </FeeRow>
+                  </Stack>
+                )}
+                {itemCount > 0 && !externalPayment && (
+                  <Row $gap={10}>
+                    <Toggle
+                      $active={paymentMode === "SELF"}
+                      onClick={() => setPaymentMode("SELF")}
+                      disabled={!itemAvailable}>
+                      Pay now
+                    </Toggle>
+                    <Toggle
+                      $active={paymentMode === "PAY_FOR_ME"}
+                      onClick={() => setPaymentMode("PAY_FOR_ME")}
+                      disabled={!itemAvailable}>
+                      Pay for me
+                    </Toggle>
+                  </Row>
+                )}
+                <PaymentButton
+                  $full
+                  $size="lg"
+                  $loading={placing}
+                  onClick={checkout}
+                  disabled={
+                    !!externalPayment ||
+                    !itemAvailable ||
+                    (isAuthenticated && !canOrder)
+                  }>
+                  {!isAuthenticated
+                    ? "Log in to order"
+                    : !hasAvailableItem
+                      ? "Sold out"
+                      : !orderable
+                        ? // "Opens 11:30am" for a not-yet-started listing (visible but
+                          // not orderable); "Ordering closed" for every closed reason.
+                          status?.kind === "OPENS_AT"
+                          ? status.label
+                          : "Ordering closed"
+                        : itemCount === 0
+                          ? "Select items"
+                          : !hasBuyerCampus
+                            ? "Choose campus in Account"
+                            : !optionsValid
+                              ? "Complete required options"
+                              : // The buyer must never be sent to Paystack against a
+                                // total we could not compute. See the fee note at the top.
+                                !canQuoteFee
+                                ? "Fees unavailable — try again"
+                                : `Pay ${formatKobo(checkoutTotal)} →`}
+                </PaymentButton>
+              </Stack>
+            </Sticky>
+          </Content>
+        </OrderSurface>
+      </FadeIn>
+    </Wrap>
+  );
 }
 
 function errMsg(e: unknown): string {
-	const err = e as { response?: { data?: { message?: string } } };
-	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+  const err = e as { response?: { data?: { message?: string } } };
+  return err?.response?.data?.message ?? "Something went wrong. Try again.";
 }

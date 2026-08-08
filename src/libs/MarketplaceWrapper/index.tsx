@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -771,8 +772,10 @@ const ListGrid = styled.div`
   gap: 14px;
 
   @media (min-width: 980px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  
 `;
 
 function isMarketplaceUnavailable(error: unknown): boolean {
@@ -1038,6 +1041,8 @@ export default function MarketplaceWrapper() {
   const [selectedCategory, setSelectedCategory] =
     useState<CategoryFilterValue>("ALL");
   const [locationNotice, setLocationNotice] = useState("");
+  const searchParams = useSearchParams();
+  const savedOnly = searchParams.get("saved") === "1";
   const manualCampusRef = useRef(false);
   const locationRequestedRef = useRef(false);
   const { data: availability, isLoading: availabilityLoading } =
@@ -1074,14 +1079,16 @@ export default function MarketplaceWrapper() {
 
   const campusName = campuses?.find((c) => c.id === selectedCampusId)?.name;
   const activeCampuses = campuses ?? [];
-  const vendors = useMemo(
-    () => filterMarketplaceRows(data ?? [], selectedCategory),
-    [data, selectedCategory],
-  );
-  const searchHits = useMemo(
-    () => filterMarketplaceRows(hits ?? [], selectedCategory),
-    [hits, selectedCategory],
-  );
+  const vendors = useMemo(() => {
+    const categoryFiltered = filterMarketplaceRows(data ?? [], selectedCategory);
+    if (!savedOnly) return categoryFiltered;
+    return categoryFiltered.filter((row) => row.isFollowed);
+  }, [data, selectedCategory, savedOnly]);
+  const searchHits = useMemo(() => {
+    const categoryFiltered = filterMarketplaceRows(hits ?? [], selectedCategory);
+    if (!savedOnly) return categoryFiltered;
+    return categoryFiltered.filter((row) => row.isFollowed);
+  }, [hits, selectedCategory, savedOnly]);
   const selectedCategoryLabel =
     CATEGORY_TABS.find((tab) => tab.value === selectedCategory)?.label ??
     "category";
@@ -1254,7 +1261,30 @@ export default function MarketplaceWrapper() {
           }
         />
       ) : (
-        <VendorGrid vendors={vendors} />
+        <Stack $gap={18}>
+          {(() => {
+            const followed = vendors.filter((v) => v.isFollowed);
+            const rest = vendors.filter((v) => !v.isFollowed);
+            return (
+              <>
+                {followed.length > 0 && (
+                  <VendorGrid
+                    vendors={followed}
+                    title="Kitchens you follow"
+                    hint="Your saved favourites"
+                  />
+                )}
+                {rest.length > 0 && (
+                  <VendorGrid
+                    vendors={rest}
+                    title="More kitchens near you"
+                    hint="Live orders from top kitchens"
+                  />
+                )}
+              </>
+            );
+          })()}
+        </Stack>
       )}
     </MarketplaceSurface>
   );
@@ -1505,14 +1535,16 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
   );
 }
 
-function VendorGrid({ vendors }: { vendors: MarketplaceVendor[] }) {
+function VendorGrid({ vendors, title, hint }: { vendors: MarketplaceVendor[]; title?: string; hint?: string }) {
   return (
     <Stack $gap={0}>
-      <SectionIntro>
-        <SectionTitle>Available now</SectionTitle>
-        <LiveDot aria-hidden />
-        <SectionHint>Live orders from top kitchens</SectionHint>
-      </SectionIntro>
+      {(title || hint) && (
+        <SectionIntro>
+          <SectionTitle>{title ?? "Available now"}</SectionTitle>
+          {hint && <LiveDot aria-hidden />}
+          {hint && <SectionHint>{hint}</SectionHint>}
+        </SectionIntro>
+      )}
       <ListGrid>
         {vendors.map((row, i) => (
           <FadeIn key={row.vendor.id} $delay={i * 45}>

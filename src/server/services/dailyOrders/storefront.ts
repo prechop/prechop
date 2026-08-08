@@ -99,8 +99,8 @@ export async function getVendorStorefront({
 export interface VendorSearchHit {
 	vendor: PublicVendor;
 	listings: IDailyOrder[];
-	/** Which dimensions matched: any of "shop" | "menu" | "listing". */
 	matchedOn: string[];
+	isFollowed: boolean;
 }
 
 /**
@@ -114,10 +114,12 @@ export async function searchMarketplace({
 	campusId,
 	q,
 	limit = 20,
+	followedVendorIds = [],
 }: {
 	campusId?: string;
 	q: string;
 	limit?: number;
+	followedVendorIds?: string[];
 }): Promise<VendorSearchHit[]> {
 	await assertMarketplaceEnabled();
 	const term = q.trim();
@@ -167,6 +169,7 @@ export async function searchMarketplace({
 		else listingsByVendor.set(key, [listing]);
 	}
 
+	const followedSet = new Set(followedVendorIds);
 	const hits = vendorIds
 		.map((id) => {
 			const vendor = vendorById.get(id);
@@ -177,10 +180,16 @@ export async function searchMarketplace({
 					listingsByVendor.get(id) ?? [],
 				),
 				matchedOn: [...(matched.get(id) ?? [])],
+				isFollowed: followedSet.has(id),
 			} satisfies VendorSearchHit;
 		})
 		.filter((h): h is VendorSearchHit => h !== null);
 
-	// Open kitchens first, then best-rated. Unrated shops sort last.
-	return hits.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
+	// Followed kitchens first, then by existing comparator.
+	hits.sort((a, b) => {
+		const followDelta = Number(followedSet.has(b.vendor.id)) - Number(followedSet.has(a.vendor.id));
+		if (followDelta !== 0) return followDelta;
+		return comparePublicVendors(a.vendor, b.vendor);
+	});
+	return hits;
 }

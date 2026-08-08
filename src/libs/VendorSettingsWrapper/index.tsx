@@ -293,6 +293,8 @@ export default function VendorSettingsWrapper() {
   const [notifyNewOrders, setNotifyNewOrders] = useState(true);
   const [notifyPayouts, setNotifyPayouts] = useState(true);
   const [notifyReviews, setNotifyReviews] = useState(true);
+  const [notifyFollowers, setNotifyFollowers] = useState(true);
+  const [notifyFollowerMilestones, setNotifyFollowerMilestones] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [startAttempted, setStartAttempted] = useState(false);
 
@@ -347,6 +349,8 @@ export default function VendorSettingsWrapper() {
     setNotifyNewOrders(vendor.notifyNewOrders ?? true);
     setNotifyPayouts(vendor.notifyPayouts ?? true);
     setNotifyReviews(vendor.notifyReviews ?? true);
+    setNotifyFollowers(vendor.notifyFollowers ?? true);
+    setNotifyFollowerMilestones(vendor.notifyFollowerMilestones ?? true);
   }, [vendor, user]);
 
   const vendorErrorStatus =
@@ -548,6 +552,8 @@ export default function VendorSettingsWrapper() {
         notifyNewOrders,
         notifyPayouts,
         notifyReviews,
+        notifyFollowers,
+        notifyFollowerMilestones,
       });
       toast("Notification preferences saved", "success");
     });
@@ -999,6 +1005,18 @@ export default function VendorSettingsWrapper() {
               hint="Alert me when a buyer reviews my kitchen"
               on={notifyReviews}
               onToggle={() => setNotifyReviews((v) => !v)}
+            />
+            <ToggleSetting
+              title="New followers"
+              hint="Alert me when a buyer follows my kitchen"
+              on={notifyFollowers}
+              onToggle={() => setNotifyFollowers((v) => !v)}
+            />
+            <ToggleSetting
+              title="Follower milestones"
+              hint="Alert me when I reach a follower milestone"
+              on={notifyFollowerMilestones}
+              onToggle={() => setNotifyFollowerMilestones((v) => !v)}
             />
             <Button
               $loading={busy === "notifications"}

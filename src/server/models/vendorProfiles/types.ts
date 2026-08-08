@@ -64,6 +64,8 @@ export interface IVendorProfile {
 	notifyNewOrders: boolean;
 	notifyPayouts: boolean;
 	notifyReviews: boolean;
+	notifyFollowers: boolean;
+	notifyFollowerMilestones: boolean;
 	// Defaults pre-filled into the daily-order composer.
 	defaultPickupAvailable: boolean;
 	defaultDeliveryAvailable: boolean;

@@ -111,12 +111,15 @@ export async function getMarketplace({
 	limit,
 	offset,
 	viewerUserId,
+	followedVendorIds = [],
 }: {
 	campusId?: string;
 	limit?: number;
 	offset?: number;
 	/** The signed-in caller (if any); their own listings are excluded. */
 	viewerUserId?: string;
+	/** Vendor IDs followed by the signed-in caller, for priority sorting. */
+	followedVendorIds?: string[];
 }) {
 	await assertMarketplaceEnabled();
 	let excludeVendorId: string | undefined;
@@ -154,6 +157,7 @@ export async function getMarketplace({
 		if (bucket) bucket.push(listing);
 		else listingsByVendor.set(key, [listing]);
 	}
+	const followedSet = new Set(followedVendorIds);
 	const rows = vendors.map((vendor) => {
 		const publicVendor = toPublicVendor(vendor);
 		const vendorListings =
@@ -176,9 +180,16 @@ export async function getMarketplace({
 					vendorTotalReviews: publicVendor.totalReviews,
 				}),
 			),
+			isFollowed: followedSet.has(vendor._id.toString()),
 		};
 	});
-	return rows.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
+	// Sort: followed vendors first, then by existing comparator.
+	rows.sort((a, b) => {
+		const followDelta = Number(b.isFollowed) - Number(a.isFollowed);
+		if (followDelta !== 0) return followDelta;
+		return comparePublicVendors(a.vendor, b.vendor);
+	});
+	return rows;
 }
 
 export async function getPublicDailyOrder({

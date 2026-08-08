@@ -31,6 +31,7 @@ import {
 	FulfillmentType,
 	getDailyOrderByIdDB,
 	getVendorProfileByIdDB,
+	listDailyOrdersByVendorDB,
 	OrderStatus,
 	PaymentStatus,
 	VendorStatus,
@@ -132,11 +133,29 @@ export async function placeOrder({
 		throw validationError("Add a phone number for delivery.");
 	}
 
+	const now = Date.now();
+	const vendorListings = await listDailyOrdersByVendorDB({
+		vendorId: dailyOrder.vendorId,
+		status: DailyOrderStatus.ACTIVE,
+	});
+	const sameVendorListings = vendorListings.filter(
+		(o) =>
+			o.isPublic &&
+			new Date(o.cutoffTime).getTime() > now &&
+			(o.id ?? o._id)?.toString() !== input.dailyOrderId,
+	);
+	const allListings = [dailyOrder, ...sameVendorListings];
+	const itemMap = new Map<string, (typeof dailyOrder.items)[number]>();
+	for (const listing of allListings) {
+		for (const item of listing.items) {
+			const id = (item.id ?? item._id)?.toString();
+			if (id) itemMap.set(id, item);
+		}
+	}
+
 	// ── 2. Resolve requested items + options against the snapshotted listing ─
 	const resolvedItems: IBuyerOrderItem[] = input.items.map((req) => {
-		const orderItem = dailyOrder.items.find(
-			(i) => (i.id ?? i._id)?.toString() === req.dailyOrderItemId,
-		);
+		const orderItem = itemMap.get(req.dailyOrderItemId);
 		if (!orderItem) throw notFound("Item");
 		if (orderItem.maxQuantity != null) {
 			const remaining = Math.max(
@@ -319,9 +338,7 @@ export async function placeOrder({
 	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
 
 	const slotRequests: SlotRequest[] = resolvedItems.map((it) => {
-		const listing = dailyOrder.items.find(
-			(i) => (i.id ?? i._id)?.toString() === it.dailyOrderItemId,
-		);
+		const listing = itemMap.get(it.dailyOrderItemId);
 		return {
 			dailyOrderItemId: it.dailyOrderItemId,
 			quantity: it.quantity,

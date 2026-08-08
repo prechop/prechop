@@ -21,5 +21,6 @@ export * from "./siteConfigs";
 export * from "./supportRequests";
 export * from "./timetableEntries";
 export * from "./users";
+export * from "./vendorFollowers";
 export * from "./vendorProfiles";
 export * from "./whatsappTvs";

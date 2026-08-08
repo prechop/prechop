@@ -867,6 +867,40 @@ export default function VendorDashboardWrapper() {
   );
   const alertCount = alertData?.unread ?? 0;
 
+  const { data: followerData } = useSWR<{
+    count: number;
+    newThisWeek: number;
+    recentFollowers: Array<{ id: string; buyerId: string; createdAt: string }>;
+  }>(
+    isActive && vendor?.id ? `/vendors/${vendor.id}/followers/count` : null,
+    fetcher,
+    { refreshInterval: 60_000, shouldRetryOnError: false },
+  );
+  const followerCount = followerData?.count ?? 0;
+  const newFollowersThisWeek = followerData?.newThisWeek ?? 0;
+
+  function followerMilestone(count: number): { current: number; next: number; progress: number; reached: boolean } {
+    const milestones = [50, 100, 500, 1000, 2500, 5000, 10000];
+    let current = milestones[0];
+    let reached = false;
+    for (const m of milestones) {
+      if (count < m) {
+        current = m;
+        break;
+      }
+      current = m;
+      if (count === m) {
+        reached = true;
+      }
+    }
+    const currentIdx = milestones.indexOf(current);
+    const next = currentIdx >= 0 && currentIdx < milestones.length - 1
+      ? milestones[currentIdx + 1]
+      : current * 2;
+    const progress = reached ? 1 : Math.min(1, count / current);
+    return { current, next, progress, reached };
+  }
+
   function compactCount(count: number) {
     return count >= 10 ? "9+" : String(count);
   }
@@ -1187,6 +1221,47 @@ export default function VendorDashboardWrapper() {
               tone="var(--pc-color-gold)"
               hint="Across all your posts"
             />
+          </CompactStatsGrid>
+
+          <SectionHeader title="Followers" />
+          <CompactStatsGrid>
+            <CompactStatCard>
+              <CompactStatTop>
+                <CompactStatLabel>Followers</CompactStatLabel>
+                <CompactStatIcon aria-hidden>👥</CompactStatIcon>
+              </CompactStatTop>
+              <CompactStatValue>{followerCount}</CompactStatValue>
+              <CompactStatHint>
+                {(() => {
+                  const m = followerMilestone(followerCount);
+                  return m.reached
+                    ? `${m.current} reached · next: ${m.next}`
+                    : `${followerCount} of ${m.current} · ${m.current - followerCount} more to reach your next milestone`;
+                })()}
+              </CompactStatHint>
+            </CompactStatCard>
+            <CompactStatCard>
+              <CompactStatTop>
+                <CompactStatLabel>New this week</CompactStatLabel>
+                <CompactStatIcon aria-hidden>📈</CompactStatIcon>
+              </CompactStatTop>
+              <CompactStatValue>+{newFollowersThisWeek}</CompactStatValue>
+              <CompactStatHint>Joined in the last 7 days</CompactStatHint>
+            </CompactStatCard>
+            <CompactStatCard>
+              <CompactStatTop>
+                <CompactStatLabel>Next milestone</CompactStatLabel>
+                <CompactStatIcon aria-hidden>🎯</CompactStatIcon>
+              </CompactStatTop>
+              <CompactStatValue>{followerMilestone(followerCount).next}</CompactStatValue>
+              <CompactStatHint>
+                {(() => {
+                  const m = followerMilestone(followerCount);
+                  const remaining = m.next - followerCount;
+                  return remaining > 0 ? `${remaining} more to go` : "Milestone reached!";
+                })()}
+              </CompactStatHint>
+            </CompactStatCard>
           </CompactStatsGrid>
 
           <NewButton href="/dashboard/new">

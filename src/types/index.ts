@@ -110,6 +110,8 @@ export interface VendorProfile {
 	notifyNewOrders?: boolean;
 	notifyPayouts?: boolean;
 	notifyReviews?: boolean;
+	notifyFollowers?: boolean;
+	notifyFollowerMilestones?: boolean;
 	defaultPickupAvailable?: boolean;
 	defaultDeliveryAvailable?: boolean;
 	defaultDeliveryFeeKobo?: number;
@@ -250,12 +252,14 @@ export interface VendorStorefront {
 export interface MarketplaceVendor {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
+	isFollowed?: boolean;
 }
 
 export interface VendorSearchHit {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
 	matchedOn: string[];
+	isFollowed?: boolean;
 }
 
 export interface AdminUserDetail {
@@ -607,4 +611,14 @@ export interface AppNotification {
 	type: string;
 	isRead: boolean;
 	createdAt: string;
+}
+
+export interface FeedItem {
+	id: string;
+	type: "new_menu" | "sold_out" | "reopened";
+	vendorId: string;
+	title: string;
+	createdAt: string;
+	scheduledDate?: string;
+	cutoffTime?: string;
 }

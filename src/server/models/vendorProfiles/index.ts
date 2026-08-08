@@ -100,10 +100,12 @@ const schema = new mongoose.Schema<any>(
 		avgPrepDelayMin: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
-		// Notification preferences (default opted-in).
-		notifyNewOrders: { type: Boolean, default: true },
-		notifyPayouts: { type: Boolean, default: true },
-		notifyReviews: { type: Boolean, default: true },
+	// Notification preferences (default opted-in).
+	notifyNewOrders: { type: Boolean, default: true },
+	notifyPayouts: { type: Boolean, default: true },
+	notifyReviews: { type: Boolean, default: true },
+	notifyFollowers: { type: Boolean, default: true },
+	notifyFollowerMilestones: { type: Boolean, default: true },
 		// Daily-order composer defaults.
 		defaultPickupAvailable: { type: Boolean, default: true },
 		defaultDeliveryAvailable: { type: Boolean, default: false },
