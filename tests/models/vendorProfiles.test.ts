@@ -5,6 +5,7 @@ import {
 	createVendorProfileDB,
 	getVendorProfileByEmailDB,
 	getVendorProfileByIdDB,
+	getVendorProfileByStoreSlugDB,
 	getVendorProfileByUserIdDB,
 	getVendorWithSecretsDB,
 	incrementVendorOrderCountDB,
@@ -30,6 +31,21 @@ function email(): string {
 }
 
 describe("vendorProfiles model", () => {
+	it("resolves a permanent store slug without changing the vendor id", async () => {
+		const vendor = await createVendorProfileDB({
+			payload: {
+				userId: oid(),
+				email: email(),
+				businessName: "Aramide's Kitchen",
+				storeSlug: "aramides-kitchen",
+			},
+		});
+		const resolved = await getVendorProfileByStoreSlugDB({
+			storeSlug: "ARAMIDES-KITCHEN",
+		});
+		expect(resolved?._id.toString()).toBe(vendor?._id.toString());
+	});
+
 	it("creates with INCOMPLETE default status", async () => {
 		const v = await createVendorProfileDB({
 			payload: { userId: oid(), campusId: oid(), email: email() },

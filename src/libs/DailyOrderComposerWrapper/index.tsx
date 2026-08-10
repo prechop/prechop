@@ -23,6 +23,12 @@ import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
+import {
+	listingUrl,
+	listingWhatsAppMessage,
+	storeUrl,
+	storeWhatsAppMessage,
+} from "@/constants/shareLinks";
 import { useToast } from "@/hooks/useToast";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
 import type { DailyOrder, MenuItem, MenuOptionGroup } from "@/types";
@@ -302,8 +308,8 @@ function isoToLocal(iso: string): string {
 }
 
 interface Published {
-	token: string;
-	title: string;
+	order: DailyOrder;
+	storeSlug?: string;
 }
 
 export default function DailyOrderComposerWrapper({
@@ -358,6 +364,7 @@ export default function DailyOrderComposerWrapper({
 	const [busy, setBusy] = useState(false);
 	const [published, setPublished] = useState<Published | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [storeCopied, setStoreCopied] = useState(false);
 
 	// Seed fulfilment toggles from the vendor's saved delivery defaults, once.
 	// Skipped when editing — there the existing listing's values win.
@@ -731,7 +738,18 @@ export default function DailyOrderComposerWrapper({
 				api.post("/daily-orders", { ...body, draft: false }),
 			);
 			toast("Daily order posted", "success");
-			setPublished({ token: order.shareableToken, title: order.title });
+			let storeSlug = vendor?.storeSlug;
+			if (!storeSlug) {
+				try {
+					const storeVendor = await apiData<VendorMe>(
+						api.post("/vendors/me/store-slug", {}),
+					);
+					storeSlug = storeVendor.storeSlug;
+				} catch {
+					// The listing is already live; store-link setup can be retried from Store.
+				}
+			}
+			setPublished({ order, storeSlug });
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
@@ -740,15 +758,51 @@ export default function DailyOrderComposerWrapper({
 	}
 
 	if (published) {
-		const shareUrl =
-			typeof window !== "undefined"
-				? `${window.location.origin}/o/${published.token}`
-				: `/o/${published.token}`;
-		const shareText = `${published.title} — order now on Prechop: ${shareUrl}`;
+		const { order, storeSlug } = published;
+		const shareUrl = listingUrl(order.shareableToken);
+		const prices = order.items.flatMap((item) => {
+			const variants = (item.snapshotVariants ?? []).filter(
+				(variant) => variant.isActive !== false,
+			);
+			return variants.length > 0
+				? variants.map((variant) => variant.priceKobo)
+				: [item.snapshotPriceKobo];
+		});
+		const minPrice = Math.min(...prices);
+		const maxPrice = Math.max(...prices);
+		const priceLabel =
+			prices.length > 1 && minPrice !== maxPrice
+				? `From ${formatKobo(minPrice)}`
+				: formatKobo(minPrice);
+		const allFinite = order.items.every((item) => item.maxQuantity != null);
+		const remainingQuantity = allFinite
+			? order.items.reduce(
+					(total, item) =>
+						total +
+						(item.remainingQuantity ??
+							Math.max(
+								(item.maxQuantity ?? 0) - item.orderedQuantity,
+								0,
+							)),
+					0,
+				)
+			: undefined;
+		const businessName = vendor?.businessName ?? "My kitchen";
+		const shareText = listingWhatsAppMessage({
+			businessName,
+			title: order.title,
+			priceLabel,
+			remainingQuantity,
+			cutoffTime: order.cutoffTime,
+			shareableToken: order.shareableToken,
+		});
 		const waHref = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-		const tgHref = `https://t.me/share/url?url=${encodeURIComponent(
-			shareUrl,
-		)}&text=${encodeURIComponent(published.title)}`;
+		const publicStoreUrl = storeSlug ? storeUrl(storeSlug) : "";
+		const storeWaHref = storeSlug
+			? `https://wa.me/?text=${encodeURIComponent(
+					storeWhatsAppMessage(businessName, storeSlug),
+				)}`
+			: "";
 
 		const copyLink = async () => {
 			try {
@@ -761,6 +815,17 @@ export default function DailyOrderComposerWrapper({
 					"Couldn't copy — long-press the link to copy it",
 					"error",
 				);
+			}
+		};
+		const copyStoreLink = async () => {
+			if (!publicStoreUrl) return;
+			try {
+				await navigator.clipboard.writeText(publicStoreUrl);
+				setStoreCopied(true);
+				toast("Store link copied", "success");
+				setTimeout(() => setStoreCopied(false), 2000);
+			} catch {
+				toast("Couldn't copy the store link", "error");
 			}
 		};
 
@@ -781,18 +846,15 @@ export default function DailyOrderComposerWrapper({
 								$size={14}
 								style={{ color: "rgba(255,255,255,0.9)" }}
 							>
-								“{published.title}” is open for orders. Share
-								the link so buyers can order.
+								“{order.title}” is open for orders. Share the
+								link so buyers can order.
 							</Text>
 						</Stack>
 					</SuccessHero>
 
 					<Card>
 						<Stack $gap={14}>
-							<SectionHeader
-								title="Share your order link"
-								icon="🔗"
-							/>
+							<SectionHeader title="Share this menu" icon="🔗" />
 							<LinkBox>
 								<LinkText>{shareUrl}</LinkText>
 								<Button
@@ -800,7 +862,7 @@ export default function DailyOrderComposerWrapper({
 									$variant={copied ? "secondary" : "primary"}
 									onClick={copyLink}
 								>
-									{copied ? "Copied ✓" : "Copy"}
+									{copied ? "Copied ✓" : "Copy menu link"}
 								</Button>
 							</LinkBox>
 							<ShareGrid>
@@ -810,25 +872,56 @@ export default function DailyOrderComposerWrapper({
 									rel="noopener noreferrer"
 									$bg="#25D366"
 								>
-									<span aria-hidden>💬</span> WhatsApp
-								</ShareBtn>
-								<ShareBtn
-									href={tgHref}
-									target="_blank"
-									rel="noopener noreferrer"
-									$bg="#229ED9"
-								>
-									<span aria-hidden>✈️</span> Telegram
+									<span aria-hidden>💬</span> Share menu to
+									WhatsApp
 								</ShareBtn>
 							</ShareGrid>
 						</Stack>
 					</Card>
 
+					{storeSlug && (
+						<Card>
+							<Stack $gap={14}>
+								<SectionHeader
+									title="Share my kitchen"
+									icon="🏪"
+								/>
+								<Text $muted $size={13}>
+									Your permanent store link stays the same
+									after this menu closes.
+								</Text>
+								<LinkBox>
+									<LinkText>{publicStoreUrl}</LinkText>
+									<Button
+										$size="sm"
+										$variant="secondary"
+										onClick={copyStoreLink}
+									>
+										{storeCopied
+											? "Copied ✓"
+											: "Copy store link"}
+									</Button>
+								</LinkBox>
+								<ShareGrid>
+									<ShareBtn
+										href={storeWaHref}
+										target="_blank"
+										rel="noopener noreferrer"
+										$bg="#166534"
+									>
+										<span aria-hidden>💬</span> Share store
+										to WhatsApp
+									</ShareBtn>
+								</ShareGrid>
+							</Stack>
+						</Card>
+					)}
+
 					<Row $gap={12} $wrap>
 						<div style={{ flex: 1, minWidth: 160 }}>
 							<Button
 								as={Link}
-								href={`/o/${published.token}`}
+								href={`/o/${order.shareableToken}`}
 								target="_blank"
 								$variant="secondary"
 								$full

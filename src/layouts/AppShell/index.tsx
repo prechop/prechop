@@ -28,7 +28,7 @@ const vendorMobileNav = [
   { href: "/dashboard", label: "Home", icon: "🏠" },
   { href: "/pipeline", label: "Orders", icon: "🔥" },
   { href: "/menu", label: "Menu", icon: "📋" },
-  { href: "/earnings", label: "Earnings", icon: "💰" },
+  { href: "/vendor/store", label: "Store", icon: "🏪" },
   { href: "/vendor/more", label: "More", icon: "⋯" },
 ];
 const vendorDesktopNav = [
@@ -38,7 +38,7 @@ const vendorDesktopNav = [
   { href: "/timetable", label: "Timetable", icon: "🗓️" },
   { href: "/earnings", label: "Earnings", icon: "💰" },
   { href: "/vendor/followers", label: "Followers", icon: "👥" },
-
+  { href: "/vendor/store", label: "Store", icon: "🏪" },
   { href: "/notifications", label: "Notifications", icon: "🔔" },
   { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
   { href: "/help?audience=vendor", label: "Support", icon: "💬" },

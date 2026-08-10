@@ -4,16 +4,9 @@ import Link from "next/link";
 import { useMemo } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
-import {
-	Badge,
-	FadeIn,
-	Row,
-	SectionHeader,
-	Stack,
-	Text,
-} from "@/components";
-import { useAuth } from "@/hooks/Auth/useAuth";
+import { Badge, Stack } from "@/components";
 import { fetcher } from "@/constants/fetcher";
+import { useAuth } from "@/hooks/Auth/useAuth";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
 
 const Page = styled.div`
@@ -253,7 +246,7 @@ export default function VendorMoreWrapper() {
 					<PageTitle>More</PageTitle>
 				</TopBar>
 
-				<VendorCard href="/vendor/settings">
+				<VendorCard href="/vendor/store">
 					<VendorImage aria-hidden>
 						{vendor?.profileImageUrl ? (
 							<VendorImageImg
@@ -270,7 +263,13 @@ export default function VendorMoreWrapper() {
 							{vendor?.businessName ?? "Your kitchen"}
 						</VendorName>
 						<VendorMeta>
-							<VendorStatusBadge $tone={vendor?.isOpenForOrders ? "success" : "danger"}>
+							<VendorStatusBadge
+								$tone={
+									vendor?.isOpenForOrders
+										? "success"
+										: "danger"
+								}
+							>
 								{openLabel}
 							</VendorStatusBadge>
 							{shortId && <VendorId>ID: {shortId}</VendorId>}
@@ -281,11 +280,23 @@ export default function VendorMoreWrapper() {
 
 				<SectionTitle>Grow your business</SectionTitle>
 				<MenuCard>
+					<MenuRow href="/earnings">
+						<MenuIcon aria-hidden>💰</MenuIcon>
+						<MenuText>
+							<MenuTitle>Earnings</MenuTitle>
+							<MenuDesc>Sales, fees and settlements</MenuDesc>
+						</MenuText>
+						<MenuRight>
+							<MenuChevron aria-hidden>›</MenuChevron>
+						</MenuRight>
+					</MenuRow>
 					<MenuRow href="/timetable">
 						<MenuIcon aria-hidden>🗓️</MenuIcon>
 						<MenuText>
 							<MenuTitle>My timetable</MenuTitle>
-							<MenuDesc>Manage opening hours and schedules</MenuDesc>
+							<MenuDesc>
+								Manage opening hours and schedules
+							</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>
@@ -299,7 +310,9 @@ export default function VendorMoreWrapper() {
 						</MenuText>
 						<MenuRight>
 							{alertCount > 0 && (
-								<MenuBadge>{alertCount >= 10 ? "9+" : alertCount}</MenuBadge>
+								<MenuBadge>
+									{alertCount >= 10 ? "9+" : alertCount}
+								</MenuBadge>
 							)}
 							<MenuChevron aria-hidden>›</MenuChevron>
 						</MenuRight>
@@ -308,7 +321,9 @@ export default function VendorMoreWrapper() {
 						<MenuIcon aria-hidden>👥</MenuIcon>
 						<MenuText>
 							<MenuTitle>Followers & Growth</MenuTitle>
-							<MenuDesc>See who follows you and milestone progress</MenuDesc>
+							<MenuDesc>
+								See who follows you and milestone progress
+							</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>
@@ -318,11 +333,11 @@ export default function VendorMoreWrapper() {
 
 				<SectionTitle>Manage account</SectionTitle>
 				<MenuCard>
-					<MenuRow href="/vendor/settings">
+					<MenuRow href="/account">
 						<MenuIcon aria-hidden>👤</MenuIcon>
 						<MenuText>
-							<MenuTitle>Profile</MenuTitle>
-							<MenuDesc>Personal and business details</MenuDesc>
+							<MenuTitle>Account</MenuTitle>
+							<MenuDesc>Personal details and sign-in</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>
@@ -352,7 +367,9 @@ export default function VendorMoreWrapper() {
 						<MenuIcon aria-hidden>⚙️</MenuIcon>
 						<MenuText>
 							<MenuTitle>Settings</MenuTitle>
-							<MenuDesc>Security, notifications, delivery</MenuDesc>
+							<MenuDesc>
+								Security, notifications and account controls
+							</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>

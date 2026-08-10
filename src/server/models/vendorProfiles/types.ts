@@ -12,6 +12,7 @@ export interface IVendorProfileCreateInput {
 	campusId?: string;
 	email: string;
 	businessName?: string;
+	storeSlug?: string;
 	vendorType?: VendorType;
 	contactPhone?: string;
 }
@@ -25,6 +26,7 @@ export interface IVendorProfile {
 	vendorType?: VendorType;
 	bakeryBusinessType?: BakeryBusinessType;
 	businessName?: string;
+	storeSlug?: string;
 	description?: string;
 	email: string;
 	contactPhone?: string;

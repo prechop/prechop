@@ -25,17 +25,18 @@ import {
   MENU_CATEGORIES,
   normalizeMenuCategory,
 } from "@/constants/menuCategories";
+import { storeUrl, storeWhatsAppMessage } from "@/constants/shareLinks";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { describeFeePolicy, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import BankDetailsForm from "@/libs/BankDetailsForm";
-import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
 import ForgotPinFlow from "@/libs/ForgotPinFlow";
-import VendorSecurityPinForm from "@/libs/VendorSecurityPinForm";
 import {
   clearPinResetAuthParam,
   getPinResetAuthToken,
 } from "@/libs/forgotPinAuth";
+import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
+import VendorSecurityPinForm from "@/libs/VendorSecurityPinForm";
 import type { Campus } from "@/types";
 
 interface School {
@@ -199,6 +200,86 @@ const PolicyLinkGrid = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 8px;
 `;
+const StoreUrlValue = styled.div`
+  width: 100%;
+  min-width: 0;
+  padding: 12px 15px;
+  border: 1.5px solid var(--pc-input-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+`;
+const StoreUrlLabel = styled.span`
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pc-text);
+`;
+const StoreActions = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  > *:last-child {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 380px) {
+    grid-template-columns: 1fr;
+
+    > *:last-child {
+      grid-column: auto;
+    }
+  }
+`;
+const StoreCard = styled(Card)`
+  min-width: 0;
+  overflow: hidden;
+
+  @media (max-width: 520px) {
+    padding: var(--pc-space-4);
+  }
+`;
+const ProfileIdentity = styled(Row)`
+  min-width: 0;
+
+  > * {
+    min-width: 0;
+  }
+`;
+const UploadLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  color: var(--pc-text);
+  background: var(--pc-surface-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+`;
 
 function errMsg(e: unknown): string {
   const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -236,7 +317,11 @@ function ToggleSetting({
   );
 }
 
-export default function VendorSettingsWrapper() {
+export default function VendorSettingsWrapper({
+  mode = "settings",
+}: {
+  mode?: "settings" | "store";
+}) {
   const { toast } = useToast();
   const { user, refresh } = useAuth();
   const {
@@ -297,6 +382,8 @@ export default function VendorSettingsWrapper() {
   const [notifyFollowerMilestones, setNotifyFollowerMilestones] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [startAttempted, setStartAttempted] = useState(false);
+  const [storeSlugAttempted, setStoreSlugAttempted] = useState(false);
+  const [storeCopied, setStoreCopied] = useState(false);
 
   useEffect(() => {
     const status = vendorError?.response?.status;
@@ -310,6 +397,21 @@ export default function VendorSettingsWrapper() {
       .catch((e) => toast(errMsg(e), "error"))
       .finally(() => setBusy(null));
   }, [vendorError, busy, mutate, toast, startAttempted]);
+
+  useEffect(() => {
+    if (
+      mode !== "store" ||
+      !vendor ||
+      vendor.storeSlug ||
+      storeSlugAttempted
+    )
+      return;
+    setStoreSlugAttempted(true);
+    api
+      .post("/vendors/me/store-slug", {})
+      .then(() => mutate())
+      .catch((e) => toast(errMsg(e), "error"));
+  }, [mode, vendor, storeSlugAttempted, mutate, toast]);
 
   // Seed form state once the profile loads (and whenever it changes).
   useEffect(() => {
@@ -561,17 +663,85 @@ export default function VendorSettingsWrapper() {
 
   const securityPinReady =
     !!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet;
+  const publicStoreUrl = vendor.storeSlug ? storeUrl(vendor.storeSlug) : "";
+  const storeShareHref = vendor.storeSlug
+    ? `https://wa.me/?text=${encodeURIComponent(
+        storeWhatsAppMessage(
+          vendor.businessName ?? "My kitchen",
+          vendor.storeSlug,
+        ),
+      )}`
+    : "";
+
+  async function copyStoreLink() {
+    if (!publicStoreUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicStoreUrl);
+      setStoreCopied(true);
+      toast("Store link copied", "success");
+      setTimeout(() => setStoreCopied(false), 2000);
+    } catch {
+      toast("Couldn't copy the store link", "error");
+    }
+  }
 
   return (
     <FadeIn>
       <Stack $gap={20}>
         <PageHeader
           eyebrow="Vendor"
-          title="Settings"
-          subtitle="Manage your business profile, payouts, and how you get notified."
+          title={mode === "store" ? "Store" : "Settings"}
+          subtitle={
+            mode === "store"
+              ? "Manage the permanent home buyers see for your kitchen."
+              : "Manage payouts, notifications, security, and your account."
+          }
         />
 
-        {showAdminReset && adminResetToken && (
+        {mode === "store" && (
+          <StoreCard $accent>
+            <Stack $gap={14}>
+              <SectionHeader title="Your Prechop store" icon="🏪" />
+              <Text $muted $size={13}>
+                A permanent home for your kitchen. Share this link anywhere—it
+                stays the same even when today&apos;s menu closes.
+              </Text>
+              {publicStoreUrl ? (
+                <>
+                  <Stack $gap={7}>
+                    <StoreUrlLabel>Public store URL</StoreUrlLabel>
+                    <StoreUrlValue>{publicStoreUrl}</StoreUrlValue>
+                  </Stack>
+                  <StoreActions>
+                    <Button
+                      as={Link}
+                      href={`/${vendor.storeSlug}`}
+                      target="_blank"
+                      $variant="secondary">
+                      Preview store
+                    </Button>
+                    <Button $variant="secondary" onClick={copyStoreLink}>
+                      {storeCopied ? "Copied ✓" : "Copy store link"}
+                    </Button>
+                    <Button
+                      as="a"
+                      href={storeShareHref}
+                      target="_blank"
+                      rel="noopener noreferrer">
+                      Share to WhatsApp
+                    </Button>
+                  </StoreActions>
+                </>
+              ) : (
+                <Text $muted $size={13}>
+                  Creating your permanent store link…
+                </Text>
+              )}
+            </Stack>
+          </StoreCard>
+        )}
+
+        {mode === "settings" && showAdminReset && adminResetToken && (
           <Card $accent>
             <Stack $gap={10}>
               <Text $weight={700}>Admin PIN reset approved</Text>
@@ -597,10 +767,12 @@ export default function VendorSettingsWrapper() {
           </Card>
         )}
 
-        <Card>
+        {mode === "store" && (
+          <>
+        <StoreCard>
           <Stack $gap={14}>
             <SectionHeader title="Profile" icon="👤" />
-            <Row $gap={14} $align="center" $wrap>
+            <ProfileIdentity $gap={14} $align="center" $wrap>
               <Avatar
                 src={vendor.profileImageUrl}
                 name={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`}
@@ -613,16 +785,19 @@ export default function VendorSettingsWrapper() {
                 <Text $muted $size={13}>
                   {user?.email}
                 </Text>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) uploadProfileImage(file);
-                  }}
-                />
+                <UploadLabel>
+                  Change store photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadProfileImage(file);
+                    }}
+                  />
+                </UploadLabel>
               </Stack>
-            </Row>
+            </ProfileIdentity>
             <Row $gap={12} $wrap>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <Input
@@ -646,7 +821,7 @@ export default function VendorSettingsWrapper() {
               Save personal details
             </Button>
           </Stack>
-        </Card>
+        </StoreCard>
 
         {/* Business identity */}
         <Card>
@@ -832,8 +1007,12 @@ export default function VendorSettingsWrapper() {
             </Button>
           </Stack>
         </Card>
+          </>
+        )}
 
         {/* Fees */}
+        {mode === "settings" && (
+          <>
         <Card>
           <Stack $gap={10}>
             <SectionHeader title="Fees and payments" icon="%" />
@@ -908,8 +1087,11 @@ export default function VendorSettingsWrapper() {
             />
           </Stack>
         </Card>
+          </>
+        )}
 
         {/* Delivery defaults */}
+        {mode === "store" && (
         <Card>
           <Stack $gap={14}>
             <SectionHeader title="Delivery defaults" icon="🛵" />
@@ -983,8 +1165,10 @@ export default function VendorSettingsWrapper() {
             </Button>
           </Stack>
         </Card>
+        )}
 
         {/* Notifications */}
+        {mode === "settings" && (
         <Card>
           <Stack $gap={14}>
             <SectionHeader title="Notifications" icon="🔔" />
@@ -1026,8 +1210,10 @@ export default function VendorSettingsWrapper() {
             </Button>
           </Stack>
         </Card>
+        )}
 
         {/* Account */}
+        {mode === "settings" && (
         <Card>
           <Stack $gap={10}>
             <SectionHeader title="Account" icon="👤" />
@@ -1041,6 +1227,7 @@ export default function VendorSettingsWrapper() {
             </Row>
           </Stack>
         </Card>
+        )}
       </Stack>
     </FadeIn>
   );

@@ -74,6 +74,7 @@ export interface VendorProfile {
 	vendorType?: string;
 	bakeryBusinessType?: string;
 	businessName?: string;
+	storeSlug?: string;
 	description?: string;
 	email: string;
 	contactPhone?: string;

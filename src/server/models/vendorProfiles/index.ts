@@ -42,6 +42,7 @@ const schema = new mongoose.Schema<any>(
 			enum: Object.values(BakeryBusinessType),
 		},
 		businessName: { type: String, trim: true },
+		storeSlug: { type: String, trim: true, lowercase: true },
 		description: { type: String },
 		contactPhone: { type: String },
 		email: {
@@ -100,12 +101,12 @@ const schema = new mongoose.Schema<any>(
 		avgPrepDelayMin: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
-	// Notification preferences (default opted-in).
-	notifyNewOrders: { type: Boolean, default: true },
-	notifyPayouts: { type: Boolean, default: true },
-	notifyReviews: { type: Boolean, default: true },
-	notifyFollowers: { type: Boolean, default: true },
-	notifyFollowerMilestones: { type: Boolean, default: true },
+		// Notification preferences (default opted-in).
+		notifyNewOrders: { type: Boolean, default: true },
+		notifyPayouts: { type: Boolean, default: true },
+		notifyReviews: { type: Boolean, default: true },
+		notifyFollowers: { type: Boolean, default: true },
+		notifyFollowerMilestones: { type: Boolean, default: true },
 		// Daily-order composer defaults.
 		defaultPickupAvailable: { type: Boolean, default: true },
 		defaultDeliveryAvailable: { type: Boolean, default: false },
@@ -136,6 +137,7 @@ const schema = new mongoose.Schema<any>(
 // Marketplace listing hot path: campus + status + open + completeness.
 schema.index({ campusId: 1, status: 1, isOpenForOrders: 1 });
 schema.index({ campusIds: 1, status: 1, isOpenForOrders: 1 });
+schema.index({ storeSlug: 1 }, { unique: true, sparse: true });
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
@@ -616,6 +618,34 @@ export async function getVendorProfileByEmailDB({
 			(
 				await VendorProfile.aggregate<IVendorProfile>(
 					[{ $match: { email: email.toLowerCase() } }, { $limit: 1 }],
+					{ session },
+				)
+			).at(0) ?? null;
+		return vendor ? normalizeVendorCategories(vendor) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function getVendorProfileByStoreSlugDB({
+	storeSlug,
+	session,
+}: {
+	storeSlug: string;
+	session?: ClientSession;
+}): Promise<IVendorProfile | null> {
+	try {
+		const vendor =
+			(
+				await VendorProfile.aggregate<IVendorProfile>(
+					[
+						{
+							$match: {
+								storeSlug: storeSlug.trim().toLowerCase(),
+							},
+						},
+						{ $limit: 1 },
+					],
 					{ session },
 				)
 			).at(0) ?? null;

@@ -1232,13 +1232,17 @@ export default function VendorStorefrontWrapper({
 										type="button"
 										$active={isFollowing}
 										aria-label={
-											isFollowing ? "Unfollow kitchen" : "Follow kitchen"
+											isFollowing
+												? "Unfollow kitchen"
+												: "Follow kitchen"
 										}
 										onClick={toggleFollow}
 										disabled={followLoading}
 									>
 										<FiUserPlus aria-hidden />
-										{isFollowing ? "Following" : "Follow kitchen"}
+										{isFollowing
+											? "Following"
+											: "Follow kitchen"}
 									</FollowButton>
 								</VendorActions>
 							</HeroPanel>
@@ -1259,8 +1263,8 @@ export default function VendorStorefrontWrapper({
 					{cookingItems.length === 0 ? (
 						<EmptyState
 							icon="⏸️"
-							title="Nothing cooking right now"
-							description="This kitchen has no open listings at the moment. Check back later."
+							title="Nothing available right now"
+							description="Follow this kitchen to know when they’re cooking again."
 						/>
 					) : (
 						<CookingList>
