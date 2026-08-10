@@ -87,6 +87,17 @@ export const openStatusSchema = zod
 	})
 	.strict();
 
+export const closeVendorProfileSchema = zod
+	.object({
+		confirmation: zod.string().trim(),
+		securityPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/)
+			.optional(),
+	})
+	.strict();
+
 export const securityOnboardingSchema = zod.discriminatedUnion("action", [
 	zod.object({ action: zod.literal("DISMISS") }).strict(),
 	zod

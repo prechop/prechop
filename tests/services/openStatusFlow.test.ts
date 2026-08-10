@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Redis } from "@/server/databases/redis";
-import { FulfillmentType, setVendorOpenForOrdersDB } from "@/server/models";
+import {
+	FulfillmentType,
+	getVendorProfileByIdDB,
+	setVendorOpenForOrdersDB,
+} from "@/server/models";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
 import {
@@ -8,6 +12,7 @@ import {
 	getPublicDailyOrder,
 } from "@/server/services/dailyOrders";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
+import { setOpenStatus } from "@/server/services/vendors/openStatus";
 import { connectTestDB, dropAndDisconnect } from "../helpers/db";
 import {
 	makeActiveDailyOrder,
@@ -52,6 +57,24 @@ function trackSlots(listing: { items: Array<{ _id?: unknown }> }) {
 }
 
 describe("placeOrder respects the vendor open/closed switch", () => {
+	it("allows a vendor to close and reopen selling", async () => {
+		const { userId, vendorId } = await makeVendor();
+		expect(await setOpenStatus({ userId, isOpenForOrders: false })).toEqual(
+			{
+				isOpenForOrders: false,
+			},
+		);
+		expect(
+			(await getVendorProfileByIdDB({ id: vendorId }))?.isOpenForOrders,
+		).toBe(false);
+		expect(await setOpenStatus({ userId, isOpenForOrders: true })).toEqual({
+			isOpenForOrders: true,
+		});
+		expect(
+			(await getVendorProfileByIdDB({ id: vendorId }))?.isOpenForOrders,
+		).toBe(true);
+	});
+
 	it("rejects an order when the vendor is closed", async () => {
 		// makeVendor opens the kitchen by default; close it explicitly.
 		const { vendorId, campusId } = await makeVendor({

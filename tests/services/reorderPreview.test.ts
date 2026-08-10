@@ -106,6 +106,8 @@ interface OrderOpts {
 	campusId: string;
 	menuItemId: string;
 	dailyOrderId: string;
+	dailyOrderItemId?: string;
+	omitMenuItemId?: boolean;
 	priceKobo?: number;
 	selectedOptions?: { groupName: string; snapshotName: string }[];
 }
@@ -127,8 +129,8 @@ async function makePastOrder(o: OrderOpts) {
 			totalKobo: o.priceKobo ?? 150000,
 			items: [
 				{
-					dailyOrderItemId: oid(),
-					menuItemId: o.menuItemId,
+					dailyOrderItemId: o.dailyOrderItemId ?? oid(),
+					...(o.omitMenuItemId ? {} : { menuItemId: o.menuItemId }),
 					snapshotName: "Jollof",
 					snapshotPriceKobo: o.priceKobo ?? 150000,
 					quantity: 1,
@@ -339,6 +341,86 @@ for (const [label, getReorderPreview] of variants) {
 			expect(res.items[0].status).toBe("AVAILABLE");
 			expect(res.items[0].currentPriceKobo).toBe(150000);
 			expect(res.target?.dailyOrderId).toBe(listing._id.toString());
+		});
+
+		it("matches a reposted menu item in the active listing that actually contains it", async () => {
+			const { vendorId, campusId } = await makeVendor();
+			const orderedItem = oid();
+			const unrelatedItem = oid();
+			const oldListing = await makeListing({
+				vendorId,
+				campusId,
+				menuItemId: orderedItem,
+				status: DailyOrderStatus.CLOSED,
+				cutoffFromNowMs: -HOUR,
+			});
+			await makeListing({
+				vendorId,
+				campusId,
+				menuItemId: unrelatedItem,
+				cutoffFromNowMs: 30 * 60 * 1000,
+			});
+			const reposted = await makeListing({
+				vendorId,
+				campusId,
+				menuItemId: orderedItem,
+				cutoffFromNowMs: 2 * HOUR,
+			});
+			const buyerId = oid();
+			const order = await makePastOrder({
+				buyerId,
+				vendorId,
+				campusId,
+				menuItemId: orderedItem,
+				dailyOrderId: oldListing._id.toString(),
+				priceKobo: 150000,
+			});
+
+			const res = await getReorderPreview({
+				userId: buyerId,
+				buyerOrderId: order._id.toString(),
+			});
+
+			expect(res.outcome).toBe("ALL_AVAILABLE");
+			expect(res.items[0].status).toBe("AVAILABLE");
+			expect(res.target?.dailyOrderId).toBe(reposted._id.toString());
+		});
+
+		it("recovers missing order item menuItemId from the previous listing item", async () => {
+			const { vendorId, campusId } = await makeVendor();
+			const menuItemId = oid();
+			const oldListing = await makeListing({
+				vendorId,
+				campusId,
+				menuItemId,
+				status: DailyOrderStatus.CLOSED,
+				cutoffFromNowMs: -HOUR,
+			});
+			const oldDailyOrderItemId = oldListing.items[0]._id!.toString();
+			const reposted = await makeListing({
+				vendorId,
+				campusId,
+				menuItemId,
+			});
+			const buyerId = oid();
+			const order = await makePastOrder({
+				buyerId,
+				vendorId,
+				campusId,
+				menuItemId,
+				dailyOrderId: oldListing._id.toString(),
+				dailyOrderItemId: oldDailyOrderItemId,
+				omitMenuItemId: true,
+			});
+
+			const res = await getReorderPreview({
+				userId: buyerId,
+				buyerOrderId: order._id.toString(),
+			});
+
+			expect(res.outcome).toBe("ALL_AVAILABLE");
+			expect(res.items[0].status).toBe("AVAILABLE");
+			expect(res.target?.dailyOrderId).toBe(reposted._id.toString());
 		});
 
 		it("PRICE_CHANGED when the item is available but the price moved", async () => {

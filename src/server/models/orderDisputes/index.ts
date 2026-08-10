@@ -70,6 +70,33 @@ const schema = new mongoose.Schema<any>(
 	{ timestamps: true },
 );
 
+export async function countUnresolvedOrderDisputesDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({ buyerId: new mongoose.Types.ObjectId(buyerId) });
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({ vendorId: new mongoose.Types.ObjectId(vendorId) });
+		}
+		if (ownership.length === 0) return 0;
+		return OrderDispute.countDocuments(
+			{ $or: ownership, status: { $ne: "RESOLVED" } },
+			{ session },
+		);
+	} catch (error) {
+		throw error;
+	}
+}
+
 schema.index({ buyerOrderId: 1, reason: 1 }, { unique: true });
 
 schema.pre("aggregate", function () {

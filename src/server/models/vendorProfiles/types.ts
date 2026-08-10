@@ -62,6 +62,7 @@ export interface IVendorProfile {
 	avgPrepDelayMin?: number;
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
+	closedAt?: Date;
 	// Vendor notification preferences (email/push opt-ins).
 	notifyNewOrders: boolean;
 	notifyPayouts: boolean;

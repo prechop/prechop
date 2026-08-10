@@ -296,6 +296,27 @@ export async function setUserActiveDB({
 	}
 }
 
+/** Deactivate the whole account and invalidate every persisted refresh token. */
+export async function deactivateUserAccountDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { isActive: false, refreshTokens: [] } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Patch the mutable profile fields. Every parameter is independently optional:
  * omitted means "leave untouched".
@@ -573,6 +594,33 @@ export async function addUserToGroupDB({
 		const res = await User.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $addToSet: { groupIds: new mongoose.Types.ObjectId(groupId) } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Pull one IAM group from one user. */
+export async function removeUserFromGroupDB({
+	id,
+	groupId,
+	session,
+}: {
+	id: string;
+	groupId: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (
+			!mongoose.Types.ObjectId.isValid(id) ||
+			!mongoose.Types.ObjectId.isValid(groupId)
+		)
+			return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $pull: { groupIds: new mongoose.Types.ObjectId(groupId) } },
 			{ session, returnDocument: "after" },
 		);
 		return !!res;

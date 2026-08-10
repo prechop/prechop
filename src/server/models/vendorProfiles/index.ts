@@ -101,6 +101,7 @@ const schema = new mongoose.Schema<any>(
 		avgPrepDelayMin: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
+		closedAt: { type: Date },
 		// Notification preferences (default opted-in).
 		notifyNewOrders: { type: Boolean, default: true },
 		notifyPayouts: { type: Boolean, default: true },
@@ -420,6 +421,37 @@ export async function setVendorOpenForOrdersDB({
 		const res = await VendorProfile.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $set: { isOpenForOrders } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Permanently close the business side without deleting historical vendor,
+ * order, payment, or settlement references.
+ */
+export async function closeVendorProfileDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await VendorProfile.findOneAndUpdate(
+			{ _id: new mongoose.Types.ObjectId(id), deleted: false },
+			{
+				$set: {
+					deleted: true,
+					isOpenForOrders: false,
+					status: VendorStatus.SUSPENDED,
+					closedAt: new Date(),
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return !!res;

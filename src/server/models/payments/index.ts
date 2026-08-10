@@ -8,6 +8,11 @@ const collectionName = "payments";
 
 export type PaymentModel = Model<any>;
 
+const ACCOUNT_CLOSURE_BLOCKING_PAYMENT_STATUSES = [
+	PaymentStatus.INITIALIZED,
+	PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+];
+
 const schema = new mongoose.Schema<any>(
 	{
 		buyerOrderId: {
@@ -61,6 +66,36 @@ const schema = new mongoose.Schema<any>(
 	},
 	{ timestamps: true },
 );
+
+export async function countBlockingPaymentsDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({ buyerId: new mongoose.Types.ObjectId(buyerId) });
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({ vendorId: new mongoose.Types.ObjectId(vendorId) });
+		}
+		if (ownership.length === 0) return 0;
+		return Payment.countDocuments(
+			{
+				$or: ownership,
+				status: { $in: ACCOUNT_CLOSURE_BLOCKING_PAYMENT_STATUSES },
+			},
+			{ session },
+		);
+	} catch (error) {
+		throw error;
+	}
+}
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });

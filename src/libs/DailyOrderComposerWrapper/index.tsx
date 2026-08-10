@@ -257,7 +257,7 @@ const ShareBtn = styled.a<{ $bg: string }>`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 13px;
+  padding: 5px;
   border-radius: var(--pc-radius-sm);
   font-weight: 700;
   font-size: 14.5px;

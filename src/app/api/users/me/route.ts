@@ -1,10 +1,20 @@
-import { handleError, ok, withApiHandler, withAuth } from "@/server/lib";
+import {
+	clearAuthCookies,
+	clearAuthCookiesOnResponse,
+	handleError,
+	ok,
+	withApiHandler,
+	withAuth,
+} from "@/server/lib";
 import {
 	deactivateAccount,
 	getMe,
 	updateProfile,
 } from "@/server/services/users";
-import { parseUpdateProfile } from "@/server/validators/users/validate";
+import {
+	parseDeleteAccount,
+	parseUpdateProfile,
+} from "@/server/validators/users/validate";
 
 export const runtime = "nodejs";
 
@@ -39,9 +49,18 @@ export const PATCH = withApiHandler(
 
 export const DELETE = withApiHandler(
 	{ route: "/api/users/me" },
-	withAuth(async ({ auth }) => {
+	withAuth(async ({ req, auth }) => {
 		try {
-			return ok(await deactivateAccount({ userId: auth.userId }));
+			const body = parseDeleteAccount(await req.json());
+			const result = await deactivateAccount({
+				userId: auth.userId,
+				authenticatedAt: auth.token.date,
+				...body,
+			});
+			await clearAuthCookies();
+			const response = ok(result);
+			clearAuthCookiesOnResponse(response);
+			return response;
 		} catch (e) {
 			return handleError(e);
 		}

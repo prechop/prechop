@@ -120,15 +120,14 @@ const Thumb = styled.div`
   place-items: center;
   font-size: 24px;
   background: var(--pc-color-primary-50);
+
+  @media (max-width: 640px) {
+    display: none;
+  }
 `;
 const Divider = styled.div`
   height: 1px;
   background: var(--pc-border);
-`;
-const Chevron = styled.span`
-  color: var(--pc-text-faint);
-  font-size: 20px;
-  line-height: 1;
 `;
 const CompactStatsGrid = styled.div`
   display: grid;
@@ -205,21 +204,48 @@ const OutcomeNotice = styled(LateNotice)`
 	color: var(--pc-text);
 `;
 
-const ItemTitle = styled(Text)`
+const OrderHeader = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+`;
+
+const OrderIdentity = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+`;
+
+const OrderReference = styled.div`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pc-font-display);
   font-size: 15.5px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--pc-text);
   line-height: 1.3;
-  overflow-wrap: anywhere;
 
-	@media (max-width: 740px) {
-		font-size: 12.5px;
+	@media (max-width: 640px) {
+		font-size: 15px;
 	}
 `;
 
-const VendorRow = styled(Row)`
-  flex-wrap: wrap;
-  row-gap: 4px;
+const FullOrderReference = styled.span`
+  @media (max-width: 640px) {
+    display: none;
+  }
+`;
+
+const ShortOrderReference = styled.span`
+  display: none;
+
+  @media (max-width: 640px) {
+    display: inline;
+  }
 `;
 
 const VendorSubtext = styled(Text)`
@@ -229,36 +255,11 @@ const VendorSubtext = styled(Text)`
   line-height: 1.3;
 `;
 
-const DesktopOrderId = styled.span`
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: var(--pc-radius-pill);
-  background: var(--pc-surface-2);
-  border: 1px solid var(--pc-border);
+const OrderMeta = styled(Text)`
   color: var(--pc-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: var(--pc-font-mono, monospace);
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-
-  @media (max-width: 640px) {
-    display: none;
-  }
+  font-size: 12.5px;
+  line-height: 1.35;
 `;
-
-function getItemTitle(order: BuyerOrder): string {
-	if (!order.items || order.items.length === 0) {
-		return order.orderNumber;
-	}
-	const firstItemName = order.items[0].snapshotName;
-	if (order.items.length === 1) {
-		return firstItemName;
-	}
-	const extraCount = order.items.length - 1;
-	return `${firstItemName} + ${extraCount} item${extraCount === 1 ? "" : "s"}`;
-}
 
 function getShortOrderId(orderNumber: string): string {
 	if (!orderNumber) return "";
@@ -295,6 +296,19 @@ const StatusPillWrap = styled(Row)`
   > span {
     white-space: nowrap;
   }
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+  }
+`;
+
+const ViewAction = styled.span`
+  color: var(--pc-color-primary);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 `;
 
 const ModalOverlay = styled.div`
@@ -580,16 +594,8 @@ export default function MyOrdersWrapper() {
 											aria-label={`Order ${o.orderNumber}`}
 										/>
 										<Stack $gap={12}>
-											<Row
-												$justify="space-between"
-												$align="flex-start"
-												$gap={12}
-											>
-												<Row
-													$gap={12}
-													$align="flex-start"
-													style={{ minWidth: 0 }}
-												>
+											<OrderHeader>
+												<OrderIdentity>
 													<Thumb aria-hidden>
 														🍱
 													</Thumb>
@@ -600,31 +606,26 @@ export default function MyOrdersWrapper() {
 															flex: 1,
 														}}
 													>
-														<ItemTitle
-															$weight={800}
+														<OrderReference
+															aria-label={`Order reference ${o.orderNumber}`}
 														>
-															{getItemTitle(o)}
-														</ItemTitle>
-														<VendorRow
-															$gap={6}
-															$align="center"
-														>
-															<VendorSubtext
-																$muted
-																$size={13}
-															>
-																{o.vendorName ||
-																	"Prechop kitchen"}
-															</VendorSubtext>
-															<DesktopOrderId
-																aria-label={`Order ID ${getShortOrderId(o.orderNumber)}`}
-															>
+															<FullOrderReference>
+																#{o.orderNumber}
+															</FullOrderReference>
+															<ShortOrderReference>
 																#
 																{getShortOrderId(
 																	o.orderNumber,
 																)}
-															</DesktopOrderId>
-														</VendorRow>
+															</ShortOrderReference>
+														</OrderReference>
+														<VendorSubtext
+															$muted
+															$size={13}
+														>
+															{o.vendorName ||
+																"Prechop kitchen"}
+														</VendorSubtext>
 														<Text
 															$muted
 															$size={12.5}
@@ -633,8 +634,24 @@ export default function MyOrdersWrapper() {
 																o.createdAt,
 															)}
 														</Text>
+														<OrderMeta>
+															{o.fulfillmentType ===
+															"DELIVERY"
+																? "Delivery"
+																: "Pickup"}{" "}
+															·{" "}
+															{getTotalItemCount(
+																o,
+															)}{" "}
+															item
+															{getTotalItemCount(
+																o,
+															) === 1
+																? ""
+																: "s"}
+														</OrderMeta>
 													</Stack>
-												</Row>
+												</OrderIdentity>
 												<StatusPillWrap $gap={8}>
 													{(unreadByOrder.get(o.id) ??
 														0) > 0 && (
@@ -653,7 +670,7 @@ export default function MyOrdersWrapper() {
 														)}
 													</Badge>
 												</StatusPillWrap>
-											</Row>
+											</OrderHeader>
 											<Divider />
 											{isLateActiveOrder(o) && (
 												<LateNotice>
@@ -698,27 +715,12 @@ export default function MyOrdersWrapper() {
 												$align="center"
 												$gap={10}
 											>
-												<Text $muted $size={13}>
-													{getTotalItemCount(o)} item
-													{getTotalItemCount(o) === 1
-														? ""
-														: "s"}{" "}
-													·{" "}
-													{o.fulfillmentType ===
-													"DELIVERY"
-														? "Delivery"
-														: "Pickup"}
+												<Text $weight={800}>
+													{formatKobo(o.totalKobo)}
 												</Text>
-												<Row $gap={8} $align="center">
-													<Text $weight={800}>
-														{formatKobo(
-															o.totalKobo,
-														)}
-													</Text>
-													<Chevron aria-hidden>
-														›
-													</Chevron>
-												</Row>
+												<ViewAction aria-hidden>
+													View →
+												</ViewAction>
 											</Row>
 											{/* Reordering only makes sense once
 											    an order actually happened. */}

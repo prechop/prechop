@@ -281,6 +281,30 @@ const UploadLabel = styled.label`
   }
 `;
 
+const DangerCard = styled(Card)`
+  border-color: color-mix(in srgb, var(--pc-color-danger) 48%, var(--pc-border));
+`;
+const DangerAction = styled.div`
+  padding: var(--pc-space-4) 0;
+  border-top: 1px solid var(--pc-border);
+
+  &:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+`;
+const DangerTitle = styled(Text)`
+  color: var(--pc-color-danger);
+`;
+const ConfirmationCode = styled.code`
+  color: var(--pc-text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+`;
+
+const CLOSE_VENDOR_CONFIRMATION = "CLOSE MY VENDOR PROFILE";
+const DELETE_ACCOUNT_CONFIRMATION = "DELETE MY PRECHOP ACCOUNT";
+
 function errMsg(e: unknown): string {
   const m = (e as { response?: { data?: { message?: string } } })?.response
     ?.data?.message;
@@ -384,6 +408,12 @@ export default function VendorSettingsWrapper({
   const [startAttempted, setStartAttempted] = useState(false);
   const [storeSlugAttempted, setStoreSlugAttempted] = useState(false);
   const [storeCopied, setStoreCopied] = useState(false);
+  const [dangerAction, setDangerAction] = useState<
+    "vendor" | "account" | null
+  >(null);
+  const [dangerConfirmation, setDangerConfirmation] = useState("");
+  const [dangerIdentifier, setDangerIdentifier] = useState("");
+  const [dangerPin, setDangerPin] = useState("");
 
   useEffect(() => {
     const status = vendorError?.response?.status;
@@ -659,6 +689,51 @@ export default function VendorSettingsWrapper({
       });
       toast("Notification preferences saved", "success");
     });
+  }
+
+  function openDangerAction(action: "vendor" | "account") {
+    setDangerAction(action);
+    setDangerConfirmation("");
+    setDangerIdentifier("");
+    setDangerPin("");
+  }
+
+  async function closeVendorAccount() {
+    setBusy("close-vendor");
+    try {
+      await api.post("/vendors/me/close", {
+        confirmation: dangerConfirmation,
+        ...(dangerPin ? { securityPin: dangerPin } : {}),
+      });
+      toast(
+        "Vendor profile closed. Your buyer account is still active.",
+        "success",
+      );
+      await refresh();
+      window.location.assign("/feed");
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deletePrechopAccount() {
+    setBusy("delete-account");
+    try {
+      await api.delete("/users/me", {
+        data: {
+          accountIdentifier: dangerIdentifier,
+          confirmation: dangerConfirmation,
+          ...(dangerPin ? { securityPin: dangerPin } : {}),
+        },
+      });
+      window.location.assign("/login?account=deleted");
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   const securityPinReady =
@@ -1056,7 +1131,7 @@ export default function VendorSettingsWrapper({
         </Card>
 
         {(vendor.status === "ACTIVE" || !securityPinReady) && (
-          <Card>
+          <Card id="security">
             <Stack $gap={14}>
               <SectionHeader title="Vendor security" icon="!" />
               <VendorSecurityPinForm
@@ -1068,7 +1143,7 @@ export default function VendorSettingsWrapper({
         )}
 
         {/* Bank */}
-        <Card>
+        <Card id="payouts">
           <Stack $gap={14}>
             <SectionHeader title="Bank & payouts" icon="🏦" />
             <BankDetailsForm
@@ -1227,6 +1302,160 @@ export default function VendorSettingsWrapper({
             </Row>
           </Stack>
         </Card>
+        )}
+
+        {mode === "settings" && (
+          <DangerCard id="danger-zone">
+            <Stack $gap={12}>
+              <SectionHeader title="Danger zone" icon="!" />
+              <Text $muted $size={13}>
+                These actions are permanent. Resolve active orders, payments,
+                refunds, disputes, and payout obligations first.
+              </Text>
+
+              <DangerAction>
+                <Stack $gap={10}>
+                  <DangerTitle $weight={800}>Close vendor profile</DangerTitle>
+                  <Text $muted $size={13}>
+                    Permanently removes your kitchen, storefront, listings, and
+                    vendor access. Your buyer account and required transaction
+                    history remain available.
+                  </Text>
+                  {dangerAction === "vendor" ? (
+                    <>
+                      <Text $size={13}>
+                        Type{" "}
+                        <ConfirmationCode>
+                          {CLOSE_VENDOR_CONFIRMATION}
+                        </ConfirmationCode>
+                      </Text>
+                      <Input
+                        label="Confirmation"
+                        value={dangerConfirmation}
+                        onChange={(e) => setDangerConfirmation(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {securityPinReady && (
+                        <Input
+                          label="Vendor security PIN"
+                          type="password"
+                          inputMode="numeric"
+                          value={dangerPin}
+                          onChange={(e) => setDangerPin(e.target.value)}
+                          autoComplete="off"
+                        />
+                      )}
+                      <Row $gap={8} style={{ flexWrap: "wrap" }}>
+                        <Button
+                          $variant="danger"
+                          onClick={closeVendorAccount}
+                          $loading={busy === "close-vendor"}
+                          disabled={
+                            busy === "close-vendor" ||
+                            dangerConfirmation !== CLOSE_VENDOR_CONFIRMATION ||
+                            (securityPinReady && !dangerPin)
+                          }
+                        >
+                          Permanently close vendor profile
+                        </Button>
+                        <Button
+                          $variant="secondary"
+                          onClick={() => setDangerAction(null)}
+                          disabled={busy === "close-vendor"}
+                        >
+                          Cancel
+                        </Button>
+                      </Row>
+                    </>
+                  ) : (
+                    <Button
+                      $variant="secondary"
+                      style={{ alignSelf: "flex-start" }}
+                      onClick={() => openDangerAction("vendor")}
+                    >
+                      Close vendor profile
+                    </Button>
+                  )}
+                </Stack>
+              </DangerAction>
+
+              <DangerAction>
+                <Stack $gap={10}>
+                  <DangerTitle $weight={800}>
+                    Delete Prechop account
+                  </DangerTitle>
+                  <Text $muted $size={13}>
+                    Deactivates your entire account, including buyer and vendor
+                    access. A recent sign-in is required; existing financial and
+                    order records follow Prechop&apos;s retention system.
+                  </Text>
+                  {dangerAction === "account" ? (
+                    <>
+                      <Input
+                        label="Account email or verified phone"
+                        value={dangerIdentifier}
+                        onChange={(e) => setDangerIdentifier(e.target.value)}
+                        placeholder={user?.email || user?.phone || "Account contact"}
+                        autoComplete="username"
+                      />
+                      <Text $size={13}>
+                        Type{" "}
+                        <ConfirmationCode>
+                          {DELETE_ACCOUNT_CONFIRMATION}
+                        </ConfirmationCode>
+                      </Text>
+                      <Input
+                        label="Confirmation"
+                        value={dangerConfirmation}
+                        onChange={(e) => setDangerConfirmation(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {securityPinReady && (
+                        <Input
+                          label="Vendor security PIN"
+                          type="password"
+                          inputMode="numeric"
+                          value={dangerPin}
+                          onChange={(e) => setDangerPin(e.target.value)}
+                          autoComplete="off"
+                        />
+                      )}
+                      <Row $gap={8} style={{ flexWrap: "wrap" }}>
+                        <Button
+                          $variant="danger"
+                          onClick={deletePrechopAccount}
+                          $loading={busy === "delete-account"}
+                          disabled={
+                            busy === "delete-account" ||
+                            !dangerIdentifier.trim() ||
+                            dangerConfirmation !== DELETE_ACCOUNT_CONFIRMATION ||
+                            (securityPinReady && !dangerPin)
+                          }
+                        >
+                          Delete entire Prechop account
+                        </Button>
+                        <Button
+                          $variant="secondary"
+                          onClick={() => setDangerAction(null)}
+                          disabled={busy === "delete-account"}
+                        >
+                          Cancel
+                        </Button>
+                      </Row>
+                    </>
+                  ) : (
+                    <Button
+                      $variant="secondary"
+                      style={{ alignSelf: "flex-start" }}
+                      onClick={() => openDangerAction("account")}
+                    >
+                      Delete Prechop account
+                    </Button>
+                  )}
+                </Stack>
+              </DangerAction>
+            </Stack>
+          </DangerCard>
         )}
       </Stack>
     </FadeIn>

@@ -45,6 +45,20 @@ interface IncomingOrder {
   items: Array<{ snapshotName: string; quantity: number }>;
 }
 
+function shortIncomingOrderRef(orderNumber: string): string {
+  const parts = orderNumber.split("-").filter(Boolean);
+  const suffix = parts[parts.length - 1] ?? orderNumber;
+  return suffix.replace(/^#/, "").toUpperCase();
+}
+
+function mobileIncomingStatusLabel(status: OrderStatus): string {
+  if (status === "PICKUP_PROBLEM_REPORTED") return "Pickup problem";
+  if (status === "DELIVERY_FAILED") return "Delivery problem";
+  if (status === "AWAITING_VENDOR_ACCEPTANCE") return "Awaiting vendor";
+  if (status === "AWAITING_EXTERNAL_PAYMENT") return "Awaiting payment";
+  return statusLabel(status);
+}
+
 interface VendorAnalyticsLifetime {
   totalOrders: number;
   completedOrders: number;
@@ -552,6 +566,13 @@ const IncomingRow = styled.div`
   &:last-child {
     border-bottom: none;
   }
+
+  @media (max-width: 640px) {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 0;
+  }
 `;
 const IncomingLeft = styled.div`
   display: flex;
@@ -560,23 +581,73 @@ const IncomingLeft = styled.div`
   min-width: 0;
   flex: 1;
 `;
+const IncomingTopRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+
+  > span:last-child {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    justify-content: space-between;
+  }
+`;
+const IncomingOrderRef = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pc-text);
+`;
 const IncomingRight = styled.div`
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
   flex-shrink: 0;
+
+  @media (max-width: 640px) {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
 `;
 const IncomingAmount = styled.span`
   font-family: var(--pc-font-display);
   font-size: 14px;
   font-weight: 800;
   color: var(--pc-text);
+  white-space: nowrap;
 `;
 const IncomingMeta = styled.span`
   font-size: 11.5px;
   color: var(--pc-text-muted);
   font-weight: 600;
+  white-space: nowrap;
+
+  @media (max-width: 640px) {
+    display: block;
+  }
+`;
+const IncomingDesktopOnly = styled.span`
+  @media (max-width: 640px) {
+    display: none;
+  }
+`;
+const IncomingMobileOnly = styled.span`
+  display: none;
+
+  @media (max-width: 640px) {
+    display: inline;
+  }
 `;
 const OrderRowWrap = styled(Link)`
   display: flex;
@@ -1312,14 +1383,22 @@ export default function VendorDashboardWrapper() {
                 {(incoming ?? []).slice(0, 6).map((o) => (
                   <IncomingRow key={o.id}>
                     <IncomingLeft>
-                      <Row $gap={8} $align="center">
-                        <Text $weight={700} $size={14}>
-                          #{o.orderNumber}
-                        </Text>
+                      <IncomingTopRow>
+                        <IncomingOrderRef>
+                          <IncomingDesktopOnly>#{o.orderNumber}</IncomingDesktopOnly>
+                          <IncomingMobileOnly>
+                            #{shortIncomingOrderRef(o.orderNumber)}
+                          </IncomingMobileOnly>
+                        </IncomingOrderRef>
                         <Badge $tone={orderTone(o.status)}>
-                          {statusLabel(o.status)}
+                          <IncomingDesktopOnly>
+                            {statusLabel(o.status)}
+                          </IncomingDesktopOnly>
+                          <IncomingMobileOnly>
+                            {mobileIncomingStatusLabel(o.status)}
+                          </IncomingMobileOnly>
                         </Badge>
-                      </Row>
+                      </IncomingTopRow>
                       <IncomingMeta>
                         {o.fulfillmentType === "DELIVERY"
                           ? "🛵 Delivery"

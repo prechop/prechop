@@ -2,6 +2,7 @@ export * from "./bankDetails";
 export * from "./banks";
 export * from "./businessIdentity";
 export * from "./categories";
+export * from "./closeProfile";
 export * from "./deliveryDefaults";
 export * from "./forgotPin";
 export * from "./getMyVendor";

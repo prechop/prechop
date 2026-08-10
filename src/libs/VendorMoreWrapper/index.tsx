@@ -343,7 +343,7 @@ export default function VendorMoreWrapper() {
 							<MenuChevron aria-hidden>›</MenuChevron>
 						</MenuRight>
 					</MenuRow>
-					<MenuRow href="/vendor/settings">
+					<MenuRow href="/vendor/settings#payouts">
 						<MenuIcon aria-hidden>🏦</MenuIcon>
 						<MenuText>
 							<MenuTitle>Payout settings</MenuTitle>
@@ -363,7 +363,7 @@ export default function VendorMoreWrapper() {
 							<MenuChevron aria-hidden>›</MenuChevron>
 						</MenuRight>
 					</MenuRow>
-					<MenuRow href="/vendor/settings">
+					<MenuRow href="/vendor/settings#security">
 						<MenuIcon aria-hidden>⚙️</MenuIcon>
 						<MenuText>
 							<MenuTitle>Settings</MenuTitle>

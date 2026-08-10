@@ -81,7 +81,12 @@ describe("users services", () => {
 
 	it("deactivateAccount flips isActive", async () => {
 		const user = await makeUser();
-		const res = await deactivateAccount({ userId: user!._id.toString() });
+		const res = await deactivateAccount({
+			userId: user!._id.toString(),
+			accountIdentifier: user!.email,
+			confirmation: "DELETE MY PRECHOP ACCOUNT",
+			authenticatedAt: new Date(),
+		});
 		expect(res.success).toBe(true);
 		const read = await getUserByIdDB({ id: user!._id.toString() });
 		expect(read!.isActive).toBe(false);

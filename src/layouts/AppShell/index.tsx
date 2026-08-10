@@ -143,8 +143,10 @@ const Right = styled.div`
   gap: 10px;
   flex-shrink: 1;
   min-width: 0;
+  overflow-x: clip;
   @media (max-width: 759px) {
-    gap: 6px;
+    gap: 2px;
+
   }
 `;
 const ModeSwitch = styled.div`
@@ -169,6 +171,7 @@ const ModeBtn = styled.button<{ $active: boolean }>`
   font-size: 13px;
   font-weight: 700;
   padding: 5px 10px;
+  background:yellow;
   border-radius: var(--pc-radius-pill);
   color: ${(p) =>
     p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
@@ -311,6 +314,7 @@ const GuestAction = styled(Link)`
   @media (max-width: 420px) {
     padding: 7px 10px;
     font-size: 12px;
+    
   }
 `;
 const Main = styled.main<{ $noSidebar?: boolean }>`

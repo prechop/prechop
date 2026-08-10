@@ -96,6 +96,61 @@ function indexPreviousOptions(
 	return index;
 }
 
+function indexPreviousMenuItems(
+	previousListing: IDailyOrder | null,
+): Map<string, string> {
+	const index = new Map<string, string>();
+	if (!previousListing) return index;
+	for (const item of previousListing.items ?? []) {
+		const itemId = idOf(item);
+		if (itemId && item.menuItemId) index.set(itemId, String(item.menuItemId));
+	}
+	return index;
+}
+
+function menuItemIdForOrderItem(
+	orderItem: IBuyerOrderItem,
+	previousMenuItemIndex: Map<string, string>,
+): string | null {
+	if (orderItem.menuItemId) return String(orderItem.menuItemId);
+	return previousMenuItemIndex.get(String(orderItem.dailyOrderItemId)) ?? null;
+}
+
+function itemMapByMenuItemId(listing: IDailyOrder): Map<string, IDailyOrderItem> {
+	const byMenuItemId = new Map<string, IDailyOrderItem>();
+	for (const item of listing.items ?? []) {
+		if (item.menuItemId) byMenuItemId.set(String(item.menuItemId), item);
+	}
+	return byMenuItemId;
+}
+
+function chooseReorderTarget({
+	orderable,
+	menuItemIds,
+}: {
+	orderable: IDailyOrder[];
+	menuItemIds: Array<string | null>;
+}): { listing: IDailyOrder; byMenuItemId: Map<string, IDailyOrderItem> } {
+	const scored = orderable.map((listing, index) => {
+		const byMenuItemId = itemMapByMenuItemId(listing);
+		const matches = menuItemIds.filter(
+			(id) => id && byMenuItemId.has(id),
+		).length;
+		return { listing, byMenuItemId, matches, index };
+	});
+	scored.sort((a, b) => {
+		if (b.matches !== a.matches) return b.matches - a.matches;
+		return (
+			new Date(a.listing.cutoffTime).getTime() -
+			new Date(b.listing.cutoffTime).getTime()
+		);
+	});
+	return {
+		listing: scored[0].listing,
+		byMenuItemId: scored[0].byMenuItemId,
+	};
+}
+
 /**
  * Re-resolve one previously-selected option against today's listing item.
  * Returns the new option id, or null when it no longer exists (renamed group,
@@ -329,30 +384,29 @@ export async function getReorderPreview({
 		return { outcome: "NO_LISTING", vendor, items: [] };
 	}
 
-	const target = orderable[0];
-
 	// The listing the order was originally placed against — the only place the
 	// old option ids can be resolved back to (group, option) names. May be gone.
 	const previousListing = await getDailyOrderByIdDB({
 		id: order.dailyOrderId.toString(),
 	}).catch(() => null);
 	const optionIndex = indexPreviousOptions(previousListing);
+	const previousMenuItemIndex = indexPreviousMenuItems(previousListing);
+	const menuItemIds = (order.items ?? []).map((orderItem) =>
+		menuItemIdForOrderItem(orderItem, previousMenuItemIndex),
+	);
+	const { listing: target, byMenuItemId: todayByMenuItemId } =
+		chooseReorderTarget({ orderable, menuItemIds });
 
-	const todayByMenuItemId = new Map<string, IDailyOrderItem>();
-	for (const item of target.items ?? []) {
-		if (item.menuItemId)
-			todayByMenuItemId.set(String(item.menuItemId), item);
-	}
-
-	const items = (order.items ?? []).map((orderItem) =>
-		previewItem({
+	const items = (order.items ?? []).map((orderItem, index) => {
+		const menuItemId = menuItemIds[index];
+		return previewItem({
 			orderItem,
-			todayItem: orderItem.menuItemId
-				? todayByMenuItemId.get(String(orderItem.menuItemId))
+			todayItem: menuItemId
+				? todayByMenuItemId.get(menuItemId)
 				: undefined,
 			optionIndex,
-		}),
-	);
+		});
+	});
 
 	const anyUnavailable = items.some((i) => i.status !== "AVAILABLE");
 	const anyPriceChanged = items.some(

@@ -8,6 +8,12 @@ const collectionName = "refunds";
 
 export type RefundModel = Model<any>;
 
+const ACCOUNT_CLOSURE_BLOCKING_REFUND_STATUSES = [
+	"REFUND_PENDING",
+	"REFUND_PROCESSING",
+	"REFUND_FAILED",
+];
+
 const schema = new mongoose.Schema<any>(
 	{
 		paymentId: {
@@ -46,6 +52,57 @@ const schema = new mongoose.Schema<any>(
 	},
 	{ timestamps: true },
 );
+
+export async function countBlockingRefundsDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({
+				"_payment.buyerId": new mongoose.Types.ObjectId(buyerId),
+			});
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({
+				"_payment.vendorId": new mongoose.Types.ObjectId(vendorId),
+			});
+		}
+		if (ownership.length === 0) return 0;
+		const rows = await Refund.aggregate<{ count: number }>(
+			[
+				{
+					$match: {
+						status: {
+							$in: ACCOUNT_CLOSURE_BLOCKING_REFUND_STATUSES,
+						},
+					},
+				},
+				{
+					$lookup: {
+						from: "payments",
+						localField: "paymentId",
+						foreignField: "_id",
+						as: "_payment",
+					},
+				},
+				{ $unwind: "$_payment" },
+				{ $match: { $or: ownership } },
+				{ $count: "count" },
+			],
+			{ session },
+		);
+		return rows[0]?.count ?? 0;
+	} catch (error) {
+		throw error;
+	}
+}
 
 // Reconciliation: look a refund up by the id Paystack sends back on
 // refund.processed / refund.failed webhooks. Unique so the same Paystack refund

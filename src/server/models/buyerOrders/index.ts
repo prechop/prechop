@@ -32,6 +32,17 @@ export const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.BUYER_UNREACHABLE_REPORTED,
 ];
 
+/**
+ * Only these outcomes leave no order, payment, refund, or fulfilment work for
+ * either party. Account/vendor closure is blocked for every other state.
+ */
+export const ACCOUNT_CLOSURE_TERMINAL_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.COMPLETED,
+	OrderStatus.COMPLETED_BUYER_NO_SHOW,
+	OrderStatus.CANCELLED,
+	OrderStatus.REFUNDED,
+];
+
 const selectedOptionSchema = new mongoose.Schema(
 	{
 		dailyOrderOptionId: { type: mongoose.Schema.Types.ObjectId },
@@ -422,6 +433,36 @@ export async function deleteBuyerOrderHardDB({
 		);
 	} catch {
 		// best effort
+	}
+}
+
+export async function countBlockingBuyerOrdersDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({ buyerId: new mongoose.Types.ObjectId(buyerId) });
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({ vendorId: new mongoose.Types.ObjectId(vendorId) });
+		}
+		if (ownership.length === 0) return 0;
+		return BuyerOrder.countDocuments(
+			{
+				$or: ownership,
+				status: { $nin: ACCOUNT_CLOSURE_TERMINAL_ORDER_STATUSES },
+			},
+			{ session },
+		);
+	} catch (error) {
+		throw error;
 	}
 }
 
