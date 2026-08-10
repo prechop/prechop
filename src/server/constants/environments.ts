@@ -83,6 +83,8 @@ export const SENDCHAMP_TIMEOUT_MS = Number(
 );
 export const SMS_CONSOLE_MODE = !IS_PROD;
 export const SENDCHAMP_SENDER_ID = process.env.SENDCHAMP_SENDER_ID ?? "PreChop";
+export const SENDCHAMP_WHATSAPP_SENDER =
+	process.env.SENDCHAMP_WHATSAPP_SENDER ?? SENDCHAMP_SENDER_ID;
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 export const RESEND_FROM_EMAIL =
 	process.env.RESEND_FROM_EMAIL ?? "noreply@prechop.ng";

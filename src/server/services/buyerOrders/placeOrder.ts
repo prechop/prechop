@@ -447,6 +447,10 @@ export async function placeOrder({
 			deliveryFullAddress,
 			deliveryPhone: deliveryPhone || undefined,
 			customerMessage: customerMessage || undefined,
+			deliveryEstimateMinutes:
+				input.fulfillmentType === FulfillmentType.DELIVERY
+					? dailyOrder.deliveryEstimateMinutes
+					: undefined,
 			subtotalKobo,
 			deliveryFeeKobo,
 			platformFeeKobo,

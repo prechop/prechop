@@ -9,6 +9,26 @@ export type LifecycleStep = {
   icon: string;
 };
 
+export const PICKUP_NO_SHOW_WAIT_MINUTES = 120;
+const PICKUP_NO_SHOW_WAIT_MS = PICKUP_NO_SHOW_WAIT_MINUTES * 60 * 1000;
+
+export type PickupNoShowAvailability = {
+  available: boolean;
+  availableAt: Date | null;
+};
+
+export type PickupNoShowResponseWindow = {
+  deadline: Date | null;
+  expired: boolean;
+  remainingMs: number | null;
+  countdown: string;
+};
+
+export const VENDOR_PIPELINE_COMPLETED_STATUSES: OrderStatus[] = [
+  "COMPLETED",
+  "COMPLETED_BUYER_NO_SHOW",
+];
+
 export const PICKUP_FLOW: OrderStatus[] = [
   "AWAITING_VENDOR_ACCEPTANCE",
   "ACCEPTED",
@@ -97,6 +117,70 @@ export function isBuyerHandoverEligible(
   return fulfillmentType === "DELIVERY"
     ? canonical === "IN_TRANSIT"
     : canonical === "READY_FOR_PICKUP";
+}
+
+export function pickupNoShowAvailability(
+  status: OrderStatus,
+  fulfillmentType: FulfillmentKind,
+  readyAt?: string | Date | null,
+  now = Date.now(),
+): PickupNoShowAvailability | null {
+  if (
+    fulfillmentType !== "PICKUP" ||
+    canonicalOrderStatus(status, fulfillmentType) !== "READY_FOR_PICKUP"
+  ) {
+    return null;
+  }
+
+  const readyTime = readyAt == null ? Number.NaN : new Date(readyAt).getTime();
+  if (!Number.isFinite(readyTime)) {
+    return { available: false, availableAt: null };
+  }
+
+  const availableAt = new Date(readyTime + PICKUP_NO_SHOW_WAIT_MS);
+  return { available: now >= availableAt.getTime(), availableAt };
+}
+
+export function pickupNoShowResponseWindow(
+  responseDeadline?: string | Date | null,
+  now = Date.now(),
+): PickupNoShowResponseWindow {
+  const deadlineTime =
+    responseDeadline == null
+      ? Number.NaN
+      : new Date(responseDeadline).getTime();
+  if (!Number.isFinite(deadlineTime)) {
+    return {
+      deadline: null,
+      expired: false,
+      remainingMs: null,
+      countdown: "Response deadline unavailable",
+    };
+  }
+
+  const deadline = new Date(deadlineTime);
+  const remainingMs = Math.max(0, deadlineTime - now);
+  if (remainingMs === 0) {
+    return {
+      deadline,
+      expired: true,
+      remainingMs,
+      countdown: "Response window closed",
+    };
+  }
+
+  const minutes = Math.floor(remainingMs / 60_000);
+  const seconds = Math.floor((remainingMs % 60_000) / 1000);
+  return {
+    deadline,
+    expired: false,
+    remainingMs,
+    countdown: `${minutes}:${String(seconds).padStart(2, "0")} remaining`,
+  };
+}
+
+export function isVendorPipelineCompletedStatus(status: OrderStatus) {
+  return VENDOR_PIPELINE_COMPLETED_STATUSES.includes(status);
 }
 
 export function handoverUnavailableMessage(fulfillmentType: FulfillmentKind) {

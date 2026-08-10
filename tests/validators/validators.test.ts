@@ -5,6 +5,8 @@ import {
 	emailSignInVerifyQuerySchema,
 	googleCallbackQuerySchema,
 	googleStartQuerySchema,
+	whatsappSignInRequestBodySchema,
+	whatsappSignInVerifyBodySchema,
 } from "@/server/validators/auth/validate";
 import {
 	cancelOrderBodySchema,
@@ -84,6 +86,33 @@ describe("auth passwordless schemas", () => {
 			googleCallbackQuerySchema.safeParse({ error: "access_denied" })
 				.success,
 		).toBe(true);
+	});
+
+	it("validates WhatsApp request and six-digit verification payloads", () => {
+		expect(
+			whatsappSignInRequestBodySchema.safeParse({
+				phone: " 08012345678 ",
+				next: "/vendor/onboarding",
+			}).success,
+		).toBe(true);
+		expect(
+			whatsappSignInRequestBodySchema.safeParse({
+				phone: "08012345678",
+				next: "https://evil.test",
+			}).success,
+		).toBe(false);
+		expect(
+			whatsappSignInVerifyBodySchema.safeParse({
+				challengeId: "c".repeat(32),
+				code: "012345",
+			}).success,
+		).toBe(true);
+		expect(
+			whatsappSignInVerifyBodySchema.safeParse({
+				challengeId: "c".repeat(32),
+				code: "12345",
+			}).success,
+		).toBe(false);
 	});
 });
 

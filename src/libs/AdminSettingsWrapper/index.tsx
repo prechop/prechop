@@ -36,6 +36,9 @@ interface SiteConfigs {
 	abandonedOrderMinutes: number;
 	reviewWindowHours: number;
 	cutoffWarningMinutes: number;
+	deliveryInTransitGraceMinutes: number;
+	deliveryInTransitFallbackEstimateMinutes: number;
+	deliveryOverdueAutoEscalateEnabled: boolean;
 	whatsappTvEnabled: boolean;
 	marketplaceEnabled: boolean;
 	reviewsEnabled: boolean;
@@ -264,6 +267,14 @@ export default function AdminSettingsWrapper() {
 				abandonedOrderMinutes: Math.round(form.abandonedOrderMinutes),
 				reviewWindowHours: Math.round(form.reviewWindowHours),
 				cutoffWarningMinutes: Math.round(form.cutoffWarningMinutes),
+				deliveryInTransitGraceMinutes: Math.round(
+					form.deliveryInTransitGraceMinutes,
+				),
+				deliveryInTransitFallbackEstimateMinutes: Math.round(
+					form.deliveryInTransitFallbackEstimateMinutes,
+				),
+				deliveryOverdueAutoEscalateEnabled:
+					form.deliveryOverdueAutoEscalateEnabled,
 				whatsappTvEnabled: form.whatsappTvEnabled,
 				marketplaceEnabled: form.marketplaceEnabled,
 				reviewsEnabled: form.reviewsEnabled,
@@ -448,6 +459,30 @@ export default function AdminSettingsWrapper() {
 								}
 							/>
 							<Input
+								label="Delivery grace (minutes)"
+								type="number"
+								value={form.deliveryInTransitGraceMinutes.toString()}
+								hint="Extra time after the vendor's delivery estimate before an in-transit order is escalated."
+								onChange={(e) =>
+									set(
+										"deliveryInTransitGraceMinutes",
+										Number(e.target.value) || 0,
+									)
+								}
+							/>
+							<Input
+								label="Delivery fallback estimate (minutes)"
+								type="number"
+								value={form.deliveryInTransitFallbackEstimateMinutes.toString()}
+								hint="Used only when an older delivery order has no saved estimate."
+								onChange={(e) =>
+									set(
+										"deliveryInTransitFallbackEstimateMinutes",
+										Number(e.target.value) || 1,
+									)
+								}
+							/>
+							<Input
 								label="Profile completeness required (%)"
 								type="number"
 								value={form.profileCompletenessRequired.toString()}
@@ -464,6 +499,30 @@ export default function AdminSettingsWrapper() {
 					<Section>
 						<SectionHeader title="Feature flags" icon="🚩" />
 						<div>
+							<Toggle>
+								<ToggleText>
+									Delivery overdue escalation
+									<ToggleHint>
+										Send overdue in-transit delivery orders
+										to admin review automatically.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={
+											form.deliveryOverdueAutoEscalateEnabled
+										}
+										onChange={(e) =>
+											set(
+												"deliveryOverdueAutoEscalateEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
 							<Toggle>
 								<ToggleText>
 									Marketplace enabled

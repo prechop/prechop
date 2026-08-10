@@ -28,6 +28,7 @@ export const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.READY_FOR_DELIVERY,
 	OrderStatus.IN_TRANSIT,
 	OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+	OrderStatus.PICKUP_PROBLEM_REPORTED,
 	OrderStatus.BUYER_UNREACHABLE_REPORTED,
 ];
 
@@ -129,6 +130,7 @@ const schema = new mongoose.Schema<any>(
 		deliveryFullAddress: { type: String },
 		deliveryPhone: { type: String },
 		customerMessage: { type: String, maxlength: 150 },
+		deliveryEstimateMinutes: { type: Number },
 		subtotalKobo: { type: Number, required: true },
 		deliveryFeeKobo: { type: Number, default: 0 },
 		platformFeeKobo: { type: Number, required: true },
@@ -184,6 +186,7 @@ const schema = new mongoose.Schema<any>(
 		deliveryContactAttempts: { type: Number },
 		deliveryFailureNote: { type: String },
 		deliveryEvidencePhotoUrl: { type: String },
+		deliveryOverdueEscalatedAt: { type: Date, index: true },
 		adminReviewRequiredAt: { type: Date, index: true },
 		adminReviewReason: { type: String },
 		pickedUpAt: { type: Date },
@@ -367,6 +370,7 @@ export async function createBuyerOrderDB({
 			deliveryFullAddress: payload.deliveryFullAddress,
 			deliveryPhone: payload.deliveryPhone,
 			customerMessage: payload.customerMessage,
+			deliveryEstimateMinutes: payload.deliveryEstimateMinutes,
 			subtotalKobo: payload.subtotalKobo,
 			deliveryFeeKobo: payload.deliveryFeeKobo,
 			platformFeeKobo: payload.platformFeeKobo,
@@ -1286,6 +1290,76 @@ export async function markDeliveryFailedDB({
 						type: "VENDOR_MARKED_DELIVERY_FAILED",
 						actor: "vendor",
 						actorId: vendorUserId,
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function listInTransitDeliveryOrdersForOverdueDB({
+	limit = 200,
+}: {
+	limit?: number;
+} = {}): Promise<IBuyerOrder[]> {
+	try {
+		return await BuyerOrder.find({
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryStartedAt: { $exists: true },
+			deliveryOverdueEscalatedAt: { $exists: false },
+		})
+			.sort({ deliveryStartedAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+	} catch {
+		return [];
+	}
+}
+
+export async function markDeliveryOverdueEscalatedDB({
+	id,
+	now,
+	reason,
+	deadline,
+	estimateMinutes,
+	graceMinutes,
+}: {
+	id: string;
+	now: Date;
+	reason: string;
+	deadline: Date;
+	estimateMinutes: number;
+	graceMinutes: number;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.IN_TRANSIT,
+				fulfillmentType: FulfillmentType.DELIVERY,
+				deliveryOverdueEscalatedAt: { $exists: false },
+			},
+			{
+				$set: {
+					deliveryOverdueEscalatedAt: now,
+					adminReviewRequiredAt: now,
+					adminReviewReason: reason,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: now,
+						type: "DELIVERY_OVERDUE_ESCALATED",
+						actor: "system",
+						data: {
+							deadline: deadline.toISOString(),
+							estimateMinutes,
+							graceMinutes,
+						},
 					}),
 				},
 			},

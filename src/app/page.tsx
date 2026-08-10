@@ -385,6 +385,7 @@ function HeaderAuth() {
 }
 
 export default function LandingPage() {
+  const { isAuthenticated, isLoading } = useAuth();
   const [flowAudience, setFlowAudience] = useState<"BUYERS" | "VENDORS">(
     "BUYERS",
   );
@@ -423,7 +424,11 @@ export default function LandingPage() {
             </Button>
             <Button
               as={Link}
-              href="/sell"
+              href={
+                isLoading || isAuthenticated
+                  ? "/sell"
+                  : "/login?next=/vendor/onboarding"
+              }
               $size="lg"
               $variant="secondary"
               $pill>

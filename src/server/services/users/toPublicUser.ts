@@ -18,7 +18,7 @@ export function toPublicUser(
 		firstName: user.firstName,
 		lastName: user.lastName,
 		profileImageUrl: user.profileImageUrl,
-		email: user.email,
+		email: user.email.endsWith("@auth.prechop.local") ? "" : user.email,
 		...(user.phone ? { phone: tryDecrypt(user.phone) } : {}),
 		isActive: user.isActive,
 		createdAt: user.createdAt,

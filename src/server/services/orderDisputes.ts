@@ -32,6 +32,13 @@ function evidenceFromOrder({
 	messages?: unknown[];
 }) {
 	const orderSnapshot = asSnapshot(order);
+	const uniqueNotes = (notes: Array<string | undefined>) => [
+		...new Set(
+			notes
+				.map((note) => note?.trim())
+				.filter((note): note is string => Boolean(note)),
+		),
+	];
 	return {
 		orderSnapshot,
 		menuSnapshot: {
@@ -75,14 +82,14 @@ function evidenceFromOrder({
 				: []),
 			...(photos ?? []),
 		],
-		vendorNotes: [
-			...(order.deliveryFailureNote ? [order.deliveryFailureNote] : []),
+		vendorNotes: uniqueNotes([
+			order.deliveryFailureNote,
 			...(vendorNotes ?? []),
-		],
-		buyerNotes: [
-			...(order.pickupProblemNote ? [order.pickupProblemNote] : []),
+		]),
+		buyerNotes: uniqueNotes([
+			order.pickupProblemNote,
 			...(buyerNotes ?? []),
-		],
+		]),
 	};
 }
 

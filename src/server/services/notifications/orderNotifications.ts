@@ -499,3 +499,40 @@ export async function notifyBuyerUnreachableUrgent({
 		},
 	});
 }
+
+export async function notifyDeliveryOverdueEscalated({
+	buyerId,
+	orderNumber,
+	deadline,
+	data,
+}: {
+	buyerId: string;
+	orderNumber: string;
+	deadline: Date;
+	data?: Record<string, unknown>;
+}): Promise<void> {
+	const result = await createUserNotification({
+		userId: buyerId,
+		title: "Support is reviewing your delivery",
+		body: `Order ${orderNumber} is past its delivery estimate. Support has been alerted to review it.`,
+		type: "ORDER_DELIVERY_OVERDUE_ESCALATED",
+		dedupeKey: `order:${orderNumber}:buyer:delivery-overdue`,
+		data: {
+			orderNumber,
+			deadline: deadline.toISOString(),
+			...(data ?? {}),
+		},
+	});
+	if (!result.created) return;
+	void sendBuyerImportantOrderEmail({
+		notification: result.notification,
+		buyerId,
+		orderNumber,
+		subject: `Support is reviewing delivery for order ${orderNumber}`,
+		title: "Support is reviewing your delivery",
+		body: `Order ${orderNumber} is past its delivery estimate. Support has been alerted to review it.`,
+		orderId: data?.orderId as string | undefined,
+	}).catch((error) =>
+		console.error(`[notifications] delivery-overdue email failed:`, error),
+	);
+}

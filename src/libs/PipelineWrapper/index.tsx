@@ -47,7 +47,11 @@ import {
 import {
 	canonicalOrderStatus,
 	isBuyerHandoverEligible,
+	isVendorPipelineCompletedStatus,
 	nextVendorOrderAction,
+	PICKUP_NO_SHOW_WAIT_MINUTES,
+	pickupNoShowAvailability,
+	pickupNoShowResponseWindow,
 } from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
 import {
@@ -77,6 +81,9 @@ interface PipelineOrder {
 	customerMessage?: string;
 	acceptanceDeadline?: string | null;
 	expectedReadyAt?: string | null;
+	readyAt?: string | null;
+	pickupNoShowReportedAt?: string | null;
+	pickupBuyerResponseDeadline?: string | null;
 	lateMarkedAt?: string | null;
 	revisedReadyAt?: string | null;
 	revisedPrepMin?: number | null;
@@ -124,6 +131,8 @@ type LaneKey =
 	| "ACCEPTED"
 	| "COOKING"
 	| "READY_FOR_PICKUP"
+	| "AWAITING_BUYER_NO_SHOW_RESPONSE"
+	| "PICKUP_PROBLEM_REPORTED"
 	| "READY_FOR_DELIVERY"
 	| "IN_TRANSIT";
 
@@ -164,6 +173,22 @@ const COLUMNS: BoardColumn[] = [
 		label: "Ready for pickup",
 		empty: "No pickup orders ready",
 		icon: FiPackage,
+		fulfillmentType: "PICKUP",
+	},
+	{
+		key: "AWAITING_BUYER_NO_SHOW_RESPONSE",
+		status: "AWAITING_BUYER_NO_SHOW_RESPONSE",
+		label: "Awaiting buyer response",
+		empty: "No pickup reports awaiting a buyer response",
+		icon: FiClock,
+		fulfillmentType: "PICKUP",
+	},
+	{
+		key: "PICKUP_PROBLEM_REPORTED",
+		status: "PICKUP_PROBLEM_REPORTED",
+		label: "Pickup problem review",
+		empty: "No pickup problems under review",
+		icon: FiXCircle,
 		fulfillmentType: "PICKUP",
 	},
 	{
@@ -327,6 +352,20 @@ const LateNotice = styled.div`
   color: var(--pc-color-danger-ink);
 `;
 
+const ExceptionNotice = styled.div<{ $danger?: boolean }>`
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid
+    ${(p) =>
+		p.$danger ? "rgba(229, 72, 77, 0.34)" : "rgba(214, 143, 0, 0.42)"};
+  border-radius: var(--pc-radius-sm);
+  background: ${(p) =>
+		p.$danger ? "var(--pc-color-danger-50)" : "var(--pc-color-gold-50)"};
+  color: ${(p) =>
+		p.$danger ? "var(--pc-color-danger-ink)" : "var(--pc-color-gold-ink)"};
+`;
+
 const ModalOverlay = styled.div`
   position: fixed;
   inset: 0;
@@ -465,6 +504,7 @@ function statusTone(
 		case "REFUND_PENDING":
 		case "REFUND_PROCESSING":
 		case "AWAITING_BUYER_NO_SHOW_RESPONSE":
+		case "PICKUP_PROBLEM_REPORTED":
 			return "warning";
 		case "ACCEPTED":
 		case "COOKING":
@@ -481,9 +521,10 @@ function statusTone(
 		case "VENDOR_REJECTED":
 		case "EXPIRED_VENDOR_NO_RESPONSE":
 		case "REFUND_FAILED":
-		case "COMPLETED_BUYER_NO_SHOW":
 		case "DELIVERY_FAILED":
 			return "danger";
+		case "COMPLETED_BUYER_NO_SHOW":
+			return "success";
 		default:
 			return "primary";
 	}
@@ -715,7 +756,10 @@ export default function PipelineWrapper() {
 		}
 	}
 
-	function openReasonAction(kind: ReasonAction["kind"], order: PipelineOrder) {
+	function openReasonAction(
+		kind: ReasonAction["kind"],
+		order: PipelineOrder,
+	) {
 		setReasonError(null);
 		setReasonAction({ kind, order });
 	}
@@ -772,6 +816,26 @@ export default function PipelineWrapper() {
 			toast(errMsg(e), "error");
 		} finally {
 			setContactBusyId(null);
+		}
+	}
+
+	async function reportPickupNoShow(order: PipelineOrder) {
+		setBusyId(order.id);
+		try {
+			await api.post(`/vendor/orders/${order.id}/pickup-no-show`, {});
+			toast(
+				"Buyer no-show reported. The buyer has 15 minutes to respond.",
+				"success",
+			);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
 		}
 	}
 
@@ -933,8 +997,8 @@ export default function PipelineWrapper() {
 		);
 	}
 
-	const completedOrders = list.filter(
-		(order) => order.status === "COMPLETED",
+	const completedOrders = list.filter((order) =>
+		isVendorPipelineCompletedStatus(order.status),
 	);
 	const filteredCompletedOrders = completedOrders
 		.filter((order) =>
@@ -1479,6 +1543,18 @@ export default function PipelineWrapper() {
 														order.fulfillmentType,
 														order.handoverCredentialUsedAt,
 													);
+												const noShowAvailability =
+													pickupNoShowAvailability(
+														order.status,
+														order.fulfillmentType,
+														order.readyAt,
+														now,
+													);
+												const noShowResponseWindow =
+													pickupNoShowResponseWindow(
+														order.pickupBuyerResponseDeadline,
+														now,
+													);
 												const countdown =
 													acceptanceCountdown(
 														order.acceptanceDeadline,
@@ -1613,6 +1689,65 @@ export default function PipelineWrapper() {
 																				ready.
 																			</Text>
 																		</LateNotice>
+																	)}
+																	{order.status ===
+																		"AWAITING_BUYER_NO_SHOW_RESPONSE" && (
+																		<ExceptionNotice>
+																			<Text
+																				$size={
+																					12
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				Buyer
+																				response
+																				pending
+																			</Text>
+																			<Text
+																				$size={
+																					12
+																				}
+																			>
+																				{
+																					noShowResponseWindow.countdown
+																				}
+																			</Text>
+																		</ExceptionNotice>
+																	)}
+																	{order.status ===
+																		"PICKUP_PROBLEM_REPORTED" && (
+																		<ExceptionNotice
+																			$danger
+																		>
+																			<Text
+																				$size={
+																					12
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				Buyer
+																				reported
+																				a
+																				pickup
+																				problem
+																			</Text>
+																			<Text
+																				$size={
+																					12
+																				}
+																			>
+																				Prechop
+																				support
+																				will
+																				review
+																				this
+																				order.
+																			</Text>
+																		</ExceptionNotice>
 																	)}
 																	{(unreadByOrder.get(
 																		order.id,
@@ -2035,6 +2170,34 @@ export default function PipelineWrapper() {
 																			buyer
 																			PIN
 																		</Button>
+																		{noShowAvailability && (
+																			<Button
+																				$size="sm"
+																				$variant="danger"
+																				$loading={
+																					busyId ===
+																					order.id
+																				}
+																				disabled={
+																					!noShowAvailability.available
+																				}
+																				title={
+																					noShowAvailability.available
+																						? "Report buyer no-show"
+																						: `Available after ${PICKUP_NO_SHOW_WAIT_MINUTES} min.`
+																				}
+																				onClick={() =>
+																					reportPickupNoShow(
+																						order,
+																					)
+																				}
+																				aria-label={`Report buyer no-show for order ${order.orderNumber}`}
+																			>
+																				{noShowAvailability.available
+																					? "Buyer no-show"
+																					: `Available after ${PICKUP_NO_SHOW_WAIT_MINUTES} min.`}
+																			</Button>
+																		)}
 																	</>
 																) : next &&
 																	NextIcon ? (
@@ -2161,12 +2324,18 @@ export default function PipelineWrapper() {
 																)}
 															</Text>
 														</Row>
-														<Badge $tone="success">
+														<Badge
+															$tone={statusTone(
+																order.status,
+															)}
+														>
 															<FiCheckCircle
 																size={14}
 																aria-hidden
 															/>{" "}
-															Completed
+															{statusLabel(
+																order.status,
+															)}
 														</Badge>
 														<Text $muted $size={13}>
 															{order.items

@@ -31,6 +31,9 @@ export interface ISiteConfigs {
 	externalPaymentLinkTtlMinutes: number;
 	reviewWindowHours: number;
 	cutoffWarningMinutes: number;
+	deliveryInTransitGraceMinutes: number;
+	deliveryInTransitFallbackEstimateMinutes: number;
+	deliveryOverdueAutoEscalateEnabled: boolean;
 	// feature flags
 	whatsappTvEnabled: boolean;
 	marketplaceEnabled: boolean;
@@ -55,6 +58,9 @@ export const DEFAULT_SITE_CONFIGS: ISiteConfigs = {
 	externalPaymentLinkTtlMinutes: 60 * 24,
 	reviewWindowHours: 72,
 	cutoffWarningMinutes: 30,
+	deliveryInTransitGraceMinutes: 10,
+	deliveryInTransitFallbackEstimateMinutes: 60,
+	deliveryOverdueAutoEscalateEnabled: true,
 	whatsappTvEnabled: true,
 	marketplaceEnabled: true,
 	reviewsEnabled: true,

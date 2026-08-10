@@ -440,7 +440,14 @@ export interface BuyerOrder {
 	adminReviewRequiredAt?: string | null;
 	adminReviewReason?: string | null;
 	readyAt?: string | null;
+	pickupNoShowReportedAt?: string | null;
+	pickupBuyerResponseDeadline?: string | null;
+	pickupBuyerRespondedAt?: string | null;
+	pickupProblemReportedAt?: string | null;
+	pickupProblemNote?: string | null;
+	deliveryEstimateMinutes?: number | null;
 	deliveryStartedAt?: string | null;
+	deliveryOverdueEscalatedAt?: string | null;
 	pickedUpAt?: string | null;
 	deliveredAt?: string | null;
 	confirmedAt?: string | null;
@@ -611,6 +618,7 @@ export interface AppNotification {
 	body: string;
 	type: string;
 	isRead: boolean;
+	data?: Record<string, unknown>;
 	createdAt: string;
 }
 

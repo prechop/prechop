@@ -48,8 +48,8 @@ const schema = new mongoose.Schema<any>(
 		profileImageUrl: { type: String },
 		googleSubject: { type: String, sparse: true, index: true },
 		googleEmailVerified: { type: Boolean },
-		// Account identity. Sign-in is passwordless by email or Google; any phone
-		// numbers elsewhere are order or delivery contact details.
+		// Account identity. Sign-in is passwordless by email, Google, or a verified
+		// phone. Unverified phone values remain order/delivery contact details.
 		email: {
 			type: String,
 			required: true,
@@ -64,7 +64,8 @@ const schema = new mongoose.Schema<any>(
 			},
 		},
 		phone: { type: String, required: false, select: false },
-		phoneHash: { type: String, required: false, sparse: true, index: true },
+		phoneHash: { type: String, required: false, select: false },
+		phoneVerifiedAt: { type: Date, required: false },
 		isActive: { type: Boolean, default: true },
 		lastLoginAt: { type: Date, required: false },
 		refreshTokens: {
@@ -86,6 +87,16 @@ const schema = new mongoose.Schema<any>(
 
 schema.index({ "refreshTokens.deadline": 1 });
 schema.index({ "refreshTokens.absoluteDeadline": 1 });
+// Contact numbers may be shared, but a number can identify only one account
+// after an OTP has verified ownership of it.
+schema.index(
+	{ phoneHash: 1 },
+	{
+		unique: true,
+		partialFilterExpression: { phoneVerifiedAt: { $type: "date" } },
+		name: "unique_verified_phone",
+	},
+);
 
 const notDeletedFilter = {
 	$or: [{ deleted: { $ne: true } }, { deleted: { $exists: false } }],
@@ -96,6 +107,7 @@ schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
 	this.pipeline().push({
 		$project: {
+			phone: 0,
 			phoneHash: 0,
 			refreshTokens: 0,
 			deleted: 0,
@@ -176,6 +188,7 @@ export async function createUserDB({
 				? {
 						phone: encrypt(normalizedPhone),
 						phoneHash: computePhoneHash(normalizedPhone),
+						phoneVerifiedAt: payload.phoneVerifiedAt,
 					}
 				: {}),
 			isActive: payload.isActive ?? true,
@@ -841,6 +854,86 @@ export async function getUserByIdWithPhoneDB({
 	} catch {
 		return null;
 	}
+}
+
+/** Lookup for WhatsApp authentication. Unverified contact numbers are not identities. */
+export async function getUserByVerifiedPhoneDB({
+	phone,
+	session,
+}: {
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	try {
+		const normalized = normalizeNigerianMobilePhone(phone);
+		if (!normalized) return null;
+		const res = await User.findOne(
+			{
+				phoneHash: computePhoneHash(normalized),
+				phoneVerifiedAt: { $type: "date" },
+				...notDeletedFilter,
+			},
+			null,
+			{ session },
+		)
+			.select("+phone +phoneHash")
+			.lean<IUser>();
+		return res ? ({ ...res, id: res._id.toString() } as IUser) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Resolve legacy contact-number matches before promoting a phone to identity. */
+export async function getUsersByPhoneDB({
+	phone,
+	session,
+}: {
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser[]> {
+	try {
+		const normalized = normalizeNigerianMobilePhone(phone);
+		if (!normalized) return [];
+		const rows = await User.find(
+			{ phoneHash: computePhoneHash(normalized), ...notDeletedFilter },
+			null,
+			{ session },
+		)
+			.select("+phone +phoneHash")
+			.limit(2)
+			.lean<IUser[]>();
+		return rows.map((row) => ({ ...row, id: row._id.toString() }) as IUser);
+	} catch {
+		return [];
+	}
+}
+
+export async function markUserPhoneVerifiedDB({
+	id,
+	phone,
+	session,
+}: {
+	id: string;
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	const normalized = normalizeNigerianMobilePhone(phone);
+	if (!normalized || !mongoose.Types.ObjectId.isValid(id)) return null;
+	const row = await User.findByIdAndUpdate(
+		new mongoose.Types.ObjectId(id),
+		{
+			$set: {
+				phone: encrypt(normalized),
+				phoneHash: computePhoneHash(normalized),
+				phoneVerifiedAt: new Date(),
+			},
+		},
+		{ session, returnDocument: "after", runValidators: true },
+	)
+		.select("+phone +phoneHash")
+		.lean<IUser>();
+	return row ? ({ ...row, id: row._id.toString() } as IUser) : null;
 }
 
 export async function countUsersDB({

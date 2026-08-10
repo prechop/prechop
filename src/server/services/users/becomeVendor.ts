@@ -3,6 +3,7 @@ import {
 	BUYERS_GROUP,
 	conflict,
 	ErrUserNotFound,
+	tryDecrypt,
 } from "@/server/constants";
 import {
 	createVendorProfileDB,
@@ -32,7 +33,21 @@ export async function startVendorApplication({ userId }: { userId: string }) {
 	}
 
 	const existingVendor = await getVendorProfileByUserIdDB({ userId });
-	if (existingVendor) return existingVendor;
+	if (existingVendor) {
+		// An older initialization path copied the user's encrypted-at-rest phone
+		// into the vendor's plain contact field. Repair that value on read so
+		// affected incomplete applications display the real number immediately.
+		const contactPhone = tryDecrypt(existingVendor.contactPhone);
+		if (contactPhone && contactPhone !== existingVendor.contactPhone) {
+			return (
+				(await updateVendorProfileDB({
+					id: existingVendor._id.toString(),
+					payload: { contactPhone },
+				})) ?? existingVendor
+			);
+		}
+		return existingVendor;
+	}
 
 	const vendor = await createVendorProfileDB({
 		payload: {
@@ -42,10 +57,18 @@ export async function startVendorApplication({ userId }: { userId: string }) {
 			...(user.phone ? { contactPhone: user.phone } : {}),
 		},
 	});
-	if (!vendor)
+	if (!vendor) {
+		// Creating a vendor application is idempotent. In development React
+		// Strict Mode may issue this request twice, and real clients can retry as
+		// well. If another request won the unique-user race, return its profile.
+		const concurrentlyCreatedVendor = await getVendorProfileByUserIdDB({
+			userId,
+		});
+		if (concurrentlyCreatedVendor) return concurrentlyCreatedVendor;
 		throw conflict(
 			"Could not create a vendor application for this account.",
 		);
+	}
 
 	await recordAudit({
 		userId,

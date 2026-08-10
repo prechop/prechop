@@ -98,7 +98,7 @@ export const openOrderDisputeSchema = zod
 export const reviewOrderDisputeSchema = zod
 	.object({
 		action: zod.enum(ORDER_DISPUTE_ACTIONS),
-		note: zod.string().trim().min(1).max(2000).optional(),
+		note: zod.string().trim().min(1).max(2000),
 		amountKobo: zod.number().int().positive().optional(),
 	})
 	.strict();
@@ -156,6 +156,13 @@ export const updateSiteConfigsSchema = zod
 		externalPaymentLinkTtlMinutes: zod.number().int().min(1).optional(),
 		reviewWindowHours: zod.number().int().min(0).optional(),
 		cutoffWarningMinutes: zod.number().int().min(0).optional(),
+		deliveryInTransitGraceMinutes: zod.number().int().min(0).optional(),
+		deliveryInTransitFallbackEstimateMinutes: zod
+			.number()
+			.int()
+			.min(1)
+			.optional(),
+		deliveryOverdueAutoEscalateEnabled: zod.boolean().optional(),
 		whatsappTvEnabled: zod.boolean().optional(),
 		marketplaceEnabled: zod.boolean().optional(),
 		reviewsEnabled: zod.boolean().optional(),

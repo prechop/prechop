@@ -48,6 +48,19 @@ const schema = new mongoose.Schema<any>(
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.cutoffWarningMinutes,
 		},
+		deliveryInTransitGraceMinutes: {
+			type: Number,
+			default: DEFAULT_SITE_CONFIGS.deliveryInTransitGraceMinutes,
+		},
+		deliveryInTransitFallbackEstimateMinutes: {
+			type: Number,
+			default:
+				DEFAULT_SITE_CONFIGS.deliveryInTransitFallbackEstimateMinutes,
+		},
+		deliveryOverdueAutoEscalateEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.deliveryOverdueAutoEscalateEnabled,
+		},
 		whatsappTvEnabled: {
 			type: Boolean,
 			default: DEFAULT_SITE_CONFIGS.whatsappTvEnabled,

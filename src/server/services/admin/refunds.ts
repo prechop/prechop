@@ -31,6 +31,7 @@ const REFUNDABLE: OrderStatus[] = [
 	OrderStatus.PICKED_UP,
 	OrderStatus.DELIVERED,
 	OrderStatus.COMPLETED,
+	OrderStatus.PICKUP_PROBLEM_REPORTED,
 	OrderStatus.REFUND_PENDING,
 	OrderStatus.REFUND_FAILED,
 	OrderStatus.CANCELLED,

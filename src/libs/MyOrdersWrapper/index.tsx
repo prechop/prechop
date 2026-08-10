@@ -82,6 +82,7 @@ const ACTIVE: OrderStatus[] = [
 	"READY_FOR_DELIVERY",
 	"IN_TRANSIT",
 	"AWAITING_BUYER_NO_SHOW_RESPONSE",
+	"PICKUP_PROBLEM_REPORTED",
 	"BUYER_UNREACHABLE_REPORTED",
 	"PICKED_UP",
 	"DELIVERED",
@@ -248,30 +249,30 @@ const DesktopOrderId = styled.span`
 `;
 
 function getItemTitle(order: BuyerOrder): string {
-  if (!order.items || order.items.length === 0) {
-    return order.orderNumber;
-  }
-  const firstItemName = order.items[0].snapshotName;
-  if (order.items.length === 1) {
-    return firstItemName;
-  }
-  const extraCount = order.items.length - 1;
-  return `${firstItemName} + ${extraCount} item${extraCount === 1 ? "" : "s"}`;
+	if (!order.items || order.items.length === 0) {
+		return order.orderNumber;
+	}
+	const firstItemName = order.items[0].snapshotName;
+	if (order.items.length === 1) {
+		return firstItemName;
+	}
+	const extraCount = order.items.length - 1;
+	return `${firstItemName} + ${extraCount} item${extraCount === 1 ? "" : "s"}`;
 }
 
 function getShortOrderId(orderNumber: string): string {
-  if (!orderNumber) return "";
-  const parts = orderNumber.split("-");
-  const lastPart = parts[parts.length - 1];
-  if (lastPart && lastPart.length >= 4) {
-    return lastPart.toUpperCase();
-  }
-  return orderNumber.slice(-6).toUpperCase();
+	if (!orderNumber) return "";
+	const parts = orderNumber.split("-");
+	const lastPart = parts[parts.length - 1];
+	if (lastPart && lastPart.length >= 4) {
+		return lastPart.toUpperCase();
+	}
+	return orderNumber.slice(-6).toUpperCase();
 }
 
 function getTotalItemCount(order: BuyerOrder): number {
-  if (!order.items || order.items.length === 0) return 0;
-  return order.items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
+	if (!order.items || order.items.length === 0) return 0;
+	return order.items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
 }
 
 /**
@@ -281,9 +282,9 @@ function getTotalItemCount(order: BuyerOrder): number {
  * cards are shortened here; everything else falls back to statusLabel.
  */
 function cardStatusLabel(status: string): string {
-  if (status === "AWAITING_EXTERNAL_PAYMENT") return "Awaiting payment";
-  if (status === "AWAITING_VENDOR_ACCEPTANCE") return "Awaiting vendor";
-  return statusLabel(status);
+	if (status === "AWAITING_EXTERNAL_PAYMENT") return "Awaiting payment";
+	if (status === "AWAITING_VENDOR_ACCEPTANCE") return "Awaiting vendor";
+	return statusLabel(status);
 }
 
 /** Prevents the pill group from growing and squeezing the title column. */
@@ -561,126 +562,179 @@ export default function MyOrdersWrapper() {
 
 					<Stack $gap={12}>
 						{orders.map((o, i) => {
+							console.log(
+								"Rendering order",
+								o.orderNumber,
+								"with status",
+								o.status,
+								"vendors name:",
+								o.vendorName,
+							);
 							const outcome = orderOutcomeSummary(o);
 							const refundLabel = refundOutcomeLabel(o);
 							return (
-							<FadeIn key={o.id} $delay={i * 45}>
-								<OrderCard $hover>
-									<CardOverlayLink
-										href={`/my-orders/${o.id}`}
-										aria-label={`Order ${o.orderNumber}`}
-									/>
-									<Stack $gap={12}>
-										<Row
-											$justify="space-between"
-											$align="flex-start"
-											$gap={12}
-										>
-											<Row $gap={12} $align="flex-start" style={{ minWidth: 0 }}>
-												<Thumb aria-hidden>🍱</Thumb>
-												<Stack $gap={2} style={{ minWidth: 0, flex: 1 }}>
-													<ItemTitle $weight={800}>
-														{getItemTitle(o)}
-													</ItemTitle>
-													<VendorRow $gap={6} $align="center">
-														<VendorSubtext $muted $size={13}>
-															{o.vendorName || "Prechop kitchen"}
-														</VendorSubtext>
-														<DesktopOrderId aria-label={`Order ID ${getShortOrderId(o.orderNumber)}`}>
-															#{getShortOrderId(o.orderNumber)}
-														</DesktopOrderId>
-													</VendorRow>
-													<Text $muted $size={12.5}>
-														{formatDateTime(
-															o.createdAt,
+								<FadeIn key={o.id} $delay={i * 45}>
+									<OrderCard $hover>
+										<CardOverlayLink
+											href={`/my-orders/${o.id}`}
+											aria-label={`Order ${o.orderNumber}`}
+										/>
+										<Stack $gap={12}>
+											<Row
+												$justify="space-between"
+												$align="flex-start"
+												$gap={12}
+											>
+												<Row
+													$gap={12}
+													$align="flex-start"
+													style={{ minWidth: 0 }}
+												>
+													<Thumb aria-hidden>
+														🍱
+													</Thumb>
+													<Stack
+														$gap={2}
+														style={{
+															minWidth: 0,
+															flex: 1,
+														}}
+													>
+														<ItemTitle
+															$weight={800}
+														>
+															{getItemTitle(o)}
+														</ItemTitle>
+														<VendorRow
+															$gap={6}
+															$align="center"
+														>
+															<VendorSubtext
+																$muted
+																$size={13}
+															>
+																{o.vendorName ||
+																	"Prechop kitchen"}
+															</VendorSubtext>
+															<DesktopOrderId
+																aria-label={`Order ID ${getShortOrderId(o.orderNumber)}`}
+															>
+																#
+																{getShortOrderId(
+																	o.orderNumber,
+																)}
+															</DesktopOrderId>
+														</VendorRow>
+														<Text
+															$muted
+															$size={12.5}
+														>
+															{formatDateTime(
+																o.createdAt,
+															)}
+														</Text>
+													</Stack>
+												</Row>
+												<StatusPillWrap $gap={8}>
+													{(unreadByOrder.get(o.id) ??
+														0) > 0 && (
+														<Badge $tone="primary">
+															{unreadByOrder.get(
+																o.id,
+															)}{" "}
+															unread
+														</Badge>
+													)}
+													<Badge
+														$tone={tone[o.status]}
+													>
+														{cardStatusLabel(
+															o.status,
+														)}
+													</Badge>
+												</StatusPillWrap>
+											</Row>
+											<Divider />
+											{isLateActiveOrder(o) && (
+												<LateNotice>
+													<Text
+														$weight={900}
+														$size={12}
+													>
+														Running late
+													</Text>
+													<Text $size={12}>
+														The kitchen needs more
+														time. Open the order for
+														contact, help,
+														cancellation and refund
+														options.
+													</Text>
+												</LateNotice>
+											)}
+											{outcome && (
+												<OutcomeNotice>
+													<Text
+														$weight={900}
+														$size={12}
+													>
+														{outcome.title}
+													</Text>
+													{outcome.reason && (
+														<Text $size={12}>
+															Reason:{" "}
+															{outcome.reason}
+														</Text>
+													)}
+													{refundLabel && (
+														<Text $size={12}>
+															{refundLabel}
+														</Text>
+													)}
+												</OutcomeNotice>
+											)}
+											<Row
+												$justify="space-between"
+												$align="center"
+												$gap={10}
+											>
+												<Text $muted $size={13}>
+													{getTotalItemCount(o)} item
+													{getTotalItemCount(o) === 1
+														? ""
+														: "s"}{" "}
+													·{" "}
+													{o.fulfillmentType ===
+													"DELIVERY"
+														? "Delivery"
+														: "Pickup"}
+												</Text>
+												<Row $gap={8} $align="center">
+													<Text $weight={800}>
+														{formatKobo(
+															o.totalKobo,
 														)}
 													</Text>
-												</Stack>
+													<Chevron aria-hidden>
+														›
+													</Chevron>
+												</Row>
 											</Row>
-											<StatusPillWrap $gap={8}>
-												{(unreadByOrder.get(o.id) ??
-													0) > 0 && (
-													<Badge $tone="primary">
-														{unreadByOrder.get(
-															o.id,
-														)}{" "}
-														unread
-													</Badge>
-												)}
-												<Badge $tone={tone[o.status]}>
-													{cardStatusLabel(o.status)}
-												</Badge>
-											</StatusPillWrap>
-										</Row>
-										<Divider />
-										{isLateActiveOrder(o) && (
-											<LateNotice>
-												<Text $weight={900} $size={12}>
-													Running late
-												</Text>
-												<Text $size={12}>
-													The kitchen needs more time.
-													Open the order for contact,
-													help, cancellation and
-													refund options.
-												</Text>
-											</LateNotice>
-										)}
-										{outcome && (
-											<OutcomeNotice>
-												<Text $weight={900} $size={12}>
-													{outcome.title}
-												</Text>
-												{outcome.reason && (
-													<Text $size={12}>
-														Reason: {outcome.reason}
-													</Text>
-												)}
-												{refundLabel && (
-													<Text $size={12}>
-														{refundLabel}
-													</Text>
-												)}
-											</OutcomeNotice>
-										)}
-										<Row
-											$justify="space-between"
-											$align="center"
-											$gap={10}
-										>
-											<Text $muted $size={13}>
-												{getTotalItemCount(o)} item
-												{getTotalItemCount(o) === 1
-													? ""
-													: "s"}{" "}
-												·{" "}
-												{o.fulfillmentType ===
-												"DELIVERY"
-													? "Delivery"
-													: "Pickup"}
-											</Text>
-											<Row $gap={8} $align="center">
-												<Text $weight={800}>
-													{formatKobo(o.totalKobo)}
-												</Text>
-												<Chevron aria-hidden>›</Chevron>
-											</Row>
-										</Row>
-										{/* Reordering only makes sense once
+											{/* Reordering only makes sense once
 											    an order actually happened. */}
-										{o.status === "COMPLETED" && (
-											<ReorderRow $justify="flex-end">
-												<OrderAgainButton
-													orderId={o.id}
-													$variant="secondary"
-													$size="sm"
-													$pill
-												/>
-											</ReorderRow>
-										)}
-									</Stack>
-								</OrderCard>
-							</FadeIn>
+											{o.status === "COMPLETED" && (
+												<ReorderRow $justify="flex-end">
+													<OrderAgainButton
+														orderId={o.id}
+														$variant="secondary"
+														$size="sm"
+														$pill
+													/>
+												</ReorderRow>
+											)}
+										</Stack>
+									</OrderCard>
+								</FadeIn>
 							);
 						})}
 					</Stack>

@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import hash from "@/server/constants/hash";
 import {
 	generateOrderNumber,
@@ -9,10 +17,14 @@ import {
 	createBuyerOrderDB,
 	createPaymentDB,
 	FulfillmentType,
+	getBuyerOrderByIdDB,
+	listNotificationsDB,
 	OrderStatus,
 	PaymentStatus,
 } from "@/server/models";
+import { paystackProvider } from "@/server/providers";
 import {
+	listDisputesForOrder,
 	permissionForDisputeAction,
 	reviewOrderDisputeAsAdmin,
 } from "@/server/services/admin/disputes";
@@ -30,6 +42,10 @@ const actor = {
 
 beforeAll(async () => {
 	await connectTestDB();
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
 });
 
 afterAll(async () => {
@@ -96,6 +112,69 @@ async function paidOrder() {
 		},
 	});
 	return orderId;
+}
+
+async function pickupProblemOrder() {
+	const { userId: vendorUserId, vendorId, campusId } = await makeVendor();
+	const buyerId = oid();
+	const pickupProblemNote =
+		"I arrived before the deadline, but the vendor refused to hand over my food.";
+	const readyAt = new Date("2026-08-10T05:00:00.000Z");
+	const noShowReportedAt = new Date("2026-08-10T07:00:00.000Z");
+	const problemReportedAt = new Date("2026-08-10T07:05:00.000Z");
+	const order = await createBuyerOrderDB({
+		payload: {
+			orderNumber: generateOrderNumber(),
+			dailyOrderId: oid(),
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.PICKUP_PROBLEM_REPORTED,
+			fulfillmentType: FulfillmentType.PICKUP,
+			readyAt,
+			pickupNoShowReportedAt: noShowReportedAt,
+			pickupProblemReportedAt: problemReportedAt,
+			pickupProblemNote,
+			adminReviewReason: "PICKUP_PROBLEM_REPORTED",
+			subtotalKobo: TOTAL,
+			deliveryFeeKobo: 0,
+			platformFeeKobo: 0,
+			totalKobo: TOTAL,
+			items: [
+				{
+					dailyOrderItemId: oid(),
+					menuItemId: oid(),
+					snapshotName: "Jollof",
+					snapshotPriceKobo: TOTAL,
+					quantity: 1,
+					subtotalKobo: TOTAL,
+					selectedOptions: [],
+				},
+			],
+		},
+	});
+	expect(order).toBeTruthy();
+	const orderId = order?._id.toString() ?? "";
+	const ref = generatePaystackRef();
+	await createPaymentDB({
+		payload: {
+			buyerOrderId: orderId,
+			buyerId,
+			vendorId,
+			paystackRef: ref,
+			amountKobo: TOTAL,
+			platformFeeKobo: 0,
+			vendorAmountKobo: TOTAL,
+			idempotencyKey: hash(ref),
+			status: PaymentStatus.SUCCESS,
+		},
+	});
+	return {
+		orderId,
+		buyerId,
+		vendorUserId,
+		pickupProblemNote,
+	};
 }
 
 describe("order dispute admin review", () => {
@@ -187,5 +266,102 @@ describe("order dispute admin review", () => {
 				permissionForDisputeAction("ISSUE_FULL_REFUND"),
 			),
 		).not.toThrow();
+	});
+
+	it("shows the buyer's pickup complaint once in the per-order dispute evidence", async () => {
+		const { orderId, pickupProblemNote } = await pickupProblemOrder();
+		const dispute = await openOrderDisputeForReview({
+			orderId,
+			reason: "BUYER_NO_SHOW_COMPLAINT",
+			buyerNotes: [pickupProblemNote],
+		});
+
+		expect(dispute.evidence.buyerNotes).toEqual([pickupProblemNote]);
+		const forOrder = await listDisputesForOrder(orderId);
+		expect(forOrder).toHaveLength(1);
+		expect(forOrder[0]._id.toString()).toBe(dispute._id.toString());
+	});
+
+	it("requires an admin note and keeps an evidence request open", async () => {
+		const { orderId } = await pickupProblemOrder();
+		const dispute = await openOrderDisputeForReview({
+			orderId,
+			reason: "BUYER_NO_SHOW_COMPLAINT",
+		});
+
+		await expect(
+			reviewOrderDisputeAsAdmin({
+				disputeId: dispute._id.toString(),
+				action: "REQUEST_MORE_EVIDENCE",
+				actor,
+			}),
+		).rejects.toThrow(/admin note/i);
+
+		const updated = await reviewOrderDisputeAsAdmin({
+			disputeId: dispute._id.toString(),
+			action: "REQUEST_MORE_EVIDENCE",
+			note: "Please explain when you arrived at the pickup point.",
+			actor,
+		});
+		expect(updated.status).toBe("MORE_EVIDENCE_REQUESTED");
+	});
+
+	it("upholds a pickup no-show, completes the order, and notifies both parties", async () => {
+		const { orderId, buyerId, vendorUserId } = await pickupProblemOrder();
+		const dispute = await openOrderDisputeForReview({
+			orderId,
+			reason: "BUYER_NO_SHOW_COMPLAINT",
+		});
+
+		const updated = await reviewOrderDisputeAsAdmin({
+			disputeId: dispute._id.toString(),
+			action: "UPHOLD_COMPLETION",
+			note: "The ready and no-show timestamps support the vendor's report.",
+			actor,
+		});
+
+		expect(updated.status).toBe("RESOLVED");
+		expect(updated.resolutionAction).toBe("UPHOLD_COMPLETION");
+		expect((await getBuyerOrderByIdDB({ id: orderId }))?.status).toBe(
+			OrderStatus.COMPLETED_BUYER_NO_SHOW,
+		);
+		for (const userId of [buyerId, vendorUserId]) {
+			const notifications = await listNotificationsDB({ userId });
+			expect(
+				notifications.some(
+					(notification) =>
+						notification.type === "ORDER_DISPUTE_RESOLVED",
+				),
+			).toBe(true);
+		}
+	});
+
+	it("can resolve a pickup problem for the buyer with a full refund", async () => {
+		const { orderId } = await pickupProblemOrder();
+		const dispute = await openOrderDisputeForReview({
+			orderId,
+			reason: "BUYER_NO_SHOW_COMPLAINT",
+		});
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 42,
+				status: "success",
+				amount: TOTAL,
+			});
+
+		const updated = await reviewOrderDisputeAsAdmin({
+			disputeId: dispute._id.toString(),
+			action: "ISSUE_FULL_REFUND",
+			note: "The buyer's evidence shows the vendor refused handover.",
+			actor,
+		});
+
+		expect(updated.status).toBe("RESOLVED");
+		expect(updated.resolutionAction).toBe("ISSUE_FULL_REFUND");
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+		expect((await getBuyerOrderByIdDB({ id: orderId }))?.status).toBe(
+			OrderStatus.REFUNDED,
+		);
 	});
 });

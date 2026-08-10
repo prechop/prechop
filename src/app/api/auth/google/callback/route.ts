@@ -116,7 +116,10 @@ export const GET = withApiHandler(
 			});
 			await setAuthCookies(token);
 			const response = NextResponse.redirect(
-				new URL(resolvePostAuthRedirect(user, state.next), req.url),
+				new URL(
+					await resolvePostAuthRedirect(user, state.next),
+					req.url,
+				),
 			);
 			setAuthCookiesOnResponse(response, token);
 			return response;

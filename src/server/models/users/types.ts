@@ -21,6 +21,7 @@ export interface IUserCreateInput {
 	googleSubject?: string;
 	googleEmailVerified?: boolean;
 	phone?: string;
+	phoneVerifiedAt?: Date;
 	isActive?: boolean;
 }
 
@@ -42,6 +43,7 @@ export interface IUser {
 	// returning to the owning user.
 	phone?: string;
 	phoneHash?: string;
+	phoneVerifiedAt?: Date;
 	isActive: boolean;
 	lastLoginAt?: Date;
 	refreshTokens?: IRefreshTokenEntry[];

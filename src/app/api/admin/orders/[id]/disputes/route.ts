@@ -6,10 +6,28 @@ import {
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
-import { openDisputeForOrder } from "@/server/services/admin";
+import {
+	listDisputesForOrder,
+	openDisputeForOrder,
+} from "@/server/services/admin";
 import { openOrderDisputeSchema } from "@/server/validators/admin/validate";
 
 export const runtime = "nodejs";
+
+export const GET = withApiHandler(
+	{ route: "/api/admin/orders/[id]/disputes" },
+	withAuth(async ({ auth, context }) => {
+		try {
+			requirePermission(auth, "support:read");
+			const { id } = await (
+				context as { params: Promise<{ id: string }> }
+			).params;
+			return ok(await listDisputesForOrder(id));
+		} catch (error) {
+			return handleError(error);
+		}
+	}),
+);
 
 export const POST = withApiHandler(
 	{ route: "/api/admin/orders/[id]/disputes" },

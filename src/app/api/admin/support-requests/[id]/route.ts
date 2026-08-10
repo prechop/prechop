@@ -31,6 +31,8 @@ export const PATCH = withApiHandler(
 						parsed.data.assignedAdminId === "me"
 							? auth.userId
 							: parsed.data.assignedAdminId,
+					resolutionNote: parsed.data.resolutionNote,
+					resolvedBy: auth.userId,
 				}),
 			);
 		} catch (error) {

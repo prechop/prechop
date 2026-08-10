@@ -89,7 +89,10 @@ export async function reportPickupNoShow({
 		buyerId: order.buyerId.toString(),
 		orderNumber: order.orderNumber,
 		responseDeadline,
-		data: { orderId },
+		data: {
+			orderId,
+			url: `/my-orders/${orderId}#pickup-no-show-response`,
+		},
 	}).catch((error) =>
 		console.error(
 			`[orders] pickup no-show response notification failed for ${orderId}:`,
@@ -120,7 +123,7 @@ export async function respondToPickupNoShow({
 	}
 	if (
 		order.pickupBuyerResponseDeadline &&
-		now > order.pickupBuyerResponseDeadline
+		now >= order.pickupBuyerResponseDeadline
 	) {
 		throw invalidOrderState("The buyer response window has closed.");
 	}

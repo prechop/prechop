@@ -63,6 +63,7 @@ export interface IBuyerOrderCreateInput {
 	deliveryFullAddress?: string;
 	deliveryPhone?: string;
 	customerMessage?: string;
+	deliveryEstimateMinutes?: number;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
@@ -95,6 +96,7 @@ export interface IBuyerOrder {
 	deliveryFullAddress?: string;
 	deliveryPhone?: string;
 	customerMessage?: string;
+	deliveryEstimateMinutes?: number;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
@@ -143,6 +145,7 @@ export interface IBuyerOrder {
 	pickupProblemReportedAt?: Date;
 	pickupProblemNote?: string;
 	deliveryStartedAt?: Date;
+	deliveryOverdueEscalatedAt?: Date;
 	deliveryBuyerUnreachableReportedAt?: Date;
 	deliveryBuyerResponseDeadline?: Date;
 	deliveryFailedAt?: Date;

@@ -31,6 +31,7 @@ import { listNotificationsDB } from "@/server/models/notifications";
 import { paystackProvider } from "@/server/providers";
 import { cancelOrderAsBuyer } from "@/server/services/buyerOrders/cancel";
 import { revealBuyerContactForVendor } from "@/server/services/buyerOrders/contactAccess";
+import { sweepDeliveryOverdueOrders } from "@/server/services/buyerOrders/deliveryOverdue";
 import {
 	isNoShowOrFailedDeliveryFinanciallySettled,
 	markDeliveryFailed,
@@ -97,6 +98,8 @@ async function makeOrder({
 	customerMessage,
 	dailyOrderId,
 	dailyOrderItemId,
+	deliveryEstimateMinutes,
+	deliveryStartedAt,
 }: {
 	vendorId: string;
 	buyerId: string;
@@ -111,6 +114,8 @@ async function makeOrder({
 	customerMessage?: string;
 	dailyOrderId?: string;
 	dailyOrderItemId?: string;
+	deliveryEstimateMinutes?: number;
+	deliveryStartedAt?: Date;
 }) {
 	const itemId = dailyOrderItemId ?? oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
@@ -137,6 +142,7 @@ async function makeOrder({
 					: undefined,
 			deliveryPhone,
 			customerMessage,
+			deliveryEstimateMinutes,
 			subtotalKobo: 150000,
 			deliveryFeeKobo: 0,
 			platformFeeKobo: 5000,
@@ -159,6 +165,7 @@ async function makeOrder({
 			id: order!._id.toString(),
 			status,
 			acceptanceDeadline,
+			deliveryStartedAt,
 		});
 	}
 	return order!;
@@ -712,6 +719,104 @@ describe("updateOrderStatus", () => {
 		expect(completed.deliveredAt).toBeInstanceOf(Date);
 	});
 
+	it("escalates in-transit delivery after the promised estimate plus admin grace", async () => {
+		await updateSiteConfigs({
+			payload: {
+				deliveryInTransitGraceMinutes: 10,
+				deliveryInTransitFallbackEstimateMinutes: 60,
+				deliveryOverdueAutoEscalateEnabled: true,
+			},
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryEstimateMinutes: 30,
+			deliveryStartedAt: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		const early = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:39:00.000Z"),
+		});
+		expect(early.escalated).toBe(0);
+
+		const due = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:41:00.000Z"),
+		});
+		expect(due.escalated).toBe(1);
+
+		const escalated = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(escalated!.status).toBe(OrderStatus.IN_TRANSIT);
+		expect(escalated!.adminReviewReason).toBe(
+			"DELIVERY_CONFIRMATION_OVERDUE",
+		);
+		expect(escalated!.deliveryOverdueEscalatedAt).toEqual(
+			new Date("2026-07-22T10:41:00.000Z"),
+		);
+		expect(escalated!.timeline?.map((entry) => entry.type)).toContain(
+			"DELIVERY_OVERDUE_ESCALATED",
+		);
+
+		const notifications = await listNotificationsDB({ userId: buyerId });
+		expect(
+			notifications.some(
+				(n) => n.type === "ORDER_DELIVERY_OVERDUE_ESCALATED",
+			),
+		).toBe(true);
+
+		const repeat = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:42:00.000Z"),
+		});
+		expect(repeat.escalated).toBe(0);
+	});
+
+	it("respects the admin switch for delivery overdue escalation", async () => {
+		await updateSiteConfigs({
+			payload: {
+				deliveryInTransitGraceMinutes: 10,
+				deliveryInTransitFallbackEstimateMinutes: 20,
+				deliveryOverdueAutoEscalateEnabled: false,
+			},
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryStartedAt: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		const result = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T11:00:00.000Z"),
+		});
+		expect(result.scanned).toBe(0);
+		expect(result.escalated).toBe(0);
+		const unchanged = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(unchanged!.adminReviewReason).toBeUndefined();
+
+		await updateSiteConfigs({
+			payload: { deliveryOverdueAutoEscalateEnabled: true },
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+	});
+
 	it("keeps in-transit unavailable for pickup orders", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
@@ -1217,6 +1322,47 @@ describe("pickup no-show and failed delivery", () => {
 		).rejects.toThrow();
 	});
 
+	it("closes the buyer response window at the exact deadline", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		await setBuyerOrderStatusDB({
+			id: order._id.toString(),
+			status: OrderStatus.READY_FOR_PICKUP,
+			readyAt: new Date("2026-07-22T08:00:00.000Z"),
+		});
+		await reportPickupNoShow({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+			now: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		await expect(
+			respondToPickupNoShow({
+				buyerId,
+				orderId: order._id.toString(),
+				response: "CONFIRMED_COLLECTION",
+				now: new Date("2026-07-22T10:15:00.000Z"),
+			}),
+		).rejects.toThrow("response window has closed");
+
+		const swept = await sweepPickupNoShowTimers({
+			now: new Date("2026-07-22T10:15:00.000Z"),
+		});
+		expect(swept.completedNoResponse).toBe(1);
+		const completed = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(completed!.status).toBe(OrderStatus.COMPLETED_BUYER_NO_SHOW);
+	});
+
 	it("moves pickup no-show to buyer response, then completes after no response without refund", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
@@ -1224,12 +1370,12 @@ describe("pickup no-show and failed delivery", () => {
 			vendorId,
 			buyerId: buyer!._id.toString(),
 			campusId,
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			fulfillmentType: FulfillmentType.PICKUP,
 		});
 		await setBuyerOrderStatusDB({
 			id: order._id.toString(),
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			readyAt: new Date("2026-07-22T08:00:00.000Z"),
 		});
 

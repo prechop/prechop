@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	FiCheckCircle,
 	FiClock,
@@ -40,6 +40,7 @@ import {
 	handoverUnavailableMessage,
 	isBuyerHandoverEligible,
 	orderTimelineSteps,
+	pickupNoShowResponseWindow,
 } from "@/constants/orderLifecycle";
 import {
 	orderOutcomeSummary,
@@ -311,6 +312,19 @@ const StatusNote = styled.div`
   border-radius: var(--pc-radius-sm);
   background: var(--pc-surface);
 `;
+const PickupNoShowResponseCard = styled(Card)`
+  border-color: rgba(214, 143, 0, 0.52);
+  background: var(--pc-color-gold-50);
+`;
+const ResponseActions = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  @media (max-width: 440px) {
+    grid-template-columns: 1fr;
+  }
+`;
 const ContactBox = styled.div`
   display: grid;
   gap: 8px;
@@ -409,9 +423,25 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const [comment, setComment] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [contactLoading, setContactLoading] = useState(false);
+	const [now, setNow] = useState(() => Date.now());
+	const [pickupResponseSubmitting, setPickupResponseSubmitting] = useState<
+		"CONFIRMED_COLLECTION" | "PROBLEM_REPORTED" | null
+	>(null);
+	const [showPickupProblem, setShowPickupProblem] = useState(false);
+	const [pickupProblemNote, setPickupProblemNote] = useState("");
+	const [pickupResponseError, setPickupResponseError] = useState<
+		string | null
+	>(null);
 	const [kitchenContact, setKitchenContact] = useState<ContactReveal | null>(
 		null,
 	);
+
+	useEffect(() => {
+		if (data?.status !== "AWAITING_BUYER_NO_SHOW_RESPONSE") return;
+		setNow(Date.now());
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, [data?.status]);
 
 	if (isLoading) {
 		return (
@@ -459,10 +489,13 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 	const isVendorNoResponseRefund =
 		data.status === "REFUNDED" && !!data.vendorNoResponseExpiredAt;
 	const timeline = orderTimelineSteps(data.fulfillmentType);
-	const currentStatus = canonicalOrderStatus(
-		data.status,
-		data.fulfillmentType,
-	);
+	const currentStatus = [
+		"AWAITING_BUYER_NO_SHOW_RESPONSE",
+		"PICKUP_PROBLEM_REPORTED",
+		"COMPLETED_BUYER_NO_SHOW",
+	].includes(data.status)
+		? "READY_FOR_PICKUP"
+		: canonicalOrderStatus(data.status, data.fulfillmentType);
 	const currentIdx = timeline.findIndex(
 		(step) => step.status === currentStatus,
 	);
@@ -476,6 +509,52 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 		LATE_CANCELLABLE.includes(data.status) &&
 		!data.handoverCredentialUsedAt;
 	const canCancel = CANCELLABLE.includes(data.status) || isLateActive;
+	const pickupResponseWindow = pickupNoShowResponseWindow(
+		data.pickupBuyerResponseDeadline,
+		now,
+	);
+
+	async function submitPickupNoShowResponse(
+		response: "CONFIRMED_COLLECTION" | "PROBLEM_REPORTED",
+	) {
+		if (pickupResponseWindow.expired) {
+			toast("The buyer response window has closed.", "error");
+			await mutate();
+			return;
+		}
+		const note = pickupProblemNote.trim();
+		if (response === "PROBLEM_REPORTED" && !note) {
+			setPickupResponseError(
+				"Describe the problem with this pickup report.",
+			);
+			return;
+		}
+
+		setPickupResponseSubmitting(response);
+		setPickupResponseError(null);
+		try {
+			await api.post(`/orders/${orderId}/pickup-no-show-response`, {
+				response,
+				...(response === "PROBLEM_REPORTED" ? { note } : {}),
+			});
+			toast(
+				response === "CONFIRMED_COLLECTION"
+					? "Collection confirmed. The order is now completed."
+					: "Your pickup problem was sent for review.",
+				"success",
+			);
+			setShowPickupProblem(false);
+			setPickupProblemNote("");
+			await mutate();
+		} catch (e) {
+			const message = errMsg(e);
+			setPickupResponseError(message);
+			toast(message, "error");
+			await mutate();
+		} finally {
+			setPickupResponseSubmitting(null);
+		}
+	}
 
 	async function cancel() {
 		if (!reason.trim()) {
@@ -571,6 +650,153 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 					</Row>
 				</HeroCard>
 			</FadeIn>
+
+			{data.status === "AWAITING_BUYER_NO_SHOW_RESPONSE" && (
+				<FadeIn $delay={40}>
+					<PickupNoShowResponseCard
+						id="pickup-no-show-response"
+						$accent
+						aria-live="polite"
+					>
+						<Stack $gap={14}>
+							<Row
+								$justify="space-between"
+								$align="flex-start"
+								$gap={12}
+								$wrap
+							>
+								<Stack $gap={4}>
+									<Text $weight={900} $size={18}>
+										Respond to the pickup report
+									</Text>
+									<Text $muted $size={14}>
+										The kitchen reported that this order was
+										not collected.
+									</Text>
+								</Stack>
+								<Badge
+									$tone={
+										pickupResponseWindow.expired
+											? "danger"
+											: "warning"
+									}
+								>
+									<FiClock size={14} aria-hidden />{" "}
+									{pickupResponseWindow.countdown}
+								</Badge>
+							</Row>
+
+							{pickupResponseWindow.deadline && (
+								<Text $muted $size={13}>
+									Respond by{" "}
+									{formatDateTime(
+										pickupResponseWindow.deadline,
+									)}
+									.
+								</Text>
+							)}
+
+							{pickupResponseWindow.expired ? (
+								<Text $muted $size={14}>
+									The response window has closed. The order
+									will refresh when the no-show review is
+									finalized.
+								</Text>
+							) : (
+								<>
+									<Text $muted $size={13}>
+										If you did not collect the order, no
+										action is required. It will close as
+										uncollected when the response period
+										ends.
+									</Text>
+									<ResponseActions>
+										<Button
+											$loading={
+												pickupResponseSubmitting ===
+												"CONFIRMED_COLLECTION"
+											}
+											disabled={
+												pickupResponseSubmitting !==
+												null
+											}
+											onClick={() =>
+												submitPickupNoShowResponse(
+													"CONFIRMED_COLLECTION",
+												)
+											}
+										>
+											I collected this order
+										</Button>
+										<Button
+											$variant="secondary"
+											disabled={
+												pickupResponseSubmitting !==
+												null
+											}
+											onClick={() => {
+												setPickupResponseError(null);
+												setShowPickupProblem(
+													(current) => !current,
+												);
+											}}
+										>
+											There is a problem
+										</Button>
+									</ResponseActions>
+
+									{showPickupProblem && (
+										<Stack $gap={10}>
+											<Textarea
+												label="What happened?"
+												value={pickupProblemNote}
+												onChange={(event) => {
+													setPickupProblemNote(
+														event.target.value,
+													);
+													setPickupResponseError(
+														null,
+													);
+												}}
+												placeholder="Explain what is wrong with the vendor's pickup report."
+												maxLength={500}
+											/>
+											<Text $muted $size={12}>
+												{500 - pickupProblemNote.length}{" "}
+												characters left
+											</Text>
+											<Button
+												$variant="danger"
+												$loading={
+													pickupResponseSubmitting ===
+													"PROBLEM_REPORTED"
+												}
+												disabled={
+													pickupResponseSubmitting !==
+													null
+												}
+												onClick={() =>
+													submitPickupNoShowResponse(
+														"PROBLEM_REPORTED",
+													)
+												}
+											>
+												Submit problem for review
+											</Button>
+										</Stack>
+									)}
+								</>
+							)}
+
+							{pickupResponseError && (
+								<Text role="alert" $size={13}>
+									{pickupResponseError}
+								</Text>
+							)}
+						</Stack>
+					</PickupNoShowResponseCard>
+				</FadeIn>
+			)}
 
 			<FadeIn $delay={60}>
 				<SummaryGrid>
@@ -876,13 +1102,19 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 				</Card>
 			)}
 
-			{!canViewHandover && data.handoverCredentialUsedAt == null && (
-				<StatusNote>
-					<Text $muted $size={13}>
-						{handoverUnavailableMessage(data.fulfillmentType)}
-					</Text>
-				</StatusNote>
-			)}
+			{!canViewHandover &&
+				data.handoverCredentialUsedAt == null &&
+				![
+					"AWAITING_BUYER_NO_SHOW_RESPONSE",
+					"PICKUP_PROBLEM_REPORTED",
+					"COMPLETED_BUYER_NO_SHOW",
+				].includes(data.status) && (
+					<StatusNote>
+						<Text $muted $size={13}>
+							{handoverUnavailableMessage(data.fulfillmentType)}
+						</Text>
+					</StatusNote>
+				)}
 
 			{data.status === "PENDING_PAYMENT" && (
 				<Card $accent>

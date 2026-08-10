@@ -4,14 +4,20 @@ import {
 	validationError,
 } from "../../constants";
 import {
+	getBuyerOrderByIdDB,
 	getOrderDisputeByIdDB,
+	getVendorProfileByIdDB,
+	type IBuyerOrder,
 	type IOrderDispute,
 	listOrderDisputesDB,
 	type OrderDisputeAction,
 	type OrderDisputeStatus,
+	OrderStatus,
+	setBuyerOrderStatusDB,
 	updateOrderDisputeReviewDB,
 } from "../../models";
 import { recordAudit } from "../audit";
+import { createUserNotification } from "../notifications";
 import { openOrderDisputeForReview } from "../orderDisputes";
 import { refundOrderAsAdmin } from "./refunds";
 import type { AdminActor } from "./vendors";
@@ -32,6 +38,10 @@ export function listDisputes({
 	offset?: number;
 } = {}) {
 	return listOrderDisputesDB({ status, limit, offset });
+}
+
+export function listDisputesForOrder(orderId: string) {
+	return listOrderDisputesDB({ buyerOrderId: orderId, limit: 100 });
 }
 
 export function openDisputeForOrder(
@@ -57,8 +67,15 @@ export async function reviewOrderDisputeAsAdmin({
 }): Promise<IOrderDispute> {
 	const dispute = await getOrderDisputeByIdDB({ id: disputeId });
 	if (!dispute) throw ErrOrderNotFound;
+	const orderId = dispute.buyerOrderId.toString();
+	const order = await getBuyerOrderByIdDB({ id: orderId });
+	if (!order) throw ErrOrderNotFound;
 	if (dispute.status === "RESOLVED") {
 		throw invalidOrderState("This dispute has already been resolved.");
+	}
+	const trimmedNote = note?.trim();
+	if (!trimmedNote) {
+		throw validationError("Add an admin note for this dispute action.");
 	}
 
 	let nextStatus: OrderDisputeStatus = "RESOLVED";
@@ -70,19 +87,31 @@ export async function reviewOrderDisputeAsAdmin({
 		);
 	} else if (action === "ISSUE_FULL_REFUND") {
 		await refundOrderAsAdmin({
-			orderId: dispute.buyerOrderId.toString(),
-			reason: note || `Admin dispute refund: ${dispute.reason}`,
+			orderId,
+			reason: trimmedNote,
 			actor,
 		});
-	} else if (!note?.trim()) {
-		throw validationError("Add an admin note for this dispute action.");
+	} else if (
+		dispute.reason === "BUYER_NO_SHOW_COMPLAINT" &&
+		(action === "UPHOLD_COMPLETION" || action === "REJECT_DISPUTE")
+	) {
+		const completed = await setBuyerOrderStatusDB({
+			id: orderId,
+			status: OrderStatus.COMPLETED_BUYER_NO_SHOW,
+			fromStatuses: [OrderStatus.PICKUP_PROBLEM_REPORTED],
+		});
+		if (!completed) {
+			throw invalidOrderState(
+				"The pickup dispute order changed status. Refresh and review it again.",
+			);
+		}
 	}
 
 	const updated = await updateOrderDisputeReviewDB({
 		id: disputeId,
 		status: nextStatus,
 		action,
-		note: note?.trim(),
+		note: trimmedNote,
 		adminUserId: actor.userId,
 		resolvedAt: nextStatus === "RESOLVED" ? now : undefined,
 	});
@@ -101,7 +130,7 @@ export async function reviewOrderDisputeAsAdmin({
 		newState: {
 			status: updated.status,
 			action,
-			note: note?.trim(),
+			note: trimmedNote,
 			amountKobo,
 			buyerOrderId: dispute.buyerOrderId.toString(),
 		},
@@ -109,5 +138,78 @@ export async function reviewOrderDisputeAsAdmin({
 		userAgent: actor.userAgent,
 	});
 
+	await notifyOrderDisputeDecision({
+		order,
+		dispute: updated,
+		action,
+		note: trimmedNote,
+	});
+
 	return updated;
+}
+
+async function notifyOrderDisputeDecision({
+	order,
+	dispute,
+	action,
+	note,
+}: {
+	order: IBuyerOrder;
+	dispute: IOrderDispute;
+	action: OrderDisputeAction;
+	note: string;
+}): Promise<void> {
+	const orderId = order._id.toString();
+	const isEvidenceRequest = action === "REQUEST_MORE_EVIDENCE";
+	const isRefund = action === "ISSUE_FULL_REFUND";
+	const buyerBody = isEvidenceRequest
+		? `Support needs more information about order ${order.orderNumber}: ${note}`
+		: isRefund
+			? `Your report for order ${order.orderNumber} was resolved in your favour. A full refund was issued.`
+			: `Support reviewed order ${order.orderNumber} and upheld the vendor's buyer no-show report.`;
+	const vendorBody = isEvidenceRequest
+		? `Support requested more information for order ${order.orderNumber}: ${note}`
+		: isRefund
+			? `Support resolved the pickup dispute for order ${order.orderNumber} in the buyer's favour and issued a full refund.`
+			: `Support reviewed order ${order.orderNumber} and upheld your buyer no-show report.`;
+
+	await createUserNotification({
+		userId: order.buyerId.toString(),
+		title: isEvidenceRequest
+			? "Support needs more information"
+			: "Pickup dispute resolved",
+		body: buyerBody,
+		type: isEvidenceRequest
+			? "ORDER_DISPUTE_MORE_EVIDENCE"
+			: "ORDER_DISPUTE_RESOLVED",
+		dedupeKey: `dispute:${dispute._id.toString()}:buyer:${action}`,
+		data: {
+			orderId,
+			disputeId: dispute._id.toString(),
+			action,
+			url: `/my-orders/${orderId}`,
+		},
+	});
+
+	const vendor = await getVendorProfileByIdDB({
+		id: order.vendorId.toString(),
+	});
+	if (!vendor?.userId) return;
+	await createUserNotification({
+		userId: vendor.userId.toString(),
+		title: isEvidenceRequest
+			? "Support needs more information"
+			: "Pickup dispute resolved",
+		body: vendorBody,
+		type: isEvidenceRequest
+			? "ORDER_DISPUTE_MORE_EVIDENCE"
+			: "ORDER_DISPUTE_RESOLVED",
+		dedupeKey: `dispute:${dispute._id.toString()}:vendor:${action}`,
+		data: {
+			orderId,
+			disputeId: dispute._id.toString(),
+			action,
+			url: "/vendor/pipeline",
+		},
+	});
 }

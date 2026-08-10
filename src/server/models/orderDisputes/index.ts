@@ -161,11 +161,13 @@ export async function getOrderDisputeByIdDB({
 
 export async function listOrderDisputesDB({
 	status,
+	buyerOrderId,
 	limit = 50,
 	offset = 0,
 	session,
 }: {
 	status?: OrderDisputeStatus;
+	buyerOrderId?: string;
 	limit?: number;
 	offset?: number;
 	session?: ClientSession;
@@ -173,6 +175,10 @@ export async function listOrderDisputesDB({
 	try {
 		const filter: Record<string, unknown> = {};
 		if (status) filter.status = status;
+		if (buyerOrderId) {
+			if (!mongoose.Types.ObjectId.isValid(buyerOrderId)) return [];
+			filter.buyerOrderId = new mongoose.Types.ObjectId(buyerOrderId);
+		}
 		return await OrderDispute.aggregate<IOrderDispute>(
 			[
 				{ $match: filter },

@@ -58,6 +58,9 @@ export default async function cron(): Promise<void> {
 	const { sweepLateBuyerOrders } = await import(
 		"../services/buyerOrders/lateOrders"
 	);
+	const { sweepDeliveryOverdueOrders } = await import(
+		"../services/buyerOrders/deliveryOverdue"
+	);
 	const { sendCutoffWarnings } = await import(
 		"../services/buyerOrders/cutoffWarning"
 	);
@@ -161,6 +164,18 @@ export default async function cron(): Promise<void> {
 			() => {
 				void runSingleInstance("late-orders", 50, () =>
 					sweepLateBuyerOrders(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		new CronJob(
+			"*/5 * * * *",
+			() => {
+				void runSingleInstance("delivery-overdue", 280, () =>
+					sweepDeliveryOverdueOrders(),
 				);
 			},
 			null,

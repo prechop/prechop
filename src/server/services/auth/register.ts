@@ -13,8 +13,12 @@ import {
 	createUserDB,
 	getUserByEmailDB,
 	getUserByIdDB,
+	getUserByVerifiedPhoneDB,
+	getUsersByPhoneDB,
+	getVendorProfileByUserIdDB,
 	linkGoogleUserDB,
 	loginUserDB,
+	markUserPhoneVerifiedDB,
 } from "../../models";
 import { normalizeEmail } from "../../models/users";
 import type { IUser, IUserPublic } from "../../models/users/types";
@@ -44,16 +48,25 @@ function makeToken(): string {
 	return randomBytes(32).toString("base64url");
 }
 
-function cleanNext(next?: string | null): string {
+export function cleanAuthNext(next?: string | null): string {
 	if (!next?.startsWith("/") || next.startsWith("//")) return "/marketplace";
 	return next;
 }
 
-export function resolvePostAuthRedirect(
+export async function resolvePostAuthRedirect(
 	user: IUserPublic,
 	next?: string,
-): string {
-	const cleaned = cleanNext(next);
+): Promise<string> {
+	const cleaned = cleanAuthNext(next);
+	if (cleaned === "/vendor/onboarding") {
+		const vendor = await getVendorProfileByUserIdDB({ userId: user.id });
+		if (!vendor || vendor.status === "INCOMPLETE") {
+			return "/vendor/onboarding";
+		}
+		// Pending, changes-requested, and suspended vendors use the dashboard's
+		// existing status gate; active vendors use the dashboard normally.
+		return "/dashboard";
+	}
 	if (
 		user.groups.includes(ADMINISTRATORS_GROUP) &&
 		(cleaned === "/" || cleaned === "/marketplace")
@@ -131,7 +144,6 @@ async function findOrCreateBuyer({
 		});
 		return linked ?? existing;
 	}
-
 	const fallback = nameFromEmail(normalizedEmail);
 	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
 	const user = await createUserDB({
@@ -167,7 +179,7 @@ export async function requestEmailSignIn({
 	const normalizedEmail = normalizeEmail(email);
 	if (!normalizedEmail) throw validationError("Enter a valid email address.");
 	const token = makeToken();
-	const returnTo = cleanNext(next);
+	const returnTo = cleanAuthNext(next);
 	await Redis.setex(
 		tokenKey(token),
 		EMAIL_SIGN_IN_TTL_SECONDS,
@@ -198,7 +210,7 @@ export async function verifyEmailSignIn({
 	const user = await findOrCreateBuyer({ email: data.email });
 	return {
 		...(await publicAuthResult(user._id.toString(), ip)),
-		next: cleanNext(next ?? data.next),
+		next: cleanAuthNext(next ?? data.next),
 	};
 }
 
@@ -207,7 +219,7 @@ export async function createGoogleAuthState(next?: string): Promise<string> {
 	await Redis.setex(
 		googleStateKey(state),
 		GOOGLE_STATE_TTL_SECONDS,
-		JSON.stringify({ next: cleanNext(next) }),
+		JSON.stringify({ next: cleanAuthNext(next) }),
 	);
 	return state;
 }
@@ -220,7 +232,7 @@ export async function consumeGoogleAuthState(
 	if (!raw) throw ErrInvalidCredentials;
 	await Redis.del(key);
 	const data = JSON.parse(raw) as { next?: string };
-	return { next: cleanNext(data.next) };
+	return { next: cleanAuthNext(data.next) };
 }
 
 export async function signInWithGoogleProfile({
@@ -250,6 +262,69 @@ export async function signInWithGoogleProfile({
 		profileImageUrl,
 		googleSubject,
 		googleEmailVerified: true,
+	});
+	return publicAuthResult(user._id.toString(), ip);
+}
+
+export async function signInWithVerifiedPhone({
+	phone,
+	ip,
+}: {
+	phone: string;
+	ip: string;
+}): Promise<AuthResult> {
+	const existing = await getUserByVerifiedPhoneDB({ phone });
+	if (existing) {
+		if (!existing.isActive) throw ErrUnauthorized;
+		return publicAuthResult(existing._id.toString(), ip);
+	}
+	const contactMatches = await getUsersByPhoneDB({ phone });
+	if (contactMatches.length > 1) {
+		throw validationError(
+			"This number is linked to more than one account. Sign in with Google or email and update your account phone.",
+		);
+	}
+	if (contactMatches.length === 1) {
+		const match = contactMatches[0];
+		if (!match.isActive) throw ErrUnauthorized;
+		const verified = await markUserPhoneVerifiedDB({
+			id: match._id.toString(),
+			phone,
+		});
+		if (!verified) throw validationError("Could not verify account phone.");
+		return publicAuthResult(verified._id.toString(), ip);
+	}
+
+	const buyersGroupId = await getBuiltInGroupId(BUYERS_GROUP);
+	let user: IUser | null = null;
+	try {
+		user = await createUserDB({
+			payload: {
+				firstName: "Prechop",
+				lastName: "Customer",
+				email: `phone-${hash(phone).slice(0, 32)}@auth.prechop.local`,
+				phone,
+				phoneVerifiedAt: new Date(),
+				groupIds: buyersGroupId ? [buyersGroupId] : [],
+				isActive: true,
+			},
+		});
+	} catch (error) {
+		// Another verification may have claimed this number concurrently. The
+		// partial unique index is authoritative; resolve the winning account.
+		if ((error as { code?: number })?.code !== 11000) throw error;
+	}
+
+	if (!user) user = await getUserByVerifiedPhoneDB({ phone });
+	if (!user) throw validationError("Could not create account.");
+	if (!user.isActive) throw ErrUnauthorized;
+
+	await recordAudit({
+		userId: user._id.toString(),
+		role: BUYERS_GROUP,
+		action: "BUYER_REGISTER_WHATSAPP",
+		resourceType: "users",
+		resourceId: user._id.toString(),
 	});
 	return publicAuthResult(user._id.toString(), ip);
 }

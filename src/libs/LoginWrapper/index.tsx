@@ -104,18 +104,35 @@ export default function LoginWrapper() {
   const [emailOpen, setEmailOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
   const next = useMemo(() => cleanNext(params.get("next")), [params]);
   const authNext = next;
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace(authNext);
+      router.replace(authNext === "/vendor/onboarding" ? "/sell" : authNext);
     }
   }, [authNext, isAuthenticated, isLoading, router]);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = window.setInterval(
+      () => setResendIn((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [resendIn]);
 
   async function continueWithEmail() {
     if (!emailOpen) {
       setEmailOpen(true);
+      setWhatsAppOpen(false);
       return;
     }
     setLoading(true);
@@ -142,6 +159,44 @@ export default function LoginWrapper() {
     window.location.href = `/api/auth/google?${query.toString()}`;
   }
 
+  async function requestWhatsAppCode() {
+    setWhatsAppLoading(true);
+    try {
+      const res = await api.post("/auth/whatsapp/request", {
+        phone,
+        next: authNext,
+      });
+      const data = res.data?.data;
+      setChallengeId(data.challengeId);
+      setMaskedPhone(data.maskedPhone);
+      setOtp("");
+      setResendIn(data.resendAfterSeconds ?? 60);
+      toast("Verification code sent on WhatsApp.", "success");
+      if (data.devOtp) {
+        console.info("Prechop dev WhatsApp OTP:", data.devOtp);
+      }
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  }
+
+  async function verifyWhatsAppCode() {
+    setWhatsAppLoading(true);
+    try {
+      const res = await api.post("/auth/whatsapp/verify", {
+        challengeId,
+        code: otp,
+      });
+      window.location.assign(res.data?.data?.next ?? authNext);
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  }
+
   return (
     <Screen>
       <Wrap>
@@ -164,11 +219,106 @@ export default function LoginWrapper() {
                 <Text $muted>Sign in to continue your order.</Text>
               </Stack>
 
-              <Button $full $size="lg" onClick={continueWithGoogle}>
-                Continue with Google
+              <Button
+                $full
+                $size="lg"
+                onClick={() => {
+                  setWhatsAppOpen(true);
+                  setEmailOpen(false);
+                }}>
+                Continue with WhatsApp
               </Button>
 
+              {whatsAppOpen && (
+                <Panel>
+                  <Stack $gap={12}>
+                    {!challengeId ? (
+                      <>
+                        <Input
+                          label="WhatsApp number"
+                          type="tel"
+                          inputMode="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="0801 234 5678"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") requestWhatsAppCode();
+                          }}
+                        />
+                        <Text $muted $size={13}>
+                          We&apos;ll send a 6-digit code to your Nigerian
+                          WhatsApp number.
+                        </Text>
+                        <Button
+                          $full
+                          onClick={requestWhatsAppCode}
+                          disabled={!phone.trim() || whatsAppLoading}
+                          $loading={whatsAppLoading}>
+                          Send WhatsApp code
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          label="Verification code"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={otp}
+                          onChange={(e) =>
+                            setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          placeholder="123456"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && otp.length === 6)
+                              verifyWhatsAppCode();
+                          }}
+                        />
+                        <Text $muted $size={13}>
+                          Enter the code sent to {maskedPhone}. It expires in 5
+                          minutes.
+                        </Text>
+                        <Button
+                          $full
+                          onClick={verifyWhatsAppCode}
+                          disabled={otp.length !== 6}
+                          $loading={whatsAppLoading}>
+                          Verify and continue
+                        </Button>
+                        <Button
+                          $full
+                          $variant="ghost"
+                          disabled={resendIn > 0 || whatsAppLoading}
+                          onClick={requestWhatsAppCode}>
+                          {resendIn > 0
+                            ? `Resend in ${resendIn}s`
+                            : "Resend code"}
+                        </Button>
+                        <Button
+                          $full
+                          $variant="ghost"
+                          onClick={() => {
+                            setChallengeId("");
+                            setOtp("");
+                          }}>
+                          Change number
+                        </Button>
+                      </>
+                    )}
+                  </Stack>
+                </Panel>
+              )}
+
               <Divider>OR</Divider>
+
+              <Button
+                $full
+                $size="lg"
+                $variant="secondary"
+                onClick={continueWithGoogle}>
+                Continue with Google
+              </Button>
 
               <Button
                 $full
@@ -189,7 +339,6 @@ export default function LoginWrapper() {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setSent(false);
-						
                       }}
                       placeholder="you@example.com"
                       onKeyDown={(e) => {
@@ -213,10 +362,10 @@ export default function LoginWrapper() {
               Want to sell?{" "}
             </Text>
             <Link
-              href="/sell"
+              href="/login?next=/vendor/onboarding"
               onClick={(e) => {
                 e.preventDefault();
-                router.push("/sell");
+                router.push("/login?next=/vendor/onboarding");
               }}
               style={{
                 color: "var(--pc-color-primary)",

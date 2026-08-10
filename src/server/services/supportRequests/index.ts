@@ -8,7 +8,9 @@ import {
 	addSupportMessageDB,
 	createSupportRequestDB,
 	getBuyerOrderByNumberDB,
+	getPaymentByOrderIdDB,
 	getSupportRequestByIdDB,
+	getUserByIdDB,
 	getVendorProfileByIdDB,
 	type ISupportRequestCreateInput,
 	listSupportRequestsByUserDB,
@@ -141,18 +143,89 @@ export async function updateAdminSupportRequest({
 	requestId,
 	status,
 	assignedAdminId,
+	resolutionNote,
+	resolvedBy,
 }: {
 	requestId: string;
 	status?: SupportStatus;
 	assignedAdminId?: string;
+	resolutionNote?: string;
+	resolvedBy?: string;
 }) {
+	if (status === "RESOLVED" && !resolutionNote?.trim()) {
+		throw ErrInvalidAction;
+	}
 	const updated = await updateSupportRequestDB({
 		id: requestId,
 		status,
 		assignedAdminId,
+		resolutionNote: resolutionNote?.trim(),
+		resolvedBy: status === "RESOLVED" ? resolvedBy : undefined,
 	});
 	if (!updated) throw ErrOrderNotFound;
 	return updated;
+}
+
+export async function getAdminSupportOrderContext({
+	requestId,
+}: {
+	requestId: string;
+}) {
+	const request = await getSupportRequestByIdDB({ id: requestId });
+	if (!request) throw ErrOrderNotFound;
+	if (request.category !== "ORDER" || !request.relatedOrderRef) {
+		throw ErrInvalidAction;
+	}
+	const order = await getBuyerOrderByNumberDB({
+		orderNumber: request.relatedOrderRef,
+	});
+	if (!order) throw ErrOrderNotFound;
+	const [payment, vendor, buyer] = await Promise.all([
+		getPaymentByOrderIdDB({ buyerOrderId: order._id.toString() }),
+		getVendorProfileByIdDB({ id: order.vendorId.toString() }),
+		getUserByIdDB({ id: order.buyerId.toString() }),
+	]);
+	return {
+		order: {
+			id: order._id.toString(),
+			orderNumber: order.orderNumber,
+			status: order.status,
+			fulfillmentType: order.fulfillmentType,
+			totalKobo: order.totalKobo,
+			createdAt: order.createdAt,
+			timeline: order.timeline ?? [],
+		},
+		payment: payment
+			? {
+					status: payment.status,
+					webhookVerified: payment.webhookVerified,
+					paidAt: payment.paidAt,
+					paystackRef: payment.paystackRef,
+				}
+			: null,
+		vendor: vendor
+			? {
+					id: vendor._id.toString(),
+					name: vendor.businessName || vendor.email,
+					status: vendor.status,
+				}
+			: null,
+		buyer: buyer
+			? {
+					id: buyer._id.toString(),
+					name: `${buyer.firstName} ${buyer.lastName}`.trim(),
+					email: buyer.email,
+				}
+			: null,
+		handover: {
+			confirmed: !!order.confirmedAt,
+			confirmedAt: order.confirmedAt ?? null,
+			method: order.confirmationMethod ?? null,
+			credentialUsedAt: order.handoverCredentialUsedAt ?? null,
+			failedAttempts: order.handoverFailedAttempts ?? 0,
+			lockedUntil: order.handoverLockedUntil ?? null,
+		},
+	};
 }
 
 export async function addAdminSupportMessage({
