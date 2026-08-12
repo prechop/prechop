@@ -129,7 +129,6 @@ const Right = styled.div`
   min-width: 0;
   @media (max-width: 759px) {
     gap: 2px;
-
   }
 `;
 const ModeSwitch = styled.div`
@@ -175,7 +174,7 @@ const ModeBtn = styled.button<{ $active: boolean }>`
   font-size: 13px;
   font-weight: 700;
   padding: 5px 10px;
-  background:yellow;
+  background: yellow;
   border-radius: var(--pc-radius-pill);
   color: ${(p) =>
     p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
@@ -280,7 +279,7 @@ const TopBadge = styled.span`
     top: -9px;
     right: -3px;
     min-width: 14px;
-    color:yellow;
+    color: yellow;
     height: 14px;
     padding: 0 3px;
     font-size: 7px;
@@ -319,7 +318,6 @@ const GuestAction = styled(Link)`
   @media (max-width: 420px) {
     padding: 7px 10px;
     font-size: 12px;
-    
   }
 `;
 const Main = styled.main<{ $noSidebar?: boolean }>`
@@ -350,6 +348,7 @@ const VendorFooter = styled.footer`
   align-items: center;
   justify-content: center;
   gap: 6px;
+  margin: 10px 0;
   color: var(--pc-text-muted);
   font-size: 12px;
 `;

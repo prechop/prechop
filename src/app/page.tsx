@@ -214,6 +214,8 @@ const FloatCard = styled.div<{ $pos: string; $delay: number }>`
 const Footer = styled(Container)`
   padding: var(--pc-space-5) var(--pc-space-4);
   color: var(--pc-text-muted);
+
+  margin-top: 5px;
   font-size: 13px;
   font-weight: 600;
   border-top: 1px solid var(--pc-border);
@@ -345,6 +347,7 @@ const AuthCluster = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
+  background: var(--pc-surface);
   min-height: 40px;
 `;
 

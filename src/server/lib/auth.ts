@@ -1,17 +1,19 @@
 import "server-only";
 
-import type { NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import {
 	ADMINISTRATORS_GROUP,
 	decodeJwtToken,
 	ErrForbidden,
+	ErrTokenCompromised,
 	ErrUnauthorized,
 	ErrVendorNotActive,
 } from "../constants";
 
 import {
 	getUserByIdDB,
+	getUserForAuthDB,
 	getVendorProfileByUserIdDB,
 	type IPolicyStatement,
 	type IVendorProfile,
@@ -34,9 +36,11 @@ import { getClientIp } from "./clientIp";
 import {
 	ACCESS_COOKIE,
 	clearAuthCookies,
+	clearAuthCookiesOnResponse,
 	getCookieValue,
 	REFRESH_COOKIE,
 	setAuthCookies,
+	setAuthCookiesOnResponse,
 } from "./cookies";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,7 +321,7 @@ async function resolveScope(userId: string): Promise<{
 		userId,
 	});
 
-	const user = await getUserByIdDB({
+	const user = await getUserForAuthDB({
 		id: userId,
 	});
 
@@ -404,43 +408,39 @@ export async function verifyAuthToken(
 	});
 
 	if (access.token) {
-		try {
-			const decodedAccess = await decodeJwtToken({
-				accessToken: access.token,
-			});
-
-			if (!decodedAccess) {
-				console.warn("[verifyAuthToken] access token decoded to null", {
-					source: access.source,
-				});
-			} else {
-				console.info("[verifyAuthToken] access token decoded", {
-					userId: decodedAccess.userId,
-					tokenKeys: Object.keys(decodedAccess),
-				});
-
-				const scope = await resolveScope(decodedAccess.userId);
-
-				console.info(
-					"[verifyAuthToken] access authentication succeeded",
-					{
-						userId: decodedAccess.userId,
-						groups: scope.groups,
-					},
-				);
-
-				return {
-					userId: decodedAccess.userId,
-					token: decodedAccess,
-					refreshed: false,
-					...scope,
-				};
-			}
-		} catch (error) {
+		const decodedAccess = await decodeJwtToken({
+			accessToken: access.token,
+		}).catch((error) => {
 			console.warn("[verifyAuthToken] access token rejected", {
 				source: access.source,
 				...describeError(error),
 			});
+			return null;
+		});
+
+		if (!decodedAccess) {
+			console.warn("[verifyAuthToken] access token decoded to null", {
+				source: access.source,
+			});
+		} else {
+			console.info("[verifyAuthToken] access token decoded", {
+				userId: decodedAccess.userId,
+				tokenKeys: Object.keys(decodedAccess),
+			});
+
+			const scope = await resolveScope(decodedAccess.userId);
+
+			console.info("[verifyAuthToken] access authentication succeeded", {
+				userId: decodedAccess.userId,
+				groups: scope.groups,
+			});
+
+			return {
+				userId: decodedAccess.userId,
+				token: decodedAccess,
+				refreshed: false,
+				...scope,
+			};
 		}
 	}
 
@@ -761,11 +761,17 @@ export function withAuth<TCtx = unknown>(
 				...describeError(error),
 			});
 
-			await clearAuthCookies();
+			if (isTerminalAuthenticationError(error)) {
+				await clearAuthCookies();
+			}
 
 			const { handleError } = await import("./response");
 
-			return handleError(error);
+			const response = handleError(error);
+			if (isTerminalAuthenticationError(error)) {
+				clearAuthCookiesOnResponse(response);
+			}
+			return response;
 		}
 
 		let response: Response;
@@ -791,7 +797,11 @@ export function withAuth<TCtx = unknown>(
 			});
 
 			try {
-				await setAuthCookies(auth.token);
+				if (response instanceof NextResponse) {
+					setAuthCookiesOnResponse(response, auth.token);
+				} else {
+					await setAuthCookies(auth.token);
+				}
 
 				console.info("[withAuth] refreshed cookies persisted", {
 					userId: auth.userId,
@@ -811,6 +821,11 @@ export function withAuth<TCtx = unknown>(
 
 		return response;
 	};
+}
+
+/** Only these outcomes prove the browser credential is no longer usable. */
+export function isTerminalAuthenticationError(error: unknown): boolean {
+	return error === ErrUnauthorized || error === ErrTokenCompromised;
 }
 
 // import "server-only";

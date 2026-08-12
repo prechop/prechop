@@ -481,6 +481,23 @@ export async function getUsersByIdsDB({
 	}
 }
 
+/**
+ * Authentication-critical lookup. Unlike general repository reads, this does
+ * not collapse database failures into "not found", because doing so would turn
+ * a temporary Mongo outage into a terminal logout.
+ */
+export async function getUserForAuthDB({
+	id,
+}: {
+	id: string;
+}): Promise<IUser | null> {
+	if (!mongoose.Types.ObjectId.isValid(id)) return null;
+	return User.findOne({
+		_id: new mongoose.Types.ObjectId(id),
+		...notDeletedFilter,
+	}).lean<IUser>();
+}
+
 // IAM attachments (groups & direct policies) ─────────────────────────────
 
 export async function getUserByEmailDB({
@@ -816,14 +833,18 @@ export async function reLoginUserWithRefreshTokenDB({
 			success: "true",
 		});
 		return result;
-	} catch {
+	} catch (error) {
 		timer({
 			operation: IOperationType.Update,
 			collection: collectionName,
 			method: "reLoginUserWithRefreshTokenDB",
 			success: "false",
 		});
-		return null;
+		// A missing/expired/revoked token is an ordinary authentication failure.
+		// Database errors must remain distinguishable so callers do not clear a
+		// valid browser credential during a temporary outage.
+		if (error === ErrUserNotFound) return null;
+		throw error;
 	}
 }
 
@@ -850,6 +871,63 @@ export async function logoutUserDB({
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Compensate a rotation that could not publish its encrypted Redis handoff.
+ * The replacement was never returned to a caller, so atomically restore the
+ * presented browser credential and remove the unreachable successor.
+ */
+export async function restoreRefreshTokenAfterFailedRotationDB({
+	id,
+	presentedToken,
+	replacementToken,
+	deadline,
+	absoluteDeadline,
+}: {
+	id: string;
+	presentedToken: string;
+	replacementToken: string;
+	deadline: Date;
+	absoluteDeadline: Date;
+}): Promise<void> {
+	const restored = await User.findOneAndUpdate(
+		{
+			_id: new mongoose.Types.ObjectId(id),
+			"refreshTokens.refreshToken": replacementToken,
+		},
+		[
+			{
+				$set: {
+					refreshTokens: {
+						$concatArrays: [
+							{
+								$filter: {
+									input: "$refreshTokens",
+									as: "token",
+									cond: {
+										$ne: [
+											"$$token.refreshToken",
+											replacementToken,
+										],
+									},
+								},
+							},
+							[
+								{
+									refreshToken: presentedToken,
+									deadline,
+									absoluteDeadline,
+								},
+							],
+						],
+					},
+				},
+			},
+		],
+		{ returnDocument: "after" },
+	);
+	if (!restored) throw new Error("Could not restore failed refresh rotation");
 }
 
 export async function removeExpiredUsersTokensDB(): Promise<boolean> {

@@ -1383,7 +1383,7 @@ export default function VendorStorefrontWrapper({
 					</SectionTop>
 					{reviews.length === 0 ? (
 						<EmptyState
-							icon="star"
+							icon="⭐"
 							title="No reviews yet"
 							description="Buyer reviews will appear here after completed orders."
 						/>

@@ -9,14 +9,17 @@ export const api: AxiosInstance = axios.create({
 	headers: { "Content-Type": "application/json" },
 });
 
-let refreshing: Promise<boolean> | null = null;
+type RefreshOutcome = "success" | "terminal" | "recoverable";
+let refreshing: Promise<RefreshOutcome> | null = null;
 
-async function tryRefresh(): Promise<boolean> {
+async function tryRefresh(): Promise<RefreshOutcome> {
 	if (!refreshing) {
 		refreshing = api
 			.post("/auth/refresh")
-			.then(() => true)
-			.catch(() => false)
+			.then(() => "success" as const)
+			.catch((error) =>
+				error?.response?.status === 401 ? "terminal" : "recoverable",
+			)
 			.finally(() => {
 				refreshing = null;
 			});
@@ -45,8 +48,9 @@ api.interceptors.response.use(
 			// user whose access token has expired but whose refresh token is still
 			// valid — including on `/users/me`, the auth probe fired on every page
 			// load. If the refresh succeeds we transparently replay the request.
-			const ok = await tryRefresh();
-			if (ok) return api(original);
+			const outcome = await tryRefresh();
+			if (outcome === "success") return api(original);
+			if (outcome === "recoverable") return Promise.reject(error);
 
 			// Refresh failed → the session is truly gone. `/users/me` is the silent
 			// auth probe: a 401 there just means "anonymous", so let `useAuth`

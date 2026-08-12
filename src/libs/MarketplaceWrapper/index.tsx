@@ -661,13 +661,13 @@ const SectionIntro = styled.div`
   }
 `;
 const SectionTitle = styled.h2`
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--pc-text);
   letter-spacing: 0;
 
   @media (max-width: 759px) {
-    font-size: 16px;
+    font-size: 11px;
   }
 `;
 const LiveDot = styled.span`
@@ -683,7 +683,7 @@ const SectionHint = styled.span`
   font-weight: 700;
 
   @media (max-width: 759px) {
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
   }
 `;
