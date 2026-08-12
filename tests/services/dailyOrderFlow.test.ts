@@ -38,7 +38,7 @@ beforeAll(async () => {
 	invalidateSiteConfigsCache();
 	vi.spyOn(paystackProvider, "refund").mockResolvedValue({
 		id: 1,
-		status: "success",
+		status: "processed",
 		amount: 1000,
 	});
 });

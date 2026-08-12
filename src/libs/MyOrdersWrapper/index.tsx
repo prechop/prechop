@@ -505,7 +505,7 @@ export default function MyOrdersWrapper() {
 							</ModalActions>
 							<Button
 								as={Link}
-								href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(lateModalOrder.orderNumber)}#support-form`}
+								href={`/help?category=ORDER&order=${encodeURIComponent(lateModalOrder.orderNumber)}#support-form`}
 								$variant="ghost"
 								onClick={() => dismissLateModal(lateModalOrder)}
 							>

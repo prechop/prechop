@@ -71,9 +71,37 @@ export default async function cron(): Promise<void> {
 	const { sendDueReviewPrompts } = await import(
 		"../services/notifications/reviewPrompts"
 	);
+	const { reconcileRefunds } = await import("../services/refunds");
+	const { runVendorPayoutBatch, reconcileVendorPayoutTransfers } = await import(
+		"../services/vendorPayouts"
+	);
 
 	try {
 		// Cutoff sweep — close ACTIVE listings past their cutoff. Every minute.
+		new CronJob(
+			"0 10 * * 1-5",
+			() => {
+				void runSingleInstance("vendor-payout-v2", 3300, () =>
+					runVendorPayoutBatch({ limit: 1000 }),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		new CronJob(
+			"*/10 * * * *",
+			() => {
+				void runSingleInstance("vendor-payout-reconciliation-v2", 550, () =>
+					reconcileVendorPayoutTransfers({ limit: 50 }),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
 		new CronJob(
 			"*/1 * * * *",
 			() => {
@@ -128,6 +156,20 @@ export default async function cron(): Promise<void> {
 			() => {
 				void runSingleInstance("cutoff-enforce", 280, () =>
 					sweepStalePaidOrders(),
+				);
+			},
+			null,
+			true,
+			PLATFORM_TIMEZONE,
+		);
+
+		// Poll only already-submitted refunds whose webhook may have been missed.
+		// This never creates or retries a refund and processes a bounded batch.
+		new CronJob(
+			"*/10 * * * *",
+			() => {
+				void runSingleInstance("refund-reconciliation", 550, () =>
+					reconcileRefunds({ limit: 100 }),
 				);
 			},
 			null,

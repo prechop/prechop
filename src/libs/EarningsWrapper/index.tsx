@@ -69,6 +69,16 @@ interface Earnings {
 		orders: number;
 	};
 	days: EarningsDay[];
+	settlementModels?: {
+		v1: { netSettledKobo: number; orders: number };
+		v2: {
+			pendingKobo: number;
+			heldKobo: number;
+			queuedKobo: number;
+			paidKobo: number;
+			openAdjustmentKobo: number;
+		};
+	};
 }
 
 /** Reviews still come from analytics — this is the only vendor-facing surface
@@ -211,7 +221,7 @@ const EarningsStatsGrid = styled(Grid)`
  * question a vendor has ("where is my money?") before they can misread the
  * numbers as a balance PreChop is holding for them.
  */
-function SettlementNotice() {
+function SettlementNotice({ v2Visible }: { v2Visible: boolean }) {
 	return (
 		<Notice>
 			<Row $gap={12} $align="flex-start">
@@ -220,13 +230,14 @@ function SettlementNotice() {
 				</Text>
 				<Stack $gap={4}>
 					<Text $weight={800} $size={15}>
-						Paystack pays you directly. PreChop never holds your
-						money.
+						{v2Visible
+							? "Your payout method is shown separately for each payment version."
+							: "Buyer payments and vendor payouts are tracked separately."}
 					</Text>
 					<Text $muted $size={13.5}>
-						Every payment is split at checkout and your share is
-						settled straight to your bank account by Paystack. There
-						is no balance here to withdraw.
+						{v2Visible
+							? "Direct-split payments and completion-based payouts are tracked separately so pending, held, queued and paid money are never mixed."
+							: "A paid order creates a pending vendor payable. After trusted completion, review and hold checks, an eligible payout is sent by Paystack Transfer to your verified bank."}
 					</Text>
 				</Stack>
 			</Row>
@@ -299,8 +310,8 @@ function NoBank() {
 				<Text $muted $size={14}>
 					Your payout account isn't set up yet, so PreChop can't take
 					orders for your kitchen — buyers are turned away at
-					checkout. Add your bank details and Paystack will start
-					settling you directly.
+					checkout. Add your bank details so eligible V2 payouts can
+					be sent by Paystack Transfer to your verified bank.
 				</Text>
 				<Row>
 					<Button as={Link} href="/vendor/settings" $pill>
@@ -346,7 +357,17 @@ export default function EarningsWrapper() {
 		);
 	}
 
-	const { totals, days, platformFeeVendorPercent, bankConnected } = data;
+	const {
+		totals,
+		days,
+		platformFeeVendorPercent,
+		bankConnected,
+		settlementModels,
+	} = data;
+	const v2 = settlementModels?.v2;
+	const v2Visible = Boolean(
+		v2 && Object.values(v2).some((amount) => amount > 0),
+	);
 	const reviews = analytics?.reviews ?? [];
 	const sortedDays = [...(days ?? [])].sort(
 		(a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
@@ -361,7 +382,41 @@ export default function EarningsWrapper() {
 					subtitle="What you sold, what PreChop charged, and what Paystack sent to your bank."
 				/>
 
-				<SettlementNotice />
+				<SettlementNotice v2Visible={v2Visible} />
+				{v2Visible && v2 ? (
+					<>
+						<SectionHeader
+							title="Completion-based payouts"
+							icon="🏦"
+						/>
+						<EarningsStatsGrid $min={160} $gap={12}>
+							<StatCard
+								label="Pending"
+								value={formatKobo(v2.pendingKobo)}
+								icon="⏳"
+								hint="Completed-order grace or awaiting the next payout run"
+							/>
+							<StatCard
+								label="Held"
+								value={formatKobo(v2.heldKobo)}
+								icon="🛑"
+								hint="Order-specific review, dispute or refund hold"
+							/>
+							<StatCard
+								label="Queued"
+								value={formatKobo(v2.queuedKobo)}
+								icon="↗"
+								hint="Included in transfer processing"
+							/>
+							<StatCard
+								label="Paid"
+								value={formatKobo(v2.paidKobo)}
+								icon="✓"
+								hint="Confirmed paid by Paystack transfer status"
+							/>
+						</EarningsStatsGrid>
+					</>
+				) : null}
 
 				{/* Outranks the empty state: no bank is why there are no earnings. */}
 				{!bankConnected && <NoBank />}
@@ -409,11 +464,11 @@ export default function EarningsWrapper() {
 						}
 					/>
 					<StatCard
-						label="Net settled"
+						label="Paid to bank"
 						value={formatKobo(totals.netSettledKobo)}
 						icon="🏦"
 						tone="var(--pc-color-accent)"
-						hint="Sent to your bank by Paystack"
+						hint="Completed Paystack Transfers"
 					/>
 					<StatCard
 						label="Orders"
@@ -432,7 +487,7 @@ export default function EarningsWrapper() {
 						description={
 							bankConnected
 								? "Once buyers start ordering, every day you sell will show up here with its fee and payout."
-								: "Add your bank details above so buyers can order and Paystack can settle you."
+								: "Add your bank details so eligible payouts can be transferred to your bank."
 						}
 					/>
 				) : (

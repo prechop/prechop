@@ -75,6 +75,17 @@ export const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
 // Payments (Paystack)
 export const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
 export const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY ?? "";
+// Completion-based vendor payouts. All three default closed. Foundation access
+// is separate from the final money-movement interlock so one flag can never
+// accidentally authorize transfers.
+export const PLATFORM_BALANCE_TRANSFER_V2_ENABLED =
+	process.env.PLATFORM_BALANCE_TRANSFER_V2_ENABLED === "1";
+export const PAYSTACK_MANUAL_PAYOUTS_APPROVED =
+	process.env.PAYSTACK_MANUAL_PAYOUTS_APPROVED === "1";
+export const PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED =
+	process.env.PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED === "1";
+export const PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED =
+	process.env.PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED === "1";
 
 // Comms
 export const SENDCHAMP_API_KEY = process.env.SENDCHAMP_API_KEY ?? "";

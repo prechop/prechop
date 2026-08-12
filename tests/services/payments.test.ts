@@ -603,7 +603,7 @@ describe("confirmBuyerPaymentByReference", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 79,
-				status: "success",
+				status: "processed",
 				amount: amountKobo,
 			});
 		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
@@ -711,7 +711,7 @@ describe("confirmBuyerPaymentByReference", () => {
 		);
 		vi.spyOn(paystackProvider, "refund").mockResolvedValue({
 			id: 99,
-			status: "success",
+			status: "processed",
 			amount: amountKobo,
 		});
 		vi.spyOn(paystackProvider, "verifyTransaction").mockResolvedValue(
@@ -763,7 +763,7 @@ describe("refundBuyerOrder", () => {
 		const { order, ref } = await seedPaidOrder();
 		const spy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 1, status: "success", amount: 155000 });
+			.mockResolvedValue({ id: 1, status: "processed", amount: 155000 });
 		await refundBuyerOrder({
 			orderId: order._id.toString(),
 			paystackRef: ref,

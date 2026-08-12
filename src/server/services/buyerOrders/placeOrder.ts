@@ -34,6 +34,7 @@ import {
 	listDailyOrdersByVendorDB,
 	OrderStatus,
 	PaymentStatus,
+	PaymentSettlementMode,
 	VendorStatus,
 } from "../../models";
 import type { IBuyerOrderItem } from "../../models/buyerOrders/types";
@@ -42,6 +43,7 @@ import {
 	getSiteConfigs,
 	MARKETPLACE_UNAVAILABLE_MESSAGE,
 } from "../siteConfigs";
+import { classifyNewPaymentSettlement } from "../vendorPayouts";
 import { releaseSlots, reserveSlots, type SlotRequest } from "./slots";
 
 export interface PlaceOrderInput {
@@ -327,7 +329,15 @@ export async function placeOrder({
 			"This kitchen isn't accepting orders right now. Please try again later.",
 		);
 	}
-	if (!vendor.paystackSubaccountCode) {
+	const settlementClassification = await classifyNewPaymentSettlement({
+		vendorId: dailyOrder.vendorId,
+		campusId,
+	});
+	if (
+		settlementClassification.settlementMode ===
+			PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 &&
+		!vendor.paystackSubaccountCode
+	) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 
@@ -388,6 +398,7 @@ export async function placeOrder({
 				email: buyerEmail,
 				amountKobo: totalKobo,
 				reference: paystackRef,
+				settlementMode: settlementClassification.settlementMode,
 				subaccountCode: vendor.paystackSubaccountCode,
 				vendorAmountKobo: vendorSettlementKobo,
 				metadata: {
@@ -493,6 +504,7 @@ export async function placeOrder({
 			status: payForMe
 				? PaymentStatus.AWAITING_EXTERNAL_PAYMENT
 				: PaymentStatus.INITIALIZED,
+			...settlementClassification,
 		},
 	});
 	if (!payment) {

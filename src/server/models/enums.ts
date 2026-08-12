@@ -107,6 +107,15 @@ export enum PaymentStatus {
 	REFUNDED = "REFUNDED",
 }
 
+/**
+ * The settlement architecture chosen when a payment is created. This is
+ * persisted explicitly so a migration cutoff can never be inferred from time.
+ */
+export enum PaymentSettlementMode {
+	DIRECT_SUBACCOUNT_V1 = "DIRECT_SUBACCOUNT_V1",
+	PLATFORM_BALANCE_TRANSFER_V2 = "PLATFORM_BALANCE_TRANSFER_V2",
+}
+
 export enum DayOfWeek {
 	MONDAY = "MONDAY",
 	TUESDAY = "TUESDAY",

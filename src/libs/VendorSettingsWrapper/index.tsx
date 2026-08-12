@@ -52,11 +52,11 @@ const VENDOR_TYPES = [
   { value: "BAKERY", label: "Bakery" },
 ];
 const SELLING_POLICY_LINKS = [
-  { href: "/help?audience=vendor", label: "Help / FAQs" },
+  { href: "/help", label: "Help / FAQs" },
   { href: "/how-selling-works", label: "How Selling Works" },
   {
     href: "/policies/payments-and-settlement",
-    label: "Payments and Settlement",
+    label: "Payments and Payouts",
   },
   {
     href: "/policies/cancellation-and-refunds",
@@ -65,7 +65,6 @@ const SELLING_POLICY_LINKS = [
   { href: "/policies/pickup-and-delivery", label: "Pickup and Delivery" },
   { href: "/policies/buyer-no-show", label: "Buyer No-show" },
   { href: "/policies/disputes", label: "Disputes" },
-  { href: "/policies/vendor-policy", label: "Vendor Policy" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
 ];

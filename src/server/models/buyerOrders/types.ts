@@ -163,6 +163,7 @@ export interface IBuyerOrder {
 	confirmationVendorId?: string;
 	confirmationBuyerId?: string;
 	confirmationOrderId?: string;
+	trustedCompletionAuditRef?: string;
 	handoverTokenHash?: string;
 	handoverPinHash?: string;
 	handoverCredentialCreatedAt?: Date;

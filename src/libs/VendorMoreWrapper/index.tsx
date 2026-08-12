@@ -284,7 +284,7 @@ export default function VendorMoreWrapper() {
 						<MenuIcon aria-hidden>💰</MenuIcon>
 						<MenuText>
 							<MenuTitle>Earnings</MenuTitle>
-							<MenuDesc>Sales, fees and settlements</MenuDesc>
+							<MenuDesc>Sales, fees and payouts</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>
@@ -347,13 +347,13 @@ export default function VendorMoreWrapper() {
 						<MenuIcon aria-hidden>🏦</MenuIcon>
 						<MenuText>
 							<MenuTitle>Payout settings</MenuTitle>
-							<MenuDesc>Bank details and settlements</MenuDesc>
+							<MenuDesc>Bank details and payouts</MenuDesc>
 						</MenuText>
 						<MenuRight>
 							<MenuChevron aria-hidden>›</MenuChevron>
 						</MenuRight>
 					</MenuRow>
-					<MenuRow href="/help?audience=vendor">
+					<MenuRow href="/help">
 						<MenuIcon aria-hidden>💬</MenuIcon>
 						<MenuText>
 							<MenuTitle>Support & Help</MenuTitle>

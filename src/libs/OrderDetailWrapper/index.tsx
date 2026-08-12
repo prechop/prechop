@@ -429,12 +429,22 @@ const ProductHeading = styled.h1`
   font-weight: 850;
   letter-spacing: -0.035em;
   color: var(--pc-text);
+
+  @media (max-width: 520px) {
+    font-size: 18px;
+    font-weight: 700;
+  }
 `;
 const ProductPrice = styled.div`
   margin-top: 3px;
   color: #ff5a1f;
   font-size: clamp(19px, 3vw, 24px);
-  font-weight: 850;
+  font-weight: 700;
+
+  @media (max-width: 520px) {
+    olor: #ff5a1f;
+  font-size: clamp(16px, 3vw, 20px);
+  }
 `;
 const ProductDescription = styled.p`
   margin: 8px 0 0;
@@ -1414,7 +1424,6 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
                           group.maxSelect != null &&
                           count >= group.maxSelect;
                         return (
-                           
                           <AddonRow key={o.id}>
                             <input
                               type={single ? "radio" : "checkbox"}

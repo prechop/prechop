@@ -22,155 +22,565 @@ import { formatDateTime } from "@/constants/formatters";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 
-type Audience = "buyer" | "vendor";
+type HelpSection = "buyer" | "vendor" | "account" | "support";
+type HelpAudience = "guest" | "buyer" | "vendor";
 
 interface HelpTopic {
 	id: string;
 	title: string;
 	summary: string;
-	audience: Audience | "all";
+	section: HelpSection;
+	audiences?: HelpAudience[];
 	popular?: boolean;
 	body: string[];
+	keywords?: string[];
+	links?: Array<{ label: string; href: string }>;
 }
 
 const TOPICS: HelpTopic[] = [
 	{
-		id: "how-prechop-works",
-		title: "How Prechop works",
-		summary:
-			"Browse kitchens, reserve a meal, then pick up or receive delivery.",
-		audience: "buyer",
+		id: "place-an-order",
+		title: "How do I place an order?",
+		summary: "Choose a kitchen, customise your meal and pay securely.",
+		section: "buyer",
 		popular: true,
 		body: [
-			"Browse campus kitchens and open daily menus.",
-			"Choose your meal, options, pickup or delivery.",
-			"Pay through Paystack to reserve your order before the vendor cooks.",
-			"Track the order until it is ready for pickup or delivery.",
+			"Open Marketplace, confirm your campus and choose an open kitchen or daily listing.",
+			"Select the items, quantities, variants and extras you want, then choose pickup or delivery and add any required delivery details.",
+			"Review the food subtotal, delivery fee, service fee and total before continuing to Paystack. Your order moves forward only after Prechop verifies a successful payment.",
+			"Each order is for one kitchen. Place separate orders when buying from different vendors.",
 		],
+		keywords: ["checkout", "buy food", "quantity", "options", "extras"],
 	},
 	{
-		id: "service-fee",
-		title: "What is the service fee?",
-		summary: "A small buyer fee may be added at checkout to run Prechop.",
-		audience: "buyer",
+		id: "order-total",
+		title: "What makes up my order total?",
+		summary: "See food, delivery and service costs before paying.",
+		section: "buyer",
 		popular: true,
 		body: [
-			"The service fee is shown before payment, so buyers can review the final total.",
-			"It helps cover platform operations, order tracking and support.",
-			"Paystack processing is included in the checkout calculation.",
+			"Your total can include the food and selected extras, a vendor-set delivery fee for delivery orders, and the current buyer service or payment-processing fee.",
+			"Every applicable amount is shown before payment. Fees are configurable, so the checkout total is the source of truth for that order.",
+		],
+		keywords: ["price", "charges", "processing fee", "delivery fee"],
+		links: [
+			{
+				label: "Payments policy",
+				href: "/policies/payments-and-settlement",
+			},
 		],
 	},
 	{
 		id: "pay-for-me",
-		title: "How Pay for Me works",
+		title: "How does Pay for Me work?",
 		summary:
 			"Create a secure payment link for someone else to pay your order.",
-		audience: "buyer",
+		section: "buyer",
 		popular: true,
 		body: [
 			"Choose Pay for Me at checkout to create a secure payment link.",
-			"Send the link to a parent, friend or sponsor.",
-			"Once they pay through Paystack, your original order is confirmed automatically.",
+			"Send the link to a parent, friend or sponsor. They can review the order summary and pay through Paystack without gaining access to your account.",
+			"The link works only while the reservation and listing remain active. If it expires or is cancelled, the held quantity is released.",
+			"After successful payment verification, the original order updates automatically.",
+		],
+		keywords: [
+			"external payer",
+			"sponsor",
+			"parent",
+			"payment link",
+			"expired link",
 		],
 	},
 	{
-		id: "refunds-cancellations",
-		title: "Refund and cancellation policy",
+		id: "track-order-status",
+		title: "How do I track my order and understand its status?",
 		summary:
-			"Cancelled paid orders are handled through the original payment route.",
-		audience: "all",
+			"Follow payment, acceptance, preparation and fulfilment separately.",
+		section: "buyer",
 		popular: true,
 		body: [
-			"If a paid order is cancelled, Prechop starts the refund process through the original payment route.",
-			"Refund timing can depend on Paystack and the buyer's bank.",
-			"Vendors should cancel only when they cannot fulfil the order.",
+			"Open My Orders and select the order to see its timeline and current state.",
+			"Pending payment or awaiting external payment describes payment. Paid or awaiting vendor acceptance means payment succeeded but the vendor still needs to respond. Accepted, preparing, ready and in transit describe fulfilment.",
+			"Cancelled, refund pending, refund processing, refunded and refund failed describe the financial recovery path. These are not vendor-payout statuses.",
+		],
+		keywords: [
+			"pending",
+			"paid",
+			"accepted",
+			"preparing",
+			"ready",
+			"in transit",
+			"completed",
 		],
 	},
 	{
 		id: "pickup-delivery",
-		title: "Pickup and delivery",
-		summary:
-			"Vendors choose pickup, delivery, or both for each daily order.",
-		audience: "buyer",
+		title: "How do pickup, delivery and handover work?",
+		summary: "Collect from the kitchen or receive vendor-managed delivery.",
+		section: "buyer",
 		body: [
-			"Pickup orders show the vendor's pickup location.",
-			"Delivery orders ask for the buyer's delivery details at checkout.",
-			"Closed vendors remain visible so buyers can still inspect menus and opening times.",
+			"For pickup, wait until the order is marked ready and go to the displayed kitchen location. For delivery, provide accurate contact and address details and remain reachable.",
+			"Delivery is managed by the vendor unless Prechop announces a separate delivery service. The vendor controls coverage, fee, estimate and rider arrangements.",
+			"Show the order QR code or PIN only when you receive the food. QR, PIN or an authorized support confirmation records trusted handover, but support can still review a reported problem.",
+		],
+		keywords: [
+			"QR",
+			"PIN",
+			"rider",
+			"address",
+			"handover",
+			"contact kitchen",
+		],
+		links: [
+			{
+				label: "Pickup and delivery policy",
+				href: "/policies/pickup-and-delivery",
+			},
 		],
 	},
 	{
-		id: "daily-menu",
-		title: "How to create a daily menu",
-		summary:
-			"Build your menu, set options, then publish a daily order window.",
-		audience: "vendor",
+		id: "cancel-order",
+		title: "Can I cancel or change an order?",
+		summary: "Cancellation depends on how far the order has progressed.",
+		section: "buyer",
+		body: [
+			"You can cancel only while the order is in an allowed early state. Pay for Me requests can be cancelled while they are still awaiting payment.",
+			"The normal flow does not edit a paid order. If preparation has advanced, contact the kitchen or support; cancellation and any refund require review under the applicable policy.",
+		],
+		keywords: ["edit order", "change item", "change address"],
+		links: [
+			{
+				label: "Cancellation and refunds policy",
+				href: "/policies/cancellation-and-refunds",
+			},
+		],
+	},
+	{
+		id: "refund-statuses",
+		title: "What do the different refund statuses mean?",
+		summary: "Understand pending, processing, refunded and failed refunds.",
+		section: "buyer",
 		popular: true,
 		body: [
-			"Add menu items with prices, photos, categories and option groups.",
-			"Create a daily order from the dashboard or timetable.",
-			"Choose opening and cutoff times, quantities, pickup, delivery or both.",
+			"Refund pending means Prechop has identified that money should be returned but provider processing has not completed. Refund processing means the request is being handled with the payment provider.",
+			"Refunded means the provider accepted the completed refund outcome. Refund failed means the attempt needs investigation or recovery; contact support with the order number and payment reference.",
+			"Refund timing is not guaranteed and can vary with Paystack, the buyer's bank, the refund state and any required review.",
+		],
+		keywords: [
+			"refund pending",
+			"refund processing",
+			"refund failed",
+			"money back",
+		],
+		links: [
+			{
+				label: "Cancellation and refunds policy",
+				href: "/policies/cancellation-and-refunds",
+			},
 		],
 	},
 	{
-		id: "incoming-orders",
-		title: "Incoming orders",
-		summary: "Paid orders appear after Paystack confirms payment.",
-		audience: "vendor",
+		id: "late-missing-no-show",
+		title: "What if my order is late, missing or marked as a no-show?",
+		summary:
+			"Check updates, contact the kitchen and report the problem promptly.",
+		section: "buyer",
+		body: [
+			"Check the order page for a revised estimate, use the order conversation and contact support if the vendor does not respond or the delay becomes serious.",
+			"A vendor can report pickup no-show only after the allowed waiting period. For delivery, the vendor should record arrival and contact attempts before reporting that the buyer is unreachable.",
+			"If a report is incorrect, respond through the available order action and provide timing, messages, call history or other useful evidence.",
+		],
+		keywords: [
+			"buyer unreachable",
+			"failed delivery",
+			"pickup problem",
+			"delay",
+		],
+		links: [
+			{ label: "Buyer no-show policy", href: "/policies/buyer-no-show" },
+			{ label: "Dispute policy", href: "/policies/disputes" },
+		],
+	},
+	{
+		id: "receipts-reviews-reorder",
+		title: "How do receipts, reviews and reorders work?",
+		summary:
+			"Use completed orders for receipts, feedback and repeat purchases.",
+		section: "buyer",
+		body: [
+			"A completed order can provide a downloadable receipt when generation succeeds, and Prechop may also email the PDF receipt.",
+			"Only the buyer of a completed order can leave one review within the configured review window.",
+			"Reorder compares the old order with the vendor's current listing. Prices, items, options, quantities and fees may have changed, so review the new checkout before paying.",
+		],
+		keywords: [
+			"receipt pending",
+			"receipt failed",
+			"rate vendor",
+			"review window",
+			"order again",
+		],
+	},
+	{
+		id: "become-vendor",
+		title: "How do I become an approved vendor?",
+		summary: "Complete identity, location, bank and verification steps.",
+		section: "vendor",
 		popular: true,
 		body: [
-			"Dashboard shows paid orders that still need your attention.",
-			"Pay for Me and self-paid orders enter the same incoming queue after payment confirmation.",
-			"Completed, cancelled and refunded orders move out of Incoming orders into history.",
+			"Start a vendor application from your account and complete your business identity, food categories, location, bank details, profile image and required verification documents.",
+			"Submit the completed application for admin review. Pending review means it is being assessed; changes requested means you should correct the stated issues and resubmit.",
+			"Approval activates the vendor profile, but your storefront must also meet the current menu, timetable, bank and completeness requirements before it can take orders.",
 		],
+		keywords: [
+			"onboarding",
+			"documents",
+			"approval",
+			"changes requested",
+			"verification",
+		],
+		links: [{ label: "Vendor terms", href: "/terms" }],
 	},
 	{
-		id: "cooking-status",
-		title: "Cooking statuses",
-		summary: "Move orders from paid to completed as you cook and fulfil.",
-		audience: "vendor",
-		body: [
-			"Confirm paid orders when you accept them.",
-			"Move orders to Preparing when cooking starts, Ready when food is available, and Completed after pickup or delivery.",
-			"Buyers can follow these updates from their order page.",
-		],
-	},
-	{
-		id: "vendor-settlements",
-		title: "Vendor commission and settlements",
+		id: "vendor-profile-public",
+		title: "How do I complete and manage my storefront?",
 		summary:
-			"Settlements are calculated from sales after fees and commission.",
-		audience: "vendor",
+			"Keep public business details, location and opening status accurate.",
+		section: "vendor",
+		body: [
+			"Vendor Settings manages your business name, description, profile image, contact details, location, service campuses, store link, delivery defaults and notification preferences.",
+			"Buyers may see your business identity, profile image, service area, categories, opening status, fulfilment options and eligible rating information. Bank details, security PINs and verification documents are not public.",
+			"Closing your kitchen stops new orders but does not cancel your responsibility for existing paid or accepted orders.",
+		],
+		keywords: [
+			"store slug",
+			"profile completeness",
+			"open status",
+			"closed kitchen",
+		],
+	},
+	{
+		id: "create-menu-listing",
+		title: "How do I create menus, options and daily listings?",
+		summary:
+			"Build reusable menu items, then publish a dated order window.",
+		section: "vendor",
 		popular: true,
 		body: [
-			"Prechop commission and Paystack processing are calculated from the order payment.",
-			"Your expected settlement is based on food sales plus delivery fees owed to you, minus applicable costs.",
-			"Earnings shows completed paid orders and settlement-related figures.",
+			"Create clear menu items with an accurate name, description, category, price, preparation time and photo. Add variants for sizes and option groups for extras or required choices.",
+			"Create a daily listing from the dashboard or timetable, select items and quantities, and set opening and cutoff times plus pickup or delivery availability.",
+			"Editing or soft-deleting a menu item does not rewrite the item and price snapshots stored on existing orders.",
+		],
+		keywords: [
+			"daily menu",
+			"timetable",
+			"cutoff",
+			"sold out",
+			"availability",
+			"variants",
+			"extras",
 		],
 	},
 	{
-		id: "account-settings",
-		title: "Account settings",
-		summary:
-			"Manage profile, campus, location, bank details and notifications.",
-		audience: "all",
+		id: "listing-times-capacity",
+		title: "How do listing times, quantities and sold-out controls work?",
+		summary: "Control when buyers order and how much you can fulfil.",
+		section: "vendor",
 		body: [
-			"Buyers can update profile, campus and notifications from Account.",
-			"Vendors can update business profile, location, delivery defaults, bank details and notification preferences from Settings.",
+			"Opening time controls when ordering can begin; cutoff time stops new checkout. Closing or cancelling a listing also stops new orders.",
+			"Item quantity and preparation capacity prevent overselling. Checkout can temporarily hold stock while payment is in progress, then release it if the reservation expires.",
+			"Use unavailable when you intentionally pause an item and sold out when its available quantity has finished. Existing paid orders remain your responsibility.",
 		],
+		keywords: [
+			"opening time",
+			"cutoff time",
+			"capacity",
+			"quantity",
+			"reservation",
+			"close listing",
+		],
+	},
+	{
+		id: "incoming-order-flow",
+		title: "How should I handle an incoming order?",
+		summary:
+			"Accept only verified paid orders and update them as work happens.",
+		section: "vendor",
+		popular: true,
+		body: [
+			"A self-paid or Pay for Me order enters the incoming queue only after successful payment verification. Do not cook an order that is not shown as paid or awaiting your acceptance.",
+			"Accept promptly if you can fulfil the complete order. Then update it through preparing, ready, in transit where applicable, and handover completion as those events happen.",
+			"If you cannot fulfil it, reject it promptly with the correct reason. Non-response can expire the order and start cancellation or refund handling.",
+		],
+		keywords: [
+			"accept order",
+			"reject order",
+			"cooking status",
+			"vendor no response",
+		],
+	},
+	{
+		id: "vendor-delivery-exceptions",
+		title: "What are my delivery, no-show and failed-delivery responsibilities?",
+		summary:
+			"Use buyer contact and exception actions only for active orders.",
+		section: "vendor",
+		body: [
+			"Vendor-managed delivery means you are responsible for coverage, fee, estimate, rider arrangements and appropriate use of the buyer's delivery information.",
+			"For an active accepted delivery order, use the contact action and record genuine attempts before reporting the buyer as unreachable. Add the required arrival time, contact-attempt count and note.",
+			"Use delivery failed only after the unreachable process allows it. No-show, failed delivery, open disputes and refunds can require review and affect the financial treatment of that order.",
+		],
+		keywords: [
+			"contact buyer",
+			"rider",
+			"delivery evidence",
+			"pickup no-show",
+		],
+		links: [
+			{
+				label: "Pickup and delivery policy",
+				href: "/policies/pickup-and-delivery",
+			},
+			{ label: "Buyer no-show policy", href: "/policies/buyer-no-show" },
+		],
+	},
+	{
+		id: "vendor-earnings-payout",
+		title: "When will I receive my money?",
+		summary:
+			"Payment, fulfilment and payout records describe different events.",
+		section: "vendor",
+		popular: true,
+		body: [
+			"A successful buyer payment creates a pending vendor payable; it does not mean you have been paid. Payment status, Order status and Vendor Payout status are separate.",
+			"Trusted fulfilment through the buyer's QR or PIN, or an authorized support-confirmed handover, starts the 24-hour review period. An open dispute, refund, failed-delivery or no-show review, or payout hold keeps the affected amount from becoming eligible.",
+			"After the review period and checks clear, the amount becomes eligible for the next automated payout run. It may move through eligible, queued and processing before Paystack Transfer pays your verified bank destination. A payout can also be held, failed or reversed; banking and Paystack processing can affect arrival time.",
+		],
+		keywords: [
+			"settlement",
+			"payout",
+			"bank",
+			"commission",
+			"earnings",
+			"Paystack",
+			"transfer",
+		],
+		links: [
+			{
+				label: "Payments and settlement policy",
+				href: "/policies/payments-and-settlement",
+			},
+		],
+	},
+	{
+		id: "vendor-bank-details",
+		title: "How do I add or change my payout bank details?",
+		summary:
+			"Resolve the account carefully and protect changes with your PIN.",
+		section: "vendor",
+		body: [
+			"Choose your bank, enter the account number and confirm the resolved account name before saving. Prechop uses Paystack to validate your verified transfer destination for future V2 payouts.",
+			"A vendor security PIN can be required for sensitive bank changes. If you reset the PIN, a temporary security hold may apply to sensitive actions.",
+			"Contact support immediately if the saved destination is wrong or you suspect unauthorized changes.",
+		],
+		keywords: [
+			"account number",
+			"account name",
+			"bank change",
+			"recipient",
+			"transfer recipient",
+		],
+	},
+	{
+		id: "vendor-reviews-analytics",
+		title: "How do reviews, followers and vendor analytics work?",
+		summary:
+			"Use completed-order feedback and operational performance insights.",
+		section: "vendor",
+		body: [
+			"Verified buyers can review completed orders within the configured review window. Report a review only for a genuine policy issue, not simply because it is critical.",
+			"Public ratings appear only after the required review threshold. Followers and notification preferences control applicable store updates.",
+			"Analytics can include orders, completion, cancellations, revenue, average order value, popular items, peak hours and ratings. Unpaid, cancelled and refunded attempts are not presented as settled revenue.",
+		],
+		keywords: [
+			"rating",
+			"negative review",
+			"followers",
+			"completion rate",
+			"top items",
+		],
+	},
+	{
+		id: "vendor-suspension-closure",
+		title: "What happens if my vendor profile is suspended or closed?",
+		summary:
+			"New selling can stop while valid records and obligations remain.",
+		section: "vendor",
+		body: [
+			"Suspension can stop selling while Prechop reviews fraud, safety, inaccurate information, policy breaches or repeated fulfilment problems.",
+			"You cannot close a vendor profile with unresolved orders, payments, refunds or disputes. Closure removes the public vendor profile and closes active listings but preserves historical financial and order records.",
+			"Closing the vendor side can preserve the buyer account. Contact support if you need to challenge a suspension or discuss a closed profile.",
+		],
+		keywords: [
+			"suspended",
+			"close store",
+			"delete vendor",
+			"outstanding obligations",
+			"payout hold",
+		],
+		links: [{ label: "Vendor terms", href: "/terms" }],
+	},
+	{
+		id: "sign-in-account-settings",
+		title: "How do I sign in and manage my account?",
+		summary:
+			"Use secure sign-in and keep profile and campus details current.",
+		section: "account",
+		audiences: ["guest", "buyer", "vendor"],
+		popular: true,
+		body: [
+			"Use an available secure email link, Google sign-in or other enabled verification option. Prechop does not require a reusable account password in the current flow.",
+			"Use the settings available to your account to keep your profile, contact and notification details current.",
+			"If you suspect unauthorized access, secure your email or Google account, sign out and contact support.",
+		],
+		keywords: [
+			"login",
+			"magic link",
+			"Google",
+			"campus",
+			"profile",
+			"security",
+		],
+	},
+	{
+		id: "payment-order-payout-status",
+		title: "What is the difference between payment, order and vendor payout status?",
+		summary:
+			"They are separate lifecycles and should not be read as one state.",
+		section: "account",
+		audiences: ["vendor"],
+		popular: true,
+		body: [
+			"Payment status answers whether the buyer charge succeeded, failed, expired, was cancelled or was refunded.",
+			"Order status answers whether the vendor accepted, prepared, made ready, delivered or completed the order, or whether an exception occurred.",
+			"Vendor Payout status answers whether a pending payable is in its review period, held, eligible, queued, processing, paid to the verified bank, failed or reversed. Payment success does not prove fulfilment, and order completion alone does not mean a bank transfer has completed.",
+		],
+		keywords: [
+			"paid",
+			"completed",
+			"settled",
+			"eligible",
+			"queued",
+			"processing",
+			"held",
+			"reversed",
+		],
+	},
+	{
+		id: "notifications",
+		title: "Which notifications can I receive or control?",
+		summary:
+			"Important events can use in-app, email, SMS or push channels.",
+		section: "account",
+		audiences: ["buyer", "vendor"],
+		body: [
+			"Prechop can send account, security, order, payment, refund, review and support updates through available in-app, email, SMS, WhatsApp or browser-push channels.",
+			"You can control supported optional notification categories from the settings available to your account. Critical security, transaction or support notices may still be sent when necessary.",
+			"Browser push also depends on permission in your browser or device settings.",
+		],
+		keywords: ["email", "SMS", "WhatsApp", "push", "unsubscribe"],
+	},
+	{
+		id: "privacy-data-sharing",
+		title: "What information does Prechop use and who can see it?",
+		summary:
+			"Only relevant data should be used for accounts, orders and support.",
+		section: "account",
+		audiences: ["guest", "buyer", "vendor"],
+		body: [
+			"Prechop uses account, campus, order, delivery, payment-reference, vendor, message, review, support, device and security information to operate and protect the marketplace.",
+			"The relevant vendor can access the delivery details needed for an eligible active order. Authorized support staff may inspect related records to resolve a problem. Providers such as Paystack, email, messaging, storage and push services receive the data needed to perform their service.",
+			"A vendor must not reuse buyer contact information for unrelated marketing.",
+		],
+		keywords: [
+			"personal data",
+			"phone",
+			"address",
+			"third party",
+			"vendor access",
+		],
+		links: [{ label: "Privacy notice", href: "/privacy" }],
+	},
+	{
+		id: "close-account",
+		title: "How do I close my account, and what is retained?",
+		summary: "Resolve active obligations before deactivation.",
+		section: "account",
+		audiences: ["buyer", "vendor"],
+		body: [
+			"Use the account-closure action, confirm your account identifier and complete recent authentication when requested.",
+			"Active orders, payments, refunds or disputes must be resolved first. The current process deactivates the account and revokes sessions rather than erasing every historical record immediately.",
+			"Transaction, fulfilment, refund, dispute, security and audit records may be retained for operational, accounting, fraud-prevention or legal reasons. Contact support for a privacy request.",
+		],
+		keywords: ["delete account", "deactivate", "erase data", "retention"],
+		links: [{ label: "Privacy notice", href: "/privacy" }],
 	},
 	{
 		id: "contact-support",
-		title: "How to contact support",
-		summary:
-			"Send support a clear message with your order or kitchen details.",
-		audience: "all",
+		title: "How do I contact support?",
+		summary: "Send a clear request and include the relevant reference.",
+		section: "support",
+		audiences: ["guest", "buyer", "vendor"],
 		popular: true,
 		body: [
-			"Use Contact support for payment, refund, order or account issues.",
-			"Include your order number, kitchen name and a short description so support can help faster.",
+			"Use the support form below for the account, order, payment, payout, technical or other issues relevant to your use of Prechop.",
+			"Include a clear subject, what happened, the order number or payment reference when applicable, relevant dates and any useful evidence.",
+			"Never send full card details, authentication tokens or your vendor security PIN.",
 		],
+		keywords: ["help", "message", "ticket", "complaint"],
+	},
+	{
+		id: "support-statuses",
+		title: "What do support-request statuses mean?",
+		summary: "Know when support needs action from you.",
+		section: "support",
+		audiences: ["buyer", "vendor"],
+		body: [
+			"Open means the request is awaiting or receiving review. Pending user means support needs more information from you.",
+			"Resolved means a resolution has been provided or completed. Closed means the conversation is complete.",
+			"Signed-in users can read their support conversations and reply from this page.",
+		],
+		keywords: ["open", "pending user", "resolved", "closed", "reply"],
+	},
+	{
+		id: "dispute-evidence",
+		title: "How are order disputes reviewed?",
+		summary:
+			"Support considers the complete order record, not one signal alone.",
+		section: "support",
+		audiences: ["buyer", "vendor"],
+		body: [
+			"Report non-delivery, failed delivery, wrong or missing items, quality problems, incorrect no-show reports, vendor unavailability, or payment and refund failures promptly.",
+			"Support may review order and menu snapshots, payment records, the timeline, QR or PIN confirmation, messages, photographs and notes from both parties.",
+			"Possible outcomes include requesting more evidence, leaving the completion outcome unchanged, rejecting the dispute, or starting an eligible full or partial refund.",
+		],
+		keywords: [
+			"wrong item",
+			"missing item",
+			"quality",
+			"non-delivery",
+			"photos",
+			"appeal",
+		],
+		links: [{ label: "Dispute policy", href: "/policies/disputes" }],
 	},
 ];
+
+const SECTION_LABELS: Record<HelpSection, string> = {
+	buyer: "Buyer FAQs",
+	vendor: "Vendor FAQs",
+	account: "Account, Payments & Privacy",
+	support: "Contact Support",
+};
 
 const Hero = styled(Card)`
 	padding: clamp(22px, 5vw, 42px);
@@ -197,13 +607,14 @@ const SearchWrap = styled.div`
 	max-width: 720px;
 	margin-top: var(--pc-space-4);
 `;
-const AudienceTabs = styled.div`
-	display: inline-flex;
+const SectionTabs = styled.div`
+	display: flex;
+	flex-wrap: wrap;
 	gap: 4px;
 	padding: 4px;
 	background: var(--pc-surface-2);
 	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-pill);
+	border-radius: var(--pc-radius-lg);
 `;
 const Tab = styled.button<{ $active: boolean }>`
 	border: none;
@@ -215,36 +626,60 @@ const Tab = styled.button<{ $active: boolean }>`
 	background: ${(p) => (p.$active ? "var(--pc-surface)" : "transparent")};
 	box-shadow: ${(p) => (p.$active ? "var(--pc-shadow-sm)" : "none")};
 `;
-const TopicGrid = styled.div`
+const AccordionList = styled.div`
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 12px;
-	@media (max-width: 760px) {
-		grid-template-columns: 1fr;
+	gap: 8px;
+`;
+const TopicDetails = styled.details`
+	background: var(--pc-surface);
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-lg);
+	overflow: hidden;
+
+	&[open] {
+		border-color: color-mix(in srgb, var(--pc-color-primary) 32%, var(--pc-border));
 	}
 `;
-const TopicCard = styled(Card)`
-	padding: var(--pc-space-4);
+const TopicSummary = styled.summary`
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 15px 16px;
+	cursor: pointer;
+	list-style: none;
+	font-weight: 800;
+	color: var(--pc-text);
+
+	&::-webkit-details-marker {
+		display: none;
+	}
+
+	&::before {
+		content: "⌄";
+		flex: 0 0 auto;
+		color: var(--pc-color-primary);
+		font-size: 18px;
+		line-height: 1;
+		transition: transform 160ms ease;
+	}
+
+	${TopicDetails}[open] &::before {
+		transform: rotate(180deg);
+	}
+`;
+const TopicBody = styled.div`
+	display: grid;
+	gap: 9px;
+	padding: 0 16px 16px 44px;
+	border-top: 1px solid var(--pc-border);
+	padding-top: 13px;
+
+	@media (max-width: 560px) {
+		padding-left: 16px;
+	}
 `;
 const TopicLink = styled.a`
 	color: var(--pc-color-primary);
-	font-weight: 800;
-	font-size: 13px;
-`;
-const PillRow = styled.div`
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-`;
-const Pill = styled.a`
-	display: inline-flex;
-	align-items: center;
-	min-height: 36px;
-	padding: 0 13px;
-	border-radius: var(--pc-radius-pill);
-	background: var(--pc-surface);
-	border: 1px solid var(--pc-border);
-	color: var(--pc-text);
 	font-weight: 800;
 	font-size: 13px;
 `;
@@ -274,15 +709,24 @@ interface SupportRequest {
 	updatedAt: string;
 }
 
-function topicMatches(topic: HelpTopic, audience: Audience, query: string) {
-	const audienceMatch =
-		topic.audience === "all" || topic.audience === audience;
-	if (!audienceMatch) return false;
+function topicMatches(topic: HelpTopic, query: string) {
 	if (!query) return true;
-	const haystack = [topic.title, topic.summary, ...topic.body]
+	const haystack = [
+		topic.title,
+		topic.summary,
+		...topic.body,
+		...(topic.keywords ?? []),
+	]
 		.join(" ")
 		.toLowerCase();
 	return haystack.includes(query.toLowerCase());
+}
+
+function topicIsVisible(topic: HelpTopic, audience: HelpAudience) {
+	if (topic.audiences) return topic.audiences.includes(audience);
+	if (topic.section === "buyer") return audience === "buyer";
+	if (topic.section === "vendor") return audience === "vendor";
+	return audience !== "guest";
 }
 
 export default function HelpWrapper({
@@ -291,14 +735,26 @@ export default function HelpWrapper({
 	initialOrderRef = "",
 	initialPaymentRef = "",
 }: {
-	initialAudience?: Audience;
+	initialAudience?: "buyer" | "vendor";
 	initialCategory?: string;
 	initialOrderRef?: string;
 	initialPaymentRef?: string;
 }) {
-	const { isAuthenticated, can } = useAuth();
+	const { isAuthenticated, inGroup } = useAuth();
 	const { toast } = useToast();
-	const [audience, setAudience] = useState<Audience>(initialAudience);
+	const audience: HelpAudience = !isAuthenticated
+		? "guest"
+		: inGroup("Vendors")
+			? "vendor"
+			: "buyer";
+	const allowedSections: HelpSection[] =
+		audience === "guest"
+			? ["account", "support"]
+			: [audience, "account", "support"];
+	const [section, setSection] = useState<HelpSection>(initialAudience);
+	const visibleSection = allowedSections.includes(section)
+		? section
+		: allowedSections[0];
 	const [query, setQuery] = useState("");
 	const [category, setCategory] = useState(initialCategory.toUpperCase());
 	const [subject, setSubject] = useState("");
@@ -311,7 +767,6 @@ export default function HelpWrapper({
 	);
 	const [reply, setReply] = useState("");
 	const [busy, setBusy] = useState(false);
-	const canSwitchAudience = can("support:read");
 	const { data: supportRequests, mutate: mutateSupport } = useSWR<
 		SupportRequest[]
 	>(isAuthenticated ? "/support-requests" : null, fetcher, {
@@ -319,19 +774,24 @@ export default function HelpWrapper({
 	});
 	const filtered = useMemo(
 		() =>
-			TOPICS.filter((topic) =>
-				topicMatches(topic, audience, query.trim()),
+			TOPICS.filter(
+				(topic) =>
+					topicIsVisible(topic, audience) &&
+					topicMatches(topic, query.trim()),
 			),
-		[audience, query],
+		[query, audience],
 	);
 	const popular = TOPICS.filter(
-		(topic) =>
-			topic.popular &&
-			(topic.audience === "all" || topic.audience === audience),
-	);
+		(topic) => topic.popular && topicIsVisible(topic, audience),
+	).slice(0, 5);
 	const activeTopics = TOPICS.filter(
-		(topic) => topic.audience === audience || topic.audience === "all",
+		(topic) =>
+			topic.section === visibleSection && topicIsVisible(topic, audience),
 	);
+
+	function selectSection(next: HelpSection) {
+		setSection(next);
+	}
 	const selectedRequest =
 		supportRequests?.find((request) => request.id === selectedRequestId) ??
 		supportRequests?.[0];
@@ -404,9 +864,11 @@ export default function HelpWrapper({
 						</Text>
 						<HeroTitle>Hi there. How can we help?</HeroTitle>
 						<HeroSub>
-							Find quick answers about ordering, Pay for Me,
-							refunds, menus, incoming orders and vendor
-							settlements.
+							{audience === "vendor"
+								? "Find answers about selling, fulfilment, earnings, V2 payouts and vendor support."
+								: audience === "buyer"
+									? "Find answers about ordering, payments, pickup, delivery, refunds and buyer support."
+									: "Find general information about Prechop, account security, privacy and support."}
 						</HeroSub>
 						<SearchWrap>
 							<Input
@@ -438,28 +900,23 @@ export default function HelpWrapper({
 				<Row $justify="space-between" $align="center" $gap={12} $wrap>
 					<PageHeader
 						eyebrow="Browse help"
-						title="Popular topics"
-						subtitle="Short answers for the questions people ask first."
+						title="Help Center"
+						subtitle="Search everything or browse a focused section."
 					/>
-					{canSwitchAudience && (
-						<AudienceTabs aria-label="Help audience">
-							<Tab
-								type="button"
-								$active={audience === "buyer"}
-								onClick={() => setAudience("buyer")}
-							>
-								Buyer
-							</Tab>
-							<Tab
-								type="button"
-								$active={audience === "vendor"}
-								onClick={() => setAudience("vendor")}
-							>
-								Vendor
-							</Tab>
-						</AudienceTabs>
-					)}
 				</Row>
+
+				<SectionTabs aria-label="Help sections">
+					{allowedSections.map((key) => (
+						<Tab
+							key={key}
+							type="button"
+							$active={visibleSection === key}
+							onClick={() => selectSection(key)}
+						>
+							{SECTION_LABELS[key]}
+						</Tab>
+					))}
+				</SectionTabs>
 
 				{query.trim() ? (
 					<Card>
@@ -468,11 +925,11 @@ export default function HelpWrapper({
 								title={`Search results (${filtered.length})`}
 								icon="?"
 							/>
-							<TopicGrid>
+							<AccordionList>
 								{filtered.map((topic) => (
 									<Topic key={topic.id} topic={topic} />
 								))}
-							</TopicGrid>
+							</AccordionList>
 							{filtered.length === 0 && (
 								<Text $muted $size={14}>
 									No matching topic yet. Try a shorter search
@@ -488,13 +945,14 @@ export default function HelpWrapper({
 								title="Popular help topics"
 								icon="?"
 							/>
-							<PillRow>
+							<AccordionList>
 								{popular.map((topic) => (
-									<Pill key={topic.id} href={`#${topic.id}`}>
-										{topic.title}
-									</Pill>
+									<Topic
+										key={`popular-${topic.id}`}
+										topic={topic}
+									/>
 								))}
-							</PillRow>
+							</AccordionList>
 						</Stack>
 					</Card>
 				)}
@@ -503,17 +961,18 @@ export default function HelpWrapper({
 					<Stack $gap={12}>
 						<SectionHeader
 							title={
-								audience === "vendor"
-									? "Vendor guide"
-									: "Buyer help"
+								audience === "guest" &&
+								visibleSection === "account"
+									? "General Help"
+									: SECTION_LABELS[visibleSection]
 							}
-							icon={audience === "vendor" ? "🧑‍🍳" : "🛒"}
+							icon="?"
 						/>
-						<TopicGrid>
+						<AccordionList>
 							{activeTopics.map((topic) => (
 								<Topic key={topic.id} topic={topic} />
 							))}
-						</TopicGrid>
+						</AccordionList>
 					</Stack>
 				</Card>
 
@@ -732,7 +1191,10 @@ export default function HelpWrapper({
 								phone number so support can trace the issue.
 							</Text>
 						</Stack>
-						<Button as="a" href="mailto:support@prechop.ng">
+						<Button
+							as="a"
+							href="https://wa.me/2349031260633?text=Hi%20Prechop%20Support%2C%20I%20need%20help%20with%20an%20issue."
+						>
 							Contact support
 						</Button>
 					</Row>
@@ -744,25 +1206,28 @@ export default function HelpWrapper({
 
 function Topic({ topic }: { topic: HelpTopic }) {
 	return (
-		<TopicCard id={topic.id}>
-			<Stack $gap={8}>
-				<Text $weight={800}>{topic.title}</Text>
+		<TopicDetails id={topic.id}>
+			<TopicSummary>{topic.title}</TopicSummary>
+			<TopicBody>
 				<Text $muted $size={13}>
 					{topic.summary}
 				</Text>
-				<Stack as="ul" $gap={5} style={{ paddingLeft: 18, margin: 0 }}>
-					{topic.body.map((line) => (
-						<li key={line}>
-							<Text $muted $size={13}>
-								{line}
-							</Text>
-						</li>
-					))}
-				</Stack>
-				<TopicLink href="mailto:support@prechop.ng">
-					Ask about this
-				</TopicLink>
-			</Stack>
-		</TopicCard>
+				{topic.body.map((line) => (
+					<Text key={line} $muted $size={13}>
+						{line}
+					</Text>
+				))}
+				{topic.links && topic.links.length > 0 && (
+					<Row $gap={12} $wrap>
+						{topic.links.map((link) => (
+							<TopicLink key={link.href} href={link.href}>
+								{link.label}
+							</TopicLink>
+						))}
+					</Row>
+				)}
+				<TopicLink href="#support-form">Ask about this</TopicLink>
+			</TopicBody>
+		</TopicDetails>
 	);
 }

@@ -416,7 +416,7 @@ export default function AccountWrapper() {
 						</Text>
 						<Button
 							as={Link}
-							href="/help?audience=buyer"
+							href="/help"
 							$variant="secondary"
 							style={{ alignSelf: "flex-start" }}
 						>

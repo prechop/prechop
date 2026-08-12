@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR, { mutate as globalMutate } from "swr";
 import {
@@ -420,9 +420,7 @@ export default function VendorDailyOrderDetailWrapper({
       : `/o/${order.shareableToken}`;
   const shareText = `${order.title} — order now on Prechop: ${shareUrl}`;
   const waHref = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-  const tgHref = `https://t.me/share/url?url=${encodeURIComponent(
-    shareUrl,
-  )}&text=${encodeURIComponent(order.title)}`;
+  const instagramHref = "https://www.instagram.com/";
 
   async function copyLink() {
     try {
@@ -433,6 +431,17 @@ export default function VendorDailyOrderDetailWrapper({
     } catch {
       toast("Couldn't copy — long-press the link to copy it", "error");
     }
+  }
+
+  async function shareToInstagram(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    try {
+      await navigator.clipboard.writeText(shareText);
+      toast("Listing text copied for Instagram", "success");
+    } catch {
+      toast("Open Instagram, then paste the listing link", "info");
+    }
+    window.open(instagramHref, "_blank", "noopener,noreferrer");
   }
 
   async function transitionBuyerOrder(
@@ -1126,11 +1135,12 @@ export default function VendorDailyOrderDetailWrapper({
                 <span aria-hidden>💬</span> WhatsApp
               </ShareBtn>
               <ShareBtn
-                href={tgHref}
+                href={instagramHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                $bg="#229ED9">
-                <span aria-hidden>✈️</span> Telegram
+                onClick={shareToInstagram}
+                $bg="#922135">
+                <span aria-hidden>📸</span> Instagram
               </ShareBtn>
             </ShareGrid>
             {qrDataUrl && (

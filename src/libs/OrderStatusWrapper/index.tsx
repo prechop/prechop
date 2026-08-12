@@ -977,7 +977,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 							</Stack>
 							<Button
 								as={Link}
-								href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
+								href={`/help?category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
 								$variant="secondary"
 								$size="sm"
 							>
@@ -1392,7 +1392,7 @@ export default function OrderStatusWrapper({ orderId }: { orderId: string }) {
 
 			<Button
 				as={Link}
-				href={`/help?audience=buyer&category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
+				href={`/help?category=ORDER&order=${encodeURIComponent(data.orderNumber)}#support-form`}
 				$full
 				$variant="secondary"
 				aria-label={`Report a problem with order ${data.orderNumber}`}

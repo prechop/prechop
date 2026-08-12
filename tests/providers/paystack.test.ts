@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PaymentSettlementMode } from "@/server/models";
 import {
 	buildInitializePayload,
 	isSeedPlaceholderSubaccount,
@@ -66,5 +67,33 @@ describe("buildInitializePayload", () => {
 			transaction_charge: 15000,
 			bearer: "account",
 		});
+	});
+
+	it("omits every split parameter only for an explicitly classified V2 payment", () => {
+		const payload = buildInitializePayload(
+			{
+				...baseInput,
+				settlementMode:
+					PaymentSettlementMode.PLATFORM_BALANCE_TRANSFER_V2,
+				subaccountCode: undefined,
+			},
+			{ allowUnsplit: false },
+		);
+		expect(payload).not.toHaveProperty("subaccount");
+		expect(payload).not.toHaveProperty("transaction_charge");
+		expect(payload).not.toHaveProperty("bearer");
+	});
+
+	it("refuses an unsplit V1 initialization", () => {
+		expect(() =>
+			buildInitializePayload(
+				{
+					...baseInput,
+					settlementMode: PaymentSettlementMode.DIRECT_SUBACCOUNT_V1,
+					subaccountCode: undefined,
+				},
+				{ allowUnsplit: false },
+			),
+		).toThrow(/requires a subaccount/);
 	});
 });

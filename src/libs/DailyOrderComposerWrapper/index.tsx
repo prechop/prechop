@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -797,11 +797,13 @@ export default function DailyOrderComposerWrapper({
 			shareableToken: order.shareableToken,
 		});
 		const waHref = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+		const instagramHref = "https://www.instagram.com/";
 		const publicStoreUrl = storeSlug ? storeUrl(storeSlug) : "";
+		const storeShareText = storeSlug
+			? storeWhatsAppMessage(businessName, storeSlug)
+			: "";
 		const storeWaHref = storeSlug
-			? `https://wa.me/?text=${encodeURIComponent(
-					storeWhatsAppMessage(businessName, storeSlug),
-				)}`
+			? `https://wa.me/?text=${encodeURIComponent(storeShareText)}`
 			: "";
 
 		const copyLink = async () => {
@@ -827,6 +829,19 @@ export default function DailyOrderComposerWrapper({
 			} catch {
 				toast("Couldn't copy the store link", "error");
 			}
+		};
+		const shareToInstagram = async (
+			event: MouseEvent<HTMLAnchorElement>,
+			text: string,
+		) => {
+			event.preventDefault();
+			try {
+				await navigator.clipboard.writeText(text);
+				toast("Share text copied for Instagram", "success");
+			} catch {
+				toast("Open Instagram, then paste the share text", "info");
+			}
+			window.open(instagramHref, "_blank", "noopener,noreferrer");
 		};
 
 		return (
@@ -875,6 +890,18 @@ export default function DailyOrderComposerWrapper({
 									<span aria-hidden>💬</span> Share menu to
 									WhatsApp
 								</ShareBtn>
+								<ShareBtn
+									href={instagramHref}
+									target="_blank"
+									rel="noopener noreferrer"
+									onClick={(event) =>
+										shareToInstagram(event, shareText)
+									}
+									$bg="#922135"
+								>
+									<span aria-hidden>📸</span> Share menu to
+									Instagram
+								</ShareBtn>
 							</ShareGrid>
 						</Stack>
 					</Card>
@@ -911,6 +938,21 @@ export default function DailyOrderComposerWrapper({
 									>
 										<span aria-hidden>💬</span> Share store
 										to WhatsApp
+									</ShareBtn>
+									<ShareBtn
+										href={instagramHref}
+										target="_blank"
+										rel="noopener noreferrer"
+										onClick={(event) =>
+											shareToInstagram(
+												event,
+												storeShareText,
+											)
+										}
+										$bg="#922135"
+									>
+										<span aria-hidden>📸</span> Share store
+										to Instagram
 									</ShareBtn>
 								</ShareGrid>
 							</Stack>

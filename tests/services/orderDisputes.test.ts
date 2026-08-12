@@ -346,7 +346,7 @@ describe("order dispute admin review", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 42,
-				status: "success",
+				status: "processed",
 				amount: TOTAL,
 			});
 

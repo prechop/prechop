@@ -47,6 +47,25 @@ interface SiteConfigs {
 	profileCompletenessRequired: number;
 }
 
+type MigrationMode =
+	| "V1_ONLY"
+	| "V2_PILOT"
+	| "V2_NEW_PAYMENTS"
+	| "EMERGENCY_V1";
+interface SettlementMigrationConfig {
+	mode: MigrationMode;
+	version: number;
+	pilotVendorIds: string[];
+	pilotCampusIds: string[];
+	minimumPayoutKobo: number;
+	safety: {
+		foundationEnabled: boolean;
+		paystackManualPayoutsApproved: boolean;
+		moneyMovementEnabled: boolean;
+		legalAccountingApproved: boolean;
+	};
+}
+
 const Section = styled(Card)`
 	display: flex;
 	flex-direction: column;
@@ -123,6 +142,15 @@ const Grid2 = styled.div`
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 	gap: var(--pc-space-4);
 `;
+const Select = styled.select`
+	width: 100%;
+	min-height: 44px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface);
+	color: var(--pc-text);
+	padding: 0 12px;
+`;
 /** Full-strength `--pc-text`, not `$muted`: on the tinted `--pc-surface-2` the
  *  muted token measures 4.38:1 in light theme — under the 4.5:1 AA floor. The
  *  muted token only clears AA against the plain `--pc-surface`. */
@@ -195,9 +223,17 @@ export default function AdminSettingsWrapper() {
 	const { data, isLoading, mutate } = useSWR<SiteConfigs>(
 		"/admin/site-configs",
 	);
+	const { data: migration, mutate: mutateMigration } =
+		useSWR<SettlementMigrationConfig>(
+			"/admin/finance/settlement-migration",
+		);
 	const [form, setForm] = useState<SiteConfigs | null>(null);
 	const [feeDraft, setFeeDraft] = useState<FeeDraft | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [migrationMode, setMigrationMode] =
+		useState<MigrationMode>("V1_ONLY");
+	const [migrationReason, setMigrationReason] = useState("");
+	const [migrationBusy, setMigrationBusy] = useState(false);
 
 	useEffect(() => {
 		if (!data) return;
@@ -208,6 +244,38 @@ export default function AdminSettingsWrapper() {
 			platformFeeVendorPercent: String(data.platformFeeVendorPercent),
 		});
 	}, [data]);
+
+	useEffect(() => {
+		if (migration) setMigrationMode(migration.mode);
+	}, [migration]);
+
+	async function saveMigrationMode() {
+		if (!migrationReason.trim()) {
+			toast(
+				"Add a reason for this audited settlement-mode change.",
+				"error",
+			);
+			return;
+		}
+		setMigrationBusy(true);
+		try {
+			await api.patch("/admin/finance/settlement-migration", {
+				mode: migrationMode,
+				changeReason: migrationReason.trim(),
+			});
+			setMigrationReason("");
+			await mutateMigration();
+			toast("Settlement migration mode updated", "success");
+		} catch (err: any) {
+			toast(
+				err.response?.data?.message ??
+					"Settlement migration mode is not available.",
+				"error",
+			);
+		} finally {
+			setMigrationBusy(false);
+		}
+	}
 
 	function set<K extends keyof SiteConfigs>(key: K, value: SiteConfigs[K]) {
 		setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -338,6 +406,85 @@ export default function AdminSettingsWrapper() {
 
 			<FadeIn>
 				<Stack $gap={16}>
+					{migration ? (
+						<Section>
+							<SectionHeader
+								title="Payment settlement migration"
+								icon="🔒"
+							/>
+							<PolicySummary $size={13}>
+								Current mode: <strong>{migration.mode}</strong>{" "}
+								· config v{migration.version}. V2 requires all
+								four runtime readiness gates; unavailable
+								selections fail closed to V1.
+							</PolicySummary>
+							<Grid2>
+								<label htmlFor="settlement-migration-mode">
+									<Text $weight={700} $size={13}>
+										Mode for future payments only
+									</Text>
+									<Select
+										id="settlement-migration-mode"
+										value={migrationMode}
+										onChange={(event) =>
+											setMigrationMode(
+												event.target
+													.value as MigrationMode,
+											)
+										}
+									>
+										<option value="V1_ONLY">V1 only</option>
+										<option value="V2_PILOT">
+											V2 pilot
+										</option>
+										<option value="V2_NEW_PAYMENTS">
+											V2 new payments
+										</option>
+										<option value="EMERGENCY_V1">
+											Emergency V1 rollback
+										</option>
+									</Select>
+								</label>
+								<Input
+									label="Required audit reason"
+									value={migrationReason}
+									onChange={(event) =>
+										setMigrationReason(event.target.value)
+									}
+									hint="This never reclassifies an existing payment."
+								/>
+							</Grid2>
+							<Text $muted $size={12}>
+								Readiness: foundation{" "}
+								{migration.safety.foundationEnabled
+									? "yes"
+									: "no"}
+								; Paystack approval{" "}
+								{migration.safety.paystackManualPayoutsApproved
+									? "yes"
+									: "no"}
+								; legal/accounting{" "}
+								{migration.safety.legalAccountingApproved
+									? "yes"
+									: "no"}
+								; money interlock{" "}
+								{migration.safety.moneyMovementEnabled
+									? "yes"
+									: "no"}
+								.
+							</Text>
+							<Button
+								$loading={migrationBusy}
+								disabled={
+									migrationBusy ||
+									migrationMode === migration.mode
+								}
+								onClick={saveMigrationMode}
+							>
+								Apply future-payment mode
+							</Button>
+						</Section>
+					) : null}
 					<Section>
 						<SectionHeader title="Platform fees" icon="💰" />
 						{/* Derived from the SAVED config, never hardcoded: this is

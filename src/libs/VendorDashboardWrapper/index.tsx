@@ -30,6 +30,7 @@ import {
   timeUntil,
 } from "@/constants/formatters";
 import { useToast } from "@/hooks/useToast";
+import { useAuth } from "@/hooks/Auth/useAuth";
 import VendorOnboardingWrapper, {
   type VendorMe,
 } from "@/libs/VendorOnboardingWrapper";
@@ -396,6 +397,12 @@ const HeroEyebrow = styled.span`
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--pc-color-primary);
+`;
+const HeroGreeting = styled.div`
+  font-size: clamp(16px, 4.5vw, 20px);
+  // font-weight: 400;
+  color: var(--pc-text-muted);
+  margin-top: 2px;
 `;
 const HeroNameRow = styled.div`
   display: flex;
@@ -853,11 +860,26 @@ function errMsg(e: unknown): string {
 
 export default function VendorDashboardWrapper() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [greeting, setGreeting] = useState("");
+
   const {
     data: vendor,
     isLoading,
     mutate: mutateVendor,
   } = useSWR<VendorMe>("/vendors/me", fetcher);
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    const name = user?.firstName || "Vendor";
+    if (hour < 12) {
+      setGreeting(`Good morning, ${name} ☀️`);
+    } else if (hour < 17) {
+      setGreeting(`Good afternoon, ${name}`);
+    } else {
+      setGreeting(`Good evening, ${name} 🌙`);
+    }
+  }, [user?.firstName]);
 
   // Approved vendors see the live dashboard; the onboarding wrapper is only for
   // not-yet-approved statuses. Gate on status alone (matching the server's
@@ -1233,6 +1255,7 @@ export default function VendorDashboardWrapper() {
           <HeroSection>
             <HeroText>
               <HeroEyebrow>Vendor dashboard</HeroEyebrow>
+              {greeting && <HeroGreeting>{greeting}</HeroGreeting>}
               <HeroNameRow>
                 <HeroName>{vendor.businessName ?? "Your kitchen"}</HeroName>
                 {vendor.status === "ACTIVE" && (

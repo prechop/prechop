@@ -24,6 +24,7 @@ import {
 	setBuyerOrderHandoverCredentialDB,
 } from "../../models";
 import { recordAuditSync } from "../audit";
+import { refreshVendorPayableForOrder } from "../vendorPayouts";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 type HandoverMethod = "QR" | "PIN";
@@ -362,6 +363,7 @@ export async function confirmOrderHandover({
 	if (!completed) {
 		throw invalidOrderState("This order could not be confirmed.");
 	}
+	await refreshVendorPayableForOrder({ orderId });
 	generateReceiptInBackground(orderId);
 	return completed;
 }

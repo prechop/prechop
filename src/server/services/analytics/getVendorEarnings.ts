@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
-import { Payment, PaymentStatus } from "../../models";
+import {
+	getActiveVendorTransferRecipientDB,
+	Payment,
+	PaymentSettlementMode,
+	PaymentStatus,
+	Payout,
+	VendorAdjustment,
+	VendorPayable,
+} from "../../models";
 import { PLATFORM_TIMEZONE, startOfDayInTimezone } from "../../models/utils";
 import { getEffectiveFeePolicy } from "../siteConfigs";
 import { resolveVendorByUserId, vendorIdOf } from "../vendors/resolveVendor";
@@ -31,6 +39,16 @@ export interface VendorEarnings {
 		orders: number;
 	};
 	days: VendorEarningsDay[];
+	settlementModels: {
+		v1: { netSettledKobo: number; orders: number };
+		v2: {
+			pendingKobo: number;
+			heldKobo: number;
+			queuedKobo: number;
+			paidKobo: number;
+			openAdjustmentKobo: number;
+		};
+	};
 }
 
 /**
@@ -92,6 +110,10 @@ export async function getVendorEarnings({
 	const match: Record<string, unknown> = {
 		vendorId: new mongoose.Types.ObjectId(vendorId),
 		status: PaymentStatus.SUCCESS,
+		$or: [
+			{ settlementMode: PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 },
+			{ settlementMode: { $exists: false } },
+		],
 	};
 	// Bucket on when the money actually landed, not when the row was created —
 	// an order placed at 23:58 and paid at 00:02 belongs to the new day.
@@ -171,13 +193,57 @@ export async function getVendorEarnings({
 		{ grossKobo: 0, platformFeeKobo: 0, netSettledKobo: 0, orders: 0 },
 	);
 
-	const fees = await resolvePlatformFeePolicy();
+	const [fees, v2Payables, v2Paid, v2Adjustments, recipient] =
+		await Promise.all([
+			resolvePlatformFeePolicy(),
+			VendorPayable.aggregate<{ _id: string; amount: number }>([
+				{ $match: { vendorId: new mongoose.Types.ObjectId(vendorId) } },
+				{ $group: { _id: "$status", amount: { $sum: "$amountKobo" } } },
+			]),
+			Payout.aggregate<{ amount: number }>([
+				{
+					$match: {
+						vendorId: new mongoose.Types.ObjectId(vendorId),
+						status: "PAID",
+					},
+				},
+				{ $group: { _id: null, amount: { $sum: "$totalAmountKobo" } } },
+			]),
+			VendorAdjustment.aggregate<{ amount: number }>([
+				{
+					$match: {
+						vendorId: new mongoose.Types.ObjectId(vendorId),
+						status: "OPEN",
+					},
+				},
+				{ $group: { _id: null, amount: { $sum: "$amountKobo" } } },
+			]),
+			getActiveVendorTransferRecipientDB({ vendorId }),
+		]);
+	const byStatus = Object.fromEntries(
+		v2Payables.map((row) => [row._id, row.amount]),
+	);
 
 	return {
-		bankConnected: vendor.paystackSubaccountCode != null,
+		bankConnected:
+			vendor.paystackSubaccountCode != null || Boolean(recipient),
 		platformFeeVendorPercent: fees.platformFeeVendorPercent,
 		totals,
 		days,
+		settlementModels: {
+			v1: {
+				netSettledKobo: totals.netSettledKobo,
+				orders: totals.orders,
+			},
+			v2: {
+				pendingKobo:
+					(byStatus.GRACE_PERIOD ?? 0) + (byStatus.ELIGIBLE ?? 0),
+				heldKobo: byStatus.HELD ?? 0,
+				queuedKobo: (byStatus.QUEUED ?? 0) + (byStatus.PROCESSING ?? 0),
+				paidKobo: v2Paid[0]?.amount ?? 0,
+				openAdjustmentKobo: v2Adjustments[0]?.amount ?? 0,
+			},
+		},
 	};
 }
 

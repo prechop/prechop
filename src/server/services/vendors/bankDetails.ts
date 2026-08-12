@@ -2,6 +2,7 @@ import { updateVendorProfileDB } from "@/server/models";
 import { paystackProvider } from "@/server/providers";
 import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
+import { synchronizeVendorTransferRecipient } from "../vendorPayouts";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
 import {
 	assertFreshVendorSecurityPinForSensitiveAction,
@@ -60,6 +61,17 @@ export async function setBankDetails({
 			accountName,
 			paystackSubaccountCode: subaccount.subaccount_code,
 		},
+	});
+
+	// V1 subaccount behavior above remains authoritative. This guarded V2 hook
+	// no-ops until every manual-payout safety gate is enabled.
+	await synchronizeVendorTransferRecipient({
+		vendorId,
+		accountNumber,
+		accountName,
+		bankCode,
+		bankName: resolvedBankName ?? "Unknown bank",
+		actorId: userId,
 	});
 
 	await recomputeVendorCompleteness({ vendorId, userId });

@@ -19,6 +19,7 @@ import {
 import { recordAudit } from "../audit";
 import { createUserNotification } from "../notifications";
 import { openOrderDisputeForReview } from "../orderDisputes";
+import { refreshVendorPayableForOrder } from "../vendorPayouts";
 import { refundOrderAsAdmin } from "./refunds";
 import type { AdminActor } from "./vendors";
 
@@ -98,7 +99,15 @@ export async function reviewOrderDisputeAsAdmin({
 		const completed = await setBuyerOrderStatusDB({
 			id: orderId,
 			status: OrderStatus.COMPLETED_BUYER_NO_SHOW,
-			fromStatuses: [OrderStatus.PICKUP_PROBLEM_REPORTED],
+			fromStatuses: [
+				OrderStatus.PICKUP_PROBLEM_REPORTED,
+				OrderStatus.COMPLETED_BUYER_NO_SHOW,
+			],
+			confirmedAt: now,
+			confirmedBy: actor.userId,
+			confirmationMethod: "SUPPORT",
+			confirmationOrderId: orderId,
+			trustedCompletionAuditRef: `admin-support:${disputeId}`,
 		});
 		if (!completed) {
 			throw invalidOrderState(
@@ -144,6 +153,7 @@ export async function reviewOrderDisputeAsAdmin({
 		action,
 		note: trimmedNote,
 	});
+	await refreshVendorPayableForOrder({ orderId });
 
 	return updated;
 }

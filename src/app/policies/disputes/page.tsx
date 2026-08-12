@@ -1,36 +1,36 @@
 import AppShell from "@/layouts/AppShell";
 import PolicyPageContent from "@/libs/PolicyPages";
-
-export default function DisputesPage() {
+export default function Page() {
 	return (
-		<AppShell shellRole="BUYER" publicAccess>
+		<AppShell publicAccess>
 			<PolicyPageContent
 				eyebrow="Policy"
 				title="Disputes"
-				summary="How support reviews order, payment, pickup and delivery problems."
+				summary="How support reviews order, payment, fulfilment and payout questions."
 				sections={[
 					{
-						title: "What can be disputed",
+						title: "Fair review",
+						audience: ["shared", "public"],
 						body: [
-							"Missing orders, incorrect status, failed delivery, pickup problems, payment questions and refund questions can be reported.",
-							"Buyers and vendors should include the order number and a clear description.",
-							"Photos or message records may help support understand the case, when available.",
+							"Support may review the order timeline, payment state, messages, photos and QR/PIN or authorized handover records.",
+							"Handover confirmation is useful context, not absolute proof. Repeated misuse may lead to account review.",
 						],
 					},
 					{
-						title: "Review process",
+						title: "Buyer disputes",
+						audience: "buyer",
 						body: [
-							"Support reviews the order timeline, payment state, vendor actions and buyer messages.",
-							"QR or PIN confirmation is useful context, but it is not treated as absolute proof by itself.",
-							"Some cases may require follow-up with the buyer, vendor or payment provider.",
+							"Report missing, incorrect, unsafe, failed-delivery, payment or refund problems with the order number and clear evidence when available.",
+							"Possible outcomes include no change, a request for more information, or refund handling where policy permits.",
 						],
 					},
 					{
-						title: "Possible outcomes",
+						title: "Vendor disputes and payout holds",
+						audience: "vendor",
 						body: [
-							"Support may leave the order as completed, request more information, or start refund handling where policy allows.",
-							"Refund timing can depend on Paystack and the buyer's bank.",
-							"Repeated misuse of reports may affect account or vendor review decisions.",
+							"Respond to support with fulfilment facts and relevant evidence; use buyer data only for resolving that order.",
+							"An open dispute holds the affected vendor payable. It becomes eligible only after resolution, the review period and all refund or payout-hold checks.",
+							"Unrelated eligible payouts are handled according to their own records and applicable holds.",
 						],
 					},
 				]}

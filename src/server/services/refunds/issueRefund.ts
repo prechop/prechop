@@ -1,26 +1,27 @@
+import crypto from "node:crypto";
 import { notFound, validationError } from "../../constants";
+import { acquireLock, releaseLock } from "../../databases";
 import {
 	createRefundDB,
 	getPaymentByOrderIdDB,
-	markBuyerOrderRefundedDB,
-	markBuyerOrderRefundFailedDB,
-	markBuyerOrderRefundProcessingDB,
-	markPaymentRefundedDB,
+	getRefundByIdDB,
 	markRefundFailedDB,
-	markRefundProcessedDB,
-	markRefundProcessingDB,
+	recordRefundSubmissionAttemptDB,
 } from "../../models";
 import { paystackProvider } from "../../providers";
+import type { RefundResponse } from "../../providers/paystack";
 import { notifyAdminAttention } from "../notifications";
-import { openOrderDisputeForReview } from "../orderDisputes";
+import { holdVendorPayableForOrder } from "../vendorPayouts";
+import {
+	applyPaystackRefundState,
+	existingRefundOutcome,
+	type RefundOutcome,
+	recordRefundFailure,
+} from "./refundLifecycle";
 
-export type RefundOutcome =
-	/** This call inserted the refund row and moved the money. */
-	| "REFUNDED"
-	/** A refund row already existed — Paystack was NOT called again. */
-	| "ALREADY_REFUNDED"
-	| "REFUND_PENDING"
-	| "REFUND_FAILED";
+const FAILED_REFUND_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
+
+export type { RefundOutcome } from "./refundLifecycle";
 
 export interface IssueRefundResult {
 	outcome: RefundOutcome;
@@ -29,70 +30,40 @@ export interface IssueRefundResult {
 	paystackRefundId?: string;
 }
 
-function existingRefundOutcome(refund: {
-	status?: string;
-	processedAt?: Date;
-}): RefundOutcome {
-	if (refund.processedAt || refund.status === "REFUNDED") {
-		return "ALREADY_REFUNDED";
-	}
-	if (refund.status === "REFUND_FAILED") return "REFUND_FAILED";
-	return "REFUND_PENDING";
-}
-
-function refundFailureMessage(error: unknown) {
+function refundFailureMessage(error: unknown): string {
 	if (error instanceof Error && error.message) return error.message;
-	return "Paystack refund failed.";
+	return "Paystack refund request failed.";
 }
 
-async function recordRefundFailure({
+async function alertSubmissionFailure({
 	orderId,
+	refundId,
 	failureReason,
 }: {
 	orderId: string;
+	refundId: string;
 	failureReason: string;
 }): Promise<void> {
-	await markBuyerOrderRefundFailedDB({
-		id: orderId,
-		failedAt: new Date(),
-		failureReason,
+	await notifyAdminAttention({
+		kind: "REFUND_REVIEW",
+		title: "Paystack refund request failed",
+		whatHappened: failureReason,
+		submittedBy: "System refund workflow",
+		recordId: refundId,
+		adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}&refundId=${encodeURIComponent(refundId)}`,
+		dedupeKey: `refund-submission-failed:${refundId}`,
+		severity: "critical",
 	});
-	await openOrderDisputeForReview({
-		orderId,
-		reason: "REFUND_FAILURE",
-		vendorNotes: [failureReason],
-	}).catch((reviewError) =>
-		console.error(
-			`[refunds] failed to open refund-failure admin review for ${orderId}:`,
-			reviewError,
-		),
-	);
 }
 
 /**
- * The single place money leaves Prechop.
+ * Submit one logical refund per payment. Paystack accepting POST /refund only
+ * means the refund is queued; final Payment and Order REFUNDED states are set
+ * later, exclusively after Paystack reports `processed`.
  *
- * Every refund path (buyer cancel, vendor cancel, listing cancel, the stale-PAID
- * cutoff sweep, and the admin manual refund) funnels through here so that a
- * `refunds` row — the reconciliation trail — is written for *every* payout, and
- * so the double-payout guard lives in exactly one place.
- *
- * Ordering is deliberate: the row is written BEFORE Paystack is called, never
- * after. `createRefundDB` upserts against a unique `paymentId` index and reports
- * whether *this* call inserted the row:
- *
- *   - `null`         → the write genuinely failed. Paystack is never called, so
- *                      the caller may safely retry.
- *   - `created:false` → someone already owns this refund. We must NOT call
- *                      Paystack; doing so pays the buyer twice.
- *   - `created:true`  → we own the payout, and only now do we call Paystack.
- *
- * If Paystack then fails, the row deliberately STAYS, with `processedAt` unset.
- * That is not a leak — it is the reconciliation queue the model's
- * `{processedAt:1, createdAt:1}` index exists to serve, and it is the safe side
- * of the trade: an unpaid refund is visible and fixable, a double payout is not
- * recoverable. The failure is logged loudly and thrown so no caller reports
- * success.
+ * A failed local attempt can be retried, but only after querying Paystack for
+ * an already-created refund. If that lookup is inconclusive, this function
+ * refuses to send another POST so a timeout can never become a double refund.
  */
 export async function issueRefund({
 	orderId,
@@ -103,7 +74,6 @@ export async function issueRefund({
 	orderId: string;
 	amountKobo: number;
 	reason: string;
-	/** Defaults to the payment's own reference. */
 	paystackRef?: string;
 }): Promise<IssueRefundResult> {
 	if (!Number.isInteger(amountKobo) || amountKobo <= 0) {
@@ -137,22 +107,41 @@ export async function issueRefund({
 			"Refund amount cannot exceed the amount actually paid.",
 		);
 	}
+	if (paystackRef && paystackRef !== payment.paystackRef) {
+		throw validationError(
+			"Refund reference does not match the stored payment reference.",
+		);
+	}
 
-	const refund = await createRefundDB({
-		payload: {
-			paymentId: payment._id.toString(),
-			amountKobo,
-			reason,
-		},
-	});
-	// null is a write failure, not "already refunded" — Paystack has not been
-	// called, so surfacing a retryable error is correct.
+	const financialLockKey = `financial:payment:${payment._id.toString()}`;
+	const financialLockValue = crypto.randomUUID();
+	if (!(await acquireLock(financialLockKey, financialLockValue, 30))) {
+		throw validationError(
+			"This payment is being updated. No refund was sent; please retry shortly.",
+		);
+	}
+	let refund: Awaited<ReturnType<typeof createRefundDB>>;
+	try {
+		refund = await createRefundDB({
+			payload: { paymentId: payment._id.toString(), amountKobo, reason },
+		});
+		if (refund) {
+			await holdVendorPayableForOrder({
+				orderId,
+				reasonCode: "REFUND_PENDING",
+				note: reason,
+				refundId: refund.id ?? refund._id.toString(),
+			});
+		}
+	} finally {
+		await releaseLock(financialLockKey, financialLockValue);
+	}
 	if (!refund) {
 		await notifyAdminAttention({
 			kind: "REFUND_REVIEW",
 			title: "Refund record could not be created",
 			whatHappened:
-				"A refund was requested, but the reconciliation row could not be created.",
+				"A refund was requested, but its audit record could not be created.",
 			submittedBy: "System refund workflow",
 			recordId: orderId,
 			adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}`,
@@ -164,10 +153,12 @@ export async function issueRefund({
 	}
 
 	const refundId = refund.id ?? refund._id.toString();
-
-	if (!refund.created) {
-		// Double-payout guard. A refund already exists for this payment, so this
-		// caller does not own the payout and must not touch Paystack.
+	if (refund.amountKobo !== amountKobo) {
+		throw validationError(
+			"A refund with a different amount already exists for this payment.",
+		);
+	}
+	if (!refund.created && refund.status !== "REFUND_FAILED") {
 		return {
 			outcome: existingRefundOutcome(refund),
 			refundId,
@@ -176,47 +167,125 @@ export async function issueRefund({
 		};
 	}
 
-	let paystackRefundId: string;
-	try {
-		await markRefundProcessingDB({ id: refundId });
-		await markBuyerOrderRefundProcessingDB({
-			id: orderId,
-			processedAt: new Date(),
-		});
-		const result = await paystackProvider.refund(reference, amountKobo);
-		paystackRefundId = String(result.id);
-	} catch (error) {
-		const failureReason = refundFailureMessage(error);
-		await markRefundFailedDB({ id: refundId, failureReason });
-		await recordRefundFailure({ orderId, failureReason });
-		await notifyAdminAttention({
-			kind: "REFUND_REVIEW",
-			title: "Paystack refund failed",
-			whatHappened: failureReason,
-			submittedBy: "System refund workflow",
-			recordId: refundId,
-			adminPath: `/admin/orders?orderId=${encodeURIComponent(orderId)}&refundId=${encodeURIComponent(refundId)}`,
-			dedupeKey: `refund-failed:${refundId}`,
-		});
-		console.error(
-			`[refunds] PAYSTACK REFUND FAILED order=${orderId} refund=${refundId} amountKobo=${amountKobo} — row left unprocessed for reconciliation:`,
-			error,
-		);
-		throw validationError(
-			"Refund could not be processed automatically. Our team has been notified.",
-		);
+	const lockKey = `refund:submit:${refundId}`;
+	const lockValue = crypto.randomUUID();
+	if (!(await acquireLock(lockKey, lockValue, 30))) {
+		const current = await getRefundByIdDB({ id: refundId });
+		return {
+			outcome: existingRefundOutcome(current ?? refund),
+			refundId,
+			amountKobo: refund.amountKobo,
+			paystackRefundId:
+				current?.paystackRefundId ?? refund.paystackRefundId,
+		};
 	}
 
-	// Best-effort bookkeeping from here on: the money has already moved, so a
-	// failure to stamp the row must not read as a failed refund to the caller.
-	await markRefundProcessedDB({ id: refundId, paystackRefundId });
-	await markPaymentRefundedDB({ buyerOrderId: orderId });
-	await markBuyerOrderRefundedDB({ id: orderId });
+	try {
+		const current = (await getRefundByIdDB({ id: refundId })) ?? refund;
+		if (!refund.created && current.status !== "REFUND_FAILED") {
+			return {
+				outcome: existingRefundOutcome(current),
+				refundId,
+				amountKobo: current.amountKobo,
+				paystackRefundId: current.paystackRefundId,
+			};
+		}
 
-	return {
-		outcome: "REFUNDED",
-		refundId,
-		amountKobo,
-		paystackRefundId,
-	};
+		if (!refund.created) {
+			if (
+				current.failedAt &&
+				current.failedAt.getTime() + FAILED_REFUND_RETRY_COOLDOWN_MS >
+					Date.now()
+			) {
+				throw validationError(
+					"The previous refund attempt is still within its reconciliation window. No retry was sent.",
+				);
+			}
+			let discovered: RefundResponse | null;
+			try {
+				discovered = current.paystackRefundId
+					? await paystackProvider.getRefund(current.paystackRefundId)
+					: await paystackProvider.findRefundForTransaction(
+							reference,
+							amountKobo,
+						);
+			} catch (error) {
+				const failureReason = `Could not reconcile the existing refund before retry: ${refundFailureMessage(error)}`;
+				await alertSubmissionFailure({
+					orderId,
+					refundId,
+					failureReason,
+				});
+				throw validationError(
+					"Refund status could not be confirmed, so no retry was sent. Our team has been notified.",
+				);
+			}
+			if (discovered) {
+				await recordRefundSubmissionAttemptDB({
+					id: refundId,
+					kind: "RETRY",
+					outcome: "DISCOVERED",
+					paystackRefundId: String(discovered.id),
+					paystackStatus: discovered.status,
+				});
+				const outcome = await applyPaystackRefundState({
+					refund: current,
+					payment,
+					snapshot: discovered,
+				});
+				if (outcome !== "REFUND_FAILED") {
+					return {
+						outcome,
+						refundId,
+						amountKobo,
+						paystackRefundId: String(discovered.id),
+					};
+				}
+			}
+		}
+
+		let result: RefundResponse;
+		try {
+			result = await paystackProvider.refund(reference, amountKobo);
+			await recordRefundSubmissionAttemptDB({
+				id: refundId,
+				kind: refund.created ? "INITIAL" : "RETRY",
+				outcome: "ACCEPTED",
+				paystackRefundId: String(result.id),
+				paystackStatus: result.status,
+			});
+		} catch (error) {
+			const failureReason = refundFailureMessage(error);
+			await recordRefundSubmissionAttemptDB({
+				id: refundId,
+				kind: refund.created ? "INITIAL" : "RETRY",
+				outcome: "FAILED",
+				error: failureReason,
+			});
+			await markRefundFailedDB({ id: refundId, failureReason });
+			await recordRefundFailure({ orderId, failureReason });
+			await alertSubmissionFailure({ orderId, refundId, failureReason });
+			console.error(
+				`[refunds] Paystack refund request failed order=${orderId} refund=${refundId} amountKobo=${amountKobo}:`,
+				error,
+			);
+			throw validationError(
+				"Refund could not be submitted automatically. Our team has been notified.",
+			);
+		}
+
+		const outcome = await applyPaystackRefundState({
+			refund: current,
+			payment,
+			snapshot: result,
+		});
+		return {
+			outcome,
+			refundId,
+			amountKobo,
+			paystackRefundId: String(result.id),
+		};
+	} finally {
+		await releaseLock(lockKey, lockValue);
+	}
 }

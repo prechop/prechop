@@ -41,7 +41,7 @@ const vendorDesktopNav = [
   { href: "/vendor/store", label: "Store", icon: "🏪" },
   { href: "/notifications", label: "Notifications", icon: "🔔" },
   { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
-  { href: "/help?audience=vendor", label: "Support", icon: "💬" },
+  { href: "/help", label: "Support", icon: "💬" },
 ];
 const vendorSetupNav = [
   { href: "/dashboard", label: "Home", icon: "🏠" },
@@ -49,27 +49,11 @@ const vendorSetupNav = [
   { href: "/vendor/onboarding", label: "Setup", icon: "✅" },
   { href: "/vendor/settings", label: "Settings", icon: "⚙️" },
 ];
-const footerLinks = {
-  buyer: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/buyer-policy", label: "Buyer Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-  vendor: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/vendor-policy", label: "Vendor Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-  public: [
-    { href: "/help", label: "Help Center" },
-    { href: "/policies/buyer-policy", label: "Buyer Policy" },
-    { href: "/policies/vendor-policy", label: "Vendor Policy" },
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-} as const;
+const footerLinks = [
+  { href: "/help", label: "Help" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+] as const;
 
 interface VendorMe {
   profileImageUrl?: string;
@@ -582,11 +566,6 @@ export default function AppShell({
   const fullName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
     : undefined;
-  const footerAudience = !isAuthenticated
-    ? "public"
-    : isVendor
-      ? "vendor"
-      : "buyer";
   const savedView = pathname === "/marketplace" && isSavedQuery;
   const savedCount = savedKitchens.count + savedListings.count;
   const isNavActive = (href: string, label: string) => {
@@ -722,7 +701,7 @@ export default function AppShell({
           {children}
           <VendorFooter>
             <FooterLinks aria-label="Footer links">
-              {footerLinks[footerAudience].map((link, index, links) => (
+              {footerLinks.map((link, index, links) => (
                 <Fragment key={link.href}>
                   <FooterLink href={link.href}>{link.label}</FooterLink>
                   {index < links.length - 1 && (

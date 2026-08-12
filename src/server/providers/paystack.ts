@@ -2,6 +2,7 @@ import "server-only";
 import crypto from "node:crypto";
 import axios, { type AxiosInstance } from "axios";
 import { APP_URL, IS_PROD, PAYSTACK_SECRET_KEY } from "../constants";
+import { PaymentSettlementMode } from "../models/enums";
 
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 
@@ -37,6 +38,15 @@ export function buildInitializePayload(
 		metadata: input.metadata,
 	};
 	if (
+		input.settlementMode ===
+		PaymentSettlementMode.PLATFORM_BALANCE_TRANSFER_V2
+	) {
+		return base;
+	}
+	if (!input.subaccountCode) {
+		throw new Error("V1 transaction initialization requires a subaccount");
+	}
+	if (
 		opts.allowUnsplit &&
 		isSeedPlaceholderSubaccount(input.subaccountCode)
 	) {
@@ -67,7 +77,8 @@ interface InitializeTransactionInput {
 	email: string;
 	amountKobo: number;
 	reference: string;
-	subaccountCode: string;
+	settlementMode?: PaymentSettlementMode;
+	subaccountCode?: string;
 	vendorAmountKobo: number;
 	callbackUrl?: string;
 	metadata: Record<string, unknown>;
@@ -78,6 +89,7 @@ interface InitializeTransactionResponse {
 	reference: string;
 }
 export interface VerifyTransactionResponse {
+	id?: number;
 	status: string;
 	reference: string;
 	amount: number;
@@ -87,15 +99,57 @@ export interface VerifyTransactionResponse {
 	paid_at: string | null;
 	metadata: Record<string, unknown>;
 }
-interface RefundResponse {
+export type PaystackRefundStatus =
+	| "pending"
+	| "processing"
+	| "needs-attention"
+	| "failed"
+	| "processed";
+
+export interface RefundResponse {
 	id: number;
-	status: string;
+	status: PaystackRefundStatus | string;
 	amount: number;
+	currency?: string;
+	domain?: "test" | "live" | string;
+	expected_at?: string | null;
+	refunded_at?: string | null;
+	transaction?:
+		| number
+		| {
+				id?: number;
+				reference?: string;
+				currency?: string;
+				domain?: string;
+		  };
 }
 export interface PaystackBank {
 	name: string;
 	code: string;
 	active: boolean;
+}
+export interface PaystackBalance {
+	currency: string;
+	balance: number;
+}
+export interface PaystackTransferRecipientResponse {
+	recipient_code: string;
+	name: string;
+	details: {
+		account_number: string;
+		account_name?: string;
+		bank_code: string;
+		bank_name?: string;
+	};
+}
+export interface PaystackTransferResponse {
+	id?: number;
+	amount: number;
+	currency: string;
+	reference: string;
+	transfer_code: string;
+	status: string;
+	reason?: string;
 }
 
 class PaystackProvider {
@@ -168,10 +222,92 @@ class PaystackProvider {
 		return response.data.data;
 	}
 
+	async getRefund(refundId: string): Promise<RefundResponse> {
+		const response = await this.client.get(`/refund/${refundId}`);
+		return response.data.data;
+	}
+
+	/**
+	 * Discover a refund Paystack may have accepted when our create request timed
+	 * out before returning its id. Paystack's list endpoint filters by numeric
+	 * transaction id, so resolve the stored transaction reference first.
+	 */
+	async findRefundForTransaction(
+		transactionReference: string,
+		amountKobo: number,
+	): Promise<RefundResponse | null> {
+		const transaction = await this.verifyTransaction(transactionReference);
+		if (transaction.id == null) return null;
+		const response = await this.client.get("/refund", {
+			params: { transaction: transaction.id, perPage: 50 },
+		});
+		const refunds = (response.data.data ?? []) as RefundResponse[];
+		const matches = refunds.filter(
+			(refund) => refund.amount === amountKobo,
+		);
+		if (!matches.length) return null;
+		const priority: Record<string, number> = {
+			processed: 5,
+			processing: 4,
+			pending: 3,
+			"needs-attention": 2,
+			failed: 1,
+		};
+		return matches.sort(
+			(a, b) => (priority[b.status] ?? 0) - (priority[a.status] ?? 0),
+		)[0];
+	}
+
 	async getBanks(): Promise<PaystackBank[]> {
 		const response = await this.client.get("/bank", {
 			params: { currency: "NGN", country: "nigeria" },
 		});
+		return response.data.data;
+	}
+
+	async createTransferRecipient(input: {
+		name: string;
+		accountNumber: string;
+		bankCode: string;
+		metadata?: Record<string, unknown>;
+	}): Promise<PaystackTransferRecipientResponse> {
+		const response = await this.client.post("/transferrecipient", {
+			type: "nuban",
+			name: input.name,
+			account_number: input.accountNumber,
+			bank_code: input.bankCode,
+			currency: "NGN",
+			metadata: input.metadata,
+		});
+		return response.data.data;
+	}
+
+	async getBalance(): Promise<PaystackBalance[]> {
+		const response = await this.client.get("/balance");
+		return response.data.data;
+	}
+
+	async initiateTransfer(input: {
+		amountKobo: number;
+		recipientCode: string;
+		reference: string;
+		reason: string;
+	}): Promise<PaystackTransferResponse> {
+		const response = await this.client.post("/transfer", {
+			source: "balance",
+			amount: input.amountKobo,
+			recipient: input.recipientCode,
+			reference: input.reference,
+			reason: input.reason,
+			currency: "NGN",
+		});
+		return response.data.data;
+	}
+
+	async verifyTransfer(reference: string): Promise<PaystackTransferResponse> {
+		const response = await this.client.get(
+			`/transfer/verify/${encodeURIComponent(reference)}`,
+		);
 		return response.data.data;
 	}
 

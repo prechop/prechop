@@ -1,5 +1,7 @@
 import { ErrInvalidWebhookSignature } from "../../constants";
+import { handleRefundWebhook } from "../refunds";
 import { finalizeSuccessfulPayment } from "./finalizeSuccessfulPayment";
+import { applyPaystackTransferState, type PaystackTransferEvent } from "../vendorPayouts";
 
 interface PaystackChargeEvent {
 	event: string;
@@ -25,6 +27,16 @@ export async function handlePaystackWebhook({
 	}
 
 	const event = JSON.parse(rawBody) as PaystackChargeEvent;
+	if (event.event.startsWith("transfer.")) {
+		if (["transfer.success", "transfer.failed", "transfer.reversed"].includes(event.event)) {
+			await applyPaystackTransferState(event as unknown as PaystackTransferEvent);
+		}
+		return { received: true };
+	}
+	if (event.event.startsWith("refund.")) {
+		await handleRefundWebhook(event);
+		return { received: true };
+	}
 	if (event.event !== "charge.success") return { received: true };
 
 	const { reference, amount, channel, status } = event.data;

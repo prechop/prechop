@@ -11,4 +11,5 @@ export * from "./kobo";
 export * from "./orderNumber";
 export * from "./permissions";
 export * from "./phone";
+export * from "./payoutV2";
 export { default as wait } from "./wait";

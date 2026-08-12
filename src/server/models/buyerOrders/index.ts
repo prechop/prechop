@@ -220,6 +220,7 @@ const schema = new mongoose.Schema<any>(
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "buyerOrders",
 		},
+		trustedCompletionAuditRef: { type: String },
 		handoverTokenHash: { type: String },
 		handoverPinHash: { type: String },
 		handoverCredentialCreatedAt: { type: Date },
@@ -744,6 +745,11 @@ export async function setBuyerOrderStatusDB({
 	deliveryStartedAt,
 	pickedUpAt,
 	deliveredAt,
+	confirmedAt,
+	confirmedBy,
+	confirmationMethod,
+	confirmationOrderId,
+	trustedCompletionAuditRef,
 	session,
 }: {
 	id: string;
@@ -763,6 +769,11 @@ export async function setBuyerOrderStatusDB({
 	deliveryStartedAt?: Date;
 	pickedUpAt?: Date;
 	deliveredAt?: Date;
+	confirmedAt?: Date;
+	confirmedBy?: string;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT";
+	confirmationOrderId?: string;
+	trustedCompletionAuditRef?: string;
 	session?: ClientSession;
 }): Promise<IBuyerOrder | null> {
 	try {
@@ -795,6 +806,26 @@ export async function setBuyerOrderStatusDB({
 					...(deliveryStartedAt ? { deliveryStartedAt } : {}),
 					...(pickedUpAt ? { pickedUpAt } : {}),
 					...(deliveredAt ? { deliveredAt } : {}),
+					...(confirmedAt ? { confirmedAt } : {}),
+					...(confirmedBy
+						? {
+								confirmedBy: new mongoose.Types.ObjectId(
+									confirmedBy,
+								),
+							}
+						: {}),
+					...(confirmationMethod ? { confirmationMethod } : {}),
+					...(confirmationOrderId
+						? {
+								confirmationOrderId:
+									new mongoose.Types.ObjectId(
+										confirmationOrderId,
+									),
+							}
+						: {}),
+					...(trustedCompletionAuditRef
+						? { trustedCompletionAuditRef }
+						: {}),
 				},
 			},
 			{ session, returnDocument: "after" },
@@ -1670,8 +1701,13 @@ export async function markBuyerOrderRefundProcessingDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
-		const res = await BuyerOrder.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [OrderStatus.REFUNDED, OrderStatus.REFUND_PROCESSING],
+				},
+			},
 			{
 				$set: {
 					status: OrderStatus.REFUND_PROCESSING,
@@ -1682,6 +1718,49 @@ export async function markBuyerOrderRefundProcessingDB({
 						at: processedAt,
 						type: "REFUND_PROCESSING",
 						actor: "system",
+					}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markBuyerOrderRefundPendingDB({
+	id,
+	pendingAt,
+	session,
+}: {
+	id: string;
+	pendingAt: Date;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [
+						OrderStatus.REFUNDED,
+						OrderStatus.REFUND_PENDING,
+						OrderStatus.REFUND_PROCESSING,
+					],
+				},
+			},
+			{
+				$set: {
+					status: OrderStatus.REFUND_PENDING,
+					refundProcessingAt: pendingAt,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: pendingAt,
+						type: "REFUND_PROCESSING",
+						actor: "system",
+						note: "Refund submitted to Paystack and awaiting confirmation.",
 					}),
 				},
 			},
@@ -1705,8 +1784,13 @@ export async function markBuyerOrderRefundFailedDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
-		const res = await BuyerOrder.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [OrderStatus.REFUNDED, OrderStatus.REFUND_FAILED],
+				},
+			},
 			{
 				$set: {
 					status: OrderStatus.REFUND_FAILED,

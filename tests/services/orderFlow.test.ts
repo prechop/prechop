@@ -383,7 +383,11 @@ describe("updateOrderStatus", () => {
 	it("rejects an awaiting order and starts one refund", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 444, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 444,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -414,7 +418,11 @@ describe("updateOrderStatus", () => {
 	it("expires unanswered orders and is idempotent on duplicate timer execution", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 445, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 445,
+				status: "processed",
+				amount: 155000,
+			});
 		const { vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -483,7 +491,11 @@ describe("updateOrderStatus", () => {
 	it("expires and refunds instead of accepting when the deadline has passed", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 447, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 447,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -524,7 +536,11 @@ describe("updateOrderStatus", () => {
 	it("fetch-time expiry removes overdue accept actions and restores committed capacity", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 448, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 448,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const listing = await makeActiveDailyOrder({
@@ -572,7 +588,11 @@ describe("updateOrderStatus", () => {
 	it("keeps refund idempotent when rejection is retried after refund", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 446, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 446,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({

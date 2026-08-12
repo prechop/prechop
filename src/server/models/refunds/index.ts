@@ -11,6 +11,7 @@ export type RefundModel = Model<any>;
 const ACCOUNT_CLOSURE_BLOCKING_REFUND_STATUSES = [
 	"REFUND_PENDING",
 	"REFUND_PROCESSING",
+	"REFUND_NEEDS_ATTENTION",
 	"REFUND_FAILED",
 ];
 
@@ -31,6 +32,7 @@ const schema = new mongoose.Schema<any>(
 			enum: [
 				"REFUND_PENDING",
 				"REFUND_PROCESSING",
+				"REFUND_NEEDS_ATTENTION",
 				"REFUNDED",
 				"REFUND_FAILED",
 			],
@@ -49,6 +51,33 @@ const schema = new mongoose.Schema<any>(
 		processedAt: { type: Date, required: false },
 		failedAt: { type: Date, required: false },
 		failureReason: { type: String, required: false },
+		paystackStatus: { type: String, required: false },
+		expectedAt: { type: Date, required: false },
+		submittedAt: { type: Date, required: false },
+		needsAttentionAt: { type: Date, required: false },
+		lastReconciledAt: { type: Date, required: false },
+		submissionAttempts: { type: Number, default: 0, min: 0 },
+		attempts: {
+			type: [
+				{
+					at: { type: Date, required: true },
+					kind: {
+						type: String,
+						enum: ["INITIAL", "RETRY"],
+						required: true,
+					},
+					outcome: {
+						type: String,
+						enum: ["ACCEPTED", "FAILED", "DISCOVERED"],
+						required: true,
+					},
+					paystackRefundId: { type: String },
+					paystackStatus: { type: String },
+					error: { type: String },
+				},
+			],
+			default: [],
+		},
 	},
 	{ timestamps: true },
 );
@@ -123,6 +152,7 @@ schema.index(
 // Reconciliation sweep: refunds created but never confirmed processed, oldest
 // first. processedAt leads because it is the selective equality (null).
 schema.index({ processedAt: 1, createdAt: 1 });
+schema.index({ status: 1, updatedAt: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
@@ -239,19 +269,32 @@ export async function markRefundProcessedDB({
 }): Promise<boolean> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return false;
-		const res = await Refund.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await Refund.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $ne: "REFUNDED" },
+			},
 			{
 				$set: {
 					status: "REFUNDED",
 					paystackRefundId,
+					paystackStatus: "processed",
 					processedAt: new Date(),
+					lastReconciledAt: new Date(),
 				},
-				$unset: { failedAt: "", failureReason: "" },
+				$unset: {
+					failedAt: "",
+					failureReason: "",
+					needsAttentionAt: "",
+				},
 			},
 			{ session, returnDocument: "after" },
 		);
-		return !!res;
+		if (res) return true;
+		return !!(await Refund.exists({
+			_id: new mongoose.Types.ObjectId(id),
+			status: "REFUNDED",
+		}).session(session ?? null));
 	} catch {
 		return false;
 	}
@@ -266,9 +309,18 @@ export async function markRefundProcessingDB({
 }): Promise<boolean> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return false;
-		const res = await Refund.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
-			{ $set: { status: "REFUND_PROCESSING" } },
+		const res = await Refund.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $ne: "REFUNDED" },
+			},
+			{
+				$set: {
+					status: "REFUND_PROCESSING",
+					paystackStatus: "processing",
+					lastReconciledAt: new Date(),
+				},
+			},
 			{ session, returnDocument: "after" },
 		);
 		return !!res;
@@ -280,21 +332,163 @@ export async function markRefundProcessingDB({
 export async function markRefundFailedDB({
 	id,
 	failureReason,
+	paystackStatus,
+	lastReconciledAt,
 	session,
 }: {
 	id: string;
 	failureReason: string;
+	paystackStatus?: string;
+	lastReconciledAt?: Date;
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(id)) return false;
-		const res = await Refund.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await Refund.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $ne: "REFUNDED" },
+			},
 			{
 				$set: {
 					status: "REFUND_FAILED",
 					failedAt: new Date(),
 					failureReason,
+					...(paystackStatus ? { paystackStatus } : {}),
+					...(lastReconciledAt ? { lastReconciledAt } : {}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markRefundPendingDB({
+	id,
+	paystackRefundId,
+	paystackStatus = "pending",
+	expectedAt,
+	lastReconciledAt = new Date(),
+	session,
+}: {
+	id: string;
+	paystackRefundId?: string;
+	paystackStatus?: string;
+	expectedAt?: Date;
+	lastReconciledAt?: Date;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await Refund.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $nin: ["REFUNDED", "REFUND_PROCESSING"] },
+			},
+			{
+				$set: {
+					status: "REFUND_PENDING",
+					paystackStatus,
+					lastReconciledAt,
+					...(paystackRefundId ? { paystackRefundId } : {}),
+					...(expectedAt ? { expectedAt } : {}),
+				},
+				$unset: {
+					failedAt: "",
+					failureReason: "",
+					needsAttentionAt: "",
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markRefundNeedsAttentionDB({
+	id,
+	paystackRefundId,
+	reason,
+	lastReconciledAt = new Date(),
+	session,
+}: {
+	id: string;
+	paystackRefundId?: string;
+	reason: string;
+	lastReconciledAt?: Date;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const now = new Date();
+		const res = await Refund.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: { $ne: "REFUNDED" },
+			},
+			{
+				$set: {
+					status: "REFUND_NEEDS_ATTENTION",
+					paystackStatus: "needs-attention",
+					needsAttentionAt: now,
+					failureReason: reason,
+					lastReconciledAt,
+					...(paystackRefundId ? { paystackRefundId } : {}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function recordRefundSubmissionAttemptDB({
+	id,
+	kind,
+	outcome,
+	paystackRefundId,
+	paystackStatus,
+	error,
+	session,
+}: {
+	id: string;
+	kind: "INITIAL" | "RETRY";
+	outcome: "ACCEPTED" | "FAILED" | "DISCOVERED";
+	paystackRefundId?: string;
+	paystackStatus?: string;
+	error?: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const now = new Date();
+		const res = await Refund.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{
+				...(outcome === "DISCOVERED"
+					? {}
+					: { $inc: { submissionAttempts: 1 } }),
+				$set: {
+					submittedAt: now,
+					...(paystackRefundId ? { paystackRefundId } : {}),
+					...(paystackStatus ? { paystackStatus } : {}),
+				},
+				$push: {
+					attempts: {
+						at: now,
+						kind,
+						outcome,
+						...(paystackRefundId ? { paystackRefundId } : {}),
+						...(paystackStatus ? { paystackStatus } : {}),
+						...(error ? { error } : {}),
+					},
 				},
 			},
 			{ session, returnDocument: "after" },
@@ -349,6 +543,72 @@ export async function getRefundByPaymentIdDB({
 			success: "false",
 		});
 		return null;
+	}
+}
+
+export async function getRefundByIdDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<IRefund | null> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return null;
+		const doc = await Refund.findById(
+			new mongoose.Types.ObjectId(id),
+			null,
+			{
+				session,
+			},
+		).lean();
+		return doc ? (doc as unknown as IRefund) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function getRefundByPaystackRefundIdDB({
+	paystackRefundId,
+	session,
+}: {
+	paystackRefundId: string;
+	session?: ClientSession;
+}): Promise<IRefund | null> {
+	try {
+		const doc = await Refund.findOne({ paystackRefundId }, null, {
+			session,
+		}).lean();
+		return doc ? (doc as unknown as IRefund) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function listRefundsForReconciliationDB({
+	limit = 100,
+	updatedBefore = new Date(Date.now() - 2 * 60 * 1000),
+	session,
+}: {
+	limit?: number;
+	updatedBefore?: Date;
+	session?: ClientSession;
+} = {}): Promise<IRefund[]> {
+	try {
+		return (await Refund.find(
+			{
+				status: { $in: ["REFUND_PENDING", "REFUND_PROCESSING"] },
+				paystackRefundId: { $exists: true },
+				updatedAt: { $lte: updatedBefore },
+			},
+			null,
+			{ session },
+		)
+			.sort({ updatedAt: 1 })
+			.limit(Math.min(Math.max(limit, 1), 200))
+			.lean()) as unknown as IRefund[];
+	} catch {
+		return [];
 	}
 }
 

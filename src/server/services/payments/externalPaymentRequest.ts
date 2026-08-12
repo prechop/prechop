@@ -16,7 +16,9 @@ import {
 	markPaymentExpiredDB,
 	markPaymentExternalInitializedDB,
 	OrderStatus,
+	PaymentSettlementMode,
 	PaymentStatus,
+	paymentSettlementModeOf,
 } from "../../models";
 import { paystackProvider } from "../../providers";
 import { releaseSlots } from "../buyerOrders/slots";
@@ -212,13 +214,18 @@ export async function initializeExternalPayment({
 			paystackRef: input.payment.paystackRef,
 		};
 	}
-	if (!input.vendor.paystackSubaccountCode) {
+	const settlementMode = paymentSettlementModeOf(input.payment);
+	if (
+		settlementMode === PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 &&
+		!input.vendor.paystackSubaccountCode
+	) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 	const tx = await paystackProvider.initializeTransaction({
 		email: payerEmail(contact.trim()),
 		amountKobo: input.payment.amountKobo,
 		reference: input.payment.paystackRef,
+		settlementMode,
 		subaccountCode: input.vendor.paystackSubaccountCode,
 		vendorAmountKobo:
 			input.payment.vendorSettlementKobo ??

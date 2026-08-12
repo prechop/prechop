@@ -167,7 +167,7 @@ describe("sweepStalePaidOrders — the cutoff-enforce money path", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 5001,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 		const { orderId, ref } = await stalePaidOrder();
@@ -254,7 +254,7 @@ describe("sweepStalePaidOrders — the cutoff-enforce money path", () => {
 			.mockRejectedValueOnce(new Error("paystack down"))
 			.mockResolvedValue({
 				id: 6001,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 
@@ -277,7 +277,7 @@ describe("sweepStalePaidOrders — the cutoff-enforce money path", () => {
 			}),
 		);
 		expect(statuses).toContain(OrderStatus.REFUNDED);
-		expect(statuses).toContain(OrderStatus.CANCELLED);
+		expect(statuses).toContain(OrderStatus.REFUND_FAILED);
 	});
 
 	it("counts a cancel but no refund when the payment was already refunded", async () => {
@@ -288,7 +288,7 @@ describe("sweepStalePaidOrders — the cutoff-enforce money path", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 7001,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 		const { orderId } = await stalePaidOrder();

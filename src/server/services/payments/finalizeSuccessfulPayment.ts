@@ -82,6 +82,11 @@ export async function finalizeSuccessfulPayment({
 	try {
 		if (payment.webhookVerified) {
 			if (isTerminalConflictOrder(order)) {
+				await refundCancelledLatePayment({
+					order,
+					amountKobo: payment.amountKobo,
+					reference,
+				});
 				return {
 					received: true,
 					status: "ORDER_STATE_CONFLICT",
@@ -121,6 +126,11 @@ export async function finalizeSuccessfulPayment({
 		}
 
 		if (isTerminalConflictOrder(order)) {
+			await refundCancelledLatePayment({
+				order,
+				amountKobo: payment.amountKobo,
+				reference,
+			});
 			return {
 				received: true,
 				status: "ORDER_STATE_CONFLICT",
@@ -533,6 +543,34 @@ function slotHolds(order: IBuyerOrder) {
 function maskReference(reference: string): string {
 	if (reference.length <= 8) return "****";
 	return `${reference.slice(0, 4)}...${reference.slice(-4)}`;
+}
+
+async function refundCancelledLatePayment({
+	order,
+	amountKobo,
+	reference,
+}: {
+	order: IBuyerOrder;
+	amountKobo: number;
+	reference: string;
+}): Promise<void> {
+	if (order.status !== OrderStatus.CANCELLED) return;
+	console.warn(
+		`[payment] payment settled for cancelled order - refunding in full: order=${order._id.toString()} ref=${maskReference(reference)} amountKobo=${amountKobo}`,
+	);
+	try {
+		await issueRefund({
+			orderId: order._id.toString(),
+			amountKobo,
+			reason: "Payment settled after the order was already cancelled.",
+			paystackRef: reference,
+		});
+	} catch (error) {
+		console.error(
+			`[payment] refund of cancelled-order settlement failed: order=${order._id.toString()} ref=${maskReference(reference)} amountKobo=${amountKobo}:`,
+			error,
+		);
+	}
 }
 
 async function notifyParties(order: IBuyerOrder): Promise<void> {

@@ -1,36 +1,37 @@
 import AppShell from "@/layouts/AppShell";
 import PolicyPageContent from "@/libs/PolicyPages";
-
-export default function CancellationAndRefundsPage() {
+export default function Page() {
 	return (
-		<AppShell shellRole="BUYER" publicAccess>
+		<AppShell publicAccess>
 			<PolicyPageContent
 				eyebrow="Policy"
 				title="Cancellation and Refunds"
 				summary="What happens when an order is cancelled or cannot be fulfilled."
 				sections={[
 					{
-						title: "Cancellation",
+						title: "General rule",
+						audience: ["shared", "public"],
 						body: [
-							"Buyers may cancel only while the order is still in an allowed early status.",
-							"Vendors may reject an order they cannot fulfil.",
-							"Once cooking or fulfillment has advanced, support may need to review the case.",
+							"Cancellation, order status, refund status and vendor payout status are separate.",
+							"Eligibility depends on the order stage, facts and applicable policy.",
 						],
 					},
 					{
-						title: "Refund handling",
+						title: "Buyer cancellations and refunds",
+						audience: "buyer",
 						body: [
-							"When a paid order qualifies for a refund, Prechop starts the refund process through the original payment route.",
-							"Refund timing can depend on Paystack and the buyer's bank.",
-							"Prechop does not describe refunds as instant.",
+							"You may cancel only while the order is in an allowed early status; later cases may require support review.",
+							"When approved, Prechop starts the refund through the applicable payment route. Paystack and bank processing can vary.",
+							"Include the order number and payment reference when asking support about a delayed or failed refund.",
 						],
 					},
 					{
-						title: "When to contact support",
+						title: "Vendor effect",
+						audience: "vendor",
 						body: [
-							"Contact support if an order was cancelled but the refund status has not changed after a reasonable time.",
-							"Include the order number, payment reference if available and a short explanation.",
-							"Support may ask the vendor or payment provider for more context.",
+							"Reject promptly if an order cannot be fulfilled and do not mark an order handed over unless trusted completion occurred.",
+							"A cancellation, refund, dispute or payout hold keeps the affected pending payable from becoming eligible until resolved.",
+							"If an adjustment applies after payout processing, its status will be reflected in the relevant payout or support record.",
 						],
 					},
 				]}
