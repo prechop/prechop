@@ -425,8 +425,8 @@ export default function LandingPage() {
             <Button
               as={Link}
               href={
-                isLoading || isAuthenticated
-                  ? "/sell"
+                isAuthenticated
+                  ? "/vendor/onboarding"
                   : "/login?next=/vendor/onboarding"
               }
               $size="lg"

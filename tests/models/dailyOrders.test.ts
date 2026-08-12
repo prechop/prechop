@@ -139,7 +139,7 @@ describe("dailyOrders model", () => {
 		expect(again).toBe(false);
 	});
 
-	it("edits a listing (DRAFT or ACTIVE) until it opens, then locks", async () => {
+	it("edits DRAFT and ACTIVE listings while preserving committed item data", async () => {
 		const vendorId = oid();
 		const opensAt = new Date(Date.now() + 3_600_000); // opens in 1h
 		const d = await createDailyOrderDB({
@@ -170,28 +170,52 @@ describe("dailyOrders model", () => {
 		});
 		expect(stillEditable!.title).toBe("Updated again");
 
-		// Once orders have opened (now past availableFrom) editing is locked.
-		const locked = await updateDailyOrderDraftDB({
+		const itemId = stillEditable!.items[0]._id!.toString();
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId: id,
+			dailyOrderItemId: itemId,
+			by: 2,
+		});
+		const liveEdit = await updateDailyOrderDraftDB({
 			id,
 			vendorId,
-			payload: { title: "Nope" },
+			payload: {
+				title: "Live update",
+				items: [
+					{
+						...makePayload({ vendorId }).items[0],
+						snapshotName: "New name",
+						snapshotPriceKobo: 180000,
+						maxQuantity: 10,
+					},
+				],
+			},
 			now: new Date(opensAt.getTime() + 1000),
 		});
-		expect(locked).toBeNull();
+		expect(liveEdit!.title).toBe("Live update");
+		expect(liveEdit!.items[0]._id!.toString()).toBe(itemId);
+		expect(liveEdit!.items[0].orderedQuantity).toBe(2);
+		expect(liveEdit!.items[0].snapshotName).toBe("New name");
+		expect(liveEdit!.items[0].snapshotPriceKobo).toBe(180000);
 	});
 
-	it("never edits a listing that has no open time (opens immediately)", async () => {
+	it("edits an ACTIVE listing that opened immediately", async () => {
 		const vendorId = oid();
 		const d = await createDailyOrderDB({
 			payload: makePayload({ vendorId }),
 		});
-		const locked = await updateDailyOrderDraftDB({
+		await setDailyOrderStatusDB({
 			id: d!._id.toString(),
 			vendorId,
-			payload: { title: "Nope" },
+			status: DailyOrderStatus.ACTIVE,
+		});
+		const liveEdit = await updateDailyOrderDraftDB({
+			id: d!._id.toString(),
+			vendorId,
+			payload: { title: "Live now" },
 			now: new Date(),
 		});
-		expect(locked).toBeNull();
+		expect(liveEdit!.title).toBe("Live now");
 	});
 
 	it("increments an item quantity via the positional operator", async () => {

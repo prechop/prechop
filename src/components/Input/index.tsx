@@ -72,6 +72,14 @@ const controlStyles = `
 
 const StyledInput = styled.input`
 	${controlStyles}
+
+	
+	&::-webkit-calendar-picker-indicator {
+		cursor: pointer;
+		filter: invert(89%) sepia(9%) saturate(475%) hue-rotate(342deg)
+			brightness(107%) contrast(94%);
+		opacity: 0.95;
+	} 
 `;
 
 const StyledTextarea = styled.textarea`

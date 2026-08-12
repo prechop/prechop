@@ -475,16 +475,10 @@ export default function DailyOrderComposerWrapper({
 	// A listing can only be edited before it opens for orders. Mirror the server
 	// lock (`assertActiveVendor` + the availableFrom window) so an already-open
 	// or closed listing shows a clear message instead of a form that would 409.
-	const opensAt = editing?.availableFrom
-		? new Date(editing.availableFrom).getTime()
-		: null;
 	const editLocked =
 		isEdit &&
 		!!editing &&
-		(editing.status === "CLOSED" ||
-			editing.status === "CANCELLED" ||
-			opensAt === null ||
-			opensAt <= Date.now());
+		(editing.status === "CLOSED" || editing.status === "CANCELLED");
 	if (editLocked) {
 		return (
 			<FadeIn>
@@ -497,7 +491,7 @@ export default function DailyOrderComposerWrapper({
 					<EmptyState
 						icon="🔒"
 						title="Editing is closed"
-						description="Orders have already opened for this listing, so it can’t be edited. You can still close or cancel it from your dashboard."
+						description="Closed and cancelled listings can’t be edited."
 						action={
 							<Button onClick={() => router.push("/dashboard")}>
 								Back to dashboard

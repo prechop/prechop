@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import styled, { keyframes } from "styled-components";
 import useSWR from "swr";
@@ -29,8 +30,8 @@ import {
   statusLabel,
   timeUntil,
 } from "@/constants/formatters";
-import { useToast } from "@/hooks/useToast";
 import { useAuth } from "@/hooks/Auth/useAuth";
+import { useToast } from "@/hooks/useToast";
 import VendorOnboardingWrapper, {
   type VendorMe,
 } from "@/libs/VendorOnboardingWrapper";
@@ -656,7 +657,7 @@ const IncomingMobileOnly = styled.span`
     display: inline;
   }
 `;
-const OrderRowWrap = styled(Link)`
+const OrderRowWrap = styled.div`
   display: flex;
   align-items: center;
   gap: var(--pc-space-3);
@@ -666,6 +667,7 @@ const OrderRowWrap = styled(Link)`
   border-radius: var(--pc-radius);
   color: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: border-color var(--pc-dur) var(--pc-ease);
   &:hover {
     border-color: var(--pc-color-primary);
@@ -738,7 +740,7 @@ const OrderActionLink = styled(Link)`
 const OrderCloseBtn = styled.button`
   font-size: 12px;
   font-weight: 700;
-  color: var(--pc-text-muted);
+  color: var(--pc-color-danger);
   background: none;
   border: none;
   cursor: pointer;
@@ -859,6 +861,7 @@ function errMsg(e: unknown): string {
 }
 
 export default function VendorDashboardWrapper() {
+  const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
   const [greeting, setGreeting] = useState("");
@@ -1009,6 +1012,7 @@ export default function VendorDashboardWrapper() {
   );
   const [securityPin, setSecurityPin] = useState("");
   const [securityPinConfirm, setSecurityPinConfirm] = useState("");
+  const [listingToClose, setListingToClose] = useState<DailyOrder | null>(null);
 
   useEffect(() => {
     if (!vendor?.id) {
@@ -1163,6 +1167,44 @@ export default function VendorDashboardWrapper() {
 
   return (
     <FadeIn>
+      {listingToClose && (
+        <ModalBackdrop role="presentation">
+          <SecurityModal
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="close-listing-title"
+            aria-describedby="close-listing-description">
+            <Stack $gap={18}>
+              <Stack $gap={8}>
+                <Title id="close-listing-title" $size={23}>
+                  Close this listing?
+                </Title>
+                <Text id="close-listing-description" $muted>
+                  Buyers will no longer be able to place new orders from this
+                  listing. Existing paid orders will not be affected.
+                </Text>
+              </Stack>
+              <Row $gap={10} $justify="flex-end" $wrap>
+                <Button
+                  autoFocus
+                  $variant="secondary"
+                  onClick={() => setListingToClose(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  $variant="danger"
+                  onClick={() => {
+                    const listing = listingToClose;
+                    setListingToClose(null);
+                    void closeListing(listing);
+                  }}>
+                  Close listing
+                </Button>
+              </Row>
+            </Stack>
+          </SecurityModal>
+        </ModalBackdrop>
+      )}
       {showSecurityModal && (
         <ModalBackdrop role="presentation">
           <SecurityModal
@@ -1552,7 +1594,17 @@ export default function VendorDashboardWrapper() {
                   const thumb = o.items.find((it) => it.snapshotImageUrl);
                   return (
                     <FadeIn key={o.id} $delay={i * 40}>
-                      <OrderRowWrap href={`/dashboard/${o.id}`}>
+                      <OrderRowWrap
+                        role="link"
+                        tabIndex={0}
+                        onClick={() => router.push(`/dashboard/${o.id}`)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(`/dashboard/${o.id}`);
+                          }
+                        }}>
                         <OrderThumb>
                           {thumb?.snapshotImageUrl ? (
                             <OrderThumbImg
@@ -1590,8 +1642,9 @@ export default function VendorDashboardWrapper() {
                           </Row>
                           {(editable || o.status === "ACTIVE") && (
                             <OrderActions>
-                              {editable && (
+                              {(editable || o.status === "ACTIVE") && (
                                 <OrderActionLink
+                                  onClick={(event) => event.stopPropagation()}
                                   href={`/dashboard/${o.id}/edit`}>
                                   <span aria-hidden>✏️</span> Edit
                                 </OrderActionLink>
@@ -1602,7 +1655,7 @@ export default function VendorDashboardWrapper() {
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    closeListing(o);
+                                    setListingToClose(o);
                                   }}>
                                   Close
                                 </OrderCloseBtn>

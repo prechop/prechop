@@ -3,9 +3,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	BuyerOrder,
 	createBuyerOrderDB,
+	getBuyerOrderByIdDB,
 	markBuyerOrderPaidDB,
 	setBuyerOrderStatusDB,
 } from "@/server/models/buyerOrders";
+import { incrementDailyOrderItemQuantityDB } from "@/server/models/dailyOrders";
 import {
 	DailyOrderStatus,
 	DayOfWeek,
@@ -29,6 +31,7 @@ import {
 	closeDailyOrder,
 } from "@/server/services/dailyOrders/status";
 import { updateDailyOrder } from "@/server/services/dailyOrders/update";
+import { updateMenuItem } from "@/server/services/menu/updateMenu";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeMenuItem, makeVendor } from "../helpers/factories";
@@ -92,7 +95,7 @@ describe("createDailyOrder", () => {
 		expect(updated.title).toBe("Renamed Draft");
 	});
 
-	it("locks editing once orders have opened", async () => {
+	it("edits an ACTIVE listing after ordering opens for future buyers", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const item = await makeMenuItem({ vendorId, campusId });
 		const listing = await createDailyOrder({
@@ -106,11 +109,102 @@ describe("createDailyOrder", () => {
 				items: [{ menuItemId: item!._id.toString() }],
 			},
 		});
+		const updated = await updateDailyOrder({
+			userId,
+			orderId: listing._id.toString(),
+			input: { title: "Updated live listing" },
+		});
+		expect(updated.title).toBe("Updated live listing");
+	});
+
+	it("updates the live listing but preserves paid and accepted order snapshots", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const item = await makeMenuItem({
+			vendorId,
+			campusId,
+			name: "Jollof",
+			priceKobo: 150000,
+		});
+		const listing = await createDailyOrder({
+			userId,
+			input: {
+				title: "Open now",
+				scheduledDate: futureISO(3_600_000),
+				cutoffTime: futureISO(1_800_000),
+				items: [{ menuItemId: item!._id.toString(), maxQuantity: 10 }],
+			},
+		});
+		const listingItemId = listing.items[0]._id!.toString();
+		const paid = await createBuyerOrderDB({
+			payload: {
+				orderNumber: `IMMUTABLE-${Date.now()}`,
+				dailyOrderId: listing._id.toString(),
+				vendorId,
+				buyerId: oid(),
+				campusId,
+				fulfillmentType: FulfillmentType.PICKUP,
+				subtotalKobo: 150000,
+				deliveryFeeKobo: 0,
+				platformFeeKobo: 0,
+				totalKobo: 150000,
+				items: [
+					{
+						dailyOrderItemId: listingItemId,
+						menuItemId: item!._id.toString(),
+						snapshotName: "Jollof",
+						snapshotPriceKobo: 150000,
+						quantity: 2,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			},
+		});
+		await markBuyerOrderPaidDB({ id: paid!._id.toString() });
+		await setBuyerOrderStatusDB({
+			id: paid!._id.toString(),
+			status: OrderStatus.ACCEPTED,
+		});
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId: listing._id.toString(),
+			dailyOrderItemId: listingItemId,
+			by: 2,
+		});
+
+		await updateMenuItem({
+			userId,
+			itemId: item!._id.toString(),
+			name: "Party Jollof",
+			priceNaira: 1800,
+		});
+		const updated = await updateDailyOrder({
+			userId,
+			orderId: listing._id.toString(),
+			input: {
+				items: [{ menuItemId: item!._id.toString(), maxQuantity: 12 }],
+			},
+		});
+		expect(updated.items[0].snapshotName).toBe("Party Jollof");
+		expect(updated.items[0].snapshotPriceKobo).toBe(180000);
+		expect(updated.items[0]._id!.toString()).toBe(listingItemId);
+		expect(updated.items[0].orderedQuantity).toBe(2);
+
+		const original = await getBuyerOrderByIdDB({
+			id: paid!._id.toString(),
+		});
+		expect(original!.status).toBe(OrderStatus.ACCEPTED);
+		expect(original!.items[0].snapshotName).toBe("Jollof");
+		expect(original!.items[0].snapshotPriceKobo).toBe(150000);
+		expect(original!.totalKobo).toBe(150000);
 		await expect(
 			updateDailyOrder({
 				userId,
 				orderId: listing._id.toString(),
-				input: { title: "Too late" },
+				input: {
+					items: [
+						{ menuItemId: item!._id.toString(), maxQuantity: 1 },
+					],
+				},
 			}),
 		).rejects.toThrow();
 	});

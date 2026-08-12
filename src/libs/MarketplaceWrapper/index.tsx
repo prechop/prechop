@@ -179,20 +179,21 @@ const BadgeFloat = styled.div`
   right: 14px;
   z-index: 4;
 `;
-const SlideCopy = styled.div`
+const SlideCopy = styled.div<{ $hasMultipleMenus: boolean }>`
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 46px;
+  bottom: ${(p) => (p.$hasMultipleMenus ? "46px" : "18px")};
   z-index: 3;
   color: #fff;
 `;
 const SlideMenuName = styled.h3`
   margin: 0;
   max-width: 82%;
-  font-size: 23px;
+  font-size: 18px;
+  text-transform: capitalize;
   line-height: 1.08;
-  font-weight: 900;
+  font-weight: 700;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -200,7 +201,7 @@ const SlideMenuName = styled.h3`
   overflow: hidden;
 
   @media (max-width: 759px) {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     line-height: 1.12;
   }
@@ -211,19 +212,19 @@ const SlideMenuName = styled.h3`
 `;
 const SlidePrice = styled.div`
   margin-top: 7px;
-  font-size: 24px;
+  font-size: 18px;
   line-height: 1;
-  font-weight: 900;
+  font-weight: 700;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
 
   @media (max-width: 759px) {
     margin-top: 6px;
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 700;
   }
 
   @media (max-width: 360px) {
-    font-size: 19px;
+    font-size: 16px;
   }
 `;
 const SlideMeta = styled.div`
@@ -1414,7 +1415,9 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
         )}
 
         {selectedItem && (
-          <SlideCopy aria-live="polite">
+          <SlideCopy
+            $hasMultipleMenus={hasMultipleMenus}
+            aria-live="polite">
             <SlideMenuName>{selectedItem.snapshotName}</SlideMenuName>
             <SlidePrice>{itemPrice(selectedItem)}</SlidePrice>
             <SlideMeta>
@@ -1522,7 +1525,9 @@ function VendorGridCard({ row }: { row: MarketplaceVendor }) {
               <FiGrid aria-hidden />
               <h4>{menuSummary(menuCount)}</h4>
             </VendorInfoHeading>
-            <small>Swipe to explore</small>
+            <small>
+              {menuCount === 1 ? "Available now" : "Swipe to explore"}
+            </small>
           </VendorInfoItem>
         </VendorInfoStrip>
 

@@ -687,6 +687,28 @@ export async function getVendorProfileByStoreSlugDB({
 	}
 }
 
+export async function listVendorProfilesForStoreSlugFallbackDB({
+	session,
+}: {
+	session?: ClientSession;
+} = {}): Promise<IVendorProfile[]> {
+	try {
+		const vendors = await VendorProfile.aggregate<IVendorProfile>(
+			[
+				{
+					$match: {
+						businessName: { $exists: true, $ne: null },
+					},
+				},
+			],
+			{ session },
+		);
+		return vendors.map(normalizeVendorCategories);
+	} catch {
+		return [];
+	}
+}
+
 export async function getVendorProfileByUserIdDB({
 	userId,
 	session,

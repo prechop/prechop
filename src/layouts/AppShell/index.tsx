@@ -127,7 +127,6 @@ const Right = styled.div`
   gap: 10px;
   flex-shrink: 1;
   min-width: 0;
-  overflow-x: clip;
   @media (max-width: 759px) {
     gap: 2px;
 
@@ -143,6 +142,27 @@ const ModeSwitch = styled.div`
   border-radius: var(--pc-radius-pill);
   flex-shrink: 1;
   min-width: 0;
+
+  @media (max-width: 759px) {
+    &:has(> button:last-child[aria-selected="true"]) > button:first-child {
+      position: relative;
+      width: 34px;
+      padding-inline: 0;
+      overflow: hidden;
+      color: transparent;
+    }
+
+    &:has(> button:last-child[aria-selected="true"])
+      > button:first-child::before {
+      content: "🧑‍🍳";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--pc-text-muted);
+      font-size: 16px;
+    }
+  }
 `;
 const ModeBtn = styled.button<{ $active: boolean }>`
   display: inline-flex;
@@ -183,6 +203,7 @@ const ModeBtn = styled.button<{ $active: boolean }>`
 const ProfileAvatar = styled.div`
   display: inline-flex;
   flex-shrink: 0;
+  z-index: 10;
   @media (max-width: 759px) {
     display: none;
   }
@@ -259,7 +280,7 @@ const TopBadge = styled.span`
     top: -9px;
     right: -3px;
     min-width: 14px;
-    // color:yellow;
+    color:yellow;
     height: 14px;
     padding: 0 3px;
     font-size: 7px;

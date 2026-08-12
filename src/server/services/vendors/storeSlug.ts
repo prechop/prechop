@@ -1,6 +1,7 @@
 import {
 	getVendorProfileByStoreSlugDB,
 	type IVendorProfile,
+	listVendorProfilesForStoreSlugFallbackDB,
 	updateVendorProfileDB,
 } from "@/server/models";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
@@ -78,5 +79,17 @@ export async function resolveVendorByStoreSlug({
 }: {
 	storeSlug: string;
 }): Promise<IVendorProfile | null> {
-	return getVendorProfileByStoreSlugDB({ storeSlug });
+	const normalized = storeSlug.trim().toLowerCase();
+	const exact = await getVendorProfileByStoreSlugDB({
+		storeSlug: normalized,
+	});
+	if (exact) return exact;
+
+	const vendors = await listVendorProfilesForStoreSlugFallbackDB();
+	return (
+		vendors.find(
+			(vendor) =>
+				storeSlugBase(vendor.businessName ?? "kitchen") === normalized,
+		) ?? null
+	);
 }

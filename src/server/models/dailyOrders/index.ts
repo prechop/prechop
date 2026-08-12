@@ -1,5 +1,5 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
-import { ErrDailyOrderNotFound, MAX_LIMIT } from "../../constants";
+import { MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { VENDOR_ATTENTION_ORDER_STATUSES } from "../buyerOrders";
 import { DailyOrderStatus, VendorStatus } from "../enums";
@@ -752,66 +752,89 @@ export async function updateDailyOrderDraftDB({
 	id,
 	vendorId,
 	payload,
-	now,
+	now: _now,
 	session,
 }: {
 	id: string;
 	vendorId: string;
 	payload: Partial<IDailyOrderCreateInput>;
-	/** Edits are only accepted while `availableFrom` is still in the future. */
+	/** Retained for caller compatibility and audit timing. */
 	now: Date;
 	session?: ClientSession;
 }): Promise<IDailyOrder | null> {
-	try {
-		const set: Record<string, unknown> = {};
-		if (payload.title !== undefined) set.title = payload.title;
-		if (payload.scheduledDate !== undefined)
-			set.scheduledDate = payload.scheduledDate;
-		if (payload.availableFrom !== undefined)
-			set.availableFrom = payload.availableFrom;
-		if (payload.cutoffTime !== undefined)
-			set.cutoffTime = payload.cutoffTime;
-		if (payload.isPublic !== undefined) set.isPublic = payload.isPublic;
-		if (payload.pickupAvailable !== undefined)
-			set.pickupAvailable = payload.pickupAvailable;
-		if (payload.deliveryAvailable !== undefined)
-			set.deliveryAvailable = payload.deliveryAvailable;
-		if (payload.deliveryFeeKobo !== undefined)
-			set.deliveryFeeKobo = payload.deliveryFeeKobo;
-		if (payload.deliveryCoverage !== undefined)
-			set.deliveryCoverage = payload.deliveryCoverage;
-		if (payload.deliveryEstimateMinutes !== undefined)
-			set.deliveryEstimateMinutes = payload.deliveryEstimateMinutes;
-		if (payload.deliveryContactPhone !== undefined)
-			set.deliveryContactPhone = payload.deliveryContactPhone;
-		if (payload.deliveryResponsibilityAccepted !== undefined) {
-			set.deliveryResponsibilityAccepted =
-				payload.deliveryResponsibilityAccepted;
-		}
-		if (payload.items !== undefined) set.items = mapItems(payload.items);
+	void _now;
+	const set: Record<string, unknown> = {};
+	if (payload.title !== undefined) set.title = payload.title;
+	if (payload.scheduledDate !== undefined)
+		set.scheduledDate = payload.scheduledDate;
+	if (payload.availableFrom !== undefined)
+		set.availableFrom = payload.availableFrom;
+	if (payload.cutoffTime !== undefined) set.cutoffTime = payload.cutoffTime;
+	if (payload.isPublic !== undefined) set.isPublic = payload.isPublic;
+	if (payload.pickupAvailable !== undefined)
+		set.pickupAvailable = payload.pickupAvailable;
+	if (payload.deliveryAvailable !== undefined)
+		set.deliveryAvailable = payload.deliveryAvailable;
+	if (payload.deliveryFeeKobo !== undefined)
+		set.deliveryFeeKobo = payload.deliveryFeeKobo;
+	if (payload.deliveryCoverage !== undefined)
+		set.deliveryCoverage = payload.deliveryCoverage;
+	if (payload.deliveryEstimateMinutes !== undefined)
+		set.deliveryEstimateMinutes = payload.deliveryEstimateMinutes;
+	if (payload.deliveryContactPhone !== undefined)
+		set.deliveryContactPhone = payload.deliveryContactPhone;
+	if (payload.deliveryResponsibilityAccepted !== undefined) {
+		set.deliveryResponsibilityAccepted =
+			payload.deliveryResponsibilityAccepted;
+	}
+	const nextItems =
+		payload.items !== undefined ? mapItems(payload.items) : undefined;
 
-		// A listing is editable only until it opens for orders: it must not be
-		// closed/cancelled and its `availableFrom` must still be in the future.
-		// Guarding on `availableFrom > now` at the write makes the lock atomic —
-		// a listing whose open time elapses between the service check and here
-		// simply matches nothing rather than being edited out from under buyers.
+	const baseFilter = {
+		_id: new mongoose.Types.ObjectId(id),
+		vendorId: new mongoose.Types.ObjectId(vendorId),
+		status: { $in: [DailyOrderStatus.DRAFT, DailyOrderStatus.ACTIVE] },
+	};
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		const current = await DailyOrder.findOne(baseFilter)
+			.session(session ?? null)
+			.lean();
+		if (!current) return null;
+
+		const currentByMenuItem = new Map<
+			string,
+			{ _id?: unknown; orderedQuantity?: number }
+		>(
+			(current.items ?? []).map((item: {
+				menuItemId: mongoose.Types.ObjectId;
+				_id?: unknown;
+				orderedQuantity?: number;
+			}) => [
+				item.menuItemId.toString(),
+				{ _id: item._id, orderedQuantity: item.orderedQuantity },
+			]),
+		);
+		const mergedItems = nextItems?.map((item) => {
+			const existingItem = currentByMenuItem.get(item.menuItemId.toString());
+			return {
+				...item,
+				...(existingItem?._id ? { _id: existingItem._id } : {}),
+				orderedQuantity: existingItem?.orderedQuantity ?? 0,
+			};
+		});
 		const res = await DailyOrder.findOneAndUpdate(
+			{ ...baseFilter, updatedAt: current.updatedAt },
 			{
-				_id: new mongoose.Types.ObjectId(id),
-				vendorId: new mongoose.Types.ObjectId(vendorId),
-				status: {
-					$in: [DailyOrderStatus.DRAFT, DailyOrderStatus.ACTIVE],
+				$set: {
+					...set,
+					...(mergedItems ? { items: mergedItems } : {}),
 				},
-				availableFrom: { $gt: now },
 			},
-			{ $set: set },
 			{ session, returnDocument: "after" },
 		);
-		if (!res) throw ErrDailyOrderNotFound;
-		return res.toObject() as unknown as IDailyOrder;
-	} catch {
-		return null;
+		if (res) return res.toObject() as unknown as IDailyOrder;
 	}
+	return null;
 }
 
 export async function setDailyOrderStatusDB({

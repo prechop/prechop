@@ -197,6 +197,23 @@ const CompactStatsGrid = styled.div`
 		}
 	}
 `;
+const ModalOverlay = styled.div`
+	position: fixed;
+	inset: 0;
+	z-index: 1400;
+	display: grid;
+	place-items: center;
+	padding: var(--pc-space-4);
+	background: rgba(20, 16, 12, 0.62);
+`;
+const ConfirmDialog = styled(Card)`
+	width: min(100%, 440px);
+	padding: var(--pc-space-5);
+	box-shadow: var(--pc-shadow-lg);
+`;
+const ModalActions = styled(Row)`
+	justify-content: flex-end;
+`;
 
 function errMsg(e: unknown): string {
 	const m = (e as { response?: { data?: { message?: string } } })?.response
@@ -210,17 +227,22 @@ export default function MenuWrapper() {
 	const { data, isLoading, mutate } = useSWR<MenuItem[]>("/menu", fetcher);
 	const [reordering, setReordering] = useState(false);
 	const [managingGroups, setManagingGroups] = useState(false);
+	const [deleteItem, setDeleteItem] = useState<MenuItem | null>(null);
+	const [deleting, setDeleting] = useState(false);
 
 	const items = data ?? [];
 
 	async function remove(it: MenuItem) {
-		if (!window.confirm(`Delete "${it.name}"?`)) return;
+		setDeleting(true);
 		try {
 			await api.delete(`/menu/${it.id}`);
 			toast("Menu item deleted", "success");
+			setDeleteItem(null);
 			await mutate();
 		} catch (e) {
 			toast(errMsg(e), "error");
+		} finally {
+			setDeleting(false);
 		}
 	}
 
@@ -323,6 +345,52 @@ export default function MenuWrapper() {
 	return (
 		<FadeIn>
 			<Stack $gap={20}>
+				{deleteItem && (
+					<ModalOverlay
+						role="presentation"
+						onClick={() => !deleting && setDeleteItem(null)}
+					>
+						<ConfirmDialog
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="delete-menu-item-title"
+							onClick={(event) => event.stopPropagation()}
+						>
+							<Stack $gap={16}>
+								<Stack $gap={6}>
+									<Text
+										id="delete-menu-item-title"
+										$weight={900}
+										$size={22}
+									>
+										Delete menu item?
+									</Text>
+									<Text $muted>
+										“{deleteItem.name}” will be removed from
+										your menu. Existing orders containing
+										this item will not be affected.
+									</Text>
+								</Stack>
+								<ModalActions $gap={8} $wrap>
+									<Button
+										$variant="secondary"
+										disabled={deleting}
+										onClick={() => setDeleteItem(null)}
+									>
+										Cancel
+									</Button>
+									<Button
+										$variant="danger"
+										disabled={deleting}
+										onClick={() => remove(deleteItem)}
+									>
+										{deleting ? "Deleting…" : "Delete menu"}
+									</Button>
+								</ModalActions>
+							</Stack>
+						</ConfirmDialog>
+					</ModalOverlay>
+				)}
 				<PageHeader
 					eyebrow="Menu"
 					title="Your menu"
@@ -516,7 +584,9 @@ export default function MenuWrapper() {
 													Edit
 												</IconBtn>
 												<IconBtn
-													onClick={() => remove(it)}
+													onClick={() =>
+														setDeleteItem(it)
+													}
 													style={{
 														color: "var(--pc-color-danger)",
 													}}
