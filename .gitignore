@@ -3,8 +3,8 @@
 /.pnp
 .pnp.*
 .yarn/*
-.codex
-.kilo
+.codex/
+.kilo/
 
 
 # next.js

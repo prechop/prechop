@@ -720,10 +720,21 @@ const OrderStatusPill = styled(Badge)`
   flex-shrink: 0;
 `;
 const OrderActions = styled.div`
-  display: flex;
+ display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 14px;
+  // width: 100%;
+  // margin-top: 24px;
+  // padding-top: 24px;
+  // border-top: 1px solid rgba(181, 163, 143, 0.18);
   flex-shrink: 0;
+
+  // @media (max-width: 640px) {
+  //   gap: 10px;
+    margin-top: 10px;
+  //   padding-top: 18px;
+  // }
 `;
 const OrderActionLink = styled(Link)`
   font-size: 12px;

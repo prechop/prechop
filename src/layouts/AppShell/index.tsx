@@ -348,7 +348,7 @@ const VendorFooter = styled.footer`
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin: 10px 0;
+  margin-bottom: var(--pc-space-3);
   color: var(--pc-text-muted);
   font-size: 12px;
 `;

@@ -1711,7 +1711,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
           </VendorPanel>
           <Content>
             <SectionTitle>
-              <FiMapPin aria-hidden /> Fulfilment
+              <FiMapPin aria-hidden /> Choose Pickup or Delivery
             </SectionTitle>
             <FulfillmentGrid>
               {data.pickupAvailable && (
