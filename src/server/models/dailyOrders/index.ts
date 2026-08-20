@@ -1,7 +1,8 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
-import { ErrDailyOrderNotFound, MAX_LIMIT } from "../../constants";
+import { MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { DailyOrderStatus, VendorStatus } from "../enums";
+import { VENDOR_ATTENTION_ORDER_STATUSES } from "../buyerOrders";
+import { DailyOrderStatus, MarketplaceCategory, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type {
 	IDailyOrder,
@@ -41,8 +42,29 @@ const itemSchema = new mongoose.Schema(
 			ref: "menuItems",
 			required: true,
 		},
+		category: { type: String },
 		snapshotName: { type: String, required: true },
+		snapshotDescription: { type: String },
 		snapshotPriceKobo: { type: Number, required: true, min: 0 },
+		snapshotVariants: {
+			type: [
+				new mongoose.Schema(
+					{
+						sourceVariantId: {
+							type: mongoose.Schema.Types.ObjectId,
+							default: null,
+						},
+						name: { type: String, required: true },
+						priceKobo: { type: Number, required: true, min: 0 },
+						isDefault: { type: Boolean, default: false },
+						isActive: { type: Boolean, default: true },
+						displayOrder: { type: Number, default: 0 },
+					},
+					{ _id: true },
+				),
+			],
+			default: [],
+		},
 		snapshotImageUrl: { type: String },
 		snapshotPrepMin: { type: Number, default: 20 },
 		maxQuantity: { type: Number, default: null },
@@ -92,6 +114,12 @@ const schema = new mongoose.Schema<any>(
 		deliveryResponsibilityAccepted: { type: Boolean, default: false },
 		totalOrdersCount: { type: Number, default: 0 },
 		items: { type: [itemSchema], default: [] },
+		marketplaceCategories: {
+			type: [String],
+			enum: Object.values(MarketplaceCategory),
+			default: [],
+			index: true,
+		},
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
@@ -156,6 +184,37 @@ const withEmbeddedIds = {
 								},
 							},
 						},
+						snapshotVariants: {
+							$map: {
+								input: {
+									$ifNull: ["$$it.snapshotVariants", []],
+								},
+								as: "v",
+								in: {
+									$mergeObjects: [
+										"$$v",
+										{
+											id: { $toString: "$$v._id" },
+											sourceVariantId: {
+												$cond: [
+													{
+														$ifNull: [
+															"$$v.sourceVariantId",
+															false,
+														],
+													},
+													{
+														$toString:
+															"$$v.sourceVariantId",
+													},
+													null,
+												],
+											},
+										},
+									],
+								},
+							},
+						},
 					},
 				],
 			},
@@ -176,8 +235,21 @@ export const DailyOrder: DailyOrderModel =
 function mapItems(items: IDailyOrderItemInput[]) {
 	return items.map((it) => ({
 		menuItemId: new mongoose.Types.ObjectId(it.menuItemId),
+		category: it.category,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
+		snapshotVariants: (it.snapshotVariants ?? []).map((v, i) => ({
+			sourceVariantId:
+				v.sourceVariantId &&
+				mongoose.Types.ObjectId.isValid(v.sourceVariantId)
+					? new mongoose.Types.ObjectId(v.sourceVariantId)
+					: null,
+			name: v.name,
+			priceKobo: v.priceKobo,
+			isDefault: v.isDefault ?? false,
+			isActive: v.isActive ?? true,
+			displayOrder: v.displayOrder ?? i,
+		})),
 		snapshotImageUrl: it.snapshotImageUrl,
 		snapshotPrepMin: it.snapshotPrepMin,
 		maxQuantity: it.maxQuantity ?? null,
@@ -306,6 +378,7 @@ export async function listDailyOrdersByVendorDB({
 	to,
 	limit = MAX_LIMIT,
 	offset = 0,
+	includeFulfillmentQueue = false,
 	session,
 }: {
 	vendorId: string;
@@ -317,14 +390,22 @@ export async function listDailyOrdersByVendorDB({
 	to?: Date;
 	limit?: number;
 	offset?: number;
+	includeFulfillmentQueue?: boolean;
 	session?: ClientSession;
 }): Promise<IDailyOrder[]> {
 	try {
 		if (!mongoose.Types.ObjectId.isValid(vendorId)) return [];
+		const vendorObjectId = new mongoose.Types.ObjectId(vendorId);
+		const includeClosedWithActiveBuyerOrders =
+			includeFulfillmentQueue && status === DailyOrderStatus.ACTIVE;
 		const match: Record<string, unknown> = {
-			vendorId: new mongoose.Types.ObjectId(vendorId),
+			vendorId: vendorObjectId,
 		};
-		if (status) match.status = status;
+		if (includeClosedWithActiveBuyerOrders) {
+			match.status = {
+				$in: [DailyOrderStatus.ACTIVE, DailyOrderStatus.CLOSED],
+			};
+		} else if (status) match.status = status;
 		const term = q?.trim();
 		if (term) {
 			// Escape so a title containing regex metacharacters (e.g. "Buy 1 (get 1)")
@@ -337,15 +418,77 @@ export async function listDailyOrdersByVendorDB({
 			if (to) range.$lte = to;
 			match.scheduledDate = range;
 		}
-		return await DailyOrder.aggregate<IDailyOrder>(
-			[
-				{ $match: match },
-				{ $sort: { scheduledDate: -1 } },
-				{ $skip: offset },
-				{ $limit: Math.min(limit, MAX_LIMIT) },
-			],
-			{ session },
+		const pipeline: mongoose.PipelineStage[] = [{ $match: match }];
+		if (includeClosedWithActiveBuyerOrders) {
+			pipeline.push(
+				{
+					$lookup: {
+						from: "buyerorders",
+						let: { dailyOrderId: "$_id" },
+						pipeline: [
+							{
+								$match: {
+									$expr: {
+										$and: [
+											{
+												$eq: [
+													"$dailyOrderId",
+													"$$dailyOrderId",
+												],
+											},
+											{
+												$eq: [
+													"$vendorId",
+													vendorObjectId,
+												],
+											},
+											{
+												$in: [
+													"$status",
+													VENDOR_ATTENTION_ORDER_STATUSES,
+												],
+											},
+										],
+									},
+								},
+							},
+							{ $count: "count" },
+						],
+						as: "_activeBuyerOrders",
+					},
+				},
+				{
+					$addFields: {
+						activeBuyerOrdersCount: {
+							$ifNull: [
+								{
+									$arrayElemAt: [
+										"$_activeBuyerOrders.count",
+										0,
+									],
+								},
+								0,
+							],
+						},
+					},
+				},
+				{
+					$match: {
+						$or: [
+							{ status: DailyOrderStatus.ACTIVE },
+							{ activeBuyerOrdersCount: { $gt: 0 } },
+						],
+					},
+				},
+				{ $project: { _activeBuyerOrders: 0 } },
+			);
+		}
+		pipeline.push(
+			{ $sort: { scheduledDate: -1 } },
+			{ $skip: offset },
+			{ $limit: Math.min(limit, MAX_LIMIT) },
 		);
+		return await DailyOrder.aggregate<IDailyOrder>(pipeline, { session });
 	} catch {
 		return [];
 	}
@@ -432,6 +575,12 @@ export async function listActivePublicListingsForVendorIdsDB({
 										$mergeObjects: [
 											"$$it",
 											{
+												category: {
+													$ifNull: [
+														"$$it.category",
+														"$$menuItem.category",
+													],
+												},
 												snapshotImageUrl: {
 													$cond: [
 														{
@@ -609,66 +758,89 @@ export async function updateDailyOrderDraftDB({
 	id,
 	vendorId,
 	payload,
-	now,
+	now: _now,
 	session,
 }: {
 	id: string;
 	vendorId: string;
 	payload: Partial<IDailyOrderCreateInput>;
-	/** Edits are only accepted while `availableFrom` is still in the future. */
+	/** Retained for caller compatibility and audit timing. */
 	now: Date;
 	session?: ClientSession;
 }): Promise<IDailyOrder | null> {
-	try {
-		const set: Record<string, unknown> = {};
-		if (payload.title !== undefined) set.title = payload.title;
-		if (payload.scheduledDate !== undefined)
-			set.scheduledDate = payload.scheduledDate;
-		if (payload.availableFrom !== undefined)
-			set.availableFrom = payload.availableFrom;
-		if (payload.cutoffTime !== undefined)
-			set.cutoffTime = payload.cutoffTime;
-		if (payload.isPublic !== undefined) set.isPublic = payload.isPublic;
-		if (payload.pickupAvailable !== undefined)
-			set.pickupAvailable = payload.pickupAvailable;
-		if (payload.deliveryAvailable !== undefined)
-			set.deliveryAvailable = payload.deliveryAvailable;
-		if (payload.deliveryFeeKobo !== undefined)
-			set.deliveryFeeKobo = payload.deliveryFeeKobo;
-		if (payload.deliveryCoverage !== undefined)
-			set.deliveryCoverage = payload.deliveryCoverage;
-		if (payload.deliveryEstimateMinutes !== undefined)
-			set.deliveryEstimateMinutes = payload.deliveryEstimateMinutes;
-		if (payload.deliveryContactPhone !== undefined)
-			set.deliveryContactPhone = payload.deliveryContactPhone;
-		if (payload.deliveryResponsibilityAccepted !== undefined) {
-			set.deliveryResponsibilityAccepted =
-				payload.deliveryResponsibilityAccepted;
-		}
-		if (payload.items !== undefined) set.items = mapItems(payload.items);
+	void _now;
+	const set: Record<string, unknown> = {};
+	if (payload.title !== undefined) set.title = payload.title;
+	if (payload.scheduledDate !== undefined)
+		set.scheduledDate = payload.scheduledDate;
+	if (payload.availableFrom !== undefined)
+		set.availableFrom = payload.availableFrom;
+	if (payload.cutoffTime !== undefined) set.cutoffTime = payload.cutoffTime;
+	if (payload.isPublic !== undefined) set.isPublic = payload.isPublic;
+	if (payload.pickupAvailable !== undefined)
+		set.pickupAvailable = payload.pickupAvailable;
+	if (payload.deliveryAvailable !== undefined)
+		set.deliveryAvailable = payload.deliveryAvailable;
+	if (payload.deliveryFeeKobo !== undefined)
+		set.deliveryFeeKobo = payload.deliveryFeeKobo;
+	if (payload.deliveryCoverage !== undefined)
+		set.deliveryCoverage = payload.deliveryCoverage;
+	if (payload.deliveryEstimateMinutes !== undefined)
+		set.deliveryEstimateMinutes = payload.deliveryEstimateMinutes;
+	if (payload.deliveryContactPhone !== undefined)
+		set.deliveryContactPhone = payload.deliveryContactPhone;
+	if (payload.deliveryResponsibilityAccepted !== undefined) {
+		set.deliveryResponsibilityAccepted =
+			payload.deliveryResponsibilityAccepted;
+	}
+	const nextItems =
+		payload.items !== undefined ? mapItems(payload.items) : undefined;
 
-		// A listing is editable only until it opens for orders: it must not be
-		// closed/cancelled and its `availableFrom` must still be in the future.
-		// Guarding on `availableFrom > now` at the write makes the lock atomic —
-		// a listing whose open time elapses between the service check and here
-		// simply matches nothing rather than being edited out from under buyers.
+	const baseFilter = {
+		_id: new mongoose.Types.ObjectId(id),
+		vendorId: new mongoose.Types.ObjectId(vendorId),
+		status: { $in: [DailyOrderStatus.DRAFT, DailyOrderStatus.ACTIVE] },
+	};
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		const current = await DailyOrder.findOne(baseFilter)
+			.session(session ?? null)
+			.lean();
+		if (!current) return null;
+
+		const currentByMenuItem = new Map<
+			string,
+			{ _id?: unknown; orderedQuantity?: number }
+		>(
+			(current.items ?? []).map((item: {
+				menuItemId: mongoose.Types.ObjectId;
+				_id?: unknown;
+				orderedQuantity?: number;
+			}) => [
+				item.menuItemId.toString(),
+				{ _id: item._id, orderedQuantity: item.orderedQuantity },
+			]),
+		);
+		const mergedItems = nextItems?.map((item) => {
+			const existingItem = currentByMenuItem.get(item.menuItemId.toString());
+			return {
+				...item,
+				...(existingItem?._id ? { _id: existingItem._id } : {}),
+				orderedQuantity: existingItem?.orderedQuantity ?? 0,
+			};
+		});
 		const res = await DailyOrder.findOneAndUpdate(
+			{ ...baseFilter, updatedAt: current.updatedAt },
 			{
-				_id: new mongoose.Types.ObjectId(id),
-				vendorId: new mongoose.Types.ObjectId(vendorId),
-				status: {
-					$in: [DailyOrderStatus.DRAFT, DailyOrderStatus.ACTIVE],
+				$set: {
+					...set,
+					...(mergedItems ? { items: mergedItems } : {}),
 				},
-				availableFrom: { $gt: now },
 			},
-			{ $set: set },
 			{ session, returnDocument: "after" },
 		);
-		if (!res) throw ErrDailyOrderNotFound;
-		return res.toObject() as unknown as IDailyOrder;
-	} catch {
-		return null;
+		if (res) return res.toObject() as unknown as IDailyOrder;
 	}
+	return null;
 }
 
 export async function setDailyOrderStatusDB({
@@ -736,10 +908,61 @@ export async function incrementDailyOrderItemQuantityDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
+		if (by <= 0) return false;
+		const dailyOrderObjectId = new mongoose.Types.ObjectId(dailyOrderId);
+		const itemObjectId = new mongoose.Types.ObjectId(dailyOrderItemId);
 		const res = await DailyOrder.updateOne(
 			{
-				_id: new mongoose.Types.ObjectId(dailyOrderId),
-				"items._id": new mongoose.Types.ObjectId(dailyOrderItemId),
+				_id: dailyOrderObjectId,
+				"items._id": itemObjectId,
+				$expr: {
+					$let: {
+						vars: {
+							item: {
+								$first: {
+									$filter: {
+										input: "$items",
+										as: "item",
+										cond: {
+											$eq: ["$$item._id", itemObjectId],
+										},
+									},
+								},
+							},
+						},
+						in: {
+							$or: [
+								{
+									$eq: [
+										{
+											$ifNull: [
+												"$$item.maxQuantity",
+												null,
+											],
+										},
+										null,
+									],
+								},
+								{
+									$lte: [
+										{
+											$add: [
+												{
+													$ifNull: [
+														"$$item.orderedQuantity",
+														0,
+													],
+												},
+												by,
+											],
+										},
+										"$$item.maxQuantity",
+									],
+								},
+							],
+						},
+					},
+				},
 			},
 			{ $inc: { "items.$.orderedQuantity": by } },
 			{ session },

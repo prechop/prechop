@@ -10,6 +10,17 @@ const collectionName = "menuItems";
 
 export type MenuItemModel = Model<any>;
 
+const variantSchema = new mongoose.Schema(
+	{
+		name: { type: String, required: true, trim: true },
+		priceKobo: { type: Number, required: true, min: 0 },
+		isDefault: { type: Boolean, default: false },
+		isActive: { type: Boolean, default: true },
+		displayOrder: { type: Number, default: 0 },
+	},
+	{ _id: true },
+);
+
 const schema = new mongoose.Schema<any>(
 	{
 		vendorId: {
@@ -32,6 +43,7 @@ const schema = new mongoose.Schema<any>(
 		name: { type: String, required: true, trim: true },
 		description: { type: String },
 		priceKobo: { type: Number, required: true, min: 0 },
+		variants: { type: [variantSchema], default: [] },
 		imageUrl: { type: String },
 		estimatedPrepMin: { type: Number, default: 20 },
 		isAvailable: { type: Boolean, default: true },
@@ -69,6 +81,18 @@ schema.pre("aggregate", function () {
 					in: { $toString: "$$g" },
 				},
 			},
+			variants: {
+				$map: {
+					input: { $ifNull: ["$variants", []] },
+					as: "v",
+					in: {
+						$mergeObjects: [
+							"$$v",
+							{ id: { $toString: "$$v._id" } },
+						],
+					},
+				},
+			},
 		},
 	});
 	this.pipeline().push({ $project: { deleted: 0, __v: 0 } });
@@ -79,12 +103,24 @@ export const MenuItem: MenuItemModel =
 	mongoose.model<any>(collectionName, schema);
 
 function normalizeMenuItemCategory<
-	T extends { _id?: unknown; category: string },
+	T extends {
+		_id?: unknown;
+		category: string;
+		variants?: Array<{ _id?: unknown; id?: string }>;
+	},
 >(item: T): T & { id?: string } {
 	return {
 		...item,
 		id: typeof item._id === "string" ? item._id : item._id?.toString(),
-		category: normalizeMenuCategory(item.category),
+		category: normalizeMenuCategory(item.category) as T["category"],
+		variants: (item.variants ?? []).map((variant) => ({
+			...variant,
+			id:
+				variant.id ??
+				(typeof variant._id === "string"
+					? variant._id
+					: variant._id?.toString()),
+		})),
 	};
 }
 

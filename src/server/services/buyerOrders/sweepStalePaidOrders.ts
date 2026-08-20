@@ -71,9 +71,10 @@ export async function sweepStalePaidOrders({
 
 			createUserNotification({
 				userId: order.buyerId,
-				title: "Order refunded",
+				title: "Refund pending",
 				body: "Your order was not confirmed before the cutoff, so it was cancelled and your money is on its way back.",
-				type: "ORDER_REFUNDED",
+				type: "ORDER_REFUND_PENDING",
+				dedupeKey: `order:${order.id}:buyer:refund-pending`,
 				data: { orderId: order.id, amountKobo: order.totalKobo },
 			});
 		} catch (error) {

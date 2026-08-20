@@ -52,6 +52,16 @@ export const PERMISSION_CATALOG = {
 			"refund:create": "Issue a refund",
 		},
 	},
+	payout: {
+		label: "Vendor payouts",
+		actions: {
+			"payout:read": "View vendor payables and payouts",
+			"payout:hold": "Place or release order payout holds",
+			"payout:retry": "Retry failed payout processing",
+			"payout:reconcile": "Reconcile Paystack transfers",
+			"payout:configure": "Configure staged settlement migration",
+		},
+	},
 	campus: {
 		label: "Campuses",
 		actions: {
@@ -256,6 +266,11 @@ export const BUILTIN_POLICIES: Record<
 					"order:read",
 					"vendor:read",
 					"analytics:read",
+					"payout:read",
+					"payout:hold",
+					"payout:retry",
+					"payout:reconcile",
+					"payout:configure",
 				],
 			},
 		],

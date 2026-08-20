@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { BUYERS_GROUP, encrypt } from "@/server/constants";
 import {
+	createVendorProfileDB,
 	DayOfWeek,
 	getVendorProfileByIdDB,
 	LocationType,
@@ -7,6 +9,8 @@ import {
 	updateVendorProfileDB,
 	upsertTimetableEntryDB,
 	VendorStatus,
+	VendorType,
+	VendorVerificationDocumentType,
 } from "@/server/models";
 import {
 	approveVendor,
@@ -15,6 +19,7 @@ import {
 	rejectVendor,
 } from "@/server/services/admin/onboarding";
 import { seedBuiltInIam } from "@/server/services/iam";
+import { startVendorApplication } from "@/server/services/users";
 import { submitVendorForReview } from "@/server/services/vendors/submitForReview";
 import {
 	clearCollections,
@@ -22,7 +27,11 @@ import {
 	dropAndDisconnect,
 	oid,
 } from "../helpers/db";
-import { makeMenuItem, makeVendor } from "../helpers/factories";
+import {
+	makeMenuItem,
+	makeUserInGroup,
+	makeVendor,
+} from "../helpers/factories";
 
 const actor = { userId: oid(), role: "Administrators" };
 
@@ -57,6 +66,17 @@ async function makeOnboardedVendor({
 		id: vendorId,
 		payload: {
 			profileImageUrl: "https://cdn.test/v.png",
+			vendorType: VendorType.STUDENT_COOK,
+			contactPhone: "+2348012345678",
+			verificationDocuments: [
+				{
+					type: VendorVerificationDocumentType.SCHOOL_ID,
+					key: "vendor-verifications/school-id.pdf",
+					fileName: "school-id.pdf",
+					mimeType: "application/pdf",
+					uploadedAt: new Date(),
+				},
+			],
 			categories: [MenuCategory.MEALS],
 			locationType: LocationType.ON_CAMPUS,
 			hostelOrStallName: "Block C",
@@ -86,6 +106,38 @@ function makeSubmittableVendor() {
 }
 
 describe("vendor onboarding gate", () => {
+	it("returns one vendor profile when initialization requests race", async () => {
+		const user = await makeUserInGroup(BUYERS_GROUP);
+		if (!user) throw new Error("Expected buyer fixture to be created.");
+		const userId = user._id.toString();
+
+		const results = await Promise.all(
+			Array.from({ length: 8 }, () => startVendorApplication({ userId })),
+		);
+		const vendorIds = new Set(
+			results.map((vendor) => vendor._id.toString()),
+		);
+		expect(vendorIds.size).toBe(1);
+	});
+
+	it("repairs an encrypted vendor contact phone from the legacy initialization path", async () => {
+		const user = await makeUserInGroup(BUYERS_GROUP);
+		if (!user) throw new Error("Expected buyer fixture to be created.");
+		const phone = "+2348012345678";
+		await createVendorProfileDB({
+			payload: {
+				userId: user._id.toString(),
+				email: `vendor-${user._id.toString()}@draft.prechop.local`,
+				contactPhone: encrypt(phone),
+			},
+		});
+
+		const vendor = await startVendorApplication({
+			userId: user._id.toString(),
+		});
+		expect(vendor.contactPhone).toBe(phone);
+	});
+
 	it("blocks submission when the profile is incomplete", async () => {
 		const { userId, vendorId } = await makeVendor({
 			status: VendorStatus.INCOMPLETE,
@@ -128,6 +180,17 @@ describe("vendor onboarding gate", () => {
 			id: vendorId,
 			payload: {
 				profileImageUrl: "https://cdn.test/v.png",
+				vendorType: VendorType.STUDENT_COOK,
+				contactPhone: "+2348012345678",
+				verificationDocuments: [
+					{
+						type: VendorVerificationDocumentType.SCHOOL_ID,
+						key: "vendor-verifications/school-id.pdf",
+						fileName: "school-id.pdf",
+						mimeType: "application/pdf",
+						uploadedAt: new Date(),
+					},
+				],
 				categories: [MenuCategory.MEALS],
 				paystackSubaccountCode: "ACCT_test",
 			},

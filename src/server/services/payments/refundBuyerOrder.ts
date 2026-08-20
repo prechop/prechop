@@ -1,9 +1,10 @@
-import { issueRefund } from "../refunds";
+import { type IssueRefundResult, issueRefund } from "../refunds";
 
 /**
- * Refund a paid order through Paystack, then flip the payment + order to
- * REFUNDED. A failed Paystack refund throws (and is logged) so a human can
- * reconcile — we never silently swallow a failed refund.
+ * Start a paid-order refund through Paystack. The payment and order remain in
+ * refund-pending/processing states until a webhook or reconciliation lookup
+ * confirms Paystack's final `processed` status. A failed submission throws so
+ * it is never silently reported as completed.
  *
  * Thin wrapper kept for its existing callers (buyer cancel, vendor cancel,
  * listing cancel). The money mechanics — writing the `refunds` row that gives
@@ -21,6 +22,6 @@ export async function refundBuyerOrder({
 	paystackRef: string;
 	amountKobo: number;
 	reason?: string;
-}): Promise<void> {
-	await issueRefund({ orderId, paystackRef, amountKobo, reason });
+}): Promise<IssueRefundResult> {
+	return issueRefund({ orderId, paystackRef, amountKobo, reason });
 }

@@ -1,6 +1,7 @@
 export { default as clientAppURLs } from "./clientAppURLs";
 export * from "./crypto";
 export { default as decodeJwtToken } from "./decodeJwtToken";
+export * from "./deliveryCode";
 export * from "./environments";
 export * from "./errors";
 export * from "./fees";
@@ -11,4 +12,6 @@ export * from "./kobo";
 export * from "./orderNumber";
 export * from "./permissions";
 export * from "./phone";
+export * from "./payoutV2";
+export * from "./vendorShortId";
 export { default as wait } from "./wait";

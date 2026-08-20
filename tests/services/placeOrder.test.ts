@@ -24,6 +24,7 @@ import {
 	createVendorProfileDB,
 	updateVendorProfileDB,
 } from "@/server/models/vendorProfiles";
+import { BrandKitPaymentStatus, BrandKitFulfillmentStatus } from "@/server/models/enums";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
 import { getVendorOrdersForDailyOrder } from "@/server/services/buyerOrders/queries";
@@ -56,12 +57,24 @@ async function activeListing({
 	availableFrom,
 	deliveryAvailable = false,
 	deliveryFeeKobo = 0,
+	item,
 }: {
 	maxQuantity?: number | null;
 	campusId: string;
 	availableFrom?: Date;
 	deliveryAvailable?: boolean;
 	deliveryFeeKobo?: number;
+	item?: Partial<{
+		snapshotName: string;
+		snapshotPriceKobo: number;
+		snapshotVariants: Array<{
+			name: string;
+			priceKobo: number;
+			isDefault?: boolean;
+			isActive?: boolean;
+			displayOrder?: number;
+		}>;
+	}>;
 }) {
 	const vendor = await createVendorProfileDB({
 		payload: {
@@ -78,6 +91,9 @@ async function activeListing({
 		payload: {
 			paystackSubaccountCode: "ACCT_test123",
 			isOpenForOrders: true,
+			brandKitPaymentStatus: BrandKitPaymentStatus.PAID,
+			brandKitFulfillmentStatus: BrandKitFulfillmentStatus.RECEIVED,
+			brandKitReceivedAt: new Date(),
 		},
 	});
 
@@ -96,8 +112,9 @@ async function activeListing({
 			items: [
 				{
 					menuItemId: oid(),
-					snapshotName: "Jollof",
-					snapshotPriceKobo: 150000,
+					snapshotName: item?.snapshotName ?? "Jollof",
+					snapshotPriceKobo: item?.snapshotPriceKobo ?? 150000,
+					snapshotVariants: item?.snapshotVariants,
 					snapshotPrepMin: 20,
 					maxQuantity,
 				},
@@ -110,7 +127,8 @@ async function activeListing({
 		vendorId,
 		status: DailyOrderStatus.ACTIVE,
 	});
-	const itemId = listing.items[0]._id!.toString();
+	const itemId = listing.items[0]._id?.toString();
+	if (!itemId) throw new Error("Expected daily order item id");
 	slotKeys.add(`slot:reserved:${itemId}`);
 	return { listing, vendorId, vendorUserId, itemId };
 }
@@ -194,7 +212,9 @@ describe("placeOrder service", () => {
 				fulfillmentType: FulfillmentType.DELIVERY,
 				deliveryHostelName: "Kofo Hall",
 				deliveryRoomNumber: "B12",
+				deliveryAdditionalInfo: "Near the back gate",
 				deliveryPhone: "+2348012345678",
+				customerMessage: "Please call when you arrive.",
 				items: [{ dailyOrderItemId: itemId, quantity: 1 }],
 			},
 		});
@@ -208,6 +228,10 @@ describe("placeOrder service", () => {
 
 		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
 		expect(order!.deliveryPhone).toBe("+2348012345678");
+		expect(order!.deliveryFullAddress).toBe(
+			"Kofo Hall, B12, Near the back gate",
+		);
+		expect(order!.customerMessage).toBe("Please call when you arrive.");
 		expect(order!.deliveryFeeKobo).toBe(deliveryFeeKobo);
 		expect(order!.totalKobo).toBe(
 			subtotalKobo + deliveryFeeKobo + processingFee,
@@ -216,6 +240,164 @@ describe("placeOrder service", () => {
 		expect(order!.vendorSettlementKobo).toBe(
 			subtotalKobo - commission + deliveryFeeKobo,
 		);
+	});
+
+	it("uses the selected variant price as the item base price", async () => {
+		const campusId = oid();
+		const buyerId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotName: "Cupcake",
+				snapshotPriceKobo: 200000,
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isDefault: false,
+						displayOrder: 1,
+					},
+				],
+			},
+		});
+		const large = listing.items[0].snapshotVariants.find(
+			(variant) => variant.name === "Large",
+		);
+		const largeId = (large?.id ?? large?._id)?.toString();
+		if (!largeId) throw new Error("Expected Large variant snapshot");
+
+		const result = await placeOrder({
+			buyerId,
+			campusId,
+			input: {
+				dailyOrderId: listing._id.toString(),
+				fulfillmentType: FulfillmentType.PICKUP,
+				items: [
+					{
+						dailyOrderItemId: itemId,
+						quantity: 2,
+						selectedVariantId: largeId,
+					},
+				],
+			},
+		});
+
+		const subtotalKobo = 600000;
+		expect(result.totalKobo).toBe(
+			subtotalKobo + calculateBuyerServiceFeeKobo(subtotalKobo),
+		);
+		const order = await getBuyerOrderByIdDB({ id: result.buyerOrderId });
+		if (!order) throw new Error("Expected buyer order to be created");
+		expect(order.subtotalKobo).toBe(subtotalKobo);
+		expect(order.items[0].snapshotPriceKobo).toBe(300000);
+		expect(order.items[0].selectedVariantName).toBe("Large");
+		expect(order.items[0].selectedVariantPriceKobo).toBe(300000);
+		expect(
+			order.items[0].selectedVariantDailyOrderVariantId?.toString(),
+		).toBe(largeId);
+	});
+
+	it("rejects a variant item without a valid selected variant", async () => {
+		const campusId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						displayOrder: 0,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						displayOrder: 1,
+					},
+				],
+			},
+		});
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [{ dailyOrderItemId: itemId, quantity: 1 }],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [
+						{
+							dailyOrderItemId: itemId,
+							quantity: 1,
+							selectedVariantId: oid(),
+						},
+					],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
+	});
+
+	it("rejects a stale selection for an inactive listing variant", async () => {
+		const campusId = oid();
+		const { listing, itemId } = await activeListing({
+			campusId,
+			item: {
+				snapshotVariants: [
+					{
+						name: "Small",
+						priceKobo: 200000,
+						isDefault: true,
+						isActive: true,
+					},
+					{
+						name: "Large",
+						priceKobo: 300000,
+						isActive: false,
+					},
+				],
+			},
+		});
+		const inactive = listing.items[0].snapshotVariants.find(
+			(variant) => variant.isActive === false,
+		);
+		const inactiveId = (inactive?.id ?? inactive?._id)?.toString();
+		if (!inactiveId) throw new Error("Expected inactive variant snapshot");
+
+		await expect(
+			placeOrder({
+				buyerId: oid(),
+				campusId,
+				input: {
+					dailyOrderId: listing._id.toString(),
+					fulfillmentType: FulfillmentType.PICKUP,
+					items: [
+						{
+							dailyOrderItemId: itemId,
+							quantity: 1,
+							selectedVariantId: inactiveId,
+						},
+					],
+				},
+			}),
+		).rejects.toThrow(/choose one option/i);
 	});
 
 	it("creates a pay-for-me order without initializing Paystack immediately", async () => {
@@ -361,7 +543,7 @@ describe("placeOrder service", () => {
 					items: [{ dailyOrderItemId: itemId, quantity: 5 }],
 				},
 			}),
-		).rejects.toThrow(/sold out/i);
+		).rejects.toThrow(/currently available/i);
 	});
 
 	it("rejects a 'coming soon' listing whose start time is in the future", async () => {

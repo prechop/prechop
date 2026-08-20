@@ -31,22 +31,33 @@ export interface ISiteConfigs {
 	externalPaymentLinkTtlMinutes: number;
 	reviewWindowHours: number;
 	cutoffWarningMinutes: number;
+	deliveryInTransitGraceMinutes: number;
+	deliveryInTransitFallbackEstimateMinutes: number;
+	deliveryOverdueAutoEscalateEnabled: boolean;
 	// feature flags
 	whatsappTvEnabled: boolean;
 	marketplaceEnabled: boolean;
 	reviewsEnabled: boolean;
+	scheduleAheadEnabled: boolean;
+	weeklyBreakfastPlanEnabled: boolean;
+	breakfastEnabled: boolean;
+	lunchEnabled: boolean;
+	dinnerEnabled: boolean;
+	deliveryEnabled: boolean;
+	pickupEnabled: boolean;
+	vendorRegistrationEnabled: boolean;
 	// kill switches
 	ordersKillSwitch: boolean;
 	paymentsKillSwitch: boolean;
 	// vendor visibility
 	profileCompletenessRequired: number;
+	/** Admin-defined delivery locations vendors may select. Empty = free-text. */
+	deliveryLocations: string[];
 	updatedAt?: Date;
 	updatedBy?: string;
 }
 
 export const DEFAULT_SITE_CONFIGS: ISiteConfigs = {
-	// Env-sourced, never 0 by accident: an unseeded or invalid config resolves to
-	// the same 3%/₦200-cap buyer and 8% vendor fees the platform charges today.
 	platformFeeBuyerPercent: PRECHOP_BUYER_SERVICE_FEE_PERCENT,
 	platformFeeBuyerMaxKobo: PRECHOP_BUYER_SERVICE_FEE_MAX_KOBO,
 	platformFeeVendorPercent: PRECHOP_VENDOR_COMMISSION_PERCENT,
@@ -55,10 +66,22 @@ export const DEFAULT_SITE_CONFIGS: ISiteConfigs = {
 	externalPaymentLinkTtlMinutes: 60 * 24,
 	reviewWindowHours: 72,
 	cutoffWarningMinutes: 30,
+	deliveryInTransitGraceMinutes: 10,
+	deliveryInTransitFallbackEstimateMinutes: 60,
+	deliveryOverdueAutoEscalateEnabled: true,
 	whatsappTvEnabled: true,
 	marketplaceEnabled: true,
 	reviewsEnabled: true,
+	scheduleAheadEnabled: true,
+	weeklyBreakfastPlanEnabled: true,
+	breakfastEnabled: true,
+	lunchEnabled: true,
+	dinnerEnabled: true,
+	deliveryEnabled: true,
+	pickupEnabled: true,
+	vendorRegistrationEnabled: true,
 	ordersKillSwitch: false,
 	paymentsKillSwitch: false,
 	profileCompletenessRequired: 100,
+	deliveryLocations: [],
 };

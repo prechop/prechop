@@ -2,7 +2,17 @@ import mongoose, { type ClientSession, type Model } from "mongoose";
 import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { ErrVendorNotFound, encrypt, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { LocationType, MenuCategory, VendorStatus, VendorType } from "../enums";
+import {
+	BakeryBusinessType,
+	BrandKitFulfillmentStatus,
+	BrandKitPaymentStatus,
+	DeliveryCoverageType,
+	LocationType,
+	MenuCategory,
+	VendorStatus,
+	VendorType,
+	VendorVerificationDocumentType,
+} from "../enums";
 import { IOperationType } from "../utils";
 import type { IVendorProfile, IVendorProfileCreateInput } from "./types";
 
@@ -30,7 +40,12 @@ const schema = new mongoose.Schema<any>(
 			index: true,
 		},
 		vendorType: { type: String, enum: Object.values(VendorType) },
+		bakeryBusinessType: {
+			type: String,
+			enum: Object.values(BakeryBusinessType),
+		},
 		businessName: { type: String, trim: true },
+		storeSlug: { type: String, trim: true, lowercase: true },
 		description: { type: String },
 		contactPhone: { type: String },
 		email: {
@@ -53,6 +68,22 @@ const schema = new mongoose.Schema<any>(
 		state: { type: String },
 		areaOrAddress: { type: String },
 		profileImageUrl: { type: String },
+		verificationDocuments: {
+			type: [
+				{
+					type: {
+						type: String,
+						enum: Object.values(VendorVerificationDocumentType),
+						required: true,
+					},
+					key: { type: String, required: true },
+					fileName: { type: String },
+					mimeType: { type: String },
+					uploadedAt: { type: Date, default: Date.now },
+				},
+			],
+			default: [],
+		},
 		categories: {
 			type: [String],
 			enum: Object.values(MenuCategory),
@@ -67,15 +98,19 @@ const schema = new mongoose.Schema<any>(
 		totalReviews: { type: Number, default: 0 },
 		totalOrders: { type: Number, default: 0 },
 		completionRate: { type: Number, default: 0 },
+		completedOrders: { type: Number, default: 0 },
 		lateOrderCount: { type: Number, default: 0 },
 		unfulfilledOrderCount: { type: Number, default: 0 },
 		avgPrepDelayMin: { type: Number, default: 0 },
 		profileCompleteness: { type: Number, default: 10 },
 		isOpenForOrders: { type: Boolean, default: false },
+		closedAt: { type: Date },
 		// Notification preferences (default opted-in).
 		notifyNewOrders: { type: Boolean, default: true },
 		notifyPayouts: { type: Boolean, default: true },
 		notifyReviews: { type: Boolean, default: true },
+		notifyFollowers: { type: Boolean, default: true },
+		notifyFollowerMilestones: { type: Boolean, default: true },
 		// Daily-order composer defaults.
 		defaultPickupAvailable: { type: Boolean, default: true },
 		defaultDeliveryAvailable: { type: Boolean, default: false },
@@ -96,7 +131,50 @@ const schema = new mongoose.Schema<any>(
 		securityOnboardingDismissedAt: { type: Date },
 		securityOnboardingCompletedAt: { type: Date },
 		securityPinHash: { type: String, select: false },
+		pinResetHoldUntil: { type: Date },
+		lastPinResetAt: { type: Date },
 		deleted: { type: Boolean, default: false, select: false },
+		// Permanent short vendor ID (e.g. "CHI").
+		vendorShortId: {
+			type: String,
+			uppercase: true,
+			trim: true,
+			sparse: true,
+		},
+		// Brand Kit payment gate.
+		brandKitPaymentStatus: {
+			type: String,
+			enum: Object.values(BrandKitPaymentStatus),
+			default: BrandKitPaymentStatus.PENDING,
+			index: true,
+		},
+		brandKitPaymentId: { type: String },
+		brandKitPaidAt: { type: Date },
+		// Brand Kit fulfillment gate.
+		brandKitFulfillmentStatus: {
+			type: String,
+			enum: Object.values(BrandKitFulfillmentStatus),
+			default: BrandKitFulfillmentStatus.NOT_STARTED,
+			index: true,
+		},
+		brandKitFulfillmentLocationId: {
+			type: String,
+			sparse: true,
+			index: true,
+		},
+		brandKitReceivedAt: { type: Date },
+		// Vendor-level feature toggles (only consulted when the global flag is on).
+		featureScheduleAhead: { type: Boolean, default: false },
+		featureWeeklyBreakfastPlan: { type: Boolean, default: false },
+		featureDelivery: { type: Boolean, default: false },
+		featurePickup: { type: Boolean, default: true },
+		// Delivery coverage.
+		deliveryCoverageType: {
+			type: String,
+			enum: Object.values(DeliveryCoverageType),
+			default: DeliveryCoverageType.SPECIFIC,
+		},
+		deliveryLocations: { type: [String], default: [] },
 	},
 	{ timestamps: true },
 );
@@ -104,6 +182,9 @@ const schema = new mongoose.Schema<any>(
 // Marketplace listing hot path: campus + status + open + completeness.
 schema.index({ campusId: 1, status: 1, isOpenForOrders: 1 });
 schema.index({ campusIds: 1, status: 1, isOpenForOrders: 1 });
+schema.index({ storeSlug: 1 }, { unique: true, sparse: true });
+schema.index({ vendorShortId: 1 }, { unique: true, sparse: true });
+schema.index({ brandKitPaymentStatus: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
@@ -394,6 +475,37 @@ export async function setVendorOpenForOrdersDB({
 	}
 }
 
+/**
+ * Permanently close the business side without deleting historical vendor,
+ * order, payment, or settlement references.
+ */
+export async function closeVendorProfileDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await VendorProfile.findOneAndUpdate(
+			{ _id: new mongoose.Types.ObjectId(id), deleted: false },
+			{
+				$set: {
+					deleted: true,
+					isOpenForOrders: false,
+					status: VendorStatus.SUSPENDED,
+					closedAt: new Date(),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
 export async function setVendorCompletenessDB({
 	id,
 	profileCompleteness,
@@ -593,6 +705,56 @@ export async function getVendorProfileByEmailDB({
 	}
 }
 
+export async function getVendorProfileByStoreSlugDB({
+	storeSlug,
+	session,
+}: {
+	storeSlug: string;
+	session?: ClientSession;
+}): Promise<IVendorProfile | null> {
+	try {
+		const vendor =
+			(
+				await VendorProfile.aggregate<IVendorProfile>(
+					[
+						{
+							$match: {
+								storeSlug: storeSlug.trim().toLowerCase(),
+							},
+						},
+						{ $limit: 1 },
+					],
+					{ session },
+				)
+			).at(0) ?? null;
+		return vendor ? normalizeVendorCategories(vendor) : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function listVendorProfilesForStoreSlugFallbackDB({
+	session,
+}: {
+	session?: ClientSession;
+} = {}): Promise<IVendorProfile[]> {
+	try {
+		const vendors = await VendorProfile.aggregate<IVendorProfile>(
+			[
+				{
+					$match: {
+						businessName: { $exists: true, $ne: null },
+					},
+				},
+			],
+			{ session },
+		);
+		return vendors.map(normalizeVendorCategories);
+	} catch {
+		return [];
+	}
+}
+
 export async function getVendorProfileByUserIdDB({
 	userId,
 	session,
@@ -643,6 +805,47 @@ export async function getVendorWithSecretsDB({
 					...res,
 					id: res._id.toString(),
 				} as IVendorProfile)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Internal: fetch only the fields needed to verify sensitive-action PINs. */
+export async function getVendorSecuritySecretsByUserIdDB({
+	userId,
+	session,
+}: {
+	userId: string;
+	session?: ClientSession;
+}): Promise<Pick<
+	IVendorProfile,
+	| "_id"
+	| "id"
+	| "userId"
+	| "status"
+	| "securityOnboardingCompletedAt"
+	| "securityPinHash"
+> | null> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(userId)) return null;
+		const res = await VendorProfile.findOne(
+			{ userId: new mongoose.Types.ObjectId(userId), deleted: false },
+			null,
+			{ session },
+		)
+			.select("+securityPinHash")
+			.lean<IVendorProfile>();
+		return res
+			? {
+					_id: res._id,
+					id: res._id.toString(),
+					userId: res.userId,
+					status: res.status,
+					securityOnboardingCompletedAt:
+						res.securityOnboardingCompletedAt,
+					securityPinHash: res.securityPinHash,
+				}
 			: null;
 	} catch {
 		return null;

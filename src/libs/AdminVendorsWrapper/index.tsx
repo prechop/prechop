@@ -32,7 +32,6 @@ interface AdminVendor {
 	businessName?: string;
 	email: string;
 	status: VendorStatus;
-	/** Null below the public-rating threshold — see @/components/VendorRating. */
 	rating: number | null;
 	totalOrders: number;
 	totalReviews: number;
@@ -42,6 +41,18 @@ interface AdminVendor {
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
 	campusId: string;
+	vendorShortId?: string;
+	brandKitPaymentStatus?: string;
+	brandKitPaidAt?: string;
+	brandKitFulfillmentStatus?: string;
+	brandKitFulfillmentLocationId?: string;
+	brandKitReceivedAt?: string;
+	featureScheduleAhead?: boolean;
+	featureWeeklyBreakfastPlan?: boolean;
+	featureDelivery?: boolean;
+	featurePickup?: boolean;
+	deliveryCoverageType?: string;
+	deliveryLocations?: string[];
 }
 
 const tone = (s: VendorStatus) =>
@@ -165,6 +176,15 @@ export default function AdminVendorsWrapper() {
 	const [suspendId, setSuspendId] = useState<string | null>(null);
 	const [reason, setReason] = useState("");
 	const [busy, setBusy] = useState(false);
+	const [stickerVendorId, setStickerVendorId] = useState<string | null>(null);
+	const [stickerPreview, setStickerPreview] = useState<{
+		vendorName?: string;
+		shortId?: string;
+		exampleCode?: string;
+		qrUrl?: string;
+		qrDataUrl?: string;
+		storeUrl?: string;
+	} | null>(null);
 
 	const key = `/admin/vendors${status ? `?status=${status}` : ""}`;
 	const { data, isLoading, mutate } = useSWR<AdminVendor[]>(key);
@@ -210,6 +230,27 @@ export default function AdminVendorsWrapper() {
 			if (detailId) await globalMutate(`/admin/vendors/${detailId}`);
 		} catch (err: any) {
 			toast(err.response?.data?.message ?? "Could not suspend", "error");
+	} finally {
+		setBusy(false);
+	}
+}
+
+	async function previewVendorSticker(vendorId: string) {
+		setStickerVendorId(vendorId);
+		setBusy(true);
+		try {
+			const result = await api.post<{ data: { vendorName?: string; shortId?: string; exampleCode?: string; qrUrl?: string; storeUrl?: string } }>(
+				"/api/stickers/preview",
+				{ vendorId },
+			);
+			if (result.data?.data) {
+				setStickerPreview(result.data.data);
+			}
+		} catch (err: any) {
+			toast(
+				err.response?.data?.message ?? "Could not load sticker preview",
+				"error",
+			);
 		} finally {
 			setBusy(false);
 		}
@@ -285,8 +326,13 @@ export default function AdminVendorsWrapper() {
 								<thead>
 									<tr>
 										<th>Business</th>
+										<th>Short ID</th>
 										<th>Email</th>
 										<th>Status</th>
+										<th>Brand Kit</th>
+										<th>Fulfillment</th>
+										<th>Delivery</th>
+										<th>Pickup</th>
 										<th>Rating</th>
 										<th>Orders</th>
 										<th>Actions</th>
@@ -311,12 +357,78 @@ export default function AdminVendorsWrapper() {
 											</td>
 											<td>
 												<Text $muted $size={13}>
+													{v.vendorShortId ?? "—"}
+												</Text>
+											</td>
+											<td>
+												<Text $muted $size={13}>
 													{v.email}
 												</Text>
 											</td>
 											<td>
 												<Badge $tone={tone(v.status)}>
 													{statusLabel(v.status)}
+												</Badge>
+											</td>
+											<td>
+												<Badge
+													$tone={
+														v.brandKitPaymentStatus ===
+														"PAID"
+															? "success"
+															: v.brandKitPaymentStatus ===
+															  "FAILED"
+																? "danger"
+																: "muted"
+													}
+												>
+													{v.brandKitPaymentStatus ??
+														"PENDING"}
+												</Badge>
+											</td>
+											<td>
+												<Badge
+													$tone={
+														v.brandKitFulfillmentStatus ===
+														"RECEIVED"
+															? "success"
+															: v.brandKitFulfillmentStatus ===
+															  "DELIVERED"
+																? "warning"
+																: v.brandKitFulfillmentStatus ===
+																  "DISPATCHED"
+																	? "primary"
+																	: "muted"
+													}
+												>
+													{v.brandKitFulfillmentStatus ??
+														"NOT_STARTED"}
+												</Badge>
+											</td>
+											<td>
+												<Badge
+													$tone={
+														v.featureDelivery
+															? "success"
+															: "muted"
+													}
+												>
+													{v.featureDelivery
+														? "Yes"
+														: "No"}
+												</Badge>
+											</td>
+											<td>
+												<Badge
+													$tone={
+														v.featurePickup
+															? "success"
+															: "muted"
+													}
+												>
+													{v.featurePickup
+														? "Yes"
+														: "No"}
 												</Badge>
 											</td>
 											<td>
@@ -412,6 +524,12 @@ export default function AdminVendorsWrapper() {
 									</Row>
 									<Stack $gap={0}>
 										<KV>
+											<Text $muted>Short ID</Text>
+											<Text $weight={600}>
+												{detail.vendorShortId ?? "—"}
+											</Text>
+										</KV>
+										<KV>
 											<Text $muted>Email</Text>
 											<Text $weight={600}>
 												{detail.email}
@@ -427,6 +545,152 @@ export default function AdminVendorsWrapper() {
 													: "—"}
 											</Text>
 										</KV>
+									<KV>
+										<Text $muted>Brand Kit</Text>
+										<Badge
+											$tone={
+												detail.brandKitPaymentStatus ===
+												"PAID"
+													? "success"
+													: detail.brandKitPaymentStatus ===
+													  "FAILED"
+														? "danger"
+														: "muted"
+											}
+										>
+											{detail.brandKitPaymentStatus ??
+												"PENDING"}
+										</Badge>
+									</KV>
+									{detail.brandKitPaidAt && (
+										<KV>
+											<Text $muted>
+												Brand Kit paid at
+											</Text>
+											<Text $weight={600}>
+												{new Date(detail.brandKitPaidAt).toLocaleString()}
+											</Text>
+										</KV>
+									)}
+									<KV>
+										<Text $muted>
+											Fulfillment status
+										</Text>
+										<Badge
+											$tone={
+												detail.brandKitFulfillmentStatus ===
+												"RECEIVED"
+													? "success"
+													: detail.brandKitFulfillmentStatus ===
+													  "DELIVERED"
+														? "warning"
+														: detail.brandKitFulfillmentStatus ===
+														  "DISPATCHED"
+															? "primary"
+															: "muted"
+											}
+										>
+											{detail.brandKitFulfillmentStatus ??
+												"NOT_STARTED"}
+										</Badge>
+									</KV>
+									{detail.brandKitReceivedAt && (
+										<KV>
+											<Text $muted>
+												Brand Kit received at
+											</Text>
+											<Text $weight={600}>
+												{new Date(detail.brandKitReceivedAt).toLocaleString()}
+											</Text>
+										</KV>
+									)}
+										<KV>
+											<Text $muted>
+												Feature: Schedule Ahead
+											</Text>
+											<Badge
+												$tone={
+													detail.featureScheduleAhead
+														? "success"
+														: "muted"
+												}
+											>
+												{detail.featureScheduleAhead
+													? "ON"
+													: "OFF"}
+											</Badge>
+										</KV>
+										<KV>
+											<Text $muted>
+												Feature: Weekly Breakfast Plan
+											</Text>
+											<Badge
+												$tone={
+													detail.featureWeeklyBreakfastPlan
+														? "success"
+														: "muted"
+												}
+											>
+												{detail.featureWeeklyBreakfastPlan
+													? "ON"
+													: "OFF"}
+											</Badge>
+										</KV>
+										<KV>
+											<Text $muted>
+												Feature: Delivery
+											</Text>
+											<Badge
+												$tone={
+													detail.featureDelivery
+														? "success"
+														: "muted"
+												}
+											>
+												{detail.featureDelivery
+													? "ON"
+													: "OFF"}
+											</Badge>
+										</KV>
+										<KV>
+											<Text $muted>
+												Feature: Pickup
+											</Text>
+											<Badge
+												$tone={
+													detail.featurePickup
+														? "success"
+														: "muted"
+												}
+											>
+												{detail.featurePickup
+													? "ON"
+													: "OFF"}
+											</Badge>
+										</KV>
+										<KV>
+											<Text $muted>
+												Delivery coverage
+											</Text>
+											<Text $weight={600}>
+												{detail.deliveryCoverageType ??
+													"SPECIFIC"}
+											</Text>
+										</KV>
+										{detail.deliveryLocations &&
+											detail.deliveryLocations.length >
+												0 && (
+												<KV>
+													<Text $muted>
+														Delivery locations
+													</Text>
+													<Text $weight={600}>
+														{detail.deliveryLocations.join(
+															", ",
+														)}
+													</Text>
+												</KV>
+											)}
 										<KV>
 											<Text $muted>Rating</Text>
 											<Text $weight={600}>
@@ -475,6 +739,22 @@ export default function AdminVendorsWrapper() {
 												</Text>
 											</KV>
 										)}
+										<KV>
+											<Text $muted>
+												Delivery sticker
+											</Text>
+											<Button
+												$variant="secondary"
+												$size="sm"
+												onClick={() =>
+													previewVendorSticker(
+														detail.id,
+													)
+												}
+											>
+												Preview sticker
+											</Button>
+										</KV>
 									</Stack>
 								</>
 							)}
@@ -522,6 +802,62 @@ export default function AdminVendorsWrapper() {
 									Suspend
 								</Button>
 							</Row>
+						</Stack>
+					</Modal>
+				</Overlay>
+			)}
+			{stickerVendorId && (
+				<Overlay onClick={() => { setStickerVendorId(null); setStickerPreview(null); }}>
+					<Modal onClick={(e) => e.stopPropagation()}>
+						<Stack $gap={14}>
+							<Row $justify="space-between" $align="center">
+								<Title $size={18}>Sticker preview</Title>
+								<Button
+									$variant="ghost"
+									$size="sm"
+									onClick={() => { setStickerVendorId(null); setStickerPreview(null); }}
+								>
+									Close
+								</Button>
+							</Row>
+								{!stickerPreview ? (
+									<Skeleton $h={200} />
+								) : (
+									<Stack $gap={10}>
+										<Text $muted $size={12}>
+											PreChop controls the design. Vendor details are inserted automatically.
+										</Text>
+										<Card $pad={24} style={{ width: "min(320px, 100%)", textAlign: "center" }}>
+											<Stack $gap={10}>
+												<Text $size={11} $weight={800} $muted style={{ textTransform: "uppercase", letterSpacing: "0.18em" }}>
+													PreChop
+												</Text>
+												<Text $size={18} $weight={900}>
+													{stickerPreview.vendorName ?? "Kitchen"}
+												</Text>
+												<Text $size={22} $weight={900} style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", color: "var(--pc-color-primary)" }}>
+													{stickerPreview.exampleCode ?? "???"}
+												</Text>
+												{stickerPreview.qrDataUrl ? (
+													<img
+														src={stickerPreview.qrDataUrl}
+														alt="QR code"
+														width={120}
+														height={120}
+														style={{ borderRadius: "var(--pc-radius)", border: "1px solid var(--pc-border)" }}
+													/>
+												) : (
+													<Text $muted $size={12}>
+														QR → {stickerPreview.qrUrl ?? "/k/..."}
+													</Text>
+												)}
+												<Text $size={11} $weight={700} $muted style={{ textTransform: "uppercase", letterSpacing: "0.12em" }}>
+													Powered by PreChop
+												</Text>
+											</Stack>
+										</Card>
+									</Stack>
+								)}
 						</Stack>
 					</Modal>
 				</Overlay>

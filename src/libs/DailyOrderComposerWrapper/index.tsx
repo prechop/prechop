@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -23,6 +23,12 @@ import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo } from "@/constants/formatters";
+import {
+	listingUrl,
+	listingWhatsAppMessage,
+	storeUrl,
+	storeWhatsAppMessage,
+} from "@/constants/shareLinks";
 import { useToast } from "@/hooks/useToast";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
 import type { DailyOrder, MenuItem, MenuOptionGroup } from "@/types";
@@ -62,6 +68,16 @@ function weekdayOf(dateStr: string): string {
 // Stable empty defaults so unedited items don't create new prop objects each render.
 const EMPTY_SET: Set<string> = new Set();
 const EMPTY_EDITS: Record<string, EditableOption[]> = {};
+
+function menuItemPriceLabel(item: MenuItem): string {
+	const activeVariantPrices = (item.variants ?? [])
+		.filter((variant) => variant.isActive)
+		.map((variant) => variant.priceKobo);
+	if (activeVariantPrices.length === 0) return formatKobo(item.priceKobo);
+	const min = Math.min(...activeVariantPrices);
+	const max = Math.max(...activeVariantPrices);
+	return min === max ? formatKobo(min) : `From ${formatKobo(min)}`;
+}
 
 const ItemRow = styled(Card)<{ $on: boolean }>`
   padding: var(--pc-space-3) var(--pc-space-4);
@@ -151,6 +167,29 @@ const ItemsAction = styled.div`
 const QtyWrap = styled.div`
   padding-left: 36px;
 `;
+const VariantReview = styled.div`
+	margin-left: 36px;
+	padding: 10px 12px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+`;
+const VariantReviewRow = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--pc-border);
+	&:last-child { border-bottom: 0; }
+`;
+const VariantMeta = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	flex-wrap: wrap;
+`;
 const SubmitBar = styled.div`
   position: sticky;
   bottom: var(--pc-space-3);
@@ -218,7 +257,7 @@ const ShareBtn = styled.a<{ $bg: string }>`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 13px;
+  padding: 5px;
   border-radius: var(--pc-radius-sm);
   font-weight: 700;
   font-size: 14.5px;
@@ -269,8 +308,8 @@ function isoToLocal(iso: string): string {
 }
 
 interface Published {
-	token: string;
-	title: string;
+	order: DailyOrder;
+	storeSlug?: string;
 }
 
 export default function DailyOrderComposerWrapper({
@@ -325,6 +364,7 @@ export default function DailyOrderComposerWrapper({
 	const [busy, setBusy] = useState(false);
 	const [published, setPublished] = useState<Published | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [storeCopied, setStoreCopied] = useState(false);
 
 	// Seed fulfilment toggles from the vendor's saved delivery defaults, once.
 	// Skipped when editing — there the existing listing's values win.
@@ -373,7 +413,7 @@ export default function DailyOrderComposerWrapper({
 		const sel: Record<string, string> = {};
 		const edits: Record<string, Record<string, EditableOption[]>> = {};
 		for (const it of editing.items) {
-			sel[it.menuItemId] = it.maxPlate ? String(it.maxPlate) : "";
+			sel[it.menuItemId] = it.maxQuantity ? String(it.maxQuantity) : "";
 			for (const g of it.optionGroups ?? []) {
 				if (!g.sourceGroupId) continue;
 				edits[it.menuItemId] ??= {};
@@ -435,16 +475,10 @@ export default function DailyOrderComposerWrapper({
 	// A listing can only be edited before it opens for orders. Mirror the server
 	// lock (`assertActiveVendor` + the availableFrom window) so an already-open
 	// or closed listing shows a clear message instead of a form that would 409.
-	const opensAt = editing?.availableFrom
-		? new Date(editing.availableFrom).getTime()
-		: null;
 	const editLocked =
 		isEdit &&
 		!!editing &&
-		(editing.status === "CLOSED" ||
-			editing.status === "CANCELLED" ||
-			opensAt === null ||
-			opensAt <= Date.now());
+		(editing.status === "CLOSED" || editing.status === "CANCELLED");
 	if (editLocked) {
 		return (
 			<FadeIn>
@@ -457,7 +491,7 @@ export default function DailyOrderComposerWrapper({
 					<EmptyState
 						icon="🔒"
 						title="Editing is closed"
-						description="Orders have already opened for this listing, so it can’t be edited. You can still close or cancel it from your dashboard."
+						description="Closed and cancelled listings can’t be edited."
 						action={
 							<Button onClick={() => router.push("/dashboard")}>
 								Back to dashboard
@@ -477,6 +511,17 @@ export default function DailyOrderComposerWrapper({
 		return (item.optionGroupIds ?? [])
 			.map((id) => groupById.get(id))
 			.filter((g): g is MenuOptionGroup => Boolean(g));
+	}
+
+	/** Variants frozen on an edited listing win over later menu changes. */
+	function inheritedVariants(item: MenuItem) {
+		const listingVariants = isEdit
+			? editing?.items.find((entry) => entry.menuItemId === item.id)
+					?.snapshotVariants
+			: undefined;
+		return [...(listingVariants ?? item.variants ?? [])].sort(
+			(a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
+		);
 	}
 
 	function toggleGroupForItem(itemId: string, groupId: string) {
@@ -566,7 +611,7 @@ export default function DailyOrderComposerWrapper({
 		// validating that each kept group still has enough named options.
 		const items: Array<{
 			menuItemId: string;
-			maxPlate?: number;
+			maxQuantity?: number;
 			optionGroups?: Array<{
 				sourceGroupId: string;
 				name: string;
@@ -610,7 +655,7 @@ export default function DailyOrderComposerWrapper({
 			}
 			items.push({
 				menuItemId: id,
-				...(q > 0 ? { maxPlate: Math.floor(q) } : {}),
+				...(q > 0 ? { maxQuantity: Math.floor(q) } : {}),
 				...(optionGroups.length > 0 ? { optionGroups } : {}),
 			});
 		}
@@ -687,7 +732,18 @@ export default function DailyOrderComposerWrapper({
 				api.post("/daily-orders", { ...body, draft: false }),
 			);
 			toast("Daily order posted", "success");
-			setPublished({ token: order.shareableToken, title: order.title });
+			let storeSlug = vendor?.storeSlug;
+			if (!storeSlug) {
+				try {
+					const storeVendor = await apiData<VendorMe>(
+						api.post("/vendors/me/store-slug", {}),
+					);
+					storeSlug = storeVendor.storeSlug;
+				} catch {
+					// The listing is already live; store-link setup can be retried from Store.
+				}
+			}
+			setPublished({ order, storeSlug });
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
@@ -696,15 +752,53 @@ export default function DailyOrderComposerWrapper({
 	}
 
 	if (published) {
-		const shareUrl =
-			typeof window !== "undefined"
-				? `${window.location.origin}/o/${published.token}`
-				: `/o/${published.token}`;
-		const shareText = `${published.title} — order now on Prechop: ${shareUrl}`;
+		const { order, storeSlug } = published;
+		const shareUrl = listingUrl(order.shareableToken);
+		const prices = order.items.flatMap((item) => {
+			const variants = (item.snapshotVariants ?? []).filter(
+				(variant) => variant.isActive !== false,
+			);
+			return variants.length > 0
+				? variants.map((variant) => variant.priceKobo)
+				: [item.snapshotPriceKobo];
+		});
+		const minPrice = Math.min(...prices);
+		const maxPrice = Math.max(...prices);
+		const priceLabel =
+			prices.length > 1 && minPrice !== maxPrice
+				? `From ${formatKobo(minPrice)}`
+				: formatKobo(minPrice);
+		const allFinite = order.items.every((item) => item.maxQuantity != null);
+		const remainingQuantity = allFinite
+			? order.items.reduce(
+					(total, item) =>
+						total +
+						(item.remainingQuantity ??
+							Math.max(
+								(item.maxQuantity ?? 0) - item.orderedQuantity,
+								0,
+							)),
+					0,
+				)
+			: undefined;
+		const businessName = vendor?.businessName ?? "My kitchen";
+		const shareText = listingWhatsAppMessage({
+			businessName,
+			title: order.title,
+			priceLabel,
+			remainingQuantity,
+			cutoffTime: order.cutoffTime,
+			shareableToken: order.shareableToken,
+		});
 		const waHref = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-		const tgHref = `https://t.me/share/url?url=${encodeURIComponent(
-			shareUrl,
-		)}&text=${encodeURIComponent(published.title)}`;
+		const instagramHref = "https://www.instagram.com/";
+		const publicStoreUrl = storeSlug ? storeUrl(storeSlug) : "";
+		const storeShareText = storeSlug
+			? storeWhatsAppMessage(businessName, storeSlug)
+			: "";
+		const storeWaHref = storeSlug
+			? `https://wa.me/?text=${encodeURIComponent(storeShareText)}`
+			: "";
 
 		const copyLink = async () => {
 			try {
@@ -718,6 +812,30 @@ export default function DailyOrderComposerWrapper({
 					"error",
 				);
 			}
+		};
+		const copyStoreLink = async () => {
+			if (!publicStoreUrl) return;
+			try {
+				await navigator.clipboard.writeText(publicStoreUrl);
+				setStoreCopied(true);
+				toast("Store link copied", "success");
+				setTimeout(() => setStoreCopied(false), 2000);
+			} catch {
+				toast("Couldn't copy the store link", "error");
+			}
+		};
+		const shareToInstagram = async (
+			event: MouseEvent<HTMLAnchorElement>,
+			text: string,
+		) => {
+			event.preventDefault();
+			try {
+				await navigator.clipboard.writeText(text);
+				toast("Share text copied for Instagram", "success");
+			} catch {
+				toast("Open Instagram, then paste the share text", "info");
+			}
+			window.open(instagramHref, "_blank", "noopener,noreferrer");
 		};
 
 		return (
@@ -737,18 +855,15 @@ export default function DailyOrderComposerWrapper({
 								$size={14}
 								style={{ color: "rgba(255,255,255,0.9)" }}
 							>
-								“{published.title}” is open for orders. Share
-								the link so buyers can order.
+								“{order.title}” is open for orders. Share the
+								link so buyers can order.
 							</Text>
 						</Stack>
 					</SuccessHero>
 
 					<Card>
 						<Stack $gap={14}>
-							<SectionHeader
-								title="Share your order link"
-								icon="🔗"
-							/>
+							<SectionHeader title="Share this menu" icon="🔗" />
 							<LinkBox>
 								<LinkText>{shareUrl}</LinkText>
 								<Button
@@ -756,7 +871,7 @@ export default function DailyOrderComposerWrapper({
 									$variant={copied ? "secondary" : "primary"}
 									onClick={copyLink}
 								>
-									{copied ? "Copied ✓" : "Copy"}
+									{copied ? "Copied ✓" : "Copy menu link"}
 								</Button>
 							</LinkBox>
 							<ShareGrid>
@@ -766,25 +881,83 @@ export default function DailyOrderComposerWrapper({
 									rel="noopener noreferrer"
 									$bg="#25D366"
 								>
-									<span aria-hidden>💬</span> WhatsApp
+									<span aria-hidden>💬</span> Share menu to
+									WhatsApp
 								</ShareBtn>
 								<ShareBtn
-									href={tgHref}
+									href={instagramHref}
 									target="_blank"
 									rel="noopener noreferrer"
-									$bg="#229ED9"
+									onClick={(event) =>
+										shareToInstagram(event, shareText)
+									}
+									$bg="#922135"
 								>
-									<span aria-hidden>✈️</span> Telegram
+									<span aria-hidden>📸</span> Share menu to
+									Instagram
 								</ShareBtn>
 							</ShareGrid>
 						</Stack>
 					</Card>
 
+					{storeSlug && (
+						<Card>
+							<Stack $gap={14}>
+								<SectionHeader
+									title="Share my kitchen"
+									icon="🏪"
+								/>
+								<Text $muted $size={13}>
+									Your permanent store link stays the same
+									after this menu closes.
+								</Text>
+								<LinkBox>
+									<LinkText>{publicStoreUrl}</LinkText>
+									<Button
+										$size="sm"
+										$variant="secondary"
+										onClick={copyStoreLink}
+									>
+										{storeCopied
+											? "Copied ✓"
+											: "Copy store link"}
+									</Button>
+								</LinkBox>
+								<ShareGrid>
+									<ShareBtn
+										href={storeWaHref}
+										target="_blank"
+										rel="noopener noreferrer"
+										$bg="#166534"
+									>
+										<span aria-hidden>💬</span> Share store
+										to WhatsApp
+									</ShareBtn>
+									<ShareBtn
+										href={instagramHref}
+										target="_blank"
+										rel="noopener noreferrer"
+										onClick={(event) =>
+											shareToInstagram(
+												event,
+												storeShareText,
+											)
+										}
+										$bg="#922135"
+									>
+										<span aria-hidden>📸</span> Share store
+										to Instagram
+									</ShareBtn>
+								</ShareGrid>
+							</Stack>
+						</Card>
+					)}
+
 					<Row $gap={12} $wrap>
 						<div style={{ flex: 1, minWidth: 160 }}>
 							<Button
 								as={Link}
-								href={`/o/${published.token}`}
+								href={`/o/${order.shareableToken}`}
 								target="_blank"
 								$variant="secondary"
 								$full
@@ -1016,6 +1189,7 @@ export default function DailyOrderComposerWrapper({
 						<Stack $gap={8}>
 							{menuItems.map((m) => {
 								const on = m.id in selected;
+								const variants = inheritedVariants(m);
 								return (
 									<ItemRow
 										key={m.id}
@@ -1036,7 +1210,7 @@ export default function DailyOrderComposerWrapper({
 													</Text>
 												</Row>
 												<Text $weight={700}>
-													{formatKobo(m.priceKobo)}
+													{menuItemPriceLabel(m)}
 												</Text>
 											</Row>
 											{on && (
@@ -1065,6 +1239,82 @@ export default function DailyOrderComposerWrapper({
 														placeholder="Unlimited"
 													/>
 												</QtyWrap>
+											)}
+											{on && variants.length > 0 && (
+												<VariantReview
+													onClick={(e) =>
+														e.stopPropagation()
+													}
+												>
+													<Stack $gap={4}>
+														<Text
+															$weight={700}
+															$size={13}
+														>
+															Inherited variants
+														</Text>
+														<Text $muted $size={12}>
+															These sizes and
+															prices are copied
+															from the menu into
+															this listing.
+														</Text>
+														{variants.map(
+															(variant) => (
+																<VariantReviewRow
+																	key={
+																		variant.id
+																	}
+																>
+																	<Text
+																		$weight={
+																			600
+																		}
+																		$size={
+																			13
+																		}
+																	>
+																		{
+																			variant.name
+																		}
+																	</Text>
+																	<VariantMeta>
+																		<Text
+																			$weight={
+																				700
+																			}
+																			$size={
+																				13
+																			}
+																		>
+																			{formatKobo(
+																				variant.priceKobo,
+																			)}
+																		</Text>
+																		{variant.isDefault && (
+																			<Badge $tone="primary">
+																				Default
+																			</Badge>
+																		)}
+																		<Badge
+																			$tone={
+																				variant.isActive ===
+																				false
+																					? "muted"
+																					: "success"
+																			}
+																		>
+																			{variant.isActive ===
+																			false
+																				? "Inactive"
+																				: "Active"}
+																		</Badge>
+																	</VariantMeta>
+																</VariantReviewRow>
+															),
+														)}
+													</Stack>
+												</VariantReview>
 											)}
 											{on &&
 												attachedGroups(m).length >

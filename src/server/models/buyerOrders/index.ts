@@ -1,5 +1,6 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
 import { MAX_LIMIT } from "../../constants";
+import { deriveHandoverCredential } from "../../constants/handoverCredential";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { FulfillmentType, OrderStatus, SETTLED_ORDER_STATUSES } from "../enums";
 import { IOperationType, PLATFORM_TIMEZONE } from "../utils";
@@ -15,7 +16,7 @@ const collectionName = "buyerOrders";
 
 export type BuyerOrderModel = Model<any>;
 
-const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
+export const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.PAID,
 	OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
 	OrderStatus.ACCEPTED,
@@ -27,7 +28,19 @@ const VENDOR_ATTENTION_ORDER_STATUSES: OrderStatus[] = [
 	OrderStatus.READY_FOR_DELIVERY,
 	OrderStatus.IN_TRANSIT,
 	OrderStatus.AWAITING_BUYER_NO_SHOW_RESPONSE,
+	OrderStatus.PICKUP_PROBLEM_REPORTED,
 	OrderStatus.BUYER_UNREACHABLE_REPORTED,
+];
+
+/**
+ * Only these outcomes leave no order, payment, refund, or fulfilment work for
+ * either party. Account/vendor closure is blocked for every other state.
+ */
+export const ACCOUNT_CLOSURE_TERMINAL_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.COMPLETED,
+	OrderStatus.COMPLETED_BUYER_NO_SHOW,
+	OrderStatus.CANCELLED,
+	OrderStatus.REFUNDED,
 ];
 
 const selectedOptionSchema = new mongoose.Schema(
@@ -51,6 +64,11 @@ const itemSchema = new mongoose.Schema(
 		menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: "menuItems" },
 		snapshotName: { type: String, required: true },
 		snapshotPriceKobo: { type: Number, required: true },
+		selectedVariantDailyOrderVariantId: {
+			type: mongoose.Schema.Types.ObjectId,
+		},
+		selectedVariantName: { type: String },
+		selectedVariantPriceKobo: { type: Number },
 		snapshotPrepMin: { type: Number },
 		quantity: { type: Number, required: true, min: 1 },
 		subtotalKobo: { type: Number, required: true },
@@ -123,6 +141,7 @@ const schema = new mongoose.Schema<any>(
 		deliveryFullAddress: { type: String },
 		deliveryPhone: { type: String },
 		customerMessage: { type: String, maxlength: 150 },
+		deliveryEstimateMinutes: { type: Number },
 		subtotalKobo: { type: Number, required: true },
 		deliveryFeeKobo: { type: Number, default: 0 },
 		platformFeeKobo: { type: Number, required: true },
@@ -133,8 +152,11 @@ const schema = new mongoose.Schema<any>(
 		vendorSettlementKobo: { type: Number, default: 0 },
 		totalKobo: { type: Number, required: true },
 		cancellationReason: { type: String },
+		cancellationReasonCode: { type: String },
+		cancellationExplanation: { type: String },
 		cancelledBy: { type: String, enum: ["buyer", "vendor", "system"] },
 		paidAt: { type: Date },
+		inventoryCommittedAt: { type: Date },
 		acceptedAt: { type: Date },
 		acceptanceDeadline: { type: Date, index: true },
 		expectedReadyAt: { type: Date, index: true },
@@ -151,6 +173,8 @@ const schema = new mongoose.Schema<any>(
 		vendorAcceptanceReminder5SentAt: { type: Date },
 		vendorAcceptanceWarning8SentAt: { type: Date },
 		vendorRejectedAt: { type: Date },
+		vendorRejectionReasonCode: { type: String },
+		vendorRejectionExplanation: { type: String },
 		refundPendingAt: { type: Date },
 		refundProcessingAt: { type: Date },
 		refundFailedAt: { type: Date },
@@ -173,6 +197,7 @@ const schema = new mongoose.Schema<any>(
 		deliveryContactAttempts: { type: Number },
 		deliveryFailureNote: { type: String },
 		deliveryEvidencePhotoUrl: { type: String },
+		deliveryOverdueEscalatedAt: { type: Date, index: true },
 		adminReviewRequiredAt: { type: Date, index: true },
 		adminReviewReason: { type: String },
 		pickedUpAt: { type: Date },
@@ -181,7 +206,7 @@ const schema = new mongoose.Schema<any>(
 		confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
 		confirmationMethod: {
 			type: String,
-			enum: ["QR", "PIN", "SUPPORT"],
+			enum: ["QR", "PIN", "SUPPORT", "BUYER_BUTTON"],
 		},
 		confirmationVendorId: {
 			type: mongoose.Schema.Types.ObjectId,
@@ -195,6 +220,7 @@ const schema = new mongoose.Schema<any>(
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "buyerOrders",
 		},
+		trustedCompletionAuditRef: { type: String },
 		handoverTokenHash: { type: String },
 		handoverPinHash: { type: String },
 		handoverCredentialCreatedAt: { type: Date },
@@ -208,6 +234,9 @@ const schema = new mongoose.Schema<any>(
 		// PENDING would make every historical order advertise a receipt that no
 		// job will ever produce.
 		receiptStatus: { type: String, enum: RECEIPT_STATUSES },
+		deliveryCode: { type: String, index: true },
+		sentForDeliveryAt: { type: Date },
+		buyerReceiptConfirmedAt: { type: Date },
 		timeline: { type: [timelineSchema], default: [] },
 		items: { type: [itemSchema], default: [] },
 	},
@@ -249,7 +278,24 @@ schema.pre("aggregate", function () {
 					in: {
 						$mergeObjects: [
 							"$$it",
-							{ id: { $toString: "$$it.dailyOrderItemId" } },
+							{
+								id: { $toString: "$$it.dailyOrderItemId" },
+								selectedVariantDailyOrderVariantId: {
+									$cond: [
+										{
+											$ifNull: [
+												"$$it.selectedVariantDailyOrderVariantId",
+												false,
+											],
+										},
+										{
+											$toString:
+												"$$it.selectedVariantDailyOrderVariantId",
+										},
+										null,
+									],
+								},
+							},
 						],
 					},
 				},
@@ -271,6 +317,17 @@ function mapItems(items: IBuyerOrderCreateInput["items"]) {
 			: undefined,
 		snapshotName: it.snapshotName,
 		snapshotPriceKobo: it.snapshotPriceKobo,
+		selectedVariantDailyOrderVariantId:
+			it.selectedVariantDailyOrderVariantId &&
+			mongoose.Types.ObjectId.isValid(
+				it.selectedVariantDailyOrderVariantId,
+			)
+				? new mongoose.Types.ObjectId(
+						it.selectedVariantDailyOrderVariantId,
+					)
+				: undefined,
+		selectedVariantName: it.selectedVariantName,
+		selectedVariantPriceKobo: it.selectedVariantPriceKobo,
 		snapshotPrepMin: it.snapshotPrepMin,
 		quantity: it.quantity,
 		subtotalKobo: it.subtotalKobo,
@@ -301,8 +358,20 @@ export async function createBuyerOrderDB({
 }): Promise<IBuyerOrder | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		const orderObjectId = id
+			? new mongoose.Types.ObjectId(id)
+			: new mongoose.Types.ObjectId();
+		const generatedCredential =
+			payload.handoverTokenHash && payload.handoverPinHash
+				? null
+				: deriveHandoverCredential({
+						_id: orderObjectId.toString(),
+						orderNumber: payload.orderNumber,
+						buyerId: payload.buyerId,
+						vendorId: payload.vendorId,
+					});
 		const doc = await new BuyerOrder({
-			...(id ? { _id: new mongoose.Types.ObjectId(id) } : {}),
+			_id: orderObjectId,
 			orderNumber: payload.orderNumber,
 			dailyOrderId: payload.dailyOrderId,
 			vendorId: payload.vendorId,
@@ -316,6 +385,7 @@ export async function createBuyerOrderDB({
 			deliveryFullAddress: payload.deliveryFullAddress,
 			deliveryPhone: payload.deliveryPhone,
 			customerMessage: payload.customerMessage,
+			deliveryEstimateMinutes: payload.deliveryEstimateMinutes,
 			subtotalKobo: payload.subtotalKobo,
 			deliveryFeeKobo: payload.deliveryFeeKobo,
 			platformFeeKobo: payload.platformFeeKobo,
@@ -325,6 +395,13 @@ export async function createBuyerOrderDB({
 			vendorDeliveryAmountKobo: payload.vendorDeliveryAmountKobo ?? 0,
 			vendorSettlementKobo: payload.vendorSettlementKobo ?? 0,
 			totalKobo: payload.totalKobo,
+			handoverTokenHash:
+				payload.handoverTokenHash ?? generatedCredential?.qrTokenHash,
+			handoverPinHash:
+				payload.handoverPinHash ?? generatedCredential?.pinHash,
+			handoverCredentialCreatedAt:
+				payload.handoverCredentialCreatedAt ??
+				(generatedCredential ? new Date() : undefined),
 			items: mapItems(payload.items),
 		}).save({ session });
 		timer({
@@ -360,6 +437,36 @@ export async function deleteBuyerOrderHardDB({
 		);
 	} catch {
 		// best effort
+	}
+}
+
+export async function countBlockingBuyerOrdersDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({ buyerId: new mongoose.Types.ObjectId(buyerId) });
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({ vendorId: new mongoose.Types.ObjectId(vendorId) });
+		}
+		if (ownership.length === 0) return 0;
+		return BuyerOrder.countDocuments(
+			{
+				$or: ownership,
+				status: { $nin: ACCOUNT_CLOSURE_TERMINAL_ORDER_STATUSES },
+			},
+			{ session },
+		);
+	} catch (error) {
+		throw error;
 	}
 }
 
@@ -449,6 +556,23 @@ export async function listBuyerOrdersByBuyerDB({
 				{ $sort: { createdAt: -1 } },
 				{ $skip: offset },
 				{ $limit: Math.min(limit, MAX_LIMIT) },
+				{
+					$lookup: {
+						from: "vendorProfiles",
+						localField: "vendorId",
+						foreignField: "_id",
+						as: "_vendor",
+					},
+				},
+				{
+					$addFields: {
+						id: { $toString: "$_id" },
+						vendorName: {
+							$arrayElemAt: ["$_vendor.businessName", 0],
+						},
+					},
+				},
+				{ $unset: "_vendor" },
 			],
 			{ session },
 		);
@@ -617,11 +741,18 @@ export async function setBuyerOrderStatusDB({
 	actualPrepMin,
 	refundPendingAt,
 	vendorRejectedAt,
+	vendorRejectionReasonCode,
+	vendorRejectionExplanation,
 	vendorNoResponseExpiredAt,
 	readyAt,
 	deliveryStartedAt,
 	pickedUpAt,
 	deliveredAt,
+	confirmedAt,
+	confirmedBy,
+	confirmationMethod,
+	confirmationOrderId,
+	trustedCompletionAuditRef,
 	session,
 }: {
 	id: string;
@@ -634,11 +765,18 @@ export async function setBuyerOrderStatusDB({
 	actualPrepMin?: number;
 	refundPendingAt?: Date;
 	vendorRejectedAt?: Date;
+	vendorRejectionReasonCode?: string;
+	vendorRejectionExplanation?: string;
 	vendorNoResponseExpiredAt?: Date;
 	readyAt?: Date;
 	deliveryStartedAt?: Date;
 	pickedUpAt?: Date;
 	deliveredAt?: Date;
+	confirmedAt?: Date;
+	confirmedBy?: string;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | "BUYER_BUTTON";
+	confirmationOrderId?: string;
+	trustedCompletionAuditRef?: string;
 	session?: ClientSession;
 }): Promise<IBuyerOrder | null> {
 	try {
@@ -658,6 +796,12 @@ export async function setBuyerOrderStatusDB({
 					...(actualPrepMin != null ? { actualPrepMin } : {}),
 					...(refundPendingAt ? { refundPendingAt } : {}),
 					...(vendorRejectedAt ? { vendorRejectedAt } : {}),
+					...(vendorRejectionReasonCode
+						? { vendorRejectionReasonCode }
+						: {}),
+					...(vendorRejectionExplanation
+						? { vendorRejectionExplanation }
+						: {}),
 					...(vendorNoResponseExpiredAt
 						? { vendorNoResponseExpiredAt }
 						: {}),
@@ -665,6 +809,26 @@ export async function setBuyerOrderStatusDB({
 					...(deliveryStartedAt ? { deliveryStartedAt } : {}),
 					...(pickedUpAt ? { pickedUpAt } : {}),
 					...(deliveredAt ? { deliveredAt } : {}),
+					...(confirmedAt ? { confirmedAt } : {}),
+					...(confirmedBy
+						? {
+								confirmedBy: new mongoose.Types.ObjectId(
+									confirmedBy,
+								),
+							}
+						: {}),
+					...(confirmationMethod ? { confirmationMethod } : {}),
+					...(confirmationOrderId
+						? {
+								confirmationOrderId:
+									new mongoose.Types.ObjectId(
+										confirmationOrderId,
+									),
+							}
+						: {}),
+					...(trustedCompletionAuditRef
+						? { trustedCompletionAuditRef }
+						: {}),
 				},
 			},
 			{ session, returnDocument: "after" },
@@ -682,6 +846,56 @@ const PRE_READY_ORDER_STATUSES = [
 	OrderStatus.PREPARING,
 ];
 
+function expectedPrepMinForOrder(order: IBuyerOrder): number {
+	const itemPrepMins = (order.items ?? [])
+		.map((item) => item.snapshotPrepMin ?? 0)
+		.filter((min) => min > 0);
+	return (
+		order.expectedPrepMin ??
+		(itemPrepMins.length ? Math.max(...itemPrepMins) : 20)
+	);
+}
+
+export async function backfillMissingReadyDeadlinesDB({
+	limit = 200,
+}: {
+	limit?: number;
+} = {}): Promise<number> {
+	try {
+		const rows = await BuyerOrder.find({
+			status: { $in: PRE_READY_ORDER_STATUSES },
+			acceptedAt: { $ne: null },
+			expectedReadyAt: null,
+			readyAt: null,
+			lateMarkedAt: null,
+		})
+			.sort({ acceptedAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+		let updated = 0;
+		for (const order of rows as unknown as IBuyerOrder[]) {
+			const acceptedAt = new Date(order.acceptedAt as Date);
+			const expectedPrepMin = expectedPrepMinForOrder(order);
+			const expectedReadyAt = new Date(
+				acceptedAt.getTime() + expectedPrepMin * 60 * 1000,
+			);
+			const res = await BuyerOrder.updateOne(
+				{
+					_id: new mongoose.Types.ObjectId(order._id),
+					status: { $in: PRE_READY_ORDER_STATUSES },
+					expectedReadyAt: null,
+					readyAt: null,
+				},
+				{ $set: { expectedReadyAt, expectedPrepMin } },
+			);
+			updated += res.modifiedCount;
+		}
+		return updated;
+	} catch {
+		return 0;
+	}
+}
+
 export async function listReadyDeadlineDueOrdersDB({
 	now,
 	limit = 200,
@@ -693,8 +907,8 @@ export async function listReadyDeadlineDueOrdersDB({
 		const rows = await BuyerOrder.find({
 			status: { $in: PRE_READY_ORDER_STATUSES },
 			expectedReadyAt: { $lte: now },
-			readyAt: { $exists: false },
-			lateMarkedAt: { $exists: false },
+			readyAt: null,
+			lateMarkedAt: null,
 		})
 			.sort({ expectedReadyAt: 1 })
 			.limit(limit)
@@ -717,8 +931,8 @@ export async function markBuyerOrderLateDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: false },
+				readyAt: null,
+				lateMarkedAt: null,
 			},
 			{
 				$set: {
@@ -749,9 +963,9 @@ export async function listLateOrdersForEscalationDB({
 		const rows = await BuyerOrder.find({
 			status: { $in: PRE_READY_ORDER_STATUSES },
 			expectedReadyAt: { $lte: cutoff },
-			readyAt: { $exists: false },
-			lateMarkedAt: { $exists: true },
-			lateEscalatedAt: { $exists: false },
+			readyAt: null,
+			lateMarkedAt: { $ne: null },
+			lateEscalatedAt: null,
 		})
 			.sort({ expectedReadyAt: 1 })
 			.limit(limit)
@@ -776,9 +990,9 @@ export async function markBuyerOrderLateEscalatedDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: true },
-				lateEscalatedAt: { $exists: false },
+				readyAt: null,
+				lateMarkedAt: { $ne: null },
+				lateEscalatedAt: null,
 			},
 			{
 				$set: {
@@ -816,8 +1030,8 @@ export async function reviseBuyerOrderReadyEstimateDB({
 				_id: new mongoose.Types.ObjectId(id),
 				vendorId: new mongoose.Types.ObjectId(vendorId),
 				status: { $in: PRE_READY_ORDER_STATUSES },
-				readyAt: { $exists: false },
-				lateMarkedAt: { $exists: true },
+				readyAt: null,
+				lateMarkedAt: { $ne: null },
 				$or: [
 					{ readyExtensionCount: { $exists: false } },
 					{ readyExtensionCount: { $lt: maxExtensions } },
@@ -825,7 +1039,6 @@ export async function reviseBuyerOrderReadyEstimateDB({
 			},
 			{
 				$set: {
-					expectedReadyAt: revisedReadyAt,
 					revisedReadyAt,
 					revisedPrepMin,
 					lastReadyExtensionAt: now,
@@ -1163,6 +1376,76 @@ export async function markDeliveryFailedDB({
 	}
 }
 
+export async function listInTransitDeliveryOrdersForOverdueDB({
+	limit = 200,
+}: {
+	limit?: number;
+} = {}): Promise<IBuyerOrder[]> {
+	try {
+		return await BuyerOrder.find({
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryStartedAt: { $exists: true },
+			deliveryOverdueEscalatedAt: { $exists: false },
+		})
+			.sort({ deliveryStartedAt: 1 })
+			.limit(limit)
+			.lean<IBuyerOrder[]>();
+	} catch {
+		return [];
+	}
+}
+
+export async function markDeliveryOverdueEscalatedDB({
+	id,
+	now,
+	reason,
+	deadline,
+	estimateMinutes,
+	graceMinutes,
+}: {
+	id: string;
+	now: Date;
+	reason: string;
+	deadline: Date;
+	estimateMinutes: number;
+	graceMinutes: number;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: OrderStatus.IN_TRANSIT,
+				fulfillmentType: FulfillmentType.DELIVERY,
+				deliveryOverdueEscalatedAt: { $exists: false },
+			},
+			{
+				$set: {
+					deliveryOverdueEscalatedAt: now,
+					adminReviewRequiredAt: now,
+					adminReviewReason: reason,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: now,
+						type: "DELIVERY_OVERDUE_ESCALATED",
+						actor: "system",
+						data: {
+							deadline: deadline.toISOString(),
+							estimateMinutes,
+							graceMinutes,
+						},
+					}),
+				},
+			},
+			{ returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function findReadyPickupOrdersForNoShowTimersDB({
 	now,
 	limit = 200,
@@ -1293,6 +1576,38 @@ export async function markBuyerOrderPaidDB({
 	}
 }
 
+export async function markBuyerOrderInventoryCommittedDB({
+	id,
+	committedAt = new Date(),
+	session,
+}: {
+	id: string;
+	committedAt?: Date;
+	session?: ClientSession;
+}): Promise<IBuyerOrder | null> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				inventoryCommittedAt: { $exists: false },
+				status: {
+					$nin: [
+						OrderStatus.PENDING_PAYMENT,
+						OrderStatus.AWAITING_EXTERNAL_PAYMENT,
+						OrderStatus.CANCELLED,
+						OrderStatus.REFUNDED,
+					],
+				},
+			},
+			{ $set: { inventoryCommittedAt: committedAt } },
+			{ session, returnDocument: "after" },
+		);
+		return res ? (res.toObject() as unknown as IBuyerOrder) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function markBuyerOrderPendingPaymentDB({
 	id,
 	session,
@@ -1318,12 +1633,16 @@ export async function markBuyerOrderPendingPaymentDB({
 export async function markBuyerOrderCancelledDB({
 	id,
 	reason,
+	reasonCode,
+	explanation,
 	cancelledBy,
 	fromStatuses,
 	session,
 }: {
 	id: string;
 	reason: string;
+	reasonCode?: string;
+	explanation?: string;
 	cancelledBy: "buyer" | "vendor" | "system";
 	fromStatuses?: OrderStatus[];
 	session?: ClientSession;
@@ -1339,6 +1658,12 @@ export async function markBuyerOrderCancelledDB({
 				$set: {
 					status: OrderStatus.CANCELLED,
 					cancellationReason: reason,
+					...(reasonCode
+						? { cancellationReasonCode: reasonCode }
+						: {}),
+					...(explanation
+						? { cancellationExplanation: explanation }
+						: {}),
 					cancelledBy,
 				},
 			},
@@ -1379,8 +1704,13 @@ export async function markBuyerOrderRefundProcessingDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
-		const res = await BuyerOrder.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [OrderStatus.REFUNDED, OrderStatus.REFUND_PROCESSING],
+				},
+			},
 			{
 				$set: {
 					status: OrderStatus.REFUND_PROCESSING,
@@ -1391,6 +1721,49 @@ export async function markBuyerOrderRefundProcessingDB({
 						at: processedAt,
 						type: "REFUND_PROCESSING",
 						actor: "system",
+					}),
+				},
+			},
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+export async function markBuyerOrderRefundPendingDB({
+	id,
+	pendingAt,
+	session,
+}: {
+	id: string;
+	pendingAt: Date;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [
+						OrderStatus.REFUNDED,
+						OrderStatus.REFUND_PENDING,
+						OrderStatus.REFUND_PROCESSING,
+					],
+				},
+			},
+			{
+				$set: {
+					status: OrderStatus.REFUND_PENDING,
+					refundProcessingAt: pendingAt,
+				},
+				$push: {
+					timeline: timelineEntry({
+						at: pendingAt,
+						type: "REFUND_PROCESSING",
+						actor: "system",
+						note: "Refund submitted to Paystack and awaiting confirmation.",
 					}),
 				},
 			},
@@ -1414,8 +1787,13 @@ export async function markBuyerOrderRefundFailedDB({
 	session?: ClientSession;
 }): Promise<boolean> {
 	try {
-		const res = await BuyerOrder.findByIdAndUpdate(
-			new mongoose.Types.ObjectId(id),
+		const res = await BuyerOrder.findOneAndUpdate(
+			{
+				_id: new mongoose.Types.ObjectId(id),
+				status: {
+					$nin: [OrderStatus.REFUNDED, OrderStatus.REFUND_FAILED],
+				},
+			},
 			{
 				$set: {
 					status: OrderStatus.REFUND_FAILED,
@@ -1457,6 +1835,10 @@ export async function setBuyerOrderHandoverCredentialDB({
 			{
 				_id: new mongoose.Types.ObjectId(id),
 				handoverCredentialUsedAt: { $exists: false },
+				$or: [
+					{ handoverTokenHash: { $exists: false } },
+					{ handoverPinHash: { $exists: false } },
+				],
 			},
 			{
 				$set: {
@@ -1647,6 +2029,28 @@ export async function countBuyerOrdersDB({
 } = {}): Promise<number> {
 	try {
 		return await BuyerOrder.countDocuments(filter ?? {});
+	} catch {
+		return 0;
+	}
+}
+
+const COMPLETED_ORDER_STATUSES: OrderStatus[] = [
+	OrderStatus.PICKED_UP,
+	OrderStatus.DELIVERED,
+	OrderStatus.COMPLETED,
+];
+
+export async function countCompletedBuyerOrdersByVendorDB({
+	vendorId,
+}: {
+	vendorId: string;
+}): Promise<number> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(vendorId)) return 0;
+		return await BuyerOrder.countDocuments({
+			vendorId: new mongoose.Types.ObjectId(vendorId),
+			status: { $in: COMPLETED_ORDER_STATUSES },
+		});
 	} catch {
 		return 0;
 	}

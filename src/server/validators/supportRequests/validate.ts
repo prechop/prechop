@@ -33,4 +33,5 @@ export const addSupportMessageSchema = zod.object({
 export const updateSupportRequestSchema = zod.object({
 	status: supportStatusSchema.optional(),
 	assignedAdminId: zod.string().trim().min(1).optional(),
+	resolutionNote: zod.string().trim().min(10).max(2000).optional(),
 });

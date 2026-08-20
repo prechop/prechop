@@ -68,6 +68,7 @@ const emptyChecklist: OnboardingChecklistInput = {
 	hasLocation: false,
 	hasBankDetails: false,
 	hasProfileImage: false,
+	hasVerificationDocuments: false,
 };
 
 const fullChecklist: OnboardingChecklistInput = {
@@ -76,6 +77,7 @@ const fullChecklist: OnboardingChecklistInput = {
 	hasLocation: true,
 	hasBankDetails: true,
 	hasProfileImage: true,
+	hasVerificationDocuments: true,
 };
 
 describe("onboardingChecklist", () => {
@@ -88,6 +90,7 @@ describe("onboardingChecklist", () => {
 			"location",
 			"bank",
 			"image",
+			"verification",
 		]);
 	});
 
@@ -101,6 +104,7 @@ describe("onboardingChecklist", () => {
 			location: true,
 			bank: true,
 			image: true,
+			verification: true,
 		});
 	});
 
@@ -124,5 +128,11 @@ describe("onboardingChecklist", () => {
 			onboardingChecklist({ ...fullChecklist, hasProfileImage: false })
 				.missing,
 		).toEqual(["image"]);
+		expect(
+			onboardingChecklist({
+				...fullChecklist,
+				hasVerificationDocuments: false,
+			}).missing,
+		).toEqual(["verification"]);
 	});
 });

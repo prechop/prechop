@@ -14,6 +14,21 @@ export enum VendorType {
 	BAKERY = "BAKERY",
 }
 
+export enum BakeryBusinessType {
+	HOME_BASED = "HOME_BASED",
+	CAMPUS_BASED = "CAMPUS_BASED",
+	REGISTERED = "REGISTERED",
+}
+
+export enum VendorVerificationDocumentType {
+	SCHOOL_ID = "SCHOOL_ID",
+	STALL_EVIDENCE = "STALL_EVIDENCE",
+	OPERATOR_ID = "OPERATOR_ID",
+	CAC = "CAC",
+	REPRESENTATIVE_ID = "REPRESENTATIVE_ID",
+	OWNER_ID = "OWNER_ID",
+}
+
 export enum VendorStatus {
 	/** Vendor is still filling in their onboarding details. */
 	INCOMPLETE = "INCOMPLETE",
@@ -37,6 +52,12 @@ export enum MenuCategory {
 	SNACKS_PASTRIES = "SNACKS_PASTRIES",
 	CAKES_DESSERTS = "CAKES_DESSERTS",
 	DRINKS = "DRINKS",
+}
+
+export enum MarketplaceCategory {
+	BREAKFAST = "BREAKFAST",
+	LUNCH = "LUNCH",
+	DINNER = "DINNER",
 }
 
 export enum DailyOrderStatus {
@@ -92,6 +113,15 @@ export enum PaymentStatus {
 	REFUNDED = "REFUNDED",
 }
 
+/**
+ * The settlement architecture chosen when a payment is created. This is
+ * persisted explicitly so a migration cutoff can never be inferred from time.
+ */
+export enum PaymentSettlementMode {
+	DIRECT_SUBACCOUNT_V1 = "DIRECT_SUBACCOUNT_V1",
+	PLATFORM_BALANCE_TRANSFER_V2 = "PLATFORM_BALANCE_TRANSFER_V2",
+}
+
 export enum DayOfWeek {
 	MONDAY = "MONDAY",
 	TUESDAY = "TUESDAY",
@@ -100,6 +130,37 @@ export enum DayOfWeek {
 	FRIDAY = "FRIDAY",
 	SATURDAY = "SATURDAY",
 	SUNDAY = "SUNDAY",
+}
+
+export enum VendorFeature {
+	SCHEDULE_AHEAD = "SCHEDULE_AHEAD",
+	WEEKLY_BREAKFAST_PLAN = "WEEKLY_BREAKFAST_PLAN",
+	DELIVERY = "DELIVERY",
+	PICKUP = "PICKUP",
+}
+
+export enum BrandKitPaymentStatus {
+	PENDING = "PENDING",
+	PAID = "PAID",
+	FAILED = "FAILED",
+}
+
+export enum BrandKitFulfillmentStatus {
+	NOT_STARTED = "NOT_STARTED",
+	PREPARING = "PREPARING",
+	DISPATCHED = "DISPATCHED",
+	DELIVERED = "DELIVERED",
+	RECEIVED = "RECEIVED",
+}
+
+export enum DeliveryCoverageType {
+	ANYWHERE = "ANYWHERE",
+	SPECIFIC = "SPECIFIC",
+}
+
+export enum StickerBatchStatus {
+	ACTIVE = "ACTIVE",
+	EXHAUSTED = "EXHAUSTED",
 }
 
 export const ALL_MENU_CATEGORIES = Object.values(MenuCategory);

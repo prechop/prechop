@@ -1,12 +1,19 @@
 "use client";
 
-import { type ComponentType, useEffect, useState } from "react";
+import {
+	type ComponentType,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import {
 	FiCamera,
 	FiCheckCircle,
 	FiClock,
 	FiHash,
 	FiMapPin,
+	FiMessageCircle,
 	FiPackage,
 	FiPhone,
 	FiPlayCircle,
@@ -21,6 +28,7 @@ import {
 	Card,
 	EmptyState,
 	FadeIn,
+	Input,
 	PageHeader,
 	Row,
 	Select,
@@ -29,16 +37,35 @@ import {
 	Text,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
-import { api } from "@/constants/api";
+import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo, statusLabel } from "@/constants/formatters";
 import {
+	canSendOrderChat,
+	ORDER_CHAT_NOT_OPEN_MESSAGE,
+} from "@/constants/orderChat";
+import {
 	canonicalOrderStatus,
 	isBuyerHandoverEligible,
+	isVendorPipelineCompletedStatus,
 	nextVendorOrderAction,
+	PICKUP_NO_SHOW_WAIT_MINUTES,
+	pickupNoShowAvailability,
+	pickupNoShowResponseWindow,
 } from "@/constants/orderLifecycle";
 import { useToast } from "@/hooks/useToast";
-import type { DailyOrder, OrderStatus } from "@/types";
+import {
+	hasLateOrderAck,
+	rememberLateOrderAck,
+} from "@/libs/lateOrderAcknowledgement";
+import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
+import {
+	OrderReasonModal,
+	type OrderReasonPayload,
+	VENDOR_REJECT_REASON_OPTIONS,
+	VENDOR_UNABLE_REASON_OPTIONS,
+} from "@/libs/OrderReasonModal";
+import type { DailyOrder, OrderConversation, OrderStatus } from "@/types";
 
 interface PipelineOrder {
 	id: string;
@@ -47,12 +74,21 @@ interface PipelineOrder {
 	fulfillmentType: "PICKUP" | "DELIVERY";
 	totalKobo: number;
 	deliveryHostelName?: string;
-	deliveryPhone?: string;
+	deliveryPhoneNumber: number;
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryFullAddress?: string;
 	customerMessage?: string;
 	acceptanceDeadline?: string | null;
+	expectedReadyAt?: string | null;
+	readyAt?: string | null;
+	pickupNoShowReportedAt?: string | null;
+	pickupBuyerResponseDeadline?: string | null;
+	lateMarkedAt?: string | null;
+	revisedReadyAt?: string | null;
+	revisedPrepMin?: number | null;
+	readyExtensionCount?: number | null;
+	lateEscalatedAt?: string | null;
 	createdAt?: string;
 	updatedAt?: string;
 	confirmedAt?: string | null;
@@ -61,26 +97,42 @@ interface PipelineOrder {
 	handoverCredentialUsedAt?: string | null;
 	items: Array<{
 		snapshotName: string;
+		selectedVariantName?: string;
 		quantity: number;
 		subtotalKobo: number;
 	}>;
 }
 
-type CompletedFilter = "today" | "7d" | "all";
-
-interface ContactReveal {
+interface BuyerContactReveal {
+	buyerName?: string | null;
+	address?: string;
+	deliveryHostelName?: string;
+	deliveryRoomNumber?: string;
+	deliveryAdditionalInfo?: string;
+	checkoutNote?: string;
 	phone?: string;
 	telUrl?: string;
 	whatsappUrl?: string;
-	address?: string;
 	instructions?: string[];
 }
+
+function canMessageBuyer(order: PipelineOrder) {
+	return canSendOrderChat({
+		status: order.status,
+		updatedAt: order.updatedAt,
+	});
+}
+
+type CompletedFilter = "today" | "7d" | "all";
+type ReasonAction = { kind: "reject" | "unable"; order: PipelineOrder };
 
 type LaneKey =
 	| "AWAITING_VENDOR_ACCEPTANCE"
 	| "ACCEPTED"
 	| "COOKING"
 	| "READY_FOR_PICKUP"
+	| "AWAITING_BUYER_NO_SHOW_RESPONSE"
+	| "PICKUP_PROBLEM_REPORTED"
 	| "READY_FOR_DELIVERY"
 	| "IN_TRANSIT";
 
@@ -124,6 +176,22 @@ const COLUMNS: BoardColumn[] = [
 		fulfillmentType: "PICKUP",
 	},
 	{
+		key: "AWAITING_BUYER_NO_SHOW_RESPONSE",
+		status: "AWAITING_BUYER_NO_SHOW_RESPONSE",
+		label: "Awaiting buyer response",
+		empty: "No pickup reports awaiting a buyer response",
+		icon: FiClock,
+		fulfillmentType: "PICKUP",
+	},
+	{
+		key: "PICKUP_PROBLEM_REPORTED",
+		status: "PICKUP_PROBLEM_REPORTED",
+		label: "Pickup problem review",
+		empty: "No pickup problems under review",
+		icon: FiXCircle,
+		fulfillmentType: "PICKUP",
+	},
+	{
 		key: "READY_FOR_DELIVERY",
 		status: "READY_FOR_DELIVERY",
 		label: "Ready for delivery",
@@ -134,8 +202,8 @@ const COLUMNS: BoardColumn[] = [
 	{
 		key: "IN_TRANSIT",
 		status: "IN_TRANSIT",
-		label: "On the way",
-		empty: "No delivery orders on the way",
+		label: "In transit",
+		empty: "No delivery orders In transit",
 		icon: FiTruck,
 		fulfillmentType: "DELIVERY",
 	},
@@ -172,153 +240,259 @@ const LANE_ACCENT: Record<OrderStatus, string> = {
 };
 
 const PipelineShell = styled.div`
-	width: 100%;
-	max-width: 100%;
-	box-sizing: border-box;
-	overflow-x: clip;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
 `;
 
 const Board = styled.div`
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: var(--pc-space-4);
-	align-items: start;
-	width: 100%;
-	max-width: 100%;
-	box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--pc-space-4);
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 `;
 
 const Lane = styled.div<{ $accent: string }>`
-	display: flex;
-	flex-direction: column;
-	gap: var(--pc-space-3);
-	min-width: 0;
-	max-width: 100%;
-	background: var(--pc-surface-2);
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius);
-	padding: var(--pc-space-3);
-	border-top: 3px solid ${(p) => p.$accent};
+  display: flex;
+  flex-direction: column;
+  gap: var(--pc-space-3);
+  min-width: 0;
+  max-width: 100%;
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  padding: var(--pc-space-3);
+  border-top: 3px solid ${(p) => p.$accent};
 `;
 
 const LaneHead = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--pc-space-2);
-	padding: 2px var(--pc-space-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-2);
+  padding: 2px var(--pc-space-1);
 `;
 
 const LaneTitle = styled.span`
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	font-family: var(--pc-font-display);
-	font-weight: 700;
-	font-size: 15px;
-	color: var(--pc-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--pc-text);
 `;
 
 const LaneIcon = styled.span`
-	display: inline-flex;
-	color: var(--pc-color-primary);
+  display: inline-flex;
+  color: var(--pc-color-primary);
 `;
 
 const OrderCard = styled(Card)`
-	padding: var(--pc-space-4);
-	&:hover {
-		box-shadow: var(--pc-shadow);
-	}
+  padding: var(--pc-space-4);
+  &:hover {
+    box-shadow: var(--pc-shadow);
+  }
 `;
 
 const OrderNumber = styled(Text)`
-	overflow-wrap: anywhere;
-	word-break: break-word;
-	line-height: 1.15;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.15;
 `;
 
 const Countdown = styled.span`
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 12px;
-	font-weight: 700;
-	color: var(--pc-color-gold);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pc-color-gold);
 `;
 
 const Divider = styled.div`
-	height: 1px;
-	background: var(--pc-border);
+  height: 1px;
+  background: var(--pc-border);
 `;
 
 const AddrLine = styled.div`
-	display: flex;
-	gap: 6px;
-	font-size: 13px;
-	color: var(--pc-text-muted);
-	background: var(--pc-surface-2);
-	padding: 8px 10px;
-	border-radius: var(--pc-radius-sm);
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--pc-text-muted);
+  background: var(--pc-surface-2);
+  padding: 8px 10px;
+  border-radius: var(--pc-radius-sm);
 `;
 
 const BuyerNoteBox = styled.div`
-	display: grid;
-	gap: 4px;
-	font-size: 13px;
-	color: var(--pc-text);
-	background: var(--pc-surface-2);
-	padding: 9px 10px;
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--pc-text);
+  background: var(--pc-surface-2);
+  padding: 9px 10px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+`;
+
+const LateNotice = styled.div`
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(229, 72, 77, 0.34);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-color-danger-50);
+  color: var(--pc-color-danger-ink);
+`;
+
+const ExceptionNotice = styled.div<{ $danger?: boolean }>`
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid
+    ${(p) =>
+		p.$danger ? "rgba(229, 72, 77, 0.34)" : "rgba(214, 143, 0, 0.42)"};
+  border-radius: var(--pc-radius-sm);
+  background: ${(p) =>
+		p.$danger ? "var(--pc-color-danger-50)" : "var(--pc-color-gold-50)"};
+  color: ${(p) =>
+		p.$danger ? "var(--pc-color-danger-ink)" : "var(--pc-color-gold-ink)"};
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: var(--pc-space-4);
+  background: rgba(20, 16, 12, 0.62);
+
+  @media (max-width: 640px) {
+    align-items: end;
+    padding: 0;
+  }
+`;
+
+const LateSheet = styled.div`
+  width: min(100%, 460px);
+  max-height: min(86dvh, 620px);
+  overflow: auto;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-lg);
+  background: var(--pc-surface);
+  box-shadow: var(--pc-shadow-lg);
+  padding: var(--pc-space-5);
+
+  @media (max-width: 640px) {
+    width: 100%;
+    border-radius: 22px 22px 0 0;
+    padding: var(--pc-space-4);
+  }
+`;
+
+const HandoverSheet = styled(LateSheet)`
+  width: min(100%, 520px);
+`;
+
+const Segmented = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+
+  @media (max-width: 420px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const CameraPreview = styled.video`
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--pc-radius-sm);
+  background: #000;
+  object-fit: cover;
+`;
+
+const ModalActions = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  @media (max-width: 420px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
 const ContactBox = styled.div`
-	display: grid;
-	gap: 8px;
-	font-size: 13px;
-	color: var(--pc-text);
-	background: var(--pc-surface-2);
-	padding: 10px;
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	overflow-wrap: anywhere;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--pc-text);
+  background: var(--pc-surface-2);
+  padding: 9px 10px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+`;
+
+const ContactLinks = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const ContactLink = styled.a`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: var(--pc-radius-sm);
+  border: 1px solid var(--pc-border);
+  color: var(--pc-text);
+  font-weight: 800;
+  text-decoration: none;
 `;
 
 const LaneEmpty = styled.div`
-	text-align: center;
-	font-size: 13px;
-	color: var(--pc-text-faint);
-	padding: var(--pc-space-4) var(--pc-space-2);
-	border: 1.5px dashed var(--pc-border);
-	border-radius: var(--pc-radius-sm);
+  text-align: center;
+  font-size: 13px;
+  color: var(--pc-text-faint);
+  padding: var(--pc-space-4) var(--pc-space-2);
+  border: 1.5px dashed var(--pc-border);
+  border-radius: var(--pc-radius-sm);
 `;
 const HistoryPanel = styled(Card)`
-	padding: var(--pc-space-4);
+  padding: var(--pc-space-4);
 `;
 const FilterRow = styled.div`
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 `;
 const FilterButton = styled.button<{ $active: boolean }>`
-	border: 1px solid
-		${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
-	background: ${(p) =>
+  border: 1px solid
+    ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  background: ${(p) =>
 		p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface-2)"};
-	color: ${(p) =>
+  color: ${(p) =>
 		p.$active ? "var(--pc-color-primary)" : "var(--pc-text-muted)"};
-	border-radius: 999px;
-	padding: 7px 12px;
-	font-size: 13px;
-	font-weight: 800;
-	cursor: pointer;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
 `;
 const HistoryList = styled.div`
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: var(--pc-space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--pc-space-3);
 `;
 
 function statusTone(
@@ -330,6 +504,7 @@ function statusTone(
 		case "REFUND_PENDING":
 		case "REFUND_PROCESSING":
 		case "AWAITING_BUYER_NO_SHOW_RESPONSE":
+		case "PICKUP_PROBLEM_REPORTED":
 			return "warning";
 		case "ACCEPTED":
 		case "COOKING":
@@ -346,9 +521,10 @@ function statusTone(
 		case "VENDOR_REJECTED":
 		case "EXPIRED_VENDOR_NO_RESPONSE":
 		case "REFUND_FAILED":
-		case "COMPLETED_BUYER_NO_SHOW":
 		case "DELIVERY_FAILED":
 			return "danger";
+		case "COMPLETED_BUYER_NO_SHOW":
+			return "success";
 		default:
 			return "primary";
 	}
@@ -413,6 +589,21 @@ function actionIcon(status: OrderStatus) {
 	}
 }
 
+function deliveryAddress(order: PipelineOrder) {
+	return (
+		order.deliveryFullAddress ||
+		[
+			order.deliveryHostelName,
+			order.deliveryRoomNumber,
+			order.deliveryAdditionalInfo,
+			order.deliveryPhoneNumber,
+		]
+			.filter(Boolean)
+			.join(", ") ||
+		"No address"
+	);
+}
+
 function completedAt(order: PipelineOrder) {
 	return (
 		order.confirmedAt ??
@@ -441,37 +632,66 @@ function completedOrderMatchesFilter(
 	return time >= now - 7 * 24 * 60 * 60 * 1000;
 }
 
-function canRevealBuyerContact(order: PipelineOrder) {
-	return (
-		order.fulfillmentType === "DELIVERY" &&
-		[
-			"ACCEPTED",
-			"CONFIRMED",
-			"COOKING",
-			"PREPARING",
-			"READY",
-			"READY_FOR_DELIVERY",
-			"IN_TRANSIT",
-			"BUYER_UNREACHABLE_REPORTED",
-		].includes(order.status)
-	);
+function readyStatusFor(order: PipelineOrder): OrderStatus {
+	return order.fulfillmentType === "DELIVERY"
+		? "READY_FOR_DELIVERY"
+		: "READY_FOR_PICKUP";
+}
+
+function pluralizeOrder(count: number) {
+	return count === 1 ? "order" : "orders";
+}
+
+function fulfillmentQueueLabel(dailyOrder: DailyOrder) {
+	const activeCount = dailyOrder.activeBuyerOrdersCount ?? 0;
+	if (dailyOrder.status === "CLOSED" && activeCount > 0) {
+		return `Closed to new orders · ${activeCount} active ${pluralizeOrder(activeCount)} remaining`;
+	}
+	return null;
 }
 
 export default function PipelineWrapper() {
 	const { toast } = useToast();
 	const { data: dailyOrders, isLoading } = useSWR<DailyOrder[]>(
-		"/daily-orders/my-orders?status=ACTIVE&limit=50",
+		"/daily-orders/my-orders?status=ACTIVE&includeFulfillmentQueue=1&limit=50",
 		fetcher,
 	);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [busyId, setBusyId] = useState<string | null>(null);
+	const [contactBusyId, setContactBusyId] = useState<string | null>(null);
+	const [buyerContacts, setBuyerContacts] = useState<
+		Record<string, BuyerContactReveal>
+	>({});
 	const [now, setNow] = useState(() => Date.now());
 	const [completedFilter, setCompletedFilter] =
 		useState<CompletedFilter>("today");
-	const [contactBusyId, setContactBusyId] = useState<string | null>(null);
-	const [buyerContacts, setBuyerContacts] = useState<
-		Record<string, ContactReveal>
+	const [lateModalOrderId, setLateModalOrderId] = useState<string | null>(
+		null,
+	);
+	const [messageOrderId, setMessageOrderId] = useState<string | null>(null);
+	const [handoverOrder, setHandoverOrder] = useState<PipelineOrder | null>(
+		null,
+	);
+	const [handoverMode, setHandoverMode] = useState<"QR" | "PIN" | "PASTE">(
+		"QR",
+	);
+	const [handoverCode, setHandoverCode] = useState("");
+	const [handoverStatus, setHandoverStatus] = useState<
+		"idle" | "scanning" | "loading" | "success" | "error"
+	>("idle");
+	const [handoverError, setHandoverError] = useState<string | null>(null);
+	const videoRef = useRef<HTMLVideoElement | null>(null);
+	const streamRef = useRef<MediaStream | null>(null);
+	const [estimateByOrder, setEstimateByOrder] = useState<
+		Record<string, string>
 	>({});
+	const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
+	const [reasonError, setReasonError] = useState<string | null>(null);
+	const { data: conversations } = useSWR<OrderConversation[]>(
+		"/order-conversations?limit=100",
+		fetcher,
+		{ refreshInterval: 15_000 },
+	);
 
 	useEffect(() => {
 		const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -480,6 +700,11 @@ export default function PipelineWrapper() {
 
 	const active = dailyOrders ?? [];
 	const currentId = selectedId ?? active[0]?.id ?? null;
+	const currentDailyOrder =
+		active.find((dailyOrder) => dailyOrder.id === currentId) ?? null;
+	const currentFulfillmentLabel = currentDailyOrder
+		? fulfillmentQueueLabel(currentDailyOrder)
+		: null;
 
 	const {
 		data: orders,
@@ -490,6 +715,22 @@ export default function PipelineWrapper() {
 		fetcher,
 		{ refreshInterval: 15_000 },
 	);
+	const list = orders ?? [];
+	const lateModalOrder =
+		list.find((order) => order.id === lateModalOrderId) ?? null;
+
+	useEffect(() => {
+		if (lateModalOrderId || list.length === 0) return;
+		const nextLate = list.find(
+			(order) =>
+				!!order.lateMarkedAt &&
+				!order.handoverCredentialUsedAt &&
+				canMessageBuyer(order) &&
+				COLUMNS.some((column) => orderBelongsInColumn(order, column)) &&
+				!hasLateOrderAck("vendor", order.id),
+		);
+		if (nextLate) setLateModalOrderId(nextLate.id);
+	}, [lateModalOrderId, list]);
 
 	async function advance(order: PipelineOrder) {
 		const next = actionForOrder(order);
@@ -515,90 +756,223 @@ export default function PipelineWrapper() {
 		}
 	}
 
-	async function reject(order: PipelineOrder) {
-		setBusyId(order.id);
-		try {
-			await api.patch(`/vendor/orders/${order.id}/status`, {
-				status: "VENDOR_REJECTED",
-			});
-			toast("Order rejected. Refund started.", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-				globalMutate(`/orders/${order.id}`),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
-	async function confirmHandover(order: PipelineOrder, method: "QR" | "PIN") {
-		const label = method === "QR" ? "buyer QR code" : "buyer PIN";
-		const code = window.prompt(
-			method === "QR"
-				? `Scan or paste the ${label} for ${order.orderNumber}:`
-				: `Enter the ${label} for ${order.orderNumber}:`,
-		);
-		if (!code?.trim()) return;
-		setBusyId(order.id);
-		try {
-			await api.post(`/vendor/orders/${order.id}/confirm-handover`, {
-				method,
-				code: code.trim(),
-			});
-			toast("Handover confirmed.", "success");
-			await Promise.all([
-				mutate(),
-				globalMutate("/vendor/orders/incoming"),
-				globalMutate(`/orders/${order.id}`),
-			]);
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusyId(null);
-		}
-	}
-
-	function openContactUrl(url?: string) {
-		if (!url || typeof window === "undefined") return false;
-		window.location.href = url;
-		return true;
-	}
-
-	async function revealBuyerContact(
+	function openReasonAction(
+		kind: ReasonAction["kind"],
 		order: PipelineOrder,
-		intent: "call" | "whatsapp" | "reveal" = "call",
 	) {
-		setContactBusyId(order.id);
+		setReasonError(null);
+		setReasonAction({ kind, order });
+	}
+
+	async function submitReasonAction(payload: OrderReasonPayload) {
+		if (!reasonAction) return;
+		const { kind, order } = reasonAction;
+		setBusyId(order.id);
+		setReasonError(null);
 		try {
-			const res = await api.get<{
-				data: ContactReveal;
-			}>(`/vendor/orders/${order.id}/contact/buyer`);
-			const contact = res.data.data;
-			setBuyerContacts((current) => ({
-				...current,
-				[order.id]: contact,
-			}));
-			const opened =
-				intent === "whatsapp"
-					? openContactUrl(contact.whatsappUrl)
-					: intent === "call"
-						? openContactUrl(contact.telUrl)
-						: false;
-			if (!opened) {
+			if (kind === "reject") {
+				await api.patch(`/vendor/orders/${order.id}/status`, {
+					status: "VENDOR_REJECTED",
+					reason: payload.reason,
+					reasonCode: payload.reasonCode,
+					explanation: payload.explanation,
+				});
+				toast("Order rejected. Refund started.", "success");
+			} else {
+				await api.post(`/vendor/orders/${order.id}/cancel`, {
+					reason: payload.reason,
+					reasonCode: payload.reasonCode,
+					explanation: payload.explanation,
+				});
 				toast(
-					"Buyer contact unlocked for this active order.",
+					"Order cancellation sent. Refund handling has started.",
 					"success",
 				);
+				dismissLateModal(order);
 			}
+			setReasonAction(null);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			const message = errMsg(e);
+			setReasonError(message);
+			toast(message, "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function revealBuyerContact(order: PipelineOrder) {
+		setContactBusyId(order.id);
+		try {
+			const data = await apiData<BuyerContactReveal>(
+				api.post(`/vendor/orders/${order.id}/contact/buyer`),
+			);
+			setBuyerContacts((current) => ({ ...current, [order.id]: data }));
 		} catch (e) {
 			toast(errMsg(e), "error");
 		} finally {
 			setContactBusyId(null);
 		}
 	}
+
+	async function reportPickupNoShow(order: PipelineOrder) {
+		setBusyId(order.id);
+		try {
+			await api.post(`/vendor/orders/${order.id}/pickup-no-show`, {});
+			toast(
+				"Buyer no-show reported. The buyer has 15 minutes to respond.",
+				"success",
+			);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	const stopScanner = useCallback(() => {
+		streamRef.current?.getTracks().forEach((track) => {
+			track.stop();
+		});
+		streamRef.current = null;
+		if (videoRef.current) videoRef.current.srcObject = null;
+	}, []);
+
+	function openHandover(order: PipelineOrder, mode: "QR" | "PIN" | "PASTE") {
+		setHandoverOrder(order);
+		setHandoverMode(mode);
+		setHandoverCode("");
+		setHandoverError(null);
+		setHandoverStatus("idle");
+	}
+
+	const closeHandover = useCallback(() => {
+		stopScanner();
+		setHandoverOrder(null);
+		setHandoverCode("");
+		setHandoverError(null);
+		setHandoverStatus("idle");
+	}, [stopScanner]);
+
+	const submitHandover = useCallback(
+		async (order: PipelineOrder, method: "QR" | "PIN", code: string) => {
+			const trimmed = code.trim();
+			if (!trimmed) {
+				setHandoverError(
+					method === "PIN"
+						? "Enter the buyer PIN."
+						: "Scan or paste the buyer QR value.",
+				);
+				setHandoverStatus("error");
+				return;
+			}
+			setBusyId(order.id);
+			setHandoverStatus("loading");
+			setHandoverError(null);
+			try {
+				await api.post(`/vendor/orders/${order.id}/confirm-handover`, {
+					method,
+					code: trimmed,
+				});
+				setHandoverStatus("success");
+				toast("Handover confirmed.", "success");
+				closeHandover();
+				await Promise.all([
+					mutate(),
+					globalMutate("/vendor/orders/incoming"),
+					globalMutate(`/orders/${order.id}`),
+				]);
+			} catch (e) {
+				const message = errMsg(e);
+				setHandoverStatus("error");
+				setHandoverError(message);
+				toast(message, "error");
+			} finally {
+				setBusyId(null);
+			}
+		},
+		[closeHandover, mutate, toast],
+	);
+
+	useEffect(() => {
+		if (!handoverOrder || handoverMode !== "QR") {
+			stopScanner();
+			return;
+		}
+		const order = handoverOrder;
+		let cancelled = false;
+		let timer: number | undefined;
+		async function scan() {
+			const BarcodeDetectorCtor = (
+				window as unknown as {
+					BarcodeDetector?: new (options?: {
+						formats?: string[];
+					}) => {
+						detect: (
+							video: HTMLVideoElement,
+						) => Promise<Array<{ rawValue?: string }>>;
+					};
+				}
+			).BarcodeDetector;
+			if (!BarcodeDetectorCtor || !navigator.mediaDevices?.getUserMedia) {
+				setHandoverStatus("error");
+				setHandoverError(
+					"Camera scanning is not available on this device. Enter PIN or paste the QR value instead.",
+				);
+				return;
+			}
+			try {
+				setHandoverStatus("scanning");
+				const stream = await navigator.mediaDevices.getUserMedia({
+					video: { facingMode: "environment" },
+				});
+				if (cancelled) {
+					stream.getTracks().forEach((track) => {
+						track.stop();
+					});
+					return;
+				}
+				streamRef.current = stream;
+				if (videoRef.current) {
+					videoRef.current.srcObject = stream;
+					await videoRef.current.play();
+				}
+				const detector = new BarcodeDetectorCtor({
+					formats: ["qr_code"],
+				});
+				const tick = async () => {
+					if (cancelled || !videoRef.current) return;
+					const [result] = await detector.detect(videoRef.current);
+					if (result?.rawValue) {
+						await submitHandover(order, "QR", result.rawValue);
+						return;
+					}
+					timer = window.setTimeout(tick, 350);
+				};
+				timer = window.setTimeout(tick, 350);
+			} catch {
+				setHandoverStatus("error");
+				setHandoverError(
+					"Could not open the camera. Enter PIN or paste the QR value instead.",
+				);
+			}
+		}
+		scan();
+		return () => {
+			cancelled = true;
+			if (timer) window.clearTimeout(timer);
+			stopScanner();
+		};
+	}, [handoverOrder, handoverMode, stopScanner, submitHandover]);
 
 	if (isLoading) return <PageLoader />;
 
@@ -623,9 +997,8 @@ export default function PipelineWrapper() {
 		);
 	}
 
-	const list = orders ?? [];
-	const completedOrders = list.filter(
-		(order) => order.status === "COMPLETED",
+	const completedOrders = list.filter((order) =>
+		isVendorPipelineCompletedStatus(order.status),
 	);
 	const filteredCompletedOrders = completedOrders
 		.filter((order) =>
@@ -638,10 +1011,424 @@ export default function PipelineWrapper() {
 	const liveCount = list.filter((order) =>
 		COLUMNS.some((column) => orderBelongsInColumn(order, column)),
 	).length;
+	const unreadByOrder = new Map(
+		(conversations ?? []).map((conversation) => [
+			conversation.orderId,
+			conversation.unreadCount,
+		]),
+	);
+
+	function dismissLateModal(order: PipelineOrder) {
+		rememberLateOrderAck("vendor", order.id);
+		setLateModalOrderId(null);
+	}
+
+	function openBuyerMessages(order: PipelineOrder) {
+		if (!canMessageBuyer(order)) {
+			toast(ORDER_CHAT_NOT_OPEN_MESSAGE, "error");
+			return;
+		}
+		setMessageOrderId(order.id);
+		dismissLateModal(order);
+	}
+
+	async function markReady(order: PipelineOrder) {
+		setBusyId(order.id);
+		try {
+			const intermediateStatuses: OrderStatus[] =
+				order.status === "ACCEPTED"
+					? ["COOKING"]
+					: order.status === "CONFIRMED"
+						? ["PREPARING"]
+						: [];
+			for (const status of intermediateStatuses) {
+				await api.patch(`/vendor/orders/${order.id}/status`, {
+					status,
+				});
+			}
+			await api.patch(`/vendor/orders/${order.id}/status`, {
+				status: readyStatusFor(order),
+			});
+			toast("Order marked ready.", "success");
+			dismissLateModal(order);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function reviseEstimate(order: PipelineOrder) {
+		const revisedPrepMin = Number(estimateByOrder[order.id] ?? "");
+		if (!Number.isInteger(revisedPrepMin) || revisedPrepMin < 5) {
+			toast("Enter at least 5 minutes.", "error");
+			return;
+		}
+		setBusyId(order.id);
+		try {
+			await api.patch(`/vendor/orders/${order.id}/ready-estimate`, {
+				revisedPrepMin,
+			});
+			toast("Ready time updated.", "success");
+			setEstimateByOrder((current) => ({ ...current, [order.id]: "" }));
+			dismissLateModal(order);
+			await Promise.all([
+				mutate(),
+				globalMutate("/vendor/orders/incoming"),
+				globalMutate(`/orders/${order.id}`),
+			]);
+		} catch (e) {
+			toast(errMsg(e), "error");
+		} finally {
+			setBusyId(null);
+		}
+	}
+
+	async function reportUnableToComplete(order: PipelineOrder) {
+		openReasonAction("unable", order);
+	}
 
 	return (
 		<FadeIn>
 			<PipelineShell>
+				<OrderReasonModal
+					open={!!reasonAction}
+					title={
+						reasonAction?.kind === "reject"
+							? "Reject order"
+							: "Unable to complete"
+					}
+					description={
+						reasonAction?.kind === "reject"
+							? `Choose why you cannot accept order ${reasonAction.order.orderNumber}.`
+							: `Choose why order ${reasonAction?.order.orderNumber ?? ""} cannot be completed.`
+					}
+					consequence={
+						reasonAction?.kind === "reject"
+							? "The buyer will be told the kitchen rejected the order and refund handling will start."
+							: "The buyer will be told the kitchen cancelled the order and refund handling will start."
+					}
+					confirmLabel={
+						reasonAction?.kind === "reject"
+							? "Reject order"
+							: "Confirm cancellation"
+					}
+					options={
+						reasonAction?.kind === "reject"
+							? VENDOR_REJECT_REASON_OPTIONS
+							: VENDOR_UNABLE_REASON_OPTIONS
+					}
+					loading={!!reasonAction && busyId === reasonAction.order.id}
+					error={reasonError}
+					onCancel={() => {
+						if (busyId) return;
+						setReasonAction(null);
+						setReasonError(null);
+					}}
+					onConfirm={submitReasonAction}
+				/>
+				{lateModalOrder && (
+					<ModalOverlay
+						role="presentation"
+						onClick={() => dismissLateModal(lateModalOrder)}
+					>
+						<LateSheet
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="vendor-late-order-title"
+							onClick={(event) => event.stopPropagation()}
+						>
+							<Stack $gap={14}>
+								<Stack $gap={6}>
+									<Badge $tone="danger">Running late</Badge>
+									<Text
+										id="vendor-late-order-title"
+										$weight={900}
+										$size={22}
+									>
+										Expected ready time has passed
+									</Text>
+									<Text $muted>
+										Order #{lateModalOrder.orderNumber} is
+										now late. Let the buyer know what is
+										happening by marking it ready, adding a
+										revised estimate, or reporting that you
+										cannot complete it.
+									</Text>
+								</Stack>
+								{lateModalOrder.expectedReadyAt && (
+									<Text $muted $size={13}>
+										Expected ready:{" "}
+										{new Date(
+											lateModalOrder.expectedReadyAt,
+										).toLocaleString()}
+									</Text>
+								)}
+								<Stack $gap={8}>
+									<Row $gap={8} $align="end" $wrap>
+										<div style={{ flex: "1 1 180px" }}>
+											<Select
+												value={
+													estimateByOrder[
+														lateModalOrder.id
+													] ?? ""
+												}
+												onChange={(event) =>
+													setEstimateByOrder(
+														(current) => ({
+															...current,
+															[lateModalOrder.id]:
+																event.target
+																	.value,
+														}),
+													)
+												}
+												aria-label="Revised ready estimate"
+											>
+												<option value="">
+													Choose extra time
+												</option>
+												<option value="5">
+													5 minutes
+												</option>
+												<option value="10">
+													10 minutes
+												</option>
+												<option value="15">
+													15 minutes
+												</option>
+												<option value="20">
+													20 minutes
+												</option>
+												<option value="30">
+													30 minutes
+												</option>
+											</Select>
+										</div>
+										<Button
+											$variant="secondary"
+											$loading={
+												busyId === lateModalOrder.id
+											}
+											onClick={() =>
+												reviseEstimate(lateModalOrder)
+											}
+										>
+											Add estimate
+										</Button>
+									</Row>
+									<ModalActions>
+										<Button
+											$loading={
+												busyId === lateModalOrder.id
+											}
+											onClick={() =>
+												markReady(lateModalOrder)
+											}
+										>
+											Mark ready
+										</Button>
+										<Button
+											$variant="danger"
+											$loading={
+												busyId === lateModalOrder.id
+											}
+											onClick={() =>
+												reportUnableToComplete(
+													lateModalOrder,
+												)
+											}
+										>
+											Unable to complete
+										</Button>
+									</ModalActions>
+									<Button
+										$variant="secondary"
+										onClick={() =>
+											openBuyerMessages(lateModalOrder)
+										}
+									>
+										<FiMessageCircle
+											size={14}
+											aria-hidden
+										/>{" "}
+										Message buyer
+									</Button>
+									<Button
+										$variant="ghost"
+										onClick={() =>
+											dismissLateModal(lateModalOrder)
+										}
+									>
+										Dismiss
+									</Button>
+								</Stack>
+							</Stack>
+						</LateSheet>
+					</ModalOverlay>
+				)}
+				{handoverOrder && (
+					<ModalOverlay role="presentation" onClick={closeHandover}>
+						<HandoverSheet
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="handover-title"
+							onClick={(event) => event.stopPropagation()}
+						>
+							<Stack $gap={14}>
+								<Stack $gap={6}>
+									<Badge $tone="primary">
+										Confirm handover
+									</Badge>
+									<Text
+										id="handover-title"
+										$weight={900}
+										$size={22}
+									>
+										Order #{handoverOrder.orderNumber}
+									</Text>
+									<Text $muted>
+										Scan the buyer's Prechop QR code, enter
+										the PIN instead, or paste the QR value
+										if scanning is unavailable.
+									</Text>
+								</Stack>
+								<Segmented>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "QR"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("QR")}
+									>
+										<FiCamera size={14} aria-hidden /> Scan
+										QR code
+									</Button>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "PIN"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("PIN")}
+									>
+										<FiHash size={14} aria-hidden /> Enter
+										PIN instead
+									</Button>
+									<Button
+										type="button"
+										$variant={
+											handoverMode === "PASTE"
+												? "primary"
+												: "secondary"
+										}
+										onClick={() => setHandoverMode("PASTE")}
+									>
+										Paste QR value
+									</Button>
+								</Segmented>
+								{handoverMode === "QR" ? (
+									<Stack $gap={8}>
+										<CameraPreview
+											ref={videoRef}
+											muted
+											playsInline
+										/>
+										<Text $muted $size={13}>
+											{handoverStatus === "scanning"
+												? "Looking for a Prechop QR code..."
+												: "Camera scanning starts automatically when supported."}
+										</Text>
+									</Stack>
+								) : (
+									<Input
+										label={
+											handoverMode === "PIN"
+												? "Buyer PIN"
+												: "QR value"
+										}
+										type={
+											handoverMode === "PIN"
+												? "tel"
+												: "text"
+										}
+										inputMode={
+											handoverMode === "PIN"
+												? "numeric"
+												: "text"
+										}
+										pattern={
+											handoverMode === "PIN"
+												? "[0-9]*"
+												: undefined
+										}
+										maxLength={
+											handoverMode === "PIN" ? 6 : 256
+										}
+										value={handoverCode}
+										onChange={(event) =>
+											setHandoverCode(
+												handoverMode === "PIN"
+													? event.target.value.replace(
+															/\D/g,
+															"",
+														)
+													: event.target.value,
+											)
+										}
+										error={handoverError}
+									/>
+								)}
+								{handoverMode === "QR" && handoverError && (
+									<Text $size={13} $weight={800}>
+										{handoverError}
+									</Text>
+								)}
+								{handoverStatus === "success" && (
+									<Badge $tone="success">
+										Handover confirmed
+									</Badge>
+								)}
+								<ModalActions>
+									<Button
+										type="button"
+										$loading={
+											busyId === handoverOrder.id ||
+											handoverStatus === "loading"
+										}
+										onClick={() =>
+											submitHandover(
+												handoverOrder,
+												handoverMode === "PIN"
+													? "PIN"
+													: "QR",
+												handoverCode,
+											)
+										}
+										disabled={handoverMode === "QR"}
+									>
+										Confirm handover
+									</Button>
+									<Button
+										type="button"
+										$variant="secondary"
+										onClick={closeHandover}
+									>
+										Cancel
+									</Button>
+								</ModalActions>
+							</Stack>
+						</HandoverSheet>
+					</ModalOverlay>
+				)}
 				<Stack $gap={20}>
 					<PageHeader
 						eyebrow="Live kitchen"
@@ -664,11 +1451,16 @@ export default function PipelineWrapper() {
 						{active.map((dailyOrder) => (
 							<option key={dailyOrder.id} value={dailyOrder.id}>
 								{dailyOrder.title} -{" "}
-								{dailyOrder.totalOrdersCount} order
-								{dailyOrder.totalOrdersCount === 1 ? "" : "s"}
+								{fulfillmentQueueLabel(dailyOrder) ??
+									`${dailyOrder.totalOrdersCount} ${pluralizeOrder(
+										dailyOrder.totalOrdersCount,
+									)}`}
 							</option>
 						))}
 					</Select>
+					{currentFulfillmentLabel && (
+						<Badge $tone="warning">{currentFulfillmentLabel}</Badge>
+					)}
 
 					{ordersLoading ? (
 						<Board>
@@ -751,13 +1543,57 @@ export default function PipelineWrapper() {
 														order.fulfillmentType,
 														order.handoverCredentialUsedAt,
 													);
+												const noShowAvailability =
+													pickupNoShowAvailability(
+														order.status,
+														order.fulfillmentType,
+														order.readyAt,
+														now,
+													);
+												const noShowResponseWindow =
+													pickupNoShowResponseWindow(
+														order.pickupBuyerResponseDeadline,
+														now,
+													);
 												const countdown =
 													acceptanceCountdown(
 														order.acceptanceDeadline,
 														now,
 													);
+												const acceptanceOverdue =
+													order.status ===
+														"AWAITING_VENDOR_ACCEPTANCE" &&
+													!!order.acceptanceDeadline &&
+													new Date(
+														order.acceptanceDeadline,
+													).getTime() <= now;
 												const buyerContact =
 													buyerContacts[order.id];
+												const checkoutNote =
+													buyerContact?.checkoutNote ??
+													order.customerMessage;
+												const checkoutNoteLabel =
+													order.fulfillmentType ===
+													"DELIVERY"
+														? "Delivery instructions"
+														: "Checkout note";
+												const showCheckoutNote =
+													order.fulfillmentType !==
+														"DELIVERY" ||
+													!!buyerContact;
+												const redactedAddress =
+													order.status ===
+													"AWAITING_VENDOR_ACCEPTANCE"
+														? "Accept order to view delivery address"
+														: "Reveal buyer details to view address";
+												const cardAddress =
+													buyerContact?.address ||
+													(deliveryAddress(order) ===
+													"No address"
+														? redactedAddress
+														: deliveryAddress(
+																order,
+															));
 
 												return (
 													<OrderCard key={order.id}>
@@ -824,6 +1660,106 @@ export default function PipelineWrapper() {
 																				}
 																			</Countdown>
 																		)}
+																	{order.lateMarkedAt && (
+																		<LateNotice>
+																			<Text
+																				$size={
+																					12
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				Running
+																				late
+																			</Text>
+																			<Text
+																				$size={
+																					12
+																				}
+																			>
+																				Add
+																				a
+																				revised
+																				estimate
+																				or
+																				mark
+																				this
+																				order
+																				ready.
+																			</Text>
+																		</LateNotice>
+																	)}
+																	{order.status ===
+																		"AWAITING_BUYER_NO_SHOW_RESPONSE" && (
+																		<ExceptionNotice>
+																			<Text
+																				$size={
+																					12
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				Buyer
+																				response
+																				pending
+																			</Text>
+																			<Text
+																				$size={
+																					12
+																				}
+																			>
+																				{
+																					noShowResponseWindow.countdown
+																				}
+																			</Text>
+																		</ExceptionNotice>
+																	)}
+																	{order.status ===
+																		"PICKUP_PROBLEM_REPORTED" && (
+																		<ExceptionNotice
+																			$danger
+																		>
+																			<Text
+																				$size={
+																					12
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				Buyer
+																				reported
+																				a
+																				pickup
+																				problem
+																			</Text>
+																			<Text
+																				$size={
+																					12
+																				}
+																			>
+																				Prechop
+																				support
+																				will
+																				review
+																				this
+																				order.
+																			</Text>
+																		</ExceptionNotice>
+																	)}
+																	{(unreadByOrder.get(
+																		order.id,
+																	) ?? 0) >
+																		0 && (
+																		<Badge $tone="primary">
+																			{unreadByOrder.get(
+																				order.id,
+																			)}{" "}
+																			unread
+																		</Badge>
+																	)}
 																</Stack>
 																<Text
 																	$weight={
@@ -875,43 +1811,95 @@ export default function PipelineWrapper() {
 																					item.snapshotName
 																				}
 																			</Text>
+																			{item.selectedVariantName && (
+																				<Text
+																					$muted
+																					$size={
+																						12
+																					}
+																				>
+																					{
+																						item.selectedVariantName
+																					}
+																				</Text>
+																			)}
 																		</Row>
 																	),
 																)}
 															</Stack>
 
 															{order.fulfillmentType ===
+																"DELIVERY" && (
+																<AddrLine>
+																	<FiMapPin
+																		size={
+																			14
+																		}
+																		aria-hidden
+																	/>
+																	<span>
+																		{
+																			cardAddress
+																		}
+																	</span>
+																</AddrLine>
+															)}
+
+															{order.fulfillmentType ===
 																"DELIVERY" &&
-																canRevealBuyerContact(
-																	order,
-																) &&
-																(buyerContact ? (
+																buyerContact && (
 																	<ContactBox>
-																		<Text
-																			$size={
-																				12
-																			}
-																			$weight={
-																				800
-																			}
-																		>
-																			Buyer
-																			contact
-																		</Text>
+																		{buyerContact.buyerName && (
+																			<Text
+																				$size={
+																					13
+																				}
+																				$weight={
+																					900
+																				}
+																			>
+																				{
+																					buyerContact.buyerName
+																				}
+																			</Text>
+																		)}
 																		{buyerContact.address && (
-																			<AddrLine>
-																				<FiMapPin
-																					size={
-																						14
-																					}
-																					aria-hidden
-																				/>
-																				<span>
-																					{
-																						buyerContact.address
-																					}
-																				</span>
-																			</AddrLine>
+																			<Text
+																				$size={
+																					13
+																				}
+																			>
+																				Address:{" "}
+																				{
+																					buyerContact.address
+																				}
+																			</Text>
+																		)}
+																		{buyerContact.deliveryRoomNumber && (
+																			<Text
+																				$muted
+																				$size={
+																					12
+																				}
+																			>
+																				Room:{" "}
+																				{
+																					buyerContact.deliveryRoomNumber
+																				}
+																			</Text>
+																		)}
+																		{buyerContact.deliveryAdditionalInfo && (
+																			<Text
+																				$muted
+																				$size={
+																					12
+																				}
+																			>
+																				Landmark:{" "}
+																				{
+																					buyerContact.deliveryAdditionalInfo
+																				}
+																			</Text>
 																		)}
 																		{buyerContact.phone && (
 																			<Row
@@ -919,6 +1907,7 @@ export default function PipelineWrapper() {
 																					8
 																				}
 																				$align="center"
+																				$wrap
 																			>
 																				<FiPhone
 																					size={
@@ -926,105 +1915,166 @@ export default function PipelineWrapper() {
 																					}
 																					aria-hidden
 																				/>
-																				<a
+																				<Text
+																					$size={
+																						13
+																					}
+																					$weight={
+																						800
+																					}
+																				>
+																					{
+																						buyerContact.phone
+																					}
+																				</Text>
+																			</Row>
+																		)}
+																		<ContactLinks>
+																			{buyerContact.telUrl && (
+																				<ContactLink
 																					href={
 																						buyerContact.telUrl
 																					}
 																				>
-																					Call
-																					buyer
-																				</a>
-																				{buyerContact.whatsappUrl && (
-																					<a
-																						href={
-																							buyerContact.whatsappUrl
+																					<FiPhone
+																						size={
+																							13
 																						}
-																						target="_blank"
-																						rel="noreferrer"
-																					>
-																						WhatsApp
-																					</a>
-																				)}
-																			</Row>
-																		)}
-																		{buyerContact.instructions?.map(
-																			(
-																				instruction,
-																			) => (
-																				<Text
-																					key={
-																						instruction
+																						aria-hidden
+																					/>
+																					Call
+																				</ContactLink>
+																			)}
+																			{buyerContact.whatsappUrl && (
+																				<ContactLink
+																					href={
+																						buyerContact.whatsappUrl
 																					}
-																					$size={
-																						13
-																					}
+																					target="_blank"
+																					rel="noopener noreferrer"
 																				>
-																					{
-																						instruction
-																					}
-																				</Text>
-																			),
+																					WhatsApp
+																				</ContactLink>
+																			)}
+																		</ContactLinks>
+																		{(buyerContact
+																			.instructions
+																			?.length ??
+																			0) >
+																			0 && (
+																			<Text
+																				$muted
+																				$size={
+																					12
+																				}
+																			>
+																				{buyerContact.instructions?.join(
+																					" ",
+																				)}
+																			</Text>
 																		)}
 																	</ContactBox>
-																) : (
-																	<Button
-																		$size="sm"
-																		$variant="secondary"
-																		$loading={
-																			contactBusyId ===
-																			order.id
+																)}
+
+															{showCheckoutNote && (
+																<BuyerNoteBox>
+																	<Text
+																		$size={
+																			12
 																		}
-																		onClick={() =>
-																			revealBuyerContact(
-																				order,
-																			)
+																		$weight={
+																			800
 																		}
 																	>
-																		<FiPhone
-																			size={
-																				14
-																			}
-																			aria-hidden
-																		/>{" "}
-																		Call
-																		buyer
-																	</Button>
-																))}
-
-															{order.fulfillmentType !==
-																"DELIVERY" &&
-																order.customerMessage && (
-																	<BuyerNoteBox>
-																		<Text
-																			$size={
-																				12
-																			}
-																			$weight={
-																				800
-																			}
-																		>
-																			Buyer
-																			note
-																		</Text>
-																		<Text
-																			$size={
-																				13
-																			}
-																		>
-																			{
-																				order.customerMessage
-																			}
-																		</Text>
-																	</BuyerNoteBox>
-																)}
+																		{
+																			checkoutNoteLabel
+																		}
+																	</Text>
+																	<Text
+																		$muted={
+																			!checkoutNote
+																		}
+																		$size={
+																			13
+																		}
+																	>
+																		{checkoutNote ||
+																			"No delivery instructions provided"}
+																	</Text>
+																</BuyerNoteBox>
+															)}
 
 															<Row
 																$gap={10}
 																$justify="flex-end"
 																$align="center"
+																$wrap
 															>
+																<Button
+																	$size="sm"
+																	$variant="secondary"
+																	disabled={
+																		!canMessageBuyer(
+																			order,
+																		)
+																	}
+																	title={
+																		canMessageBuyer(
+																			order,
+																		)
+																			? "Message buyer"
+																			: ORDER_CHAT_NOT_OPEN_MESSAGE
+																	}
+																	onClick={() =>
+																		setMessageOrderId(
+																			messageOrderId ===
+																				order.id
+																				? null
+																				: order.id,
+																		)
+																	}
+																>
+																	<FiMessageCircle
+																		size={
+																			14
+																		}
+																		aria-hidden
+																	/>{" "}
+																	Message
+																	buyer
+																</Button>
+																{order.fulfillmentType ===
+																	"DELIVERY" &&
+																	!buyerContact &&
+																	order.status !==
+																		"AWAITING_VENDOR_ACCEPTANCE" && (
+																		<Button
+																			$size="sm"
+																			$variant="secondary"
+																			$loading={
+																				contactBusyId ===
+																				order.id
+																			}
+																			onClick={() =>
+																				revealBuyerContact(
+																					order,
+																				)
+																			}
+																		>
+																			<FiPhone
+																				size={
+																					14
+																				}
+																				aria-hidden
+																			/>{" "}
+																			Show
+																			buyer
+																			details
+																		</Button>
+																	)}
 																{order.status ===
-																"AWAITING_VENDOR_ACCEPTANCE" ? (
+																	"AWAITING_VENDOR_ACCEPTANCE" &&
+																!acceptanceOverdue ? (
 																	<>
 																		<Button
 																			$size="sm"
@@ -1055,7 +2105,8 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				reject(
+																				openReasonAction(
+																					"reject",
 																					order,
 																				)
 																			}
@@ -1079,7 +2130,7 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				confirmHandover(
+																				openHandover(
 																					order,
 																					"QR",
 																				)
@@ -1103,7 +2154,7 @@ export default function PipelineWrapper() {
 																				order.id
 																			}
 																			onClick={() =>
-																				confirmHandover(
+																				openHandover(
 																					order,
 																					"PIN",
 																				)
@@ -1119,6 +2170,34 @@ export default function PipelineWrapper() {
 																			buyer
 																			PIN
 																		</Button>
+																		{noShowAvailability && (
+																			<Button
+																				$size="sm"
+																				$variant="danger"
+																				$loading={
+																					busyId ===
+																					order.id
+																				}
+																				disabled={
+																					!noShowAvailability.available
+																				}
+																				title={
+																					noShowAvailability.available
+																						? "Report buyer no-show"
+																						: `Available after ${PICKUP_NO_SHOW_WAIT_MINUTES} min.`
+																				}
+																				onClick={() =>
+																					reportPickupNoShow(
+																						order,
+																					)
+																				}
+																				aria-label={`Report buyer no-show for order ${order.orderNumber}`}
+																			>
+																				{noShowAvailability.available
+																					? "Buyer no-show"
+																					: `Available after ${PICKUP_NO_SHOW_WAIT_MINUTES} min.`}
+																			</Button>
+																		)}
 																	</>
 																) : next &&
 																	NextIcon ? (
@@ -1146,6 +2225,16 @@ export default function PipelineWrapper() {
 																	</Button>
 																) : null}
 															</Row>
+															{messageOrderId ===
+																order.id && (
+																<OrderConversationPanel
+																	orderId={
+																		order.id
+																	}
+																	title="Message buyer"
+																	autoFocus
+																/>
+															)}
 														</Stack>
 													</OrderCard>
 												);
@@ -1235,12 +2324,18 @@ export default function PipelineWrapper() {
 																)}
 															</Text>
 														</Row>
-														<Badge $tone="success">
+														<Badge
+															$tone={statusTone(
+																order.status,
+															)}
+														>
 															<FiCheckCircle
 																size={14}
 																aria-hidden
 															/>{" "}
-															Completed
+															{statusLabel(
+																order.status,
+															)}
 														</Badge>
 														<Text $muted $size={13}>
 															{order.items

@@ -2,6 +2,7 @@ import {
 	APP_URL,
 	ErrPaymentVerification,
 	hash,
+	reservationExpired,
 	validationError,
 } from "../../constants";
 import {
@@ -15,10 +16,13 @@ import {
 	markPaymentExpiredDB,
 	markPaymentExternalInitializedDB,
 	OrderStatus,
+	PaymentSettlementMode,
 	PaymentStatus,
+	paymentSettlementModeOf,
 } from "../../models";
 import { paystackProvider } from "../../providers";
 import { releaseSlots } from "../buyerOrders/slots";
+import { getSiteConfigs } from "../siteConfigs";
 import { ensureReceiptUrl } from "./receipts";
 
 export interface ExternalPaymentSummary {
@@ -111,6 +115,7 @@ async function expireIfNeeded(
 			dailyOrderItemId: item.dailyOrderItemId.toString(),
 			quantity: item.quantity,
 		})),
+		order._id.toString(),
 	);
 	return {
 		...input,
@@ -183,19 +188,44 @@ export async function initializeExternalPayment({
 		});
 		throw validationError("This payment link is no longer valid.");
 	}
+	if (await pendingReservationExpired(input.payment.createdAt)) {
+		await markPaymentExpiredDB({
+			buyerOrderId: input.order._id.toString(),
+		});
+		await markBuyerOrderCancelledDB({
+			id: input.order._id.toString(),
+			reason: "Checkout reservation expired before payment started.",
+			reasonCode: "RESERVATION_EXPIRED",
+			cancelledBy: "system",
+			fromStatuses: [OrderStatus.AWAITING_EXTERNAL_PAYMENT],
+		});
+		await releaseSlots(
+			input.order.items.map((item) => ({
+				dailyOrderItemId: item.dailyOrderItemId.toString(),
+				quantity: item.quantity,
+			})),
+			input.order._id.toString(),
+		);
+		throw reservationExpired();
+	}
 	if (input.payment.paystackAuthorizationUrl) {
 		return {
 			paymentUrl: input.payment.paystackAuthorizationUrl,
 			paystackRef: input.payment.paystackRef,
 		};
 	}
-	if (!input.vendor.paystackSubaccountCode) {
+	const settlementMode = paymentSettlementModeOf(input.payment);
+	if (
+		settlementMode === PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 &&
+		!input.vendor.paystackSubaccountCode
+	) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 	const tx = await paystackProvider.initializeTransaction({
 		email: payerEmail(contact.trim()),
 		amountKobo: input.payment.amountKobo,
 		reference: input.payment.paystackRef,
+		settlementMode,
 		subaccountCode: input.vendor.paystackSubaccountCode,
 		vendorAmountKobo:
 			input.payment.vendorSettlementKobo ??
@@ -218,6 +248,12 @@ export async function initializeExternalPayment({
 		paymentUrl: updated?.paystackAuthorizationUrl ?? tx.authorization_url,
 		paystackRef: input.payment.paystackRef,
 	};
+}
+
+async function pendingReservationExpired(createdAt: Date): Promise<boolean> {
+	const config = await getSiteConfigs();
+	if (config.slotHoldTtlSeconds <= 0) return false;
+	return createdAt.getTime() + config.slotHoldTtlSeconds * 1000 <= Date.now();
 }
 
 export async function cancelExternalPaymentRequest({
@@ -249,6 +285,7 @@ export async function cancelExternalPaymentRequest({
 			dailyOrderItemId: item.dailyOrderItemId.toString(),
 			quantity: item.quantity,
 		})),
+		order._id.toString(),
 	);
 	return { message: "Payment request cancelled." };
 }

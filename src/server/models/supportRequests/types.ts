@@ -37,6 +37,9 @@ export interface ISupportRequest {
 	subject: string;
 	status: SupportStatus;
 	assignedAdminId?: string;
+	resolutionNote?: string;
+	resolvedBy?: string;
+	resolvedAt?: Date;
 	relatedOrderRef?: string;
 	relatedPaymentRef?: string;
 	messages: ISupportMessage[];

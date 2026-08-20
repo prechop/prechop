@@ -20,9 +20,11 @@ import {
 import { Redis } from "@/server/databases/redis";
 import {
 	createBuyerOrderDB,
+	createDailyOrderDB,
 	createPaymentDB,
 	FulfillmentType,
 	getBuyerOrderByIdDB,
+	getDailyOrderByIdDB,
 	getPaymentByRefDB,
 	getRefundByPaymentIdDB,
 	getVendorProfileByIdDB,
@@ -34,6 +36,7 @@ import { paystackProvider } from "@/server/providers";
 import { sendchampProvider } from "@/server/providers/sendchamp";
 import { sweepAbandonedOrders } from "@/server/services/buyerOrders/sweepAbandoned";
 import { handlePaystackWebhook } from "@/server/services/payments/handlePaystackWebhook";
+import { issueRefund } from "@/server/services/refunds";
 import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSiteConfigs";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeVendor } from "../helpers/factories";
@@ -63,13 +66,37 @@ function sign(rawBody: string): string {
 async function seedPendingOrder(amountKobo = 155000) {
 	const { userId: vendorUserId, vendorId, campusId } = await makeVendor();
 	const buyerId = oid();
-	const itemId = oid();
+	const menuItemId = oid();
+	const listing = await createDailyOrderDB({
+		payload: {
+			vendorId,
+			campusId,
+			shareableToken: `tok_${Math.random().toString(36).slice(2)}`,
+			title: "Lunch",
+			scheduledDate: new Date(Date.now() + 3_600_000),
+			cutoffTime: new Date(Date.now() + 1_800_000),
+			pickupAvailable: true,
+			items: [
+				{
+					menuItemId,
+					snapshotName: "Jollof",
+					snapshotPriceKobo: 150000,
+					snapshotPrepMin: 20,
+					maxQuantity: 10,
+				},
+			],
+		},
+	});
+	const savedListing = await getDailyOrderByIdDB({
+		id: listing!._id.toString(),
+	});
+	const itemId = savedListing!.items[0].id ?? savedListing!.items[0]._id!;
 	slotKeys.add(`slot:reserved:${itemId}`);
 	const ref = generatePaystackRef();
 	const order = await createBuyerOrderDB({
 		payload: {
 			orderNumber: generateOrderNumber(),
-			dailyOrderId: oid(),
+			dailyOrderId: listing!._id.toString(),
 			vendorId,
 			buyerId,
 			campusId,
@@ -81,7 +108,7 @@ async function seedPendingOrder(amountKobo = 155000) {
 			items: [
 				{
 					dailyOrderItemId: itemId,
-					menuItemId: oid(),
+					menuItemId,
 					snapshotName: "Jollof",
 					snapshotPriceKobo: 150000,
 					quantity: 1,
@@ -198,7 +225,7 @@ describe("handlePaystackWebhook — late settlement on a cancelled order", () =>
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 42,
-				status: "success",
+				status: "pending",
 				amount: amountKobo,
 			});
 
@@ -230,6 +257,9 @@ describe("handlePaystackWebhook — late settlement on a cancelled order", () =>
 		expect(refund).not.toBeNull();
 		expect(refund!.amountKobo).toBe(amountKobo);
 		expect(refund!.paystackRefundId).toBe("42");
+		expect(refund!.status).toBe("REFUND_PENDING");
+		expect(refund!.processedAt).toBeFalsy();
+		expect(settledPayment!.status).toBe(PaymentStatus.SUCCESS);
 
 		// (a) Capacity was NOT committed: the vendor's order count never moved.
 		const vendor = await getVendorProfileByIdDB({ id: vendorId });
@@ -239,10 +269,156 @@ describe("handlePaystackWebhook — late settlement on a cancelled order", () =>
 		const notifications = await listNotificationsDB({ userId: buyerId });
 		expect(notifications).toHaveLength(0);
 
-		// The order was never resurrected into PAID.
+		// The order was never resurrected into PAID and remains awaiting Paystack
+		// confirmation rather than being prematurely marked REFUNDED.
 		const after = await getBuyerOrderByIdDB({ id: order._id.toString() });
-		expect(after!.status).not.toBe(OrderStatus.PAID);
+		expect(after!.status).toBe(OrderStatus.REFUND_PENDING);
+
+		const processedBody = JSON.stringify({
+			event: "refund.processed",
+			data: {
+				id: 42,
+				status: "processed",
+				amount: amountKobo,
+				currency: "NGN",
+				domain: "test",
+				transaction: { reference: ref },
+			},
+		});
+		await handlePaystackWebhook({
+			rawBody: processedBody,
+			signature: sign(processedBody),
+		});
+		expect(
+			(await getBuyerOrderByIdDB({ id: order._id.toString() }))!.status,
+		).toBe(OrderStatus.REFUNDED);
+		expect((await getPaymentByRefDB({ paystackRef: ref }))!.status).toBe(
+			PaymentStatus.REFUNDED,
+		);
+
+		// A duplicate charge webhook reuses the same logical refund and does not
+		// submit another Paystack refund.
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		expect(refundSpy).toHaveBeenCalledTimes(1);
 
 		refundSpy.mockRestore();
+	});
+
+	it("maps every Paystack refund lifecycle event without early completion", async () => {
+		const { order, ref, amountKobo } = await seedPendingOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { BuyerOrder } = await import("@/server/models/buyerOrders");
+		const { Payment } = await import("@/server/models/payments");
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(order._id) },
+			{ $set: { status: OrderStatus.PAID } },
+		);
+		await Payment.collection.updateOne(
+			{ paystackRef: ref },
+			{ $set: { status: PaymentStatus.SUCCESS, webhookVerified: true } },
+		);
+		vi.spyOn(paystackProvider, "refund").mockResolvedValue({
+			id: 84,
+			status: "pending",
+			amount: amountKobo,
+		});
+		await issueRefund({
+			orderId: order._id.toString(),
+			amountKobo,
+			reason: "lifecycle test",
+		});
+
+		const sendRefundEvent = async (status: string) => {
+			const body = JSON.stringify({
+				event: `refund.${status}`,
+				data: {
+					id: 84,
+					status,
+					amount: amountKobo,
+					currency: "NGN",
+					domain: "test",
+					transaction: { reference: ref },
+				},
+			});
+			await handlePaystackWebhook({
+				rawBody: body,
+				signature: sign(body),
+			});
+		};
+
+		await sendRefundEvent("pending");
+		expect(
+			(await getBuyerOrderByIdDB({ id: order._id.toString() }))!.status,
+		).toBe(OrderStatus.REFUND_PENDING);
+		await sendRefundEvent("processing");
+		expect(
+			(await getBuyerOrderByIdDB({ id: order._id.toString() }))!.status,
+		).toBe(OrderStatus.REFUND_PROCESSING);
+		await sendRefundEvent("needs-attention");
+		let payment = await getPaymentByRefDB({ paystackRef: ref });
+		let refund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		expect(refund!.status).toBe("REFUND_NEEDS_ATTENTION");
+		expect(payment!.status).toBe(PaymentStatus.SUCCESS);
+		await sendRefundEvent("failed");
+		refund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		expect(refund!.status).toBe("REFUND_FAILED");
+		expect(refund!.processedAt).toBeFalsy();
+		await sendRefundEvent("processed");
+		payment = await getPaymentByRefDB({ paystackRef: ref });
+		expect(payment!.status).toBe(PaymentStatus.REFUNDED);
+		expect(
+			(await getBuyerOrderByIdDB({ id: order._id.toString() }))!.status,
+		).toBe(OrderStatus.REFUNDED);
+	});
+
+	it("escalates a processed webhook whose amount does not match", async () => {
+		const { order, ref, amountKobo } = await seedPendingOrder();
+		const mongoose = (await import("mongoose")).default;
+		const { BuyerOrder } = await import("@/server/models/buyerOrders");
+		const { Payment } = await import("@/server/models/payments");
+		await BuyerOrder.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(order._id) },
+			{ $set: { status: OrderStatus.PAID } },
+		);
+		await Payment.collection.updateOne(
+			{ paystackRef: ref },
+			{ $set: { status: PaymentStatus.SUCCESS, webhookVerified: true } },
+		);
+		vi.spyOn(paystackProvider, "refund").mockResolvedValue({
+			id: 85,
+			status: "pending",
+			amount: amountKobo,
+		});
+		await issueRefund({
+			orderId: order._id.toString(),
+			amountKobo,
+			reason: "mismatch test",
+		});
+
+		const body = JSON.stringify({
+			event: "refund.processed",
+			data: {
+				id: 85,
+				status: "processed",
+				amount: amountKobo - 1,
+				currency: "NGN",
+				domain: "test",
+				transaction: { reference: ref },
+			},
+		});
+		await handlePaystackWebhook({ rawBody: body, signature: sign(body) });
+		const payment = await getPaymentByRefDB({ paystackRef: ref });
+		const refund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		expect(refund!.status).toBe("REFUND_NEEDS_ATTENTION");
+		expect(payment!.status).toBe(PaymentStatus.SUCCESS);
+		expect(
+			(await getBuyerOrderByIdDB({ id: order._id.toString() }))!.status,
+		).toBe(OrderStatus.REFUND_FAILED);
 	});
 });

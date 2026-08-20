@@ -214,6 +214,78 @@ describe("users model", () => {
 		).toBe(true);
 	});
 
+	it("slides refresh idle expiry without extending the absolute deadline", async () => {
+		const user = await createUserDB({
+			payload: {
+				email: uniqueEmail("sliding"),
+				campusId: oid(),
+				firstName: "Sliding",
+				lastName: "Session",
+				phone: uniquePhone(),
+			},
+		});
+		const id = user!._id.toString();
+		const token = await loginUserDB({ id, ip: "1.2.3.4" });
+		expect(token).not.toBeNull();
+
+		const before = await User.findById(id).select("+refreshTokens");
+		const beforeEntry = before!.refreshTokens!.find(
+			(entry) => entry.refreshToken === token!.refreshToken,
+		);
+		expect(beforeEntry?.absoluteDeadline).toBeTruthy();
+
+		const rotated = await reLoginUserWithRefreshTokenDB({
+			id,
+			refreshToken: token!.refreshToken,
+			ip: "1.2.3.4",
+		});
+		expect(rotated).not.toBeNull();
+
+		const after = await User.findById(id).select("+refreshTokens");
+		const afterEntry = after!.refreshTokens!.find(
+			(entry) => entry.refreshToken === rotated!.refreshToken,
+		);
+		expect(afterEntry?.absoluteDeadline?.getTime()).toBe(
+			beforeEntry!.absoluteDeadline!.getTime(),
+		);
+		expect(afterEntry!.deadline.getTime()).toBeGreaterThanOrEqual(
+			beforeEntry!.deadline.getTime(),
+		);
+	});
+
+	it("refuses refresh when the absolute session deadline has passed", async () => {
+		const user = await createUserDB({
+			payload: {
+				email: uniqueEmail("absolute-expired"),
+				campusId: oid(),
+				firstName: "Absolute",
+				lastName: "Expired",
+				phone: uniquePhone(),
+			},
+		});
+		const id = user!._id.toString();
+		const token = await loginUserDB({ id, ip: "1.2.3.4" });
+		expect(token).not.toBeNull();
+
+		await User.updateOne(
+			{ _id: id, "refreshTokens.refreshToken": token!.refreshToken },
+			{
+				$set: {
+					"refreshTokens.$.absoluteDeadline": new Date(
+						Date.now() - 1000,
+					),
+				},
+			},
+		);
+
+		const rotated = await reLoginUserWithRefreshTokenDB({
+			id,
+			refreshToken: token!.refreshToken,
+			ip: "1.2.3.4",
+		});
+		expect(rotated).toBeNull();
+	});
+
 	it("counts only non-deleted users", async () => {
 		const count = await countUsersDB();
 		expect(count).toBeGreaterThan(0);

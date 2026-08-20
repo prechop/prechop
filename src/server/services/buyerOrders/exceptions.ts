@@ -26,6 +26,7 @@ import {
 	notifyPickupNoShowResponseRequired,
 } from "../notifications";
 import { openOrderDisputeForReview } from "../orderDisputes";
+import { refreshVendorPayableForOrder } from "../vendorPayouts";
 import { generateReceiptInBackground } from "./receiptPdf";
 
 const PICKUP_REMINDER_MS = 60 * 60 * 1000;
@@ -89,7 +90,10 @@ export async function reportPickupNoShow({
 		buyerId: order.buyerId.toString(),
 		orderNumber: order.orderNumber,
 		responseDeadline,
-		data: { orderId },
+		data: {
+			orderId,
+			url: `/my-orders/${orderId}#pickup-no-show-response`,
+		},
 	}).catch((error) =>
 		console.error(
 			`[orders] pickup no-show response notification failed for ${orderId}:`,
@@ -120,7 +124,7 @@ export async function respondToPickupNoShow({
 	}
 	if (
 		order.pickupBuyerResponseDeadline &&
-		now > order.pickupBuyerResponseDeadline
+		now >= order.pickupBuyerResponseDeadline
 	) {
 		throw invalidOrderState("The buyer response window has closed.");
 	}
@@ -138,6 +142,7 @@ export async function respondToPickupNoShow({
 		throw invalidOrderState("Order status changed - please retry.");
 	}
 	if (response === "CONFIRMED_COLLECTION") {
+		await refreshVendorPayableForOrder({ orderId });
 		generateReceiptInBackground(orderId);
 	} else {
 		void openOrderDisputeForReview({
@@ -328,6 +333,20 @@ export async function sweepPickupNoShowTimers({
 			completedAt: now,
 		});
 		if (completed) completedNoResponse += 1;
+		if (completed) {
+			await openOrderDisputeForReview({
+				orderId: order._id.toString(),
+				reason: "BUYER_NO_SHOW_COMPLAINT",
+				vendorNotes: [
+					"Buyer did not respond to the pickup no-show window.",
+				],
+			}).catch((error) =>
+				console.error(
+					`[orders] no-show review failed for ${order._id.toString()}:`,
+					error,
+				),
+			);
+		}
 	}
 	return { reminder60, warning90, reportEnabled, completedNoResponse };
 }

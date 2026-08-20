@@ -3,7 +3,8 @@ import {
 	ACCESS_TOKEN_MAX_AGE_SECONDS,
 	JWT_ACCESS_TOKEN_SECRET,
 	JWT_REFRESH_TOKEN_SECRET,
-	REFRESH_TOKEN_MAX_AGE_SECONDS,
+	REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS,
+	REFRESH_TOKEN_IDLE_MAX_AGE_SECONDS,
 } from "../../constants";
 import type { IJwtPayload } from "../../types";
 
@@ -39,19 +40,33 @@ export async function generateAuthToken({
 	userId,
 	ip,
 	shouldRegenerateRefreshToken,
+	refreshTokenAbsoluteExpiresIn,
 }: {
 	userId: string;
 	ip: string;
 	shouldRegenerateRefreshToken: boolean;
+	refreshTokenAbsoluteExpiresIn?: Date;
 }): Promise<IJwtPayload | null> {
 	try {
 		const currentDate = new Date();
 		const expirationDate = new Date(
 			Date.now() + ACCESS_TOKEN_MAX_AGE_SECONDS * 1000,
 		);
-		const refreshTokenExpiresIn = new Date(
-			Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000,
+		const idleRefreshTokenExpiresIn = new Date(
+			Date.now() + REFRESH_TOKEN_IDLE_MAX_AGE_SECONDS * 1000,
 		);
+		const absoluteRefreshTokenExpiresIn =
+			refreshTokenAbsoluteExpiresIn ??
+			new Date(
+				Date.now() + REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS * 1000,
+			);
+		const refreshTokenExpiresIn = new Date(
+			Math.min(
+				idleRefreshTokenExpiresIn.getTime(),
+				absoluteRefreshTokenExpiresIn.getTime(),
+			),
+		);
+		if (refreshTokenExpiresIn.getTime() <= Date.now()) return null;
 
 		let refreshToken = "";
 		if (shouldRegenerateRefreshToken) {
@@ -63,10 +78,17 @@ export async function generateAuthToken({
 				ip,
 				refreshToken: "",
 				refreshTokenExpiresIn,
+				refreshTokenAbsoluteExpiresIn: absoluteRefreshTokenExpiresIn,
 			};
+			const refreshTokenTtlSeconds = Math.max(
+				1,
+				Math.floor(
+					(refreshTokenExpiresIn.getTime() - Date.now()) / 1000,
+				),
+			);
 			const signed = sign({ data: payload }, JWT_REFRESH_TOKEN_SECRET, {
 				algorithm: "HS256",
-				expiresIn: REFRESH_TOKEN_MAX_AGE_SECONDS,
+				expiresIn: refreshTokenTtlSeconds,
 			});
 			if (!signed) return null;
 			refreshToken = signed;
@@ -78,6 +100,7 @@ export async function generateAuthToken({
 			expiresIn: expirationDate,
 			ip,
 			refreshTokenExpiresIn,
+			refreshTokenAbsoluteExpiresIn: absoluteRefreshTokenExpiresIn,
 		};
 		const accessToken = sign(
 			{ data: jwtSigningPayload },

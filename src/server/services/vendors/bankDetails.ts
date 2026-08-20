@@ -2,23 +2,35 @@ import { updateVendorProfileDB } from "@/server/models";
 import { paystackProvider } from "@/server/providers";
 import { notifyAdminAttention } from "@/server/services/notifications";
 import { recomputeVendorCompleteness } from "./recomputeVendorCompleteness";
+import { synchronizeVendorTransferRecipient } from "../vendorPayouts";
 import { resolveVendorByUserId, vendorIdOf } from "./resolveVendor";
-import { assertVendorSecurityVerifiedForSensitiveAction } from "./securityOnboarding";
+import {
+	assertFreshVendorSecurityPinForSensitiveAction,
+	assertVendorSecurityPinReady,
+	assertPinResetHoldNotActive,
+} from "./securityOnboarding";
 
 export async function setBankDetails({
 	userId,
 	bankCode,
 	accountNumber,
 	bankName,
+	securityPin,
 }: {
 	userId: string;
 	bankCode: string;
 	accountNumber: string;
 	bankName?: string;
+	securityPin?: string;
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
-	assertVendorSecurityVerifiedForSensitiveAction(vendor);
+	assertVendorSecurityPinReady(vendor);
+	await assertPinResetHoldNotActive(vendor);
+	await assertFreshVendorSecurityPinForSensitiveAction({
+		userId,
+		pin: securityPin,
+	});
 	const hadExistingBank = !!vendor.paystackSubaccountCode;
 
 	const resolved = await paystackProvider.resolveAccountNumber(
@@ -49,6 +61,17 @@ export async function setBankDetails({
 			accountName,
 			paystackSubaccountCode: subaccount.subaccount_code,
 		},
+	});
+
+	// V1 subaccount behavior above remains authoritative. This guarded V2 hook
+	// no-ops until every manual-payout safety gate is enabled.
+	await synchronizeVendorTransferRecipient({
+		vendorId,
+		accountNumber,
+		accountName,
+		bankCode,
+		bankName: resolvedBankName ?? "Unknown bank",
+		actorId: userId,
 	});
 
 	await recomputeVendorCompleteness({ vendorId, userId });

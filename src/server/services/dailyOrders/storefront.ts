@@ -1,3 +1,4 @@
+import { countCompletedBuyerOrdersByVendorDB } from "@/server/models/buyerOrders";
 import { ErrVendorNotFound } from "../../constants";
 import {
 	DailyOrderStatus,
@@ -13,13 +14,18 @@ import {
 	listVendorsByIdsDB,
 	VendorStatus,
 } from "../../models";
+import { getPublicTimetable } from "../timetable/extendedQueries";
+import { withSlotAvailabilityForListings } from "../buyerOrders/slots";
 import { assertMarketplaceEnabled } from "../siteConfigs";
 import {
 	comparePublicVendors,
 	type PublicVendor,
 	toPublicVendor,
 } from "../vendors/publicVendor";
-import { marketplaceCampusIds } from "./queries";
+import {
+	marketplaceCampusIds,
+	orderMarketplaceListingsForVendor,
+} from "./queries";
 
 // `PublicVendor` / `toPublicVendor` now live in services/vendors/publicVendor so
 // the storefront, marketplace and search payloads share one mapper — and one
@@ -69,27 +75,47 @@ export async function getVendorStorefront({
 	vendor: PublicVendor;
 	listings: IDailyOrder[];
 	menu: IMenuItem[];
+	timetable: Array<{
+		id?: string;
+		dayOfWeek: string;
+		isOpen: boolean;
+		orderStartTime?: string;
+		cutoffTime?: string;
+		cookingStartTime?: string;
+		readyDeliveryStartTime?: string;
+		plannedMenu?: string;
+		menuItem?: IMenuItem | null;
+	}>;
 }> {
 	await assertMarketplaceEnabled();
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor || vendor.status !== VendorStatus.ACTIVE)
 		throw ErrVendorNotFound;
-	const [listings, menu] = await Promise.all([
-		activeListingsForVendor(vendorId),
-		listMenuItemsByVendorDB({ vendorId, availableOnly: true }),
-	]);
+	const [listings, menu, completedOrders, timetable] =
+		await Promise.all([
+			activeListingsForVendor(vendorId),
+			listMenuItemsByVendorDB({ vendorId, availableOnly: true }),
+			countCompletedBuyerOrdersByVendorDB({ vendorId }),
+			getPublicTimetable({ vendorId }),
+		]);
 	return {
-		vendor: toPublicVendor(vendor),
-		listings: withMenuImages(listings, menu),
+		vendor: {
+			...toPublicVendor(vendor),
+			completedOrders,
+		},
+		listings: await withSlotAvailabilityForListings(
+			withMenuImages(listings, menu),
+		),
 		menu,
+		timetable,
 	};
 }
 
 export interface VendorSearchHit {
 	vendor: PublicVendor;
 	listings: IDailyOrder[];
-	/** Which dimensions matched: any of "shop" | "menu" | "listing". */
 	matchedOn: string[];
+	isFollowed: boolean;
 }
 
 /**
@@ -103,10 +129,12 @@ export async function searchMarketplace({
 	campusId,
 	q,
 	limit = 20,
+	followedVendorIds = [],
 }: {
 	campusId?: string;
 	q: string;
 	limit?: number;
+	followedVendorIds?: string[];
 }): Promise<VendorSearchHit[]> {
 	await assertMarketplaceEnabled();
 	const term = q.trim();
@@ -142,10 +170,11 @@ export async function searchMarketplace({
 	// reproduces the previous per-vendor shape and ordering exactly. Mirrors
 	// `getMarketplace` in ./queries.
 	const now = new Date();
-	const [vendors, listings] = await Promise.all([
+	const [vendors, listingsRaw] = await Promise.all([
 		listVendorsByIdsDB(vendorIds),
 		listActivePublicListingsForVendorIdsDB({ vendorIds, now }),
 	]);
+	const listings = await withSlotAvailabilityForListings(listingsRaw);
 	const vendorById = new Map(vendors.map((v) => [v._id.toString(), v]));
 	const listingsByVendor = new Map<string, IDailyOrder[]>();
 	for (const listing of listings) {
@@ -155,18 +184,27 @@ export async function searchMarketplace({
 		else listingsByVendor.set(key, [listing]);
 	}
 
+	const followedSet = new Set(followedVendorIds);
 	const hits = vendorIds
 		.map((id) => {
 			const vendor = vendorById.get(id);
 			if (!vendor || vendor.status !== VendorStatus.ACTIVE) return null;
 			return {
 				vendor: toPublicVendor(vendor),
-				listings: listingsByVendor.get(id) ?? [],
+				listings: orderMarketplaceListingsForVendor(
+					listingsByVendor.get(id) ?? [],
+				),
 				matchedOn: [...(matched.get(id) ?? [])],
+				isFollowed: followedSet.has(id),
 			} satisfies VendorSearchHit;
 		})
 		.filter((h): h is VendorSearchHit => h !== null);
 
-	// Open kitchens first, then best-rated. Unrated shops sort last.
-	return hits.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
+	// Followed kitchens first, then by existing comparator.
+	hits.sort((a, b) => {
+		const followDelta = Number(followedSet.has(b.vendor.id)) - Number(followedSet.has(a.vendor.id));
+		if (followDelta !== 0) return followDelta;
+		return comparePublicVendors(a.vendor, b.vendor);
+	});
+	return hits;
 }

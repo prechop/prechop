@@ -29,11 +29,17 @@ export const GET = withApiHandler(
 	{ route: "/api/site-configs/marketplace" },
 	async () => {
 		try {
-			// One read, two derivations — the kill-switch state and the fee
-			// policy must describe the same version of the config.
 			const configs = await getSiteConfigs();
 			return ok({
 				marketplaceEnabled: configs.marketplaceEnabled,
+				scheduleAheadEnabled: configs.scheduleAheadEnabled,
+				weeklyBreakfastPlanEnabled: configs.weeklyBreakfastPlanEnabled,
+				breakfastEnabled: configs.breakfastEnabled,
+				lunchEnabled: configs.lunchEnabled,
+				dinnerEnabled: configs.dinnerEnabled,
+				deliveryEnabled: configs.deliveryEnabled,
+				pickupEnabled: configs.pickupEnabled,
+				vendorRegistrationEnabled: configs.vendorRegistrationEnabled,
 				...toEffectiveFeePolicy(configs),
 			});
 		} catch (error) {

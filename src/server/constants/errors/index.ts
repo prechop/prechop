@@ -20,6 +20,12 @@ import {
 	ErrOrderNotFound,
 	ErrPaymentAmountMismatch,
 	ErrPaymentVerification,
+	ErrPinResetHoldActive,
+	ErrPinResetOtpExpired,
+	ErrPinResetOtpInvalid,
+	ErrPinResetRateLimited,
+	ErrPinResetSupportRequired,
+	ErrPinResetUnauthorized,
 	ErrPolicyNotFound,
 	ErrProfileIncomplete,
 	ErrResourceAlreadyExist,
@@ -88,6 +94,11 @@ export function getErrorResponse(error: Error): IErrorResponse {
 		case ErrBuiltInImmutable:
 		case ErrSelfLockout:
 		case ErrCannotOrderOwnListing:
+		case ErrPinResetUnauthorized:
+		case ErrPinResetOtpExpired:
+		case ErrPinResetOtpInvalid:
+		case ErrPinResetSupportRequired:
+		case ErrPinResetHoldActive:
 			code = 403;
 			break;
 
@@ -113,6 +124,7 @@ export function getErrorResponse(error: Error): IErrorResponse {
 			break;
 
 		case ErrTooManyRequests:
+		case ErrPinResetRateLimited:
 			code = 429;
 			break;
 

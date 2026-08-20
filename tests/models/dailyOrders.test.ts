@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateShareableToken } from "@/server/constants/orderNumber";
 import {
+	createBuyerOrderDB,
+	setBuyerOrderStatusDB,
+} from "@/server/models/buyerOrders";
+import {
 	closeExpiredDailyOrdersDB,
 	createDailyOrderDB,
 	getDailyOrderByIdDB,
@@ -12,7 +16,12 @@ import {
 	setDailyOrderStatusDB,
 	updateDailyOrderDraftDB,
 } from "@/server/models/dailyOrders";
-import { DailyOrderStatus, VendorStatus } from "@/server/models/enums";
+import {
+	DailyOrderStatus,
+	FulfillmentType,
+	OrderStatus,
+	VendorStatus,
+} from "@/server/models/enums";
 import {
 	createVendorProfileDB,
 	setVendorOpenForOrdersDB,
@@ -52,6 +61,34 @@ function makePayload(overrides: Record<string, unknown> = {}) {
 						options: [{ name: "Extra Meat", priceKobo: 50000 }],
 					},
 				],
+			},
+		],
+		...overrides,
+	};
+}
+
+function makeBuyerOrderPayload(overrides: Record<string, unknown> = {}) {
+	return {
+		orderNumber: `PC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+		dailyOrderId: oid(),
+		vendorId: oid(),
+		buyerId: oid(),
+		campusId: oid(),
+		status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+		fulfillmentType: FulfillmentType.PICKUP,
+		subtotalKobo: 150000,
+		deliveryFeeKobo: 0,
+		platformFeeKobo: 5000,
+		totalKobo: 155000,
+		items: [
+			{
+				dailyOrderItemId: oid(),
+				menuItemId: oid(),
+				snapshotName: "Jollof",
+				snapshotPriceKobo: 150000,
+				quantity: 1,
+				subtotalKobo: 150000,
+				selectedOptions: [],
 			},
 		],
 		...overrides,
@@ -102,7 +139,7 @@ describe("dailyOrders model", () => {
 		expect(again).toBe(false);
 	});
 
-	it("edits a listing (DRAFT or ACTIVE) until it opens, then locks", async () => {
+	it("edits DRAFT and ACTIVE listings while preserving committed item data", async () => {
 		const vendorId = oid();
 		const opensAt = new Date(Date.now() + 3_600_000); // opens in 1h
 		const d = await createDailyOrderDB({
@@ -133,28 +170,52 @@ describe("dailyOrders model", () => {
 		});
 		expect(stillEditable!.title).toBe("Updated again");
 
-		// Once orders have opened (now past availableFrom) editing is locked.
-		const locked = await updateDailyOrderDraftDB({
+		const itemId = stillEditable!.items[0]._id!.toString();
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId: id,
+			dailyOrderItemId: itemId,
+			by: 2,
+		});
+		const liveEdit = await updateDailyOrderDraftDB({
 			id,
 			vendorId,
-			payload: { title: "Nope" },
+			payload: {
+				title: "Live update",
+				items: [
+					{
+						...makePayload({ vendorId }).items[0],
+						snapshotName: "New name",
+						snapshotPriceKobo: 180000,
+						maxQuantity: 10,
+					},
+				],
+			},
 			now: new Date(opensAt.getTime() + 1000),
 		});
-		expect(locked).toBeNull();
+		expect(liveEdit!.title).toBe("Live update");
+		expect(liveEdit!.items[0]._id!.toString()).toBe(itemId);
+		expect(liveEdit!.items[0].orderedQuantity).toBe(2);
+		expect(liveEdit!.items[0].snapshotName).toBe("New name");
+		expect(liveEdit!.items[0].snapshotPriceKobo).toBe(180000);
 	});
 
-	it("never edits a listing that has no open time (opens immediately)", async () => {
+	it("edits an ACTIVE listing that opened immediately", async () => {
 		const vendorId = oid();
 		const d = await createDailyOrderDB({
 			payload: makePayload({ vendorId }),
 		});
-		const locked = await updateDailyOrderDraftDB({
+		await setDailyOrderStatusDB({
 			id: d!._id.toString(),
 			vendorId,
-			payload: { title: "Nope" },
+			status: DailyOrderStatus.ACTIVE,
+		});
+		const liveEdit = await updateDailyOrderDraftDB({
+			id: d!._id.toString(),
+			vendorId,
+			payload: { title: "Live now" },
 			now: new Date(),
 		});
-		expect(locked).toBeNull();
+		expect(liveEdit!.title).toBe("Live now");
 	});
 
 	it("increments an item quantity via the positional operator", async () => {
@@ -322,5 +383,129 @@ describe("dailyOrders model", () => {
 		expect(closed).toBeGreaterThanOrEqual(1);
 		const read = await getDailyOrderByIdDB({ id: d!._id.toString() });
 		expect(read!.status).toBe(DailyOrderStatus.CLOSED);
+	});
+
+	it.each([
+		OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+		OrderStatus.ACCEPTED,
+		OrderStatus.COOKING,
+		OrderStatus.READY_FOR_PICKUP,
+	])("keeps a closed listing in the vendor fulfillment queue while an order is %s", async (status) => {
+		const vendorId = oid();
+		const campusId = oid();
+		const listing = await createDailyOrderDB({
+			payload: makePayload({ vendorId, campusId }),
+		});
+		await setDailyOrderStatusDB({
+			id: listing!._id.toString(),
+			vendorId,
+			status: DailyOrderStatus.CLOSED,
+		});
+		await createBuyerOrderDB({
+			payload: makeBuyerOrderPayload({
+				dailyOrderId: listing!._id.toString(),
+				vendorId,
+				campusId,
+				status,
+				items: [
+					{
+						dailyOrderItemId: listing!.items[0]._id!.toString(),
+						menuItemId: listing!.items[0].menuItemId.toString(),
+						snapshotName: "Jollof",
+						snapshotPriceKobo: 150000,
+						quantity: 1,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			}),
+		});
+
+		const regularActiveFilter = await listDailyOrdersByVendorDB({
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+		});
+		expect(regularActiveFilter).toHaveLength(0);
+
+		const fulfillmentQueue = await listDailyOrdersByVendorDB({
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+			includeFulfillmentQueue: true,
+		});
+		expect(fulfillmentQueue.map((o) => o._id.toString())).toContain(
+			listing!._id.toString(),
+		);
+		expect(fulfillmentQueue[0].activeBuyerOrdersCount).toBe(1);
+	});
+
+	it("moves a closed listing out of the fulfillment queue after active orders finish", async () => {
+		const vendorId = oid();
+		const campusId = oid();
+		const listing = await createDailyOrderDB({
+			payload: makePayload({ vendorId, campusId }),
+		});
+		await setDailyOrderStatusDB({
+			id: listing!._id.toString(),
+			vendorId,
+			status: DailyOrderStatus.CLOSED,
+		});
+		const order = await createBuyerOrderDB({
+			payload: makeBuyerOrderPayload({
+				dailyOrderId: listing!._id.toString(),
+				vendorId,
+				campusId,
+				status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+				items: [
+					{
+						dailyOrderItemId: listing!.items[0]._id!.toString(),
+						menuItemId: listing!.items[0].menuItemId.toString(),
+						snapshotName: "Jollof",
+						snapshotPriceKobo: 150000,
+						quantity: 1,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			}),
+		});
+		await createBuyerOrderDB({
+			payload: makeBuyerOrderPayload({
+				dailyOrderId: listing!._id.toString(),
+				vendorId,
+				campusId,
+				status: OrderStatus.COMPLETED,
+				items: [
+					{
+						dailyOrderItemId: listing!.items[0]._id!.toString(),
+						menuItemId: listing!.items[0].menuItemId.toString(),
+						snapshotName: "Jollof",
+						snapshotPriceKobo: 150000,
+						quantity: 1,
+						subtotalKobo: 150000,
+						selectedOptions: [],
+					},
+				],
+			}),
+		});
+
+		let fulfillmentQueue = await listDailyOrdersByVendorDB({
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+			includeFulfillmentQueue: true,
+		});
+		expect(fulfillmentQueue).toHaveLength(1);
+		expect(fulfillmentQueue[0].activeBuyerOrdersCount).toBe(1);
+
+		await setBuyerOrderStatusDB({
+			id: order!._id.toString(),
+			vendorId,
+			status: OrderStatus.COMPLETED,
+		});
+		fulfillmentQueue = await listDailyOrdersByVendorDB({
+			vendorId,
+			status: DailyOrderStatus.ACTIVE,
+			includeFulfillmentQueue: true,
+		});
+		expect(fulfillmentQueue).toHaveLength(0);
 	});
 });

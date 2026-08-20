@@ -11,7 +11,7 @@ import {
 import { databaseResponseTimeHistogram } from "../../metrics";
 import type { IJwtPayload } from "../../types";
 import { IOperationType } from "../utils";
-import type { IUser, IUserCreateInput } from "./types";
+import type { IRefreshTokenEntry, IUser, IUserCreateInput } from "./types";
 import {
 	EMAIL_MAX_LENGTH,
 	generateAuthToken,
@@ -48,8 +48,8 @@ const schema = new mongoose.Schema<any>(
 		profileImageUrl: { type: String },
 		googleSubject: { type: String, sparse: true, index: true },
 		googleEmailVerified: { type: Boolean },
-		// Account identity. Sign-in is passwordless by email or Google; any phone
-		// numbers elsewhere are order or delivery contact details.
+		// Account identity. Sign-in is passwordless by email, Google, or a verified
+		// phone. Unverified phone values remain order/delivery contact details.
 		email: {
 			type: String,
 			required: true,
@@ -64,7 +64,8 @@ const schema = new mongoose.Schema<any>(
 			},
 		},
 		phone: { type: String, required: false, select: false },
-		phoneHash: { type: String, required: false, sparse: true, index: true },
+		phoneHash: { type: String, required: false, select: false },
+		phoneVerifiedAt: { type: Date, required: false },
 		isActive: { type: Boolean, default: true },
 		lastLoginAt: { type: Date, required: false },
 		refreshTokens: {
@@ -73,6 +74,7 @@ const schema = new mongoose.Schema<any>(
 					_id: false,
 					refreshToken: { type: String, required: true },
 					deadline: { type: Date, required: true },
+					absoluteDeadline: { type: Date, required: false },
 				},
 			],
 			select: false,
@@ -84,6 +86,17 @@ const schema = new mongoose.Schema<any>(
 );
 
 schema.index({ "refreshTokens.deadline": 1 });
+schema.index({ "refreshTokens.absoluteDeadline": 1 });
+// Contact numbers may be shared, but a number can identify only one account
+// after an OTP has verified ownership of it.
+schema.index(
+	{ phoneHash: 1 },
+	{
+		unique: true,
+		partialFilterExpression: { phoneVerifiedAt: { $type: "date" } },
+		name: "unique_verified_phone",
+	},
+);
 
 const notDeletedFilter = {
 	$or: [{ deleted: { $ne: true } }, { deleted: { $exists: false } }],
@@ -94,6 +107,7 @@ schema.pre("aggregate", function () {
 	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
 	this.pipeline().push({
 		$project: {
+			phone: 0,
 			phoneHash: 0,
 			refreshTokens: 0,
 			deleted: 0,
@@ -104,11 +118,13 @@ schema.pre("aggregate", function () {
 
 schema.methods.generateAuthToken = async function (
 	ip?: string,
+	options?: { refreshTokenAbsoluteExpiresIn?: Date },
 ): Promise<IJwtPayload> {
 	const result = await generateAuthToken({
 		userId: this._id.toString(),
 		ip: ip || "",
 		shouldRegenerateRefreshToken: true,
+		refreshTokenAbsoluteExpiresIn: options?.refreshTokenAbsoluteExpiresIn,
 	});
 	if (!result) throw ErrInvalidAction;
 
@@ -125,6 +141,7 @@ schema.methods.generateAuthToken = async function (
 		{
 			refreshToken: result.refreshToken,
 			deadline: result.refreshTokenExpiresIn,
+			absoluteDeadline: result.refreshTokenAbsoluteExpiresIn,
 		},
 	];
 	await this.save();
@@ -171,6 +188,7 @@ export async function createUserDB({
 				? {
 						phone: encrypt(normalizedPhone),
 						phoneHash: computePhoneHash(normalizedPhone),
+						phoneVerifiedAt: payload.phoneVerifiedAt,
 					}
 				: {}),
 			isActive: payload.isActive ?? true,
@@ -270,6 +288,27 @@ export async function setUserActiveDB({
 		const res = await User.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $set: { isActive } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Deactivate the whole account and invalidate every persisted refresh token. */
+export async function deactivateUserAccountDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $set: { isActive: false, refreshTokens: [] } },
 			{ session, returnDocument: "after" },
 		);
 		return !!res;
@@ -442,6 +481,23 @@ export async function getUsersByIdsDB({
 	}
 }
 
+/**
+ * Authentication-critical lookup. Unlike general repository reads, this does
+ * not collapse database failures into "not found", because doing so would turn
+ * a temporary Mongo outage into a terminal logout.
+ */
+export async function getUserForAuthDB({
+	id,
+}: {
+	id: string;
+}): Promise<IUser | null> {
+	if (!mongoose.Types.ObjectId.isValid(id)) return null;
+	return User.findOne({
+		_id: new mongoose.Types.ObjectId(id),
+		...notDeletedFilter,
+	}).lean<IUser>();
+}
+
 // IAM attachments (groups & direct policies) ─────────────────────────────
 
 export async function getUserByEmailDB({
@@ -555,6 +611,33 @@ export async function addUserToGroupDB({
 		const res = await User.findByIdAndUpdate(
 			new mongoose.Types.ObjectId(id),
 			{ $addToSet: { groupIds: new mongoose.Types.ObjectId(groupId) } },
+			{ session, returnDocument: "after" },
+		);
+		return !!res;
+	} catch {
+		return false;
+	}
+}
+
+/** Pull one IAM group from one user. */
+export async function removeUserFromGroupDB({
+	id,
+	groupId,
+	session,
+}: {
+	id: string;
+	groupId: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (
+			!mongoose.Types.ObjectId.isValid(id) ||
+			!mongoose.Types.ObjectId.isValid(groupId)
+		)
+			return false;
+		const res = await User.findByIdAndUpdate(
+			new mongoose.Types.ObjectId(id),
+			{ $pull: { groupIds: new mongoose.Types.ObjectId(groupId) } },
 			{ session, returnDocument: "after" },
 		);
 		return !!res;
@@ -713,18 +796,36 @@ export async function reLoginUserWithRefreshTokenDB({
 			_id: new mongoose.Types.ObjectId(id),
 			...notDeletedFilter,
 			refreshTokens: {
-				$elemMatch: { refreshToken, deadline: { $gt: now } },
+				$elemMatch: {
+					refreshToken,
+					deadline: { $gt: now },
+					$or: [
+						{ absoluteDeadline: { $exists: false } },
+						{ absoluteDeadline: { $gt: now } },
+					],
+				},
 			},
 		} as unknown as Parameters<typeof User.findOneAndUpdate>[0];
 		const claimed = await User.findOneAndUpdate(
 			filter,
 			{ $pull: { refreshTokens: { refreshToken } } },
-			{ session, returnDocument: "after" },
+			{ session, returnDocument: "before" },
 		).select("+refreshTokens");
 
 		if (!claimed) throw ErrUserNotFound;
 
-		const result = await claimed.generateAuthToken(ip);
+		const refreshTokens = (claimed.refreshTokens ??
+			[]) as IRefreshTokenEntry[];
+		const claimedToken = refreshTokens.find(
+			(entry) => entry.refreshToken === refreshToken,
+		);
+		claimed.refreshTokens = refreshTokens.filter(
+			(entry) => entry.refreshToken !== refreshToken,
+		);
+		const result = await claimed.generateAuthToken(ip, {
+			refreshTokenAbsoluteExpiresIn:
+				claimedToken?.absoluteDeadline ?? claimedToken?.deadline,
+		});
 		timer({
 			operation: IOperationType.Update,
 			collection: collectionName,
@@ -732,14 +833,18 @@ export async function reLoginUserWithRefreshTokenDB({
 			success: "true",
 		});
 		return result;
-	} catch {
+	} catch (error) {
 		timer({
 			operation: IOperationType.Update,
 			collection: collectionName,
 			method: "reLoginUserWithRefreshTokenDB",
 			success: "false",
 		});
-		return null;
+		// A missing/expired/revoked token is an ordinary authentication failure.
+		// Database errors must remain distinguishable so callers do not clear a
+		// valid browser credential during a temporary outage.
+		if (error === ErrUserNotFound) return null;
+		throw error;
 	}
 }
 
@@ -768,12 +873,83 @@ export async function logoutUserDB({
 	}
 }
 
+/**
+ * Compensate a rotation that could not publish its encrypted Redis handoff.
+ * The replacement was never returned to a caller, so atomically restore the
+ * presented browser credential and remove the unreachable successor.
+ */
+export async function restoreRefreshTokenAfterFailedRotationDB({
+	id,
+	presentedToken,
+	replacementToken,
+	deadline,
+	absoluteDeadline,
+}: {
+	id: string;
+	presentedToken: string;
+	replacementToken: string;
+	deadline: Date;
+	absoluteDeadline: Date;
+}): Promise<void> {
+	const restored = await User.findOneAndUpdate(
+		{
+			_id: new mongoose.Types.ObjectId(id),
+			"refreshTokens.refreshToken": replacementToken,
+		},
+		[
+			{
+				$set: {
+					refreshTokens: {
+						$concatArrays: [
+							{
+								$filter: {
+									input: "$refreshTokens",
+									as: "token",
+									cond: {
+										$ne: [
+											"$$token.refreshToken",
+											replacementToken,
+										],
+									},
+								},
+							},
+							[
+								{
+									refreshToken: presentedToken,
+									deadline,
+									absoluteDeadline,
+								},
+							],
+						],
+					},
+				},
+			},
+		],
+		{ returnDocument: "after" },
+	);
+	if (!restored) throw new Error("Could not restore failed refresh rotation");
+}
+
 export async function removeExpiredUsersTokensDB(): Promise<boolean> {
 	try {
 		const now = new Date();
 		const res = await User.updateMany(
-			{ "refreshTokens.deadline": { $lt: now } },
-			{ $pull: { refreshTokens: { deadline: { $lt: now } } } },
+			{
+				$or: [
+					{ "refreshTokens.deadline": { $lt: now } },
+					{ "refreshTokens.absoluteDeadline": { $lt: now } },
+				],
+			},
+			{
+				$pull: {
+					refreshTokens: {
+						$or: [
+							{ deadline: { $lt: now } },
+							{ absoluteDeadline: { $lt: now } },
+						],
+					},
+				},
+			},
 		);
 		return res.acknowledged;
 	} catch {
@@ -804,6 +980,86 @@ export async function getUserByIdWithPhoneDB({
 	} catch {
 		return null;
 	}
+}
+
+/** Lookup for WhatsApp authentication. Unverified contact numbers are not identities. */
+export async function getUserByVerifiedPhoneDB({
+	phone,
+	session,
+}: {
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	try {
+		const normalized = normalizeNigerianMobilePhone(phone);
+		if (!normalized) return null;
+		const res = await User.findOne(
+			{
+				phoneHash: computePhoneHash(normalized),
+				phoneVerifiedAt: { $type: "date" },
+				...notDeletedFilter,
+			},
+			null,
+			{ session },
+		)
+			.select("+phone +phoneHash")
+			.lean<IUser>();
+		return res ? ({ ...res, id: res._id.toString() } as IUser) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Resolve legacy contact-number matches before promoting a phone to identity. */
+export async function getUsersByPhoneDB({
+	phone,
+	session,
+}: {
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser[]> {
+	try {
+		const normalized = normalizeNigerianMobilePhone(phone);
+		if (!normalized) return [];
+		const rows = await User.find(
+			{ phoneHash: computePhoneHash(normalized), ...notDeletedFilter },
+			null,
+			{ session },
+		)
+			.select("+phone +phoneHash")
+			.limit(2)
+			.lean<IUser[]>();
+		return rows.map((row) => ({ ...row, id: row._id.toString() }) as IUser);
+	} catch {
+		return [];
+	}
+}
+
+export async function markUserPhoneVerifiedDB({
+	id,
+	phone,
+	session,
+}: {
+	id: string;
+	phone: string;
+	session?: ClientSession;
+}): Promise<IUser | null> {
+	const normalized = normalizeNigerianMobilePhone(phone);
+	if (!normalized || !mongoose.Types.ObjectId.isValid(id)) return null;
+	const row = await User.findByIdAndUpdate(
+		new mongoose.Types.ObjectId(id),
+		{
+			$set: {
+				phone: encrypt(normalized),
+				phoneHash: computePhoneHash(normalized),
+				phoneVerifiedAt: new Date(),
+			},
+		},
+		{ session, returnDocument: "after", runValidators: true },
+	)
+		.select("+phone +phoneHash")
+		.lean<IUser>();
+	return row ? ({ ...row, id: row._id.toString() } as IUser) : null;
 }
 
 export async function countUsersDB({

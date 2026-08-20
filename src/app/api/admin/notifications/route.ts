@@ -9,10 +9,33 @@ import {
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
-import { broadcastNotification } from "@/server/services/admin";
+import {
+	broadcastNotification,
+	listAdminNotificationInbox,
+} from "@/server/services/admin";
 import { broadcastNotificationSchema } from "@/server/validators/admin/validate";
 
 export const runtime = "nodejs";
+
+export const GET = withApiHandler(
+	{ route: "/api/admin/notifications" },
+	withAuth(async ({ req, auth }) => {
+		try {
+			requirePermission(auth, "notification:send");
+			const url = new URL(req.url);
+			const limit = Number(url.searchParams.get("limit") ?? 50);
+			const offset = Number(url.searchParams.get("offset") ?? 0);
+			const items = await listAdminNotificationInbox({
+				adminUserId: auth.userId,
+				limit: Number.isFinite(limit) ? limit : 50,
+				offset: Number.isFinite(offset) ? offset : 0,
+			});
+			return ok(items);
+		} catch (error) {
+			return handleError(error);
+		}
+	}),
+);
 
 export const POST = withApiHandler(
 	{

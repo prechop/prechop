@@ -114,6 +114,45 @@ export function slotUnavailable(itemName?: string): AppError {
 	);
 }
 
+export function insufficientQuantity(
+	itemName?: string,
+	remaining?: number,
+): AppError {
+	const message =
+		typeof remaining === "number"
+			? `Only ${remaining} plate${remaining === 1 ? " is" : "s are"} currently available.`
+			: "Not enough plates are currently available.";
+	return new AppError(
+		itemName ? `${itemName}: ${message}` : message,
+		409,
+		"INSUFFICIENT_QUANTITY",
+	);
+}
+
+export function listingSoldOut(itemName?: string): AppError {
+	return new AppError(
+		itemName ? `${itemName} is sold out.` : "This listing is sold out.",
+		409,
+		"LISTING_SOLD_OUT",
+	);
+}
+
+export function reservationExpired(): AppError {
+	return new AppError(
+		"Your checkout reservation expired. Please start checkout again.",
+		409,
+		"RESERVATION_EXPIRED",
+	);
+}
+
+export function acceptanceDeadlineExpired(): AppError {
+	return new AppError(
+		"Acceptance deadline expired. This order can no longer be accepted.",
+		409,
+		"ACCEPTANCE_DEADLINE_EXPIRED",
+	);
+}
+
 export function invalidOrderState(message: string): AppError {
 	return new AppError(message, 409, "INVALID_ORDER_STATE");
 }
@@ -136,3 +175,46 @@ export function serviceUnavailable(
 ): AppError {
 	return new AppError(message, 503, appCode);
 }
+
+// ── 403 Forgot PIN flow ──────────────────────────────────────────────────
+export const ErrPinResetUnauthorized = new AppError(
+	"Unauthorized to reset security PIN.",
+	403,
+	"PIN_RESET_UNAUTHORIZED",
+);
+
+export const ErrPinResetOtpExpired = new AppError(
+	"The verification code has expired. Request a new code.",
+	403,
+	"PIN_RESET_OTP_EXPIRED",
+);
+
+export const ErrPinResetOtpInvalid = new AppError(
+	"Incorrect verification code. Please try again.",
+	403,
+	"PIN_RESET_OTP_INVALID",
+);
+
+export const ErrPinResetRateLimited = new AppError(
+	"Too many reset attempts. Please wait before trying again.",
+	429,
+	"PIN_RESET_RATE_LIMITED",
+);
+
+export const ErrPinResetSupportRequired = new AppError(
+	"We couldn't verify your account. Contact support for help.",
+	403,
+	"PIN_RESET_SUPPORT_REQUIRED",
+);
+
+export const ErrPinResetHoldActive = new AppError(
+	"A security hold is active. Bank details and payouts are temporarily restricted.",
+	403,
+	"PIN_RESET_HOLD_ACTIVE",
+);
+
+export const ErrBrandKitNotReceived = new AppError(
+	"Brand Kit has not been received. You cannot publish orders until your Brand Kit is delivered.",
+	403,
+	"BRAND_KIT_NOT_RECEIVED",
+);

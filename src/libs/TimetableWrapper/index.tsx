@@ -13,6 +13,7 @@ import {
 	Select,
 	Stack,
 	Text,
+	Title,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api } from "@/constants/api";
@@ -25,6 +26,11 @@ interface TimetableEntry {
 	menuItemId: string;
 	dayOfWeek: string;
 	isOpen: boolean;
+	orderStartTime?: string;
+	cutoffTime?: string;
+	cookingStartTime?: string;
+	readyDeliveryStartTime?: string;
+	plannedMenu?: string;
 }
 
 const DAYS = [
@@ -51,8 +57,57 @@ const DayName = styled.span`
 	color: var(--pc-text);
 `;
 const EntryRow = styled(Row)`
-	padding: 10px 0;
-	border-top: 1px solid var(--pc-border);
+  padding: 10px 0;
+  border-top: 1px solid var(--pc-border);
+`;
+const TimeGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+`;
+const TimeField = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+const TimeLabel = styled.span`
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pc-text-muted);
+`;
+const TimeInput = styled.input`
+  height: 36px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+  &:focus {
+    outline: none;
+    border-color: var(--pc-color-primary);
+  }
+`;
+const PlannedInput = styled.textarea`
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  margin-top: 8px;
+  &:focus {
+    outline: none;
+    border-color: var(--pc-color-primary);
+  }
 `;
 const Toggle = styled.button<{ $on: boolean }>`
 	position: relative;
@@ -118,6 +173,11 @@ export default function TimetableWrapper() {
 		menuItemId: string,
 		dayOfWeek: string,
 		isOpen: boolean,
+		orderStartTime?: string,
+		cutoffTime?: string,
+		cookingStartTime?: string,
+		readyDeliveryStartTime?: string,
+		plannedMenu?: string,
 	) {
 		setBusy(true);
 		try {
@@ -125,6 +185,11 @@ export default function TimetableWrapper() {
 				menuItemId,
 				dayOfWeek,
 				isOpen,
+				orderStartTime: orderStartTime || undefined,
+				cutoffTime: cutoffTime || undefined,
+				cookingStartTime: cookingStartTime || undefined,
+				readyDeliveryStartTime: readyDeliveryStartTime || undefined,
+				plannedMenu: plannedMenu?.trim() || undefined,
 			});
 			await mutate();
 		} catch (e) {
@@ -199,39 +264,173 @@ export default function TimetableWrapper() {
 									</Badge>
 								</DayHead>
 
-								{dayEntries.map((e) => (
-									<EntryRow
-										key={e.id}
-										$justify="space-between"
-										$gap={10}
-									>
-										<Text $size={14}>
-											{nameById.get(e.menuItemId) ??
-												"Unknown item"}
-										</Text>
-										<Row $gap={12}>
-											<Toggle
-												$on={e.isOpen}
-												disabled={busy}
-												aria-label="Toggle open"
-												onClick={() =>
-													upsert(
-														e.menuItemId,
-														day.value,
-														!e.isOpen,
-													)
-												}
-											/>
-											<RemoveBtn
-												onClick={() =>
-													removeEntry(e.id)
-												}
-											>
-												Remove
-											</RemoveBtn>
+							{dayEntries.map((e) => (
+								<Card
+									key={e.id}
+									$pad={14}
+									style={{ marginTop: 8 }}
+								>
+									<Stack $gap={10}>
+										<Row
+											$justify="space-between"
+											$align="center"
+										>
+											<Text $weight={700} $size={14}>
+												{nameById.get(e.menuItemId) ??
+													"Unknown item"}
+											</Text>
+											<Row $gap={12}>
+												<Toggle
+													$on={e.isOpen}
+													disabled={busy}
+													aria-label="Toggle open"
+													onClick={() =>
+														upsert(
+															e.menuItemId,
+															day.value,
+															!e.isOpen,
+															e.orderStartTime,
+															e.cutoffTime,
+															e.cookingStartTime,
+															e.readyDeliveryStartTime,
+															e.plannedMenu,
+														)
+													}
+												/>
+												<RemoveBtn
+													onClick={() =>
+														removeEntry(e.id)
+													}
+												>
+													Remove
+												</RemoveBtn>
+											</Row>
 										</Row>
-									</EntryRow>
-								))}
+										<TimeGrid>
+											<TimeField>
+												<TimeLabel>
+													Order start
+												</TimeLabel>
+												<TimeInput
+													type="time"
+													value={
+														e.orderStartTime ??
+														""
+													}
+													onChange={(ev) =>
+														upsert(
+															e.menuItemId,
+															day.value,
+															e.isOpen,
+															ev.target.value ||
+																undefined,
+															e.cutoffTime,
+															e.cookingStartTime,
+															e.readyDeliveryStartTime,
+															e.plannedMenu,
+														)
+													}
+													disabled={busy}
+												/>
+											</TimeField>
+											<TimeField>
+												<TimeLabel>
+													Cutoff
+												</TimeLabel>
+												<TimeInput
+													type="time"
+													value={
+														e.cutoffTime ?? ""
+													}
+													onChange={(ev) =>
+														upsert(
+															e.menuItemId,
+															day.value,
+															e.isOpen,
+															e.orderStartTime,
+															ev.target.value ||
+																undefined,
+															e.cookingStartTime,
+															e.readyDeliveryStartTime,
+															e.plannedMenu,
+														)
+													}
+													disabled={busy}
+												/>
+											</TimeField>
+											<TimeField>
+												<TimeLabel>
+													Cooking start
+												</TimeLabel>
+												<TimeInput
+													type="time"
+													value={
+														e.cookingStartTime ??
+														""
+													}
+													onChange={(ev) =>
+														upsert(
+															e.menuItemId,
+															day.value,
+															e.isOpen,
+															e.orderStartTime,
+															e.cutoffTime,
+															ev.target.value ||
+																undefined,
+															e.readyDeliveryStartTime,
+															e.plannedMenu,
+														)
+													}
+													disabled={busy}
+												/>
+											</TimeField>
+											<TimeField>
+												<TimeLabel>
+													Ready/delivery
+												</TimeLabel>
+												<TimeInput
+													type="time"
+													value={
+														e.readyDeliveryStartTime ??
+														""
+													}
+													onChange={(ev) =>
+														upsert(
+															e.menuItemId,
+															day.value,
+															e.isOpen,
+															e.orderStartTime,
+															e.cutoffTime,
+															e.cookingStartTime,
+															ev.target.value ||
+																undefined,
+															e.plannedMenu,
+														)
+													}
+													disabled={busy}
+												/>
+											</TimeField>
+										</TimeGrid>
+										<PlannedInput
+											placeholder="Planned menu description (optional)"
+											value={e.plannedMenu ?? ""}
+											onChange={(ev) =>
+												upsert(
+													e.menuItemId,
+													day.value,
+													e.isOpen,
+													e.orderStartTime,
+													e.cutoffTime,
+													e.cookingStartTime,
+													e.readyDeliveryStartTime,
+													ev.target.value,
+												)
+											}
+											disabled={busy}
+										/>
+									</Stack>
+								</Card>
+							))}
 
 								{available.length > 0 && (
 									<AddSelect

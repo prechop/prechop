@@ -98,7 +98,7 @@ export const openOrderDisputeSchema = zod
 export const reviewOrderDisputeSchema = zod
 	.object({
 		action: zod.enum(ORDER_DISPUTE_ACTIONS),
-		note: zod.string().trim().min(1).max(2000).optional(),
+		note: zod.string().trim().min(1).max(2000),
 		amountKobo: zod.number().int().positive().optional(),
 	})
 	.strict();
@@ -156,9 +156,24 @@ export const updateSiteConfigsSchema = zod
 		externalPaymentLinkTtlMinutes: zod.number().int().min(1).optional(),
 		reviewWindowHours: zod.number().int().min(0).optional(),
 		cutoffWarningMinutes: zod.number().int().min(0).optional(),
+		deliveryInTransitGraceMinutes: zod.number().int().min(0).optional(),
+		deliveryInTransitFallbackEstimateMinutes: zod
+			.number()
+			.int()
+			.min(1)
+			.optional(),
+		deliveryOverdueAutoEscalateEnabled: zod.boolean().optional(),
 		whatsappTvEnabled: zod.boolean().optional(),
 		marketplaceEnabled: zod.boolean().optional(),
 		reviewsEnabled: zod.boolean().optional(),
+		scheduleAheadEnabled: zod.boolean().optional(),
+		weeklyBreakfastPlanEnabled: zod.boolean().optional(),
+		breakfastEnabled: zod.boolean().optional(),
+		lunchEnabled: zod.boolean().optional(),
+		dinnerEnabled: zod.boolean().optional(),
+		deliveryEnabled: zod.boolean().optional(),
+		pickupEnabled: zod.boolean().optional(),
+		vendorRegistrationEnabled: zod.boolean().optional(),
 		ordersKillSwitch: zod.boolean().optional(),
 		paymentsKillSwitch: zod.boolean().optional(),
 		profileCompletenessRequired: zod
@@ -166,6 +181,9 @@ export const updateSiteConfigsSchema = zod
 			.int()
 			.min(0)
 			.max(100)
+			.optional(),
+		deliveryLocations: zod
+			.array(zod.string().trim().min(1).max(120))
 			.optional(),
 	})
 	.strict();
@@ -207,3 +225,40 @@ export const broadcastNotificationSchema = zod
 		campusId: zod.string().trim().min(1).optional(),
 	})
 	.strict();
+
+export const createStickerBatchSchema = zod
+	.object({
+		vendorId: zod.string().trim().min(1),
+		batchLabel: zod.string().trim().min(1).max(200),
+		startCode: zod.string().trim().min(1),
+		endCode: zod.string().trim().min(1),
+		startSequence: zod.number().int().min(1001),
+		endSequence: zod.number().int().min(1001),
+		notes: zod.string().trim().max(1000).optional(),
+		printedAt: zod.string().trim().optional(),
+		shippedAt: zod.string().trim().optional(),
+	})
+	.strict()
+	.refine((data) => data.endSequence > data.startSequence, {
+		message: "endSequence must be greater than startSequence",
+		path: ["endSequence"],
+	});
+
+export type CreateStickerBatchInput = zod.infer<
+	typeof createStickerBatchSchema
+>;
+
+export const createFulfillmentLocationSchema = zod
+	.object({
+		name: zod.string().trim().min(1).max(200),
+		state: zod.string().trim().min(1).max(120).optional(),
+		city: zod.string().trim().min(1).max(120).optional(),
+		campusOrSchool: zod.string().trim().min(1).max(200).optional(),
+		address: zod.string().trim().min(1).max(300).optional(),
+		isActive: zod.boolean().optional(),
+	})
+	.strict();
+
+export type CreateFulfillmentLocationInput = zod.infer<
+	typeof createFulfillmentLocationSchema
+>;

@@ -6,4 +6,5 @@ export interface IJwtPayload {
 	date: Date;
 	expiresIn: Date;
 	refreshTokenExpiresIn: Date;
+	refreshTokenAbsoluteExpiresIn: Date;
 }

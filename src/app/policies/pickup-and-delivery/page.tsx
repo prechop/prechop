@@ -1,36 +1,36 @@
 import AppShell from "@/layouts/AppShell";
 import PolicyPageContent from "@/libs/PolicyPages";
-
-export default function PickupAndDeliveryPage() {
+export default function Page() {
 	return (
-		<AppShell shellRole="BUYER" publicAccess>
+		<AppShell publicAccess>
 			<PolicyPageContent
 				eyebrow="Policy"
 				title="Pickup and Delivery"
-				summary="How handover works for pickup and vendor-managed delivery orders."
+				summary="How trusted handover works for pickup and vendor-managed delivery."
 				sections={[
 					{
-						title: "Pickup",
+						title: "Trusted handover",
+						audience: ["shared", "public"],
 						body: [
-							"Pickup orders show the vendor pickup location when available.",
-							"The buyer should collect the order when it is marked ready.",
-							"The vendor should confirm handover using QR or PIN only when the buyer receives the food.",
+							"Use QR or PIN only when food is genuinely received; authorized support may confirm handover where the established process allows.",
+							"Handover records help review a case but are not absolute proof on their own.",
 						],
 					},
 					{
-						title: "Delivery",
+						title: "Buyer responsibilities",
+						audience: "buyer",
 						body: [
-							"Delivery is managed by the vendor, including rider choice, coverage, fee and delivery estimate.",
-							"The buyer should provide reachable delivery details and phone number at checkout.",
-							"The vendor should mark the order in transit when delivery starts and confirm handover when the buyer receives it.",
+							"Collect pickup orders when ready or provide accurate reachable delivery details.",
+							"Do not share QR or PIN before receiving the order; report missing, incorrect or unsafe orders promptly.",
 						],
 					},
 					{
-						title: "Handover confirmation",
+						title: "Vendor responsibilities and payout",
+						audience: "vendor",
 						body: [
-							"QR or PIN confirmation helps record handover, but it is not described as absolute proof.",
-							"Buyers should not share the code before collection or delivery.",
-							"Support may still review reported problems after QR or PIN use.",
+							"For pickup, mark ready before collection. For delivery, manage the rider, coverage, fee and estimate, and update the order as work progresses.",
+							"Trusted completion begins the 24-hour review period; it does not itself mean the vendor has been paid.",
+							"Disputes, refunds and holds can keep the affected payable from eligibility.",
 						],
 					},
 				]}

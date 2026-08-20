@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
-import {
-	decodeJwtToken,
-	ErrTokenCompromised,
-	ErrUnauthorized,
-} from "@/server/constants";
+import { decodeJwtToken, ErrUnauthorized } from "@/server/constants";
 import {
 	clearAuthCookies,
 	clearAuthCookiesOnResponse,
 	getClientIp,
 	getCookieValue,
+	getRequestCookieValue,
 	handleError,
+	isTerminalAuthenticationError,
 	ok,
 	REFRESH_COOKIE,
-	setAuthCookies,
 	setAuthCookiesOnResponse,
 	withApiHandler,
 } from "@/server/lib";
@@ -27,7 +24,9 @@ function cleanNext(value: string | null): string {
 }
 
 async function refreshSession(req: Request) {
-	const refreshToken = await getCookieValue(REFRESH_COOKIE);
+	const refreshToken =
+		getRequestCookieValue(req, REFRESH_COOKIE) ??
+		(await getCookieValue(REFRESH_COOKIE));
 	if (!refreshToken) throw ErrUnauthorized;
 	const decoded = await decodeJwtToken({ refreshToken }).catch(() => null);
 	if (!decoded) throw ErrUnauthorized;
@@ -37,7 +36,6 @@ async function refreshSession(req: Request) {
 		ip: decoded.ip || getClientIp(req),
 	});
 	if (!token) throw ErrUnauthorized;
-	await setAuthCookies(token);
 	return token;
 }
 
@@ -50,11 +48,14 @@ export const POST = withApiHandler(
 			setAuthCookiesOnResponse(response, token);
 			return response;
 		} catch (error) {
-			if (error === ErrTokenCompromised || error === ErrUnauthorized) {
+			if (isTerminalAuthenticationError(error)) {
 				await clearAuthCookies();
 			}
-
-			return handleError(error);
+			const response = handleError(error);
+			if (isTerminalAuthenticationError(error)) {
+				clearAuthCookiesOnResponse(response);
+			}
+			return response;
 		}
 	},
 );
@@ -70,14 +71,20 @@ export const GET = withApiHandler(
 			setAuthCookiesOnResponse(response, token);
 			return response;
 		} catch (error) {
-			if (error === ErrTokenCompromised || error === ErrUnauthorized) {
+			if (isTerminalAuthenticationError(error)) {
 				await clearAuthCookies();
+				const login = new URL("/login", req.url);
+				login.searchParams.set("next", next);
+				login.searchParams.set("refresh", "failed");
+				const response = NextResponse.redirect(login);
+				clearAuthCookiesOnResponse(response);
+				return response;
 			}
-			const login = new URL("/login", req.url);
-			login.searchParams.set("next", next);
-			const response = NextResponse.redirect(login);
-			clearAuthCookiesOnResponse(response);
-			return response;
+			// Infrastructure failures are recoverable. Preserve both cookies so a
+			// reload/retry can refresh when the dependency recovers.
+			return handleError(error);
 		}
 	},
 );
+
+

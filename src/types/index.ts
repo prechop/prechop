@@ -30,12 +30,22 @@ export interface MenuItem {
 	name: string;
 	description?: string;
 	priceKobo: number;
+	variants: MenuItemVariant[];
 	imageUrl?: string;
 	estimatedPrepMin: number;
 	isAvailable: boolean;
 	isSoldOut: boolean;
 	displayOrder: number;
 	optionGroupIds: string[];
+}
+
+export interface MenuItemVariant {
+	id: string;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	isActive: boolean;
+	displayOrder: number;
 }
 
 export interface MenuOption {
@@ -62,7 +72,9 @@ export interface VendorProfile {
 	campusId?: string;
 	campusIds?: string[];
 	vendorType?: string;
+	bakeryBusinessType?: string;
 	businessName?: string;
+	storeSlug?: string;
 	description?: string;
 	email: string;
 	contactPhone?: string;
@@ -78,6 +90,13 @@ export interface VendorProfile {
 	locationType?: string;
 	categories: string[];
 	profileImageUrl?: string;
+	verificationDocuments?: Array<{
+		type: string;
+		key: string;
+		fileName?: string;
+		mimeType?: string;
+		uploadedAt?: string;
+	}>;
 	rating: number;
 	totalReviews: number;
 	totalOrders: number;
@@ -92,6 +111,8 @@ export interface VendorProfile {
 	notifyNewOrders?: boolean;
 	notifyPayouts?: boolean;
 	notifyReviews?: boolean;
+	notifyFollowers?: boolean;
+	notifyFollowerMilestones?: boolean;
 	defaultPickupAvailable?: boolean;
 	defaultDeliveryAvailable?: boolean;
 	defaultDeliveryFeeKobo?: number;
@@ -99,6 +120,17 @@ export interface VendorProfile {
 	defaultDeliveryEstimateMinutes?: number;
 	defaultDeliveryContactPhone?: string;
 	defaultDeliveryResponsibilityAccepted?: boolean;
+	brandKitPaymentStatus?: string;
+	brandKitFulfillmentStatus?: string;
+	brandKitFulfillmentLocationId?: string;
+	brandKitReceivedAt?: string;
+	vendorShortId?: string;
+	featureScheduleAhead?: boolean;
+	featureWeeklyBreakfastPlan?: boolean;
+	featureDelivery?: boolean;
+	featurePickup?: boolean;
+	deliveryCoverageType?: string;
+	deliveryLocations?: string[];
 }
 
 export interface DailyOrderOption {
@@ -119,16 +151,30 @@ export interface DailyOrderOptionGroup {
 }
 
 export interface DailyOrderItem {
-	maxPlate: any;
 	id: string;
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
+	snapshotVariants: DailyOrderItemVariant[];
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;
 	orderedQuantity: number;
+	reservedQuantity?: number;
+	remainingQuantity?: number | null;
 	optionGroups: DailyOrderOptionGroup[];
+}
+
+export interface DailyOrderItemVariant {
+	id: string;
+	sourceVariantId?: string | null;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	isActive?: boolean;
+	displayOrder: number;
 }
 
 export interface DailyOrder {
@@ -150,13 +196,19 @@ export interface DailyOrder {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	totalOrdersCount: number;
+	activeBuyerOrdersCount?: number;
 	items: DailyOrderItem[];
+	marketplaceCategories?: string[];
 	/** True on the public listing response when the signed-in caller owns it. */
 	isOwnListing?: boolean;
 	/** On the public listing response: is the vendor currently accepting orders? */
 	vendorOpen?: boolean;
 	/** On the public listing response: the shop's display name (may be null). */
 	vendorName?: string | null;
+	/** Public presentation image for the compact vendor identity row. */
+	vendorProfileImageUrl?: string | null;
+	/** True only for an approved, active vendor profile. */
+	vendorVerified?: boolean;
 	/** On the public listing response: where pickup buyers should collect from. */
 	vendorPickupLocation?: string | null;
 	/** On the public listing response: vendor contact for pickup coordination. */
@@ -180,19 +232,21 @@ export interface PublicVendor {
 	state: string | null;
 	areaOrAddress: string | null;
 	categories: string[];
-	/**
-	 * The shop's publishable average rating, or null when it has fewer than 5
-	 * reviews (trust gate, PRD §8.12) — a single 5-star review must not render
-	 * as a public "5.0". Nulled server-side, so the number is not merely hidden
-	 * but absent from the response.
-	 *
-	 * Render as "New kitchen" / "Not enough reviews yet". Do NOT `?? 0` this:
-	 * an unrated shop is not a zero-star shop.
-	 */
 	rating: number | null;
 	totalReviews: number;
 	totalOrders: number;
+	completedOrders: number;
 	isOpenForOrders: boolean;
+	hasVerificationDocuments: boolean;
+	defaultPickupAvailable: boolean;
+	defaultDeliveryAvailable: boolean;
+	vendorShortId?: string;
+	deliveryCoverageType?: string;
+	deliveryLocations?: string[];
+	featureScheduleAhead?: boolean;
+	featureWeeklyBreakfastPlan?: boolean;
+	featureDelivery?: boolean;
+	featurePickup?: boolean;
 }
 
 export interface VendorStorefront {
@@ -204,12 +258,14 @@ export interface VendorStorefront {
 export interface MarketplaceVendor {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
+	isFollowed?: boolean;
 }
 
 export interface VendorSearchHit {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
 	matchedOn: string[];
+	isFollowed?: boolean;
 }
 
 export interface AdminUserDetail {
@@ -294,6 +350,9 @@ export interface BuyerOrderItem {
 	dailyOrderItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	selectedVariantDailyOrderVariantId?: string;
+	selectedVariantName?: string;
+	selectedVariantPriceKobo?: number;
 	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
@@ -342,6 +401,7 @@ export interface BuyerOrder {
 	orderNumber: string;
 	dailyOrderId: string;
 	vendorId: string;
+	vendorName?: string | null;
 	buyerId: string;
 	status: OrderStatus;
 	fulfillmentType: "PICKUP" | "DELIVERY";
@@ -385,18 +445,65 @@ export interface BuyerOrder {
 	lateEscalatedAt?: string | null;
 	adminReviewRequiredAt?: string | null;
 	adminReviewReason?: string | null;
+	readyAt?: string | null;
+	pickupNoShowReportedAt?: string | null;
+	pickupBuyerResponseDeadline?: string | null;
+	pickupBuyerRespondedAt?: string | null;
+	pickupProblemReportedAt?: string | null;
+	pickupProblemNote?: string | null;
+	deliveryEstimateMinutes?: number | null;
 	deliveryStartedAt?: string | null;
+	deliveryOverdueEscalatedAt?: string | null;
 	pickedUpAt?: string | null;
 	deliveredAt?: string | null;
 	confirmedAt?: string | null;
-	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | null;
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | "BUYER_BUTTON" | null;
 	handoverCredentialUsedAt?: string | null;
 	vendorNoResponseExpiredAt?: string | null;
+	deliveryCode?: string | null;
+	sentForDeliveryAt?: string | null;
+	buyerReceiptConfirmedAt?: string | null;
+	vendorRejectedAt?: string | null;
+	vendorRejectionReasonCode?: string | null;
+	vendorRejectionExplanation?: string | null;
+	cancellationReason?: string | null;
+	cancellationReasonCode?: string | null;
+	cancellationExplanation?: string | null;
+	cancelledBy?: "buyer" | "vendor" | "system" | null;
 	refundAmountKobo?: number | null;
 	refundReference?: string | null;
 	refundStatus?: "INITIATED" | "SENT_TO_PROVIDER" | null;
 	items: BuyerOrderItem[];
 	createdAt: string;
+	updatedAt: string;
+}
+
+export interface OrderConversationMessage {
+	id: string;
+	clientMessageId?: string;
+	senderId: string;
+	senderRole: "BUYER" | "VENDOR" | "ADMIN";
+	body: string;
+	createdAt: string;
+}
+
+export interface OrderConversation {
+	id: string;
+	orderId: string;
+	orderNumber: string;
+	orderStatus: OrderStatus;
+	buyerId: string;
+	vendorId: string;
+	vendorUserId: string;
+	participantRole: "buyer" | "vendor" | "admin";
+	messages: OrderConversationMessage[];
+	unreadCount: number;
+	canSend: boolean;
+	closedReason?: string;
+	lastMessageAt?: string;
+	lastMessagePreview?: string;
+	createdAt: string;
+	updatedAt: string;
 }
 
 /**
@@ -520,5 +627,16 @@ export interface AppNotification {
 	body: string;
 	type: string;
 	isRead: boolean;
+	data?: Record<string, unknown>;
 	createdAt: string;
+}
+
+export interface FeedItem {
+	id: string;
+	type: "new_menu" | "sold_out" | "reopened";
+	vendorId: string;
+	title: string;
+	createdAt: string;
+	scheduledDate?: string;
+	cutoffTime?: string;
 }

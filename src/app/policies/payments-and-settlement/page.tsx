@@ -3,34 +3,54 @@ import PolicyPageContent from "@/libs/PolicyPages";
 
 export default function PaymentsAndSettlementPage() {
 	return (
-		<AppShell shellRole="BUYER" publicAccess>
+		<AppShell publicAccess>
 			<PolicyPageContent
 				eyebrow="Policy"
-				title="Payments and Settlement"
-				summary="How Prechop handles payment display, confirmation and vendor earnings."
+				title="Payments and Payouts"
+				summary="How buyer payments and V2 vendor payouts move through separate lifecycles."
 				sections={[
 					{
+						title: "Separate statuses",
+						audience: ["shared", "public"],
+						body: [
+							"Payment status shows whether the buyer payment succeeded, failed or was refunded.",
+							"Order status shows fulfilment progress. Vendor payout status separately shows whether an amount is pending, held, eligible, queued, processing, paid, failed or reversed.",
+							"A successful buyer payment is not vendor settlement.",
+						],
+					},
+					{
 						title: "Buyer payments",
+						audience: "buyer",
 						body: [
-							"Buyers review the food subtotal, delivery fee and service fee before paying.",
-							"Payment is processed through Paystack.",
-							"An order moves forward after payment confirmation reaches Prechop.",
+							"Review displayed totals and fees before paying through Paystack.",
+							"Prechop advances the order only after payment confirmation. Report a mismatch with the order or payment reference.",
+							"Refund approval and completion are separate from order cancellation and remain subject to provider and banking processing.",
 						],
 					},
 					{
-						title: "Vendor settlement",
+						title: "Vendor payable and eligibility",
+						audience: "vendor",
 						body: [
-							"Vendor earnings follow Paystack's settlement schedule for the connected account.",
-							"Prechop may show expected settlement figures, but payment timing depends on Paystack and the banking system.",
-							"Vendors should keep bank and business details accurate.",
+							"Successful buyer payment creates a pending vendor payable; Paystack does not pay the vendor directly at checkout under V2.",
+							"Trusted completion through the existing QR/PIN flow or authorized support-confirmed handover starts the 24-hour review period.",
+							"An open dispute, refund or payout hold keeps the affected amount from payout eligibility.",
 						],
 					},
 					{
-						title: "Payment issues",
+						title: "Automated V2 payout",
+						audience: "vendor",
 						body: [
-							"If a buyer paid but the order does not update, they should report the problem with the order or payment reference.",
-							"Support may compare Prechop order status with Paystack confirmation events.",
-							"Do not cook an order that has not appeared as paid or accepted in your vendor dashboard.",
+							"After review and required checks, an eligible amount enters the next eligible automated payout run.",
+							"The payout moves through eligible, queued or processing states before Paystack Transfer sends it to the vendor's verified bank destination.",
+							"Paid to bank, failed and reversed states are recorded where applicable. Timing remains subject to Paystack, bank processing and applicable holds.",
+						],
+					},
+					{
+						title: "Historical transactions",
+						audience: ["buyer", "vendor"],
+						body: [
+							"Older transactions created under a retained legacy settlement mode continue to follow their recorded transaction terms.",
+							"Legacy compatibility fields do not describe the V2 model used in this current public policy.",
 						],
 					},
 				]}

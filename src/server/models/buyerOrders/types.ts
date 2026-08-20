@@ -31,6 +31,9 @@ export interface IBuyerOrderItem {
 	menuItemId: string;
 	snapshotName: string;
 	snapshotPriceKobo: number;
+	selectedVariantDailyOrderVariantId?: string;
+	selectedVariantName?: string;
+	selectedVariantPriceKobo?: number;
 	snapshotPrepMin?: number;
 	quantity: number;
 	subtotalKobo: number;
@@ -60,6 +63,7 @@ export interface IBuyerOrderCreateInput {
 	deliveryFullAddress?: string;
 	deliveryPhone?: string;
 	customerMessage?: string;
+	deliveryEstimateMinutes?: number;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
@@ -69,7 +73,12 @@ export interface IBuyerOrderCreateInput {
 	vendorDeliveryAmountKobo?: number;
 	vendorSettlementKobo?: number;
 	totalKobo: number;
+	handoverTokenHash?: string;
+	handoverPinHash?: string;
+	handoverCredentialCreatedAt?: Date;
 	items: IBuyerOrderItem[];
+	// Delivery code assigned at order creation.
+	deliveryCode?: string;
 }
 
 export interface IBuyerOrder {
@@ -78,6 +87,7 @@ export interface IBuyerOrder {
 	orderNumber: string;
 	dailyOrderId: string;
 	vendorId: string;
+	vendorName?: string | null;
 	buyerId: string;
 	campusId: string;
 	status: OrderStatus;
@@ -88,6 +98,7 @@ export interface IBuyerOrder {
 	deliveryFullAddress?: string;
 	deliveryPhone?: string;
 	customerMessage?: string;
+	deliveryEstimateMinutes?: number;
 	subtotalKobo: number;
 	deliveryFeeKobo: number;
 	platformFeeKobo: number;
@@ -98,8 +109,11 @@ export interface IBuyerOrder {
 	vendorSettlementKobo?: number;
 	totalKobo: number;
 	cancellationReason?: string;
+	cancellationReasonCode?: string;
+	cancellationExplanation?: string;
 	cancelledBy?: "buyer" | "vendor" | "system";
 	paidAt?: Date;
+	inventoryCommittedAt?: Date;
 	acceptedAt?: Date;
 	acceptanceDeadline?: Date;
 	expectedReadyAt?: Date;
@@ -116,6 +130,8 @@ export interface IBuyerOrder {
 	vendorAcceptanceReminder5SentAt?: Date;
 	vendorAcceptanceWarning8SentAt?: Date;
 	vendorRejectedAt?: Date;
+	vendorRejectionReasonCode?: string;
+	vendorRejectionExplanation?: string;
 	refundPendingAt?: Date;
 	refundProcessingAt?: Date;
 	refundFailedAt?: Date;
@@ -131,6 +147,7 @@ export interface IBuyerOrder {
 	pickupProblemReportedAt?: Date;
 	pickupProblemNote?: string;
 	deliveryStartedAt?: Date;
+	deliveryOverdueEscalatedAt?: Date;
 	deliveryBuyerUnreachableReportedAt?: Date;
 	deliveryBuyerResponseDeadline?: Date;
 	deliveryFailedAt?: Date;
@@ -144,10 +161,11 @@ export interface IBuyerOrder {
 	deliveredAt?: Date;
 	confirmedAt?: Date;
 	confirmedBy?: string;
-	confirmationMethod?: "QR" | "PIN" | "SUPPORT";
+	confirmationMethod?: "QR" | "PIN" | "SUPPORT" | "BUYER_BUTTON";
 	confirmationVendorId?: string;
 	confirmationBuyerId?: string;
 	confirmationOrderId?: string;
+	trustedCompletionAuditRef?: string;
 	handoverTokenHash?: string;
 	handoverPinHash?: string;
 	handoverCredentialCreatedAt?: Date;
@@ -170,6 +188,12 @@ export interface IBuyerOrder {
 	 * historical order has a receipt pending.
 	 */
 	receiptStatus?: ReceiptStatus;
+	// Delivery code assigned at order creation (e.g. "CHI1001").
+	deliveryCode?: string;
+	// Vendor marked the order as sent for delivery.
+	sentForDeliveryAt?: Date;
+	// Buyer confirmed physical receipt of the order.
+	buyerReceiptConfirmedAt?: Date;
 	timeline?: IBuyerOrderTimelineEntry[];
 	items: IBuyerOrderItem[];
 	createdAt: Date;

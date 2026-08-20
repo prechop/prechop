@@ -36,11 +36,6 @@ export async function connectMongoDB(): Promise<typeof mongoose> {
 			maxPoolSize: 10,
 			serverSelectionTimeoutMS: 8000,
 		};
-		console.log("[db] connecting", {
-			DB_NAME,
-			MONGODB_URI_PRESENT: Boolean(MONGODB_URI),
-			MONGODB_URI_DB_HINT: MONGODB_URI.split("?")[0].split("/").pop(),
-		});
 		cache.promise = mongoose.connect(MONGODB_URI, options).then((m) => {
 			console.log("MongoDB database connected...");
 			return m;

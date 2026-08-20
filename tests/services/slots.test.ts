@@ -10,6 +10,7 @@ import {
 
 const TTL = 60;
 const usedIds: string[] = [];
+const usedReservationIds: string[] = [];
 
 function itemId(): string {
 	const id = new mongoose.Types.ObjectId().toString();
@@ -17,15 +18,33 @@ function itemId(): string {
 	return id;
 }
 
+function reservationId(): string {
+	const id = new mongoose.Types.ObjectId().toString();
+	usedReservationIds.push(id);
+	return id;
+}
+
 afterEach(async () => {
 	// Clean only the reservation keys this suite created.
 	if (usedIds.length) {
-		await Redis.del(...usedIds.map((id) => `slot:reserved:${id}`));
+		const keys = usedIds.flatMap((id) => [
+			`slot:reserved:${id}`,
+			...usedReservationIds.map(
+				(reservation) => `slot:reserved:${id}:order:${reservation}`,
+			),
+		]);
+		await Redis.del(...keys);
 	}
 });
 
 afterAll(async () => {
-	await Redis.del(...usedIds.map((id) => `slot:reserved:${id}`));
+	const keys = usedIds.flatMap((id) => [
+		`slot:reserved:${id}`,
+		...usedReservationIds.map(
+			(reservation) => `slot:reserved:${id}:order:${reservation}`,
+		),
+	]);
+	if (keys.length) await Redis.del(...keys);
 });
 
 describe("reserveSlots", () => {
@@ -41,6 +60,26 @@ describe("reserveSlots", () => {
 		expect(await Redis.get(`slot:reserved:${req.dailyOrderItemId}`)).toBe(
 			"3",
 		);
+	});
+
+	it("tracks the buyer order reservation separately from total reserved quantity", async () => {
+		const req: SlotRequest = {
+			dailyOrderItemId: itemId(),
+			quantity: 1,
+			committed: 0,
+			maxQuantity: 1,
+		};
+		const orderReservation = reservationId();
+		const res = await reserveSlots([req], TTL, orderReservation);
+		expect(res.ok).toBe(true);
+		expect(await Redis.get(`slot:reserved:${req.dailyOrderItemId}`)).toBe(
+			"1",
+		);
+		expect(
+			await Redis.get(
+				`slot:reserved:${req.dailyOrderItemId}:order:${orderReservation}`,
+			),
+		).toBe("1");
 	});
 
 	it("ignores items with unlimited capacity (no counter created)", async () => {
@@ -75,14 +114,39 @@ describe("reserveSlots", () => {
 			TTL,
 		);
 		expect(res.ok).toBe(false);
-		if (!res.ok) expect(res.failedItemId).toBe(id);
+		if (!res.ok) {
+			expect(res.failedItemId).toBe(id);
+			expect(res.remaining).toBe(2);
+		}
 		// reservation rolled back to 0
+		expect(await Redis.get(`slot:reserved:${id}`)).toBe("0");
+	});
+
+	it("returns the current available quantity when a request exceeds max plates", async () => {
+		const id = itemId();
+		const res = await reserveSlots(
+			[
+				{
+					dailyOrderItemId: id,
+					quantity: 2,
+					committed: 0,
+					maxQuantity: 1,
+				},
+			],
+			TTL,
+		);
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.failedItemId).toBe(id);
+			expect(res.remaining).toBe(1);
+		}
 		expect(await Redis.get(`slot:reserved:${id}`)).toBe("0");
 	});
 
 	it("rolls back earlier reservations when a later item oversells", async () => {
 		const a = itemId();
 		const b = itemId();
+		const orderReservation = reservationId();
 		const res = await reserveSlots(
 			[
 				{
@@ -99,11 +163,18 @@ describe("reserveSlots", () => {
 				},
 			],
 			TTL,
+			orderReservation,
 		);
 		expect(res.ok).toBe(false);
 		// both a and b rolled back
 		expect(await Redis.get(`slot:reserved:${a}`)).toBe("0");
 		expect(await Redis.get(`slot:reserved:${b}`)).toBe("0");
+		expect(
+			await Redis.get(`slot:reserved:${a}:order:${orderReservation}`),
+		).toBeNull();
+		expect(
+			await Redis.get(`slot:reserved:${b}:order:${orderReservation}`),
+		).toBeNull();
 	});
 
 	it("lets two concurrent buyers race for the last slot with only one winning", async () => {
@@ -120,6 +191,8 @@ describe("reserveSlots", () => {
 		]);
 		const winners = [r1, r2].filter((r) => r.ok).length;
 		expect(winners).toBe(1);
+		const loser = [r1, r2].find((r) => !r.ok);
+		expect(loser && "remaining" in loser ? loser.remaining : null).toBe(0);
 	});
 });
 
@@ -151,6 +224,7 @@ describe("releaseSlots / commitSlots", () => {
 
 	it("commitSlots drops the hold (alias of releaseSlots)", async () => {
 		const id = itemId();
+		const orderReservation = reservationId();
 		await reserveSlots(
 			[
 				{
@@ -161,8 +235,15 @@ describe("releaseSlots / commitSlots", () => {
 				},
 			],
 			TTL,
+			orderReservation,
 		);
-		await commitSlots([{ dailyOrderItemId: id, quantity: 2 }]);
+		await commitSlots(
+			[{ dailyOrderItemId: id, quantity: 2 }],
+			orderReservation,
+		);
 		expect(await Redis.get(`slot:reserved:${id}`)).toBe("0");
+		expect(
+			await Redis.get(`slot:reserved:${id}:order:${orderReservation}`),
+		).toBeNull();
 	});
 });

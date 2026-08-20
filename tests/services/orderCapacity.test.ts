@@ -122,10 +122,58 @@ async function settledOrder({
 }
 
 describe("cancelling a settled order returns its capacity", () => {
+	it("does not commit more than the item's maxQuantity", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const listing = await makeActiveDailyOrder({
+			vendorId,
+			campusId,
+			maxQuantity: 1,
+		});
+		const dailyOrderId = listing._id.toString();
+		const itemId = await firstItemId(dailyOrderId);
+
+		const ok = await incrementDailyOrderItemQuantityDB({
+			dailyOrderId,
+			dailyOrderItemId: itemId,
+			by: 2,
+		});
+
+		expect(ok).toBe(false);
+		expect(await orderedQty(dailyOrderId, itemId)).toBe(0);
+	});
+
+	it("allows only one concurrent commit for the final plate", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const listing = await makeActiveDailyOrder({
+			vendorId,
+			campusId,
+			maxQuantity: 1,
+		});
+		const dailyOrderId = listing._id.toString();
+		const itemId = await firstItemId(dailyOrderId);
+
+		const results = await Promise.all([
+			incrementDailyOrderItemQuantityDB({
+				dailyOrderId,
+				dailyOrderItemId: itemId,
+				by: 1,
+			}),
+			incrementDailyOrderItemQuantityDB({
+				dailyOrderId,
+				dailyOrderItemId: itemId,
+				by: 1,
+			}),
+		]);
+
+		expect(results.filter(Boolean)).toHaveLength(1);
+		expect(await orderedQty(dailyOrderId, itemId)).toBe(1);
+	});
+
 	it("buyer cancel of a PAID order frees the item's orderedQuantity", async () => {
 		const { vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
-		const buyerId = buyer!._id.toString();
+		if (!buyer) throw new Error("Buyer fixture was not created.");
+		const buyerId = buyer._id.toString();
 		const listing = await makeActiveDailyOrder({
 			vendorId,
 			campusId,
@@ -156,7 +204,8 @@ describe("cancelling a settled order returns its capacity", () => {
 	it("vendor cancel of a CONFIRMED order also frees capacity", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
-		const buyerId = buyer!._id.toString();
+		if (!buyer) throw new Error("Buyer fixture was not created.");
+		const buyerId = buyer._id.toString();
 		const listing = await makeActiveDailyOrder({
 			vendorId,
 			campusId,

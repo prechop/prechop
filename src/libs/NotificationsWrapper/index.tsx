@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -46,6 +47,20 @@ const Dot = styled.span<{ $unread: boolean }>`
 		p.$unread ? "var(--pc-color-primary)" : "var(--pc-border)"};
 `;
 
+function notificationUrl(notification: AppNotification) {
+	const url = notification.data?.url;
+	if (typeof url === "string" && url.startsWith("/")) return url;
+	const orderId = notification.data?.orderId;
+	if (
+		notification.type === "PICKUP_NO_SHOW_RESPONSE_REQUIRED" &&
+		typeof orderId === "string" &&
+		orderId
+	) {
+		return `/my-orders/${encodeURIComponent(orderId)}#pickup-no-show-response`;
+	}
+	return null;
+}
+
 export default function NotificationsWrapper() {
 	const { toast } = useToast();
 	const { data, mutate } = useSWR<{
@@ -77,6 +92,14 @@ export default function NotificationsWrapper() {
 		} catch {
 			toast("Could not mark notifications as read.", "error");
 		}
+	}
+
+	function markRead(notification: AppNotification) {
+		if (notification.isRead) return;
+		void api
+			.patch(`/notifications/${notification.id}/read`)
+			.then(() => mutate())
+			.catch(() => undefined);
 	}
 
 	return (
@@ -125,25 +148,51 @@ export default function NotificationsWrapper() {
 							/>
 						) : (
 							<NotifList>
-								{notifications.map((n) => (
-									<NotifItem key={n.id} $unread={!n.isRead}>
-										<Dot $unread={!n.isRead} aria-hidden />
-										<Stack $gap={2}>
-											<Text
-												$weight={n.isRead ? 400 : 700}
-												$size={14}
-											>
-												{n.title}
-											</Text>
-											<Text $muted $size={13}>
-												{n.body}
-											</Text>
-											<Text $muted $size={12}>
-												{formatDateTime(n.createdAt)}
-											</Text>
-										</Stack>
-									</NotifItem>
-								))}
+								{notifications.map((n) => {
+									const href = notificationUrl(n);
+									return (
+										<NotifItem
+											key={n.id}
+											$unread={!n.isRead}
+										>
+											<Dot
+												$unread={!n.isRead}
+												aria-hidden
+											/>
+											<Stack $gap={6}>
+												<Text
+													$weight={
+														n.isRead ? 400 : 700
+													}
+													$size={14}
+												>
+													{n.title}
+												</Text>
+												<Text $muted $size={13}>
+													{n.body}
+												</Text>
+												<Text $muted $size={12}>
+													{formatDateTime(
+														n.createdAt,
+													)}
+												</Text>
+												{href && (
+													<Button
+														as={Link}
+														href={href}
+														$size="sm"
+														$variant="secondary"
+														onClick={() =>
+															markRead(n)
+														}
+													>
+														Respond now
+													</Button>
+												)}
+											</Stack>
+										</NotifItem>
+									);
+								})}
 							</NotifList>
 						)}
 					</Stack>

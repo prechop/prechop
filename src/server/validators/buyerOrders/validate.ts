@@ -20,6 +20,7 @@ export const placeOrderBodySchema = zod
 					.object({
 						dailyOrderItemId: zod.string().min(1),
 						quantity: zod.coerce.number().int().min(1).max(50),
+						selectedVariantId: zod.string().min(1).optional(),
 						selectedOptionIds: zod.array(zod.string()).optional(),
 						selectedOptions: zod
 							.array(
@@ -55,6 +56,9 @@ export const updateOrderStatusBodySchema = zod
 			OrderStatus.READY_FOR_DELIVERY,
 			OrderStatus.IN_TRANSIT,
 		]),
+		reason: zod.string().trim().min(1).max(500).optional(),
+		reasonCode: zod.string().trim().min(1).max(80).optional(),
+		explanation: zod.string().trim().min(1).max(500).optional(),
 	})
 	.strict();
 
@@ -65,7 +69,11 @@ export const reviseReadyEstimateBodySchema = zod
 	.strict();
 
 export const cancelOrderBodySchema = zod
-	.object({ reason: zod.string().min(1).max(500) })
+	.object({
+		reason: zod.string().trim().min(1).max(500),
+		reasonCode: zod.string().trim().min(1).max(80).optional(),
+		explanation: zod.string().trim().min(1).max(500).optional(),
+	})
 	.strict();
 
 export const confirmHandoverBodySchema = zod

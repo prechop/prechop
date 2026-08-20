@@ -3,6 +3,8 @@
 
 import { generateShareableToken } from "@/server/constants/orderNumber";
 import {
+	BrandKitFulfillmentStatus,
+	BrandKitPaymentStatus,
 	createCampusDB,
 	createDailyOrderDB,
 	createMenuItemDB,
@@ -96,6 +98,14 @@ export async function makeVendor({
 	// open-status gate). Tests that need a closed vendor set it explicitly.
 	if (status === VendorStatus.ACTIVE) {
 		await setVendorOpenForOrdersDB({ id: vendorId, isOpenForOrders: true });
+		await updateVendorProfileDB({
+			id: vendorId,
+			payload: {
+				brandKitPaymentStatus: BrandKitPaymentStatus.PAID,
+				brandKitFulfillmentStatus: BrandKitFulfillmentStatus.RECEIVED,
+				brandKitReceivedAt: new Date(),
+			},
+		});
 	}
 	if (withSubaccount) {
 		await updateVendorProfileDB({

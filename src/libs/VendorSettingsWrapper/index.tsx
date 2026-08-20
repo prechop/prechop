@@ -5,1124 +5,1815 @@ import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
-	Avatar,
-	Button,
-	Card,
-	FadeIn,
-	Input,
-	PageHeader,
-	Row,
-	SectionHeader,
-	Select,
-	Stack,
-	Text,
-	Textarea,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  FadeIn,
+  Input,
+  PageHeader,
+  Row,
+  SectionHeader,
+  Select,
+  Stack,
+  Text,
+  Textarea,
 } from "@/components";
 import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import {
-	MENU_CATEGORIES,
-	normalizeMenuCategory,
+  MENU_CATEGORIES,
+  normalizeMenuCategory,
 } from "@/constants/menuCategories";
+import { storeUrl, storeWhatsAppMessage } from "@/constants/shareLinks";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { describeFeePolicy, useFeePolicy } from "@/hooks/useFeePolicy";
 import { useToast } from "@/hooks/useToast";
 import BankDetailsForm from "@/libs/BankDetailsForm";
+import ForgotPinFlow from "@/libs/ForgotPinFlow";
+import {
+  clearPinResetAuthParam,
+  getPinResetAuthToken,
+} from "@/libs/forgotPinAuth";
 import type { VendorMe } from "@/libs/VendorOnboardingWrapper";
+import VendorSecurityPinForm from "@/libs/VendorSecurityPinForm";
 import type { Campus } from "@/types";
 
 interface School {
-	id: string;
-	name: string;
-	state: string;
+  id: string;
+  name: string;
+  state: string;
 }
 
 const VENDOR_TYPES = [
-	{ value: "STUDENT_COOK", label: "Student cook" },
-	{ value: "CAMPUS_STALL", label: "Campus stall" },
-	{ value: "RESTAURANT", label: "Restaurant" },
-	{ value: "BAKERY", label: "Bakery" },
+  { value: "STUDENT_COOK", label: "Student cook" },
+  { value: "CAMPUS_STALL", label: "Campus stall" },
+  { value: "RESTAURANT", label: "Restaurant" },
+  { value: "BAKERY", label: "Bakery" },
 ];
 const SELLING_POLICY_LINKS = [
-	{ href: "/help?audience=vendor", label: "Help / FAQs" },
-	{ href: "/how-selling-works", label: "How Selling Works" },
-	{
-		href: "/policies/payments-and-settlement",
-		label: "Payments and Settlement",
-	},
-	{
-		href: "/policies/cancellation-and-refunds",
-		label: "Cancellation and Refunds",
-	},
-	{ href: "/policies/pickup-and-delivery", label: "Pickup and Delivery" },
-	{ href: "/policies/buyer-no-show", label: "Buyer No-show" },
-	{ href: "/policies/disputes", label: "Disputes" },
-	{ href: "/policies/vendor-policy", label: "Vendor Policy" },
-	{ href: "/privacy", label: "Privacy" },
-	{ href: "/terms", label: "Terms" },
+  { href: "/help", label: "Help / FAQs" },
+  { href: "/how-selling-works", label: "How Selling Works" },
+  {
+    href: "/policies/payments-and-settlement",
+    label: "Payments and Payouts",
+  },
+  {
+    href: "/policies/cancellation-and-refunds",
+    label: "Cancellation and Refunds",
+  },
+  { href: "/policies/pickup-and-delivery", label: "Pickup and Delivery" },
+  { href: "/policies/buyer-no-show", label: "Buyer No-show" },
+  { href: "/policies/disputes", label: "Disputes" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
 ];
 const CATEGORIES = MENU_CATEGORIES;
 type FulfilmentChoice = "PICKUP" | "DELIVERY" | "BOTH";
 
 function fulfilmentChoice(
-	pickup: boolean,
-	delivery: boolean,
+  pickup: boolean,
+  delivery: boolean,
 ): FulfilmentChoice {
-	if (pickup && delivery) return "BOTH";
-	if (delivery) return "DELIVERY";
-	return "PICKUP";
+  if (pickup && delivery) return "BOTH";
+  if (delivery) return "DELIVERY";
+  return "PICKUP";
 }
 
 const CatGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
 
-	@media (max-width: 420px) {
-		gap: 6px;
-	}
+  @media (max-width: 420px) {
+    gap: 6px;
+  }
 
-	@media (max-width: 340px) {
-		grid-template-columns: 1fr;
-	}
+  @media (max-width: 340px) {
+    grid-template-columns: 1fr;
+  }
 `;
 const CatChip = styled.button<{ $on: boolean }>`
-	all: unset;
-	box-sizing: border-box;
-	min-width: 0;
-	min-height: 56px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
-	padding: 10px 8px;
-	border-radius: var(--pc-radius-sm);
-	font-size: 14px;
-	line-height: 1.22;
-	font-weight: 700;
-	overflow-wrap: anywhere;
-	cursor: pointer;
-	transition: border-color var(--pc-dur) var(--pc-ease),
-		background var(--pc-dur) var(--pc-ease);
-	border: 1.5px solid
-		${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
-	background: ${(p) =>
-		p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
-	color: ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-text)")};
-	&:hover {
-		border-color: var(--pc-color-primary);
-	}
+  all: unset;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: var(--pc-radius-sm);
+  font-size: 14px;
+  line-height: 1.22;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition:
+    border-color var(--pc-dur) var(--pc-ease),
+    background var(--pc-dur) var(--pc-ease);
+  border: 1.5px solid
+    ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  background: ${(p) =>
+    p.$on ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+  color: ${(p) => (p.$on ? "var(--pc-color-primary)" : "var(--pc-text)")};
+  &:hover {
+    border-color: var(--pc-color-primary);
+  }
 
-	@media (max-width: 420px) {
-		min-height: 46px;
-		padding: 8px 6px;
-		font-size: 12.5px;
-		line-height: 1.18;
-	}
+  @media (max-width: 420px) {
+    min-height: 46px;
+    padding: 8px 6px;
+    font-size: 12.5px;
+    line-height: 1.18;
+  }
 
-	@media (max-width: 360px) {
-		font-size: 12px;
-	}
+  @media (max-width: 360px) {
+    font-size: 12px;
+  }
 `;
 const ToggleRow = styled.div`
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--pc-space-3);
-	padding: var(--pc-space-3) var(--pc-space-4);
-	background: var(--pc-surface-2);
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+  padding: var(--pc-space-3) var(--pc-space-4);
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
 `;
 const Switch = styled.button<{ $on: boolean }>`
-	position: relative;
-	width: 46px;
-	height: 27px;
-	border-radius: var(--pc-radius-pill);
-	border: none;
-	cursor: pointer;
-	flex-shrink: 0;
-	transition: background var(--pc-dur) var(--pc-ease);
-	background: ${(p) =>
-		p.$on ? "var(--pc-color-accent)" : "var(--pc-surface-3)"};
-	&::after {
-		content: "";
-		position: absolute;
-		top: 3px;
-		left: ${(p) => (p.$on ? "22px" : "3px")};
-		width: 21px;
-		height: 21px;
-		border-radius: 999px;
-		background: var(--pc-text-inverse);
-		box-shadow: var(--pc-shadow);
-		transition: left var(--pc-dur) var(--pc-ease);
-	}
+  position: relative;
+  width: 46px;
+  height: 27px;
+  border-radius: var(--pc-radius-pill);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--pc-dur) var(--pc-ease);
+  background: ${(p) =>
+    p.$on ? "var(--pc-color-accent)" : "var(--pc-surface-3)"};
+  &::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: ${(p) => (p.$on ? "22px" : "3px")};
+    width: 21px;
+    height: 21px;
+    border-radius: 999px;
+    background: var(--pc-text-inverse);
+    box-shadow: var(--pc-shadow);
+    transition: left var(--pc-dur) var(--pc-ease);
+  }
 `;
 const ConfirmLabel = styled.label`
-	display: flex;
-	gap: var(--pc-space-3);
-	align-items: flex-start;
-	padding: var(--pc-space-3);
-	border: 1px solid var(--pc-border);
-	border-radius: var(--pc-radius-sm);
-	background: var(--pc-surface-2);
-	color: var(--pc-text);
-	font-size: 13px;
-	line-height: 1.45;
+  display: flex;
+  gap: var(--pc-space-3);
+  align-items: flex-start;
+  padding: var(--pc-space-3);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface-2);
+  color: var(--pc-text);
+  font-size: 13px;
+  line-height: 1.45;
 
-	input {
-		margin-top: 3px;
-		width: 18px;
-		height: 18px;
-		accent-color: var(--pc-color-primary);
-		flex-shrink: 0;
-	}
+  input {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--pc-color-primary);
+    flex-shrink: 0;
+  }
 `;
 const AccountLink = styled(Link)`
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--pc-color-primary);
-	font-weight: 700;
-	font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pc-color-primary);
+  font-weight: 700;
+  font-size: 14px;
 `;
 const PolicyLinkGrid = styled.div`
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-	gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+`;
+const StoreUrlValue = styled.div`
+  width: 100%;
+  min-width: 0;
+  padding: 12px 15px;
+  border: 1.5px solid var(--pc-input-border);
+  border-radius: var(--pc-radius-sm);
+  background: var(--pc-surface);
+  color: var(--pc-text);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+`;
+const StoreUrlLabel = styled.span`
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pc-text);
+`;
+const StoreActions = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  > *:last-child {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 380px) {
+    grid-template-columns: 1fr;
+
+    > *:last-child {
+      grid-column: auto;
+    }
+  }
+`;
+const StoreCard = styled(Card)`
+  min-width: 0;
+  overflow: hidden;
+
+  @media (max-width: 520px) {
+    padding: var(--pc-space-4);
+  }
+`;
+const ProfileIdentity = styled(Row)`
+  min-width: 0;
+
+  > * {
+    min-width: 0;
+  }
+`;
+const UploadLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-sm);
+  color: var(--pc-text);
+  background: var(--pc-surface-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
 `;
 
+const DangerCard = styled(Card)`
+  border-color: color-mix(in srgb, var(--pc-color-danger) 48%, var(--pc-border));
+`;
+const DangerAction = styled.div`
+  padding: var(--pc-space-4) 0;
+  border-top: 1px solid var(--pc-border);
+
+  &:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+`;
+const DangerTitle = styled(Text)`
+  color: var(--pc-color-danger);
+`;
+const ConfirmationCode = styled.code`
+  color: var(--pc-text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+`;
+
+const CLOSE_VENDOR_CONFIRMATION = "CLOSE MY VENDOR PROFILE";
+const DELETE_ACCOUNT_CONFIRMATION = "DELETE MY PRECHOP ACCOUNT";
+
 function errMsg(e: unknown): string {
-	const m = (e as { response?: { data?: { message?: string } } })?.response
-		?.data?.message;
-	return m ?? "Something went wrong. Please try again.";
+  const m = (e as { response?: { data?: { message?: string } } })?.response
+    ?.data?.message;
+  return m ?? "Something went wrong. Please try again.";
 }
 
 function ToggleSetting({
-	title,
-	hint,
-	on,
-	onToggle,
+  title,
+  hint,
+  on,
+  onToggle,
 }: {
-	title: string;
-	hint: string;
-	on: boolean;
-	onToggle: () => void;
+  title: string;
+  hint: string;
+  on: boolean;
+  onToggle: () => void;
 }) {
-	return (
-		<ToggleRow>
-			<Stack $gap={2}>
-				<Text $weight={600}>{title}</Text>
-				<Text $muted $size={12}>
-					{hint}
-				</Text>
-			</Stack>
-			<Switch
-				type="button"
-				$on={on}
-				onClick={onToggle}
-				aria-label={`Toggle ${title}`}
-				aria-pressed={on}
-			/>
-		</ToggleRow>
-	);
+  return (
+    <ToggleRow>
+      <Stack $gap={2}>
+        <Text $weight={600}>{title}</Text>
+        <Text $muted $size={12}>
+          {hint}
+        </Text>
+      </Stack>
+      <Switch
+        type="button"
+        $on={on}
+        onClick={onToggle}
+        aria-label={`Toggle ${title}`}
+        aria-pressed={on}
+      />
+    </ToggleRow>
+  );
 }
 
-export default function VendorSettingsWrapper() {
-	const { toast } = useToast();
-	const { user, refresh } = useAuth();
-	const {
-		data: vendor,
-		error: vendorError,
-		isLoading,
-		mutate,
-	} = useSWR<VendorMe>("/vendors/me", fetcher);
-	const { data: schools } = useSWR<School[]>("/vendors/schools", fetcher);
-	const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
-	const { policy: feePolicy } = useFeePolicy();
+const StickerPreviewCard = styled(Card)`
+  width: min(320px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+`;
+const StickerBrand = styled(Text)`
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--pc-text-muted);
+`;
+const StickerKitchen = styled(Text)`
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--pc-text);
+`;
+const StickerCode = styled(Text)`
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--pc-color-primary);
+`;
+const StickerQr = styled.div`
+  width: 120px;
+  height: 120px;
+  border-radius: var(--pc-radius);
+  background: var(--pc-surface-2);
+  border: 1px solid var(--pc-border);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--pc-text-muted);
+`;
+const StickerFooter = styled(Text)`
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--pc-text-muted);
+`;
 
-	// Business identity
-	const [firstName, setFirstName] = useState("");
-	const [lastName, setLastName] = useState("");
-	const [businessName, setBusinessName] = useState("");
-	const [vendorType, setVendorType] = useState("");
-	const [email, setEmail] = useState("");
-	const [contactPhone, setContactPhone] = useState("");
-	const [description, setDescription] = useState("");
+function StickerPreview({
+  data,
+}: {
+  data: {
+    vendorName?: string;
+    shortId?: string;
+    exampleCode?: string;
+    qrUrl?: string;
+    qrDataUrl?: string;
+    storeUrl?: string;
+  };
+}) {
+  return (
+    <StickerPreviewCard>
+      <StickerBrand>PreChop</StickerBrand>
+      <StickerKitchen>{data.vendorName ?? "Your Kitchen"}</StickerKitchen>
+      <StickerCode>{data.exampleCode ?? "???"}</StickerCode>
+      {data.qrDataUrl ? (
+        <img
+          src={data.qrDataUrl}
+          alt="QR code"
+          width={120}
+          height={120}
+          style={{ borderRadius: "var(--pc-radius)", border: "1px solid var(--pc-border)" }}
+        />
+      ) : (
+        <StickerQr>QR code</StickerQr>
+      )}
+      <Text $muted $size={12}>
+        Scan to visit kitchen
+      </Text>
+      <StickerFooter>Powered by PreChop</StickerFooter>
+      <Text $muted $size={11}>
+        {data.shortId ? `Vendor ID: ${data.shortId}` : ""}
+      </Text>
+    </StickerPreviewCard>
+  );
+}
 
-	// Categories
-	const [cats, setCats] = useState<string[]>([]);
+export default function VendorSettingsWrapper({
+  mode = "settings",
+}: {
+  mode?: "settings" | "store";
+}) {
+  const { toast } = useToast();
+  const { user, refresh } = useAuth();
+  const {
+    data: vendor,
+    error: vendorError,
+    isLoading,
+    mutate,
+  } = useSWR<VendorMe>("/vendors/me", fetcher);
+  const { data: schools } = useSWR<School[]>("/vendors/schools", fetcher);
+  const { data: campuses } = useSWR<Campus[]>("/campuses", fetcher);
+  const { policy: feePolicy } = useFeePolicy();
+  const adminResetToken = getPinResetAuthToken();
+  const [showAdminReset, setShowAdminReset] = useState(
+    Boolean(adminResetToken),
+  );
 
-	// Location
-	const [locationType, setLocationType] = useState<
-		"ON_CAMPUS" | "OFF_CAMPUS"
-	>("ON_CAMPUS");
-	const [campusId, setCampusId] = useState("");
-	const [schoolId, setSchoolId] = useState("");
-	const [hostelOrStallName, setHostelOrStallName] = useState("");
-	const [stateName, setStateName] = useState("");
-	const [areaOrAddress, setAreaOrAddress] = useState("");
-	const [campusIds, setCampusIds] = useState<string[]>([]);
+  useEffect(() => {
+    setShowAdminReset(Boolean(adminResetToken));
+  }, [adminResetToken]);
 
-	// Delivery defaults
-	const [defPickup, setDefPickup] = useState(true);
-	const [defDelivery, setDefDelivery] = useState(false);
-	const [defFee, setDefFee] = useState("");
-	const [defCoverage, setDefCoverage] = useState("");
-	const [defEstimate, setDefEstimate] = useState("");
-	const [defContact, setDefContact] = useState("");
-	const [defDeliveryAccepted, setDefDeliveryAccepted] = useState(false);
+  // Business identity
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [vendorType, setVendorType] = useState("");
+  const [email, setEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [description, setDescription] = useState("");
 
-	// Notifications
-	const [notifyNewOrders, setNotifyNewOrders] = useState(true);
-	const [notifyPayouts, setNotifyPayouts] = useState(true);
-	const [notifyReviews, setNotifyReviews] = useState(true);
-	const [securityPin, setSecurityPin] = useState("");
-	const [securityPinConfirm, setSecurityPinConfirm] = useState("");
+  // Categories
+  const [cats, setCats] = useState<string[]>([]);
 
-	const [busy, setBusy] = useState<string | null>(null);
-	const [startAttempted, setStartAttempted] = useState(false);
+  // Location
+  const [locationType, setLocationType] = useState<"ON_CAMPUS" | "OFF_CAMPUS">(
+    "ON_CAMPUS",
+  );
+  const [campusId, setCampusId] = useState("");
+  const [schoolId, setSchoolId] = useState("");
+  const [hostelOrStallName, setHostelOrStallName] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [areaOrAddress, setAreaOrAddress] = useState("");
+  const [campusIds, setCampusIds] = useState<string[]>([]);
 
-	useEffect(() => {
-		const status = vendorError?.response?.status;
-		if (status !== 404 || startAttempted || busy === "start-application")
-			return;
-		setStartAttempted(true);
-		setBusy("start-application");
-		api.post("/users/me/become-vendor", {})
-			.then(() => mutate())
-			.catch((e) => toast(errMsg(e), "error"))
-			.finally(() => setBusy(null));
-	}, [vendorError, busy, mutate, toast, startAttempted]);
+  // Delivery defaults
+  const [defPickup, setDefPickup] = useState(true);
+  const [defDelivery, setDefDelivery] = useState(false);
+  const [defFee, setDefFee] = useState("");
+  const [defCoverage, setDefCoverage] = useState("");
+  const [defEstimate, setDefEstimate] = useState("");
+  const [defContact, setDefContact] = useState("");
+  const [defDeliveryAccepted, setDefDeliveryAccepted] = useState(false);
 
-	// Seed form state once the profile loads (and whenever it changes).
-	useEffect(() => {
-		if (!vendor) return;
-		setFirstName(user?.firstName ?? "");
-		setLastName(user?.lastName ?? "");
-		setBusinessName(vendor.businessName ?? "");
-		setVendorType(vendor.vendorType ?? "");
-		setEmail(vendor.email ?? user?.email ?? "");
-		setContactPhone(vendor.contactPhone ?? "");
-		setDescription(vendor.description ?? "");
-		setCats((vendor.categories ?? []).map(normalizeMenuCategory));
-		setLocationType(vendor.locationType ?? "ON_CAMPUS");
-		setCampusId(vendor.campusId ?? "");
-		setSchoolId(vendor.schoolId ?? "");
-		setHostelOrStallName(vendor.hostelOrStallName ?? "");
-		setStateName(vendor.state ?? "");
-		setAreaOrAddress(vendor.areaOrAddress ?? "");
-		setCampusIds(vendor.campusIds ?? []);
-		setDefPickup(vendor.defaultPickupAvailable ?? true);
-		setDefDelivery(vendor.defaultDeliveryAvailable ?? false);
-		setDefFee(
-			vendor.defaultDeliveryFeeKobo
-				? String(vendor.defaultDeliveryFeeKobo / 100)
-				: "",
-		);
-		setDefCoverage(vendor.defaultDeliveryCoverage ?? "");
-		setDefEstimate(
-			vendor.defaultDeliveryEstimateMinutes
-				? String(vendor.defaultDeliveryEstimateMinutes)
-				: "",
-		);
-		setDefContact(vendor.defaultDeliveryContactPhone ?? "");
-		setDefDeliveryAccepted(
-			vendor.defaultDeliveryResponsibilityAccepted ?? false,
-		);
-		setNotifyNewOrders(vendor.notifyNewOrders ?? true);
-		setNotifyPayouts(vendor.notifyPayouts ?? true);
-		setNotifyReviews(vendor.notifyReviews ?? true);
-	}, [vendor, user]);
+  // Notifications
+  const [notifyNewOrders, setNotifyNewOrders] = useState(true);
+  const [notifyPayouts, setNotifyPayouts] = useState(true);
+  const [notifyReviews, setNotifyReviews] = useState(true);
+  const [notifyFollowers, setNotifyFollowers] = useState(true);
+  const [notifyFollowerMilestones, setNotifyFollowerMilestones] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [startAttempted, setStartAttempted] = useState(false);
+  const [storeSlugAttempted, setStoreSlugAttempted] = useState(false);
+  const [storeCopied, setStoreCopied] = useState(false);
+  const [dangerAction, setDangerAction] = useState<
+    "vendor" | "account" | null
+  >(null);
+  const [dangerConfirmation, setDangerConfirmation] = useState("");
+  const [dangerIdentifier, setDangerIdentifier] = useState("");
+  const [dangerPin, setDangerPin] = useState("");
 
-	const vendorErrorStatus =
-		vendorError?.response?.status ?? vendorError?.status;
-	if (vendorErrorStatus === 403) {
-		return (
-			<FadeIn>
-				<Card $accent>
-					<Stack $gap={10}>
-						<PageHeader
-							eyebrow="Vendor setup"
-							title="Finish your vendor submission"
-							subtitle="Complete onboarding before managing vendor settings."
-						/>
-						<Button
-							as={Link}
-							href="/vendor/onboarding"
-							style={{ alignSelf: "flex-start" }}
-						>
-							Continue setup
-						</Button>
-					</Stack>
-				</Card>
-			</FadeIn>
-		);
-	}
+  // Brand Kit
+  const [brandKitPaymentStatus, setBrandKitPaymentStatus] = useState<string | null>(null);
+  const [brandKitFulfillmentStatus, setBrandKitFulfillmentStatus] = useState<string | null>(null);
+  const [brandKitLoading, setBrandKitLoading] = useState(false);
+  const [stickerPreview, setStickerPreview] = useState<{
+    vendorName?: string;
+    shortId?: string;
+    exampleCode?: string;
+    qrUrl?: string;
+    storeUrl?: string;
+  } | null>(null);
 
-	if (isLoading || busy === "start-application" || !vendor)
-		return <PageLoader />;
+  // Feature settings
+  const [featureScheduleAhead, setFeatureScheduleAhead] = useState(false);
+  const [featureWeeklyBreakfastPlan, setFeatureWeeklyBreakfastPlan] = useState(false);
+  const [featureDelivery, setFeatureDelivery] = useState(false);
+  const [featurePickup, setFeaturePickup] = useState(true);
 
-	function toggleCat(v: string) {
-		const category = normalizeMenuCategory(v);
-		setCats((c) =>
-			c.includes(category)
-				? c.filter((x) => x !== category)
-				: [...c, category],
-		);
-	}
+  // Delivery coverage
+  const [deliveryCoverageType, setDeliveryCoverageType] = useState<"ANYWHERE" | "SPECIFIC">("SPECIFIC");
+  const [deliveryLocations, setDeliveryLocations] = useState<string[]>([]);
 
-	function toggleCampus(id: string) {
-		setCampusIds((current) => {
-			if (current.includes(id)) return current.filter((x) => x !== id);
-			if (current.length >= 3) {
-				toast("Select up to 3 campuses", "error");
-				return current;
-			}
-			return [...current, id];
-		});
-	}
+  useEffect(() => {
+    const status = vendorError?.response?.status;
+    if (status !== 404 || startAttempted || busy === "start-application")
+      return;
+    setStartAttempted(true);
+    setBusy("start-application");
+    api
+      .post("/users/me/become-vendor", {})
+      .then(() => mutate())
+      .catch((e) => toast(errMsg(e), "error"))
+      .finally(() => setBusy(null));
+  }, [vendorError, busy, mutate, toast, startAttempted]);
 
-	async function run(section: string, fn: () => Promise<void>) {
-		setBusy(section);
-		try {
-			await fn();
-			await mutate();
-		} catch (e) {
-			toast(errMsg(e), "error");
-		} finally {
-			setBusy(null);
-		}
-	}
+  useEffect(() => {
+    if (
+      mode !== "store" ||
+      !vendor ||
+      vendor.storeSlug ||
+      storeSlugAttempted
+    )
+      return;
+    setStoreSlugAttempted(true);
+    api
+      .post("/vendors/me/store-slug", {})
+      .then(() => mutate())
+      .catch((e) => toast(errMsg(e), "error"));
+  }, [mode, vendor, storeSlugAttempted, mutate, toast]);
 
-	async function saveIdentity() {
-		await run("identity", async () => {
-			await api.post("/vendors/me/business-identity", {
-				businessName: businessName.trim(),
-				...(vendorType ? { vendorType } : {}),
-				...(description.trim()
-					? { description: description.trim() }
-					: {}),
-				email: email.trim(),
-				...(contactPhone.trim()
-					? { contactPhone: contactPhone.trim() }
-					: {}),
-			});
-			toast("Business details saved", "success");
-		});
-	}
+  // Seed form state once the profile loads (and whenever it changes).
+  useEffect(() => {
+    if (!vendor) return;
+    setFirstName(user?.firstName ?? "");
+    setLastName(user?.lastName ?? "");
+    setBusinessName(vendor.businessName ?? "");
+    setVendorType(vendor.vendorType ?? "");
+    setEmail(vendor.email ?? user?.email ?? "");
+    setContactPhone(vendor.contactPhone ?? "");
+    setDescription(vendor.description ?? "");
+    setCats((vendor.categories ?? []).map(normalizeMenuCategory));
+    setLocationType(vendor.locationType ?? "ON_CAMPUS");
+    setCampusId(vendor.campusId ?? "");
+    setSchoolId(vendor.schoolId ?? "");
+    setHostelOrStallName(vendor.hostelOrStallName ?? "");
+    setStateName(vendor.state ?? "");
+    setAreaOrAddress(vendor.areaOrAddress ?? "");
+    setCampusIds(vendor.campusIds ?? []);
+    setDefPickup(vendor.defaultPickupAvailable ?? true);
+    setDefDelivery(vendor.defaultDeliveryAvailable ?? false);
+    setDefFee(
+      vendor.defaultDeliveryFeeKobo
+        ? String(vendor.defaultDeliveryFeeKobo / 100)
+        : "",
+    );
+    setDefCoverage(vendor.defaultDeliveryCoverage ?? "");
+    setDefEstimate(
+      vendor.defaultDeliveryEstimateMinutes
+        ? String(vendor.defaultDeliveryEstimateMinutes)
+        : "",
+    );
+    setDefContact(vendor.defaultDeliveryContactPhone ?? "");
+    setDefDeliveryAccepted(
+      vendor.defaultDeliveryResponsibilityAccepted ?? false,
+    );
+    setNotifyNewOrders(vendor.notifyNewOrders ?? true);
+    setNotifyPayouts(vendor.notifyPayouts ?? true);
+    setNotifyReviews(vendor.notifyReviews ?? true);
+    setNotifyFollowers(vendor.notifyFollowers ?? true);
+    setNotifyFollowerMilestones(vendor.notifyFollowerMilestones ?? true);
+    setBrandKitPaymentStatus(vendor.brandKitPaymentStatus ?? null);
+    setBrandKitFulfillmentStatus(vendor.brandKitFulfillmentStatus ?? null);
+    setFeatureScheduleAhead(vendor.featureScheduleAhead ?? false);
+    setFeatureWeeklyBreakfastPlan(vendor.featureWeeklyBreakfastPlan ?? false);
+    setFeatureDelivery(vendor.featureDelivery ?? false);
+    setFeaturePickup(vendor.featurePickup ?? true);
+    setDeliveryCoverageType(
+      (vendor.deliveryCoverageType as "ANYWHERE" | "SPECIFIC" | undefined) ??
+        "SPECIFIC",
+    );
+    setDeliveryLocations(vendor.deliveryLocations ?? []);
+  }, [vendor, user]);
 
-	async function savePersonalDetails() {
-		await run("profile", async () => {
-			await api.patch("/users/me", {
-				firstName: firstName.trim(),
-				lastName: lastName.trim(),
-			});
-			await refresh();
-			toast("Profile details saved", "success");
-		});
-	}
+  const vendorErrorStatus =
+    vendorError?.response?.status ?? vendorError?.status;
+  if (vendorErrorStatus === 403) {
+    return (
+      <FadeIn>
+        <Card $accent>
+          <Stack $gap={10}>
+            <PageHeader
+              eyebrow="Vendor setup"
+              title="Finish your vendor submission"
+              subtitle="Complete onboarding before managing vendor settings."
+            />
+            <Button
+              as={Link}
+              href="/vendor/onboarding"
+              style={{ alignSelf: "flex-start" }}>
+              Continue setup
+            </Button>
+          </Stack>
+        </Card>
+      </FadeIn>
+    );
+  }
 
-	async function uploadProfileImage(file: File) {
-		await run("image", async () => {
-			const presign = await apiData<{
-				uploadUrl: string;
-				key: string;
-			}>(
-				api.post("/vendors/me/profile-image/presign", {
-					mimeType: file.type,
-				}),
-			);
-			const put = await fetch(presign.uploadUrl, {
-				method: "PUT",
-				body: file,
-				headers: { "Content-Type": file.type },
-			});
-			if (!put.ok) throw new Error("Upload failed");
-			await api.post("/vendors/me/profile-image/confirm", {
-				key: presign.key,
-			});
-			toast("Profile picture updated", "success");
-		});
-	}
+  if (isLoading || busy === "start-application" || !vendor)
+    return <PageLoader />;
 
-	async function saveCategories() {
-		if (cats.length === 0) {
-			toast("Pick at least one category", "error");
-			return;
-		}
-		await run("categories", async () => {
-			await api.post("/vendors/me/categories", {
-				categories: cats.map(normalizeMenuCategory),
-			});
-			toast("Categories saved", "success");
-		});
-	}
+  function toggleCat(v: string) {
+    const category = normalizeMenuCategory(v);
+    setCats((c) =>
+      c.includes(category) ? c.filter((x) => x !== category) : [...c, category],
+    );
+  }
 
-	async function saveLocation() {
-		await run("location", async () => {
-			const body =
-				locationType === "ON_CAMPUS"
-					? {
-							locationType,
-							campusId,
-							...(schoolId ? { schoolId } : {}),
-							hostelOrStallName: hostelOrStallName.trim(),
-						}
-					: {
-							locationType,
-							state: stateName.trim(),
-							areaOrAddress: areaOrAddress.trim(),
-							campusIds,
-						};
-			await api.post("/vendors/me/location", body);
-			toast("Location saved", "success");
-		});
-	}
+  function toggleCampus(id: string) {
+    setCampusIds((current) => {
+      if (current.includes(id)) return current.filter((x) => x !== id);
+      if (current.length >= 3) {
+        toast("Select up to 3 campuses", "error");
+        return current;
+      }
+      return [...current, id];
+    });
+  }
 
-	async function saveDelivery() {
-		if (!defPickup && !defDelivery) {
-			toast("Choose pickup, delivery, or both.", "error");
-			return;
-		}
-		if (defDelivery) {
-			if (defFee.trim() === "" || Number(defFee) < 0) {
-				toast(
-					"Add a valid delivery fee. Use 0 for free delivery.",
-					"error",
-				);
-				return;
-			}
-			if (!defCoverage.trim()) {
-				toast("Add the supported delivery areas or distance.", "error");
-				return;
-			}
-			if (
-				!Number.isFinite(Number(defEstimate)) ||
-				Number(defEstimate) <= 0
-			) {
-				toast("Add a realistic delivery estimate in minutes.", "error");
-				return;
-			}
-			if (!defContact.trim()) {
-				toast("Add a delivery contact number.", "error");
-				return;
-			}
-			if (!defDeliveryAccepted) {
-				toast(
-					"Confirm that you manage and complete delivery.",
-					"error",
-				);
-				return;
-			}
-		}
-		await run("delivery", async () => {
-			await api.post("/vendors/me/delivery-defaults", {
-				defaultPickupAvailable: defPickup,
-				defaultDeliveryAvailable: defDelivery,
-				defaultDeliveryFeeKobo: defDelivery
-					? Math.round(Number(defFee) * 100)
-					: 0,
-				defaultDeliveryCoverage: defDelivery
-					? defCoverage.trim()
-					: undefined,
-				defaultDeliveryEstimateMinutes: defDelivery
-					? Math.round(Number(defEstimate))
-					: undefined,
-				defaultDeliveryContactPhone: defDelivery
-					? defContact.trim()
-					: undefined,
-				defaultDeliveryResponsibilityAccepted: defDelivery
-					? defDeliveryAccepted
-					: false,
-			});
-			toast("Delivery defaults saved", "success");
-		});
-	}
+  async function run(section: string, fn: () => Promise<void>) {
+    setBusy(section);
+    try {
+      await fn();
+      await mutate();
+    } catch (e) {
+      toast(errMsg(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
 
-	const stateCampuses = (campuses ?? []).filter(
-		(c) =>
-			stateName.trim() &&
-			c.state.trim().toLowerCase() === stateName.trim().toLowerCase(),
-	);
+  async function saveIdentity() {
+    await run("identity", async () => {
+      await api.post("/vendors/me/business-identity", {
+        businessName: businessName.trim(),
+        ...(vendorType ? { vendorType } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        email: email.trim(),
+        ...(contactPhone.trim() ? { contactPhone: contactPhone.trim() } : {}),
+      });
+      toast("Business details saved", "success");
+    });
+  }
 
-	async function saveNotifications() {
-		await run("notifications", async () => {
-			await api.post("/vendors/me/notification-prefs", {
-				notifyNewOrders,
-				notifyPayouts,
-				notifyReviews,
-			});
-			toast("Notification preferences saved", "success");
-		});
-	}
+  async function savePersonalDetails() {
+    await run("profile", async () => {
+      await api.patch("/users/me", {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+      });
+      await refresh();
+      toast("Profile details saved", "success");
+    });
+  }
 
-	async function completeSecurityOnboarding() {
-		if (!/^\d{4,6}$/.test(securityPin.trim())) {
-			toast("Enter a 4-6 digit security PIN", "error");
-			return;
-		}
-		if (securityPin.trim() !== securityPinConfirm.trim()) {
-			toast("Security PINs do not match", "error");
-			return;
-		}
-		await run("security-onboarding", async () => {
-			await api.patch("/vendors/me", {
-				action: "COMPLETE",
-				pin: securityPin.trim(),
-			});
-			setSecurityPin("");
-			setSecurityPinConfirm("");
-			toast("Security verification completed", "success");
-		});
-	}
+  async function uploadProfileImage(file: File) {
+    await run("image", async () => {
+      const presign = await apiData<{
+        uploadUrl: string;
+        key: string;
+      }>(
+        api.post("/vendors/me/profile-image/presign", {
+          mimeType: file.type,
+        }),
+      );
+      const put = await fetch(presign.uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!put.ok) throw new Error("Upload failed");
+      await api.post("/vendors/me/profile-image/confirm", {
+        key: presign.key,
+      });
+      toast("Profile picture updated", "success");
+    });
+  }
 
-	const securityVerified =
-		vendor.status !== "ACTIVE" ||
-		(!!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet);
+  async function saveCategories() {
+    if (cats.length === 0) {
+      toast("Pick at least one category", "error");
+      return;
+    }
+    await run("categories", async () => {
+      await api.post("/vendors/me/categories", {
+        categories: cats.map(normalizeMenuCategory),
+      });
+      toast("Categories saved", "success");
+    });
+  }
 
-	return (
-		<FadeIn>
-			<Stack $gap={20}>
-				<PageHeader
-					eyebrow="Vendor"
-					title="Settings"
-					subtitle="Manage your business profile, payouts, and how you get notified."
-				/>
+  async function saveLocation() {
+    await run("location", async () => {
+      const body =
+        locationType === "ON_CAMPUS"
+          ? {
+              locationType,
+              campusId,
+              ...(schoolId ? { schoolId } : {}),
+              hostelOrStallName: hostelOrStallName.trim(),
+            }
+          : {
+              locationType,
+              state: stateName.trim(),
+              areaOrAddress: areaOrAddress.trim(),
+              campusIds,
+            };
+      await api.post("/vendors/me/location", body);
+      toast("Location saved", "success");
+    });
+  }
 
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Profile" icon="👤" />
-						<Row $gap={14} $align="center" $wrap>
-							<Avatar
-								src={vendor.profileImageUrl}
-								name={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`}
-								size={72}
-							/>
-							<Stack $gap={6}>
-								<Text $weight={700}>
-									{user?.firstName} {user?.lastName}
-								</Text>
-								<Text $muted $size={13}>
-									{user?.email}
-								</Text>
-								<Input
-									type="file"
-									accept="image/*"
-									onChange={(e) => {
-										const file = e.target.files?.[0];
-										if (file) uploadProfileImage(file);
-									}}
-								/>
-							</Stack>
-						</Row>
-						<Row $gap={12} $wrap>
-							<div style={{ flex: 1, minWidth: 180 }}>
-								<Input
-									label="First name"
-									value={firstName}
-									onChange={(e) =>
-										setFirstName(e.target.value)
-									}
-								/>
-							</div>
-							<div style={{ flex: 1, minWidth: 180 }}>
-								<Input
-									label="Last name"
-									value={lastName}
-									onChange={(e) =>
-										setLastName(e.target.value)
-									}
-								/>
-							</div>
-						</Row>
-						<Button
-							$loading={busy === "profile"}
-							disabled={busy === "profile" || !firstName.trim()}
-							onClick={savePersonalDetails}
-						>
-							Save personal details
-						</Button>
-					</Stack>
-				</Card>
+  async function saveDelivery() {
+    if (!defPickup && !defDelivery) {
+      toast("Choose pickup, delivery, or both.", "error");
+      return;
+    }
+    if (defDelivery) {
+      if (defFee.trim() === "" || Number(defFee) < 0) {
+        toast("Add a valid delivery fee. Use 0 for free delivery.", "error");
+        return;
+      }
+      if (!defCoverage.trim()) {
+        toast("Add the supported delivery areas or distance.", "error");
+        return;
+      }
+      if (!Number.isFinite(Number(defEstimate)) || Number(defEstimate) <= 0) {
+        toast("Add a realistic delivery estimate in minutes.", "error");
+        return;
+      }
+      if (!defContact.trim()) {
+        toast("Add a delivery contact number.", "error");
+        return;
+      }
+      if (!defDeliveryAccepted) {
+        toast("Confirm that you manage and complete delivery.", "error");
+        return;
+      }
+    }
+    await run("delivery", async () => {
+      await api.post("/vendors/me/delivery-defaults", {
+        defaultPickupAvailable: defPickup,
+        defaultDeliveryAvailable: defDelivery,
+        defaultDeliveryFeeKobo: defDelivery
+          ? Math.round(Number(defFee) * 100)
+          : 0,
+        defaultDeliveryCoverage: defDelivery ? defCoverage.trim() : undefined,
+        defaultDeliveryEstimateMinutes: defDelivery
+          ? Math.round(Number(defEstimate))
+          : undefined,
+        defaultDeliveryContactPhone: defDelivery
+          ? defContact.trim()
+          : undefined,
+        defaultDeliveryResponsibilityAccepted: defDelivery
+          ? defDeliveryAccepted
+          : false,
+      });
+      toast("Delivery defaults saved", "success");
+    });
+  }
 
-				{/* Business identity */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Business identity" icon="🏪" />
-						<Input
-							label="Business name"
-							value={businessName}
-							onChange={(e) => setBusinessName(e.target.value)}
-							placeholder="Mama T's Kitchen"
-						/>
-						<Select
-							label="Vendor type"
-							value={vendorType}
-							onChange={(e) => setVendorType(e.target.value)}
-						>
-							<option value="">Select type…</option>
-							{VENDOR_TYPES.map((t) => (
-								<option key={t.value} value={t.value}>
-									{t.label}
-								</option>
-							))}
-						</Select>
-						<Input
-							label="Contact email"
-							type="email"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							placeholder="you@example.com"
-						/>
-						<Input
-							label="Phone / WhatsApp number"
-							type="tel"
-							value={contactPhone}
-							onChange={(e) => setContactPhone(e.target.value)}
-							placeholder="+2348012345678"
-						/>
-						<Textarea
-							label="Short description"
-							value={description}
-							onChange={(e) => setDescription(e.target.value)}
-							placeholder="Home-style Nigerian meals, freshly cooked daily."
-						/>
-						<Button
-							$loading={busy === "identity"}
-							disabled={
-								!businessName.trim() ||
-								!email.trim() ||
-								busy === "identity"
-							}
-							onClick={saveIdentity}
-						>
-							Save business details
-						</Button>
-					</Stack>
-				</Card>
+  const stateCampuses = (campuses ?? []).filter(
+    (c) =>
+      stateName.trim() &&
+      c.state.trim().toLowerCase() === stateName.trim().toLowerCase(),
+  );
 
-				{/* Categories */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Categories" icon="🍱" />
-						<Text $muted $size={13}>
-							What you sell — buyers filter by these.
-						</Text>
-						<CatGrid>
-							{CATEGORIES.map((c) => (
-								<CatChip
-									key={c.value}
-									type="button"
-									$on={cats.includes(c.value)}
-									onClick={() => toggleCat(c.value)}
-								>
-									{c.label}
-								</CatChip>
-							))}
-						</CatGrid>
-						<Button
-							$loading={busy === "categories"}
-							disabled={busy === "categories"}
-							onClick={saveCategories}
-						>
-							Save categories
-						</Button>
-					</Stack>
-				</Card>
+  async function saveNotifications() {
+    await run("notifications", async () => {
+      await api.post("/vendors/me/notification-prefs", {
+        notifyNewOrders,
+        notifyPayouts,
+        notifyReviews,
+        notifyFollowers,
+        notifyFollowerMilestones,
+      });
+      toast("Notification preferences saved", "success");
+    });
+  }
 
-				{/* Location */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Location" icon="📍" />
-						<Select
-							label="Location type"
-							value={locationType}
-							onChange={(e) =>
-								setLocationType(
-									e.target.value as
-										| "ON_CAMPUS"
-										| "OFF_CAMPUS",
-								)
-							}
-						>
-							<option value="ON_CAMPUS">On campus</option>
-							<option value="OFF_CAMPUS">Off campus</option>
-						</Select>
-						{locationType === "ON_CAMPUS" ? (
-							<>
-								<Select
-									label="Campus"
-									value={campusId}
-									onChange={(e) =>
-										setCampusId(e.target.value)
-									}
-								>
-									<option value="">Select campus</option>
-									{(campuses ?? []).map((c) => (
-										<option key={c.id} value={c.id}>
-											{c.name}
-										</option>
-									))}
-								</Select>
-								<Select
-									label="School (optional)"
-									value={schoolId}
-									onChange={(e) =>
-										setSchoolId(e.target.value)
-									}
-								>
-									<option value="">Select school…</option>
-									{(schools ?? []).map((s) => (
-										<option key={s.id} value={s.id}>
-											{s.name}
-										</option>
-									))}
-								</Select>
-								<Input
-									label="Hostel / stall name"
-									value={hostelOrStallName}
-									onChange={(e) =>
-										setHostelOrStallName(e.target.value)
-									}
-									placeholder="Block C, Room 12"
-								/>
-							</>
-						) : (
-							<>
-								<Input
-									label="State"
-									value={stateName}
-									onChange={(e) => {
-										setStateName(e.target.value);
-										setCampusIds([]);
-									}}
-									placeholder="Lagos"
-								/>
-								<Input
-									label="Area / address"
-									value={areaOrAddress}
-									onChange={(e) =>
-										setAreaOrAddress(e.target.value)
-									}
-									placeholder="12 Allen Avenue, Ikeja"
-								/>
-								{stateName.trim() && (
-									<Stack $gap={8}>
-										<Text $weight={700} $size={13}>
-											Campuses to show your menu on
-										</Text>
-										{stateCampuses.length > 0 ? (
-											<CatGrid>
-												{stateCampuses.map((c) => (
-													<CatChip
-														key={c.id}
-														type="button"
-														$on={campusIds.includes(
-															c.id,
-														)}
-														onClick={() =>
-															toggleCampus(c.id)
-														}
-													>
-														{c.name}
-													</CatChip>
-												))}
-											</CatGrid>
-										) : (
-											<Text $muted $size={13}>
-												No active campuses found for
-												this state.
-											</Text>
-										)}
-										<Text $muted $size={12}>
-											{campusIds.length}/3 selected
-										</Text>
-									</Stack>
-								)}
-							</>
-						)}
-						<Button
-							$loading={busy === "location"}
-							disabled={
-								busy === "location" ||
-								(locationType === "ON_CAMPUS"
-									? !campusId || !hostelOrStallName.trim()
-									: !stateName.trim() ||
-										!areaOrAddress.trim() ||
-										campusIds.length === 0)
-							}
-							onClick={saveLocation}
-						>
-							Save location
-						</Button>
-					</Stack>
-				</Card>
+  async function saveFeatureSettings() {
+    await run("features", async () => {
+      await api.patch("/vendors/me/feature-settings", {
+        scheduleAhead: featureScheduleAhead,
+        weeklyBreakfastPlan: featureWeeklyBreakfastPlan,
+        delivery: featureDelivery,
+        pickup: featurePickup,
+      });
+      toast("Feature settings saved", "success");
+    });
+  }
 
-				{/* Fees */}
-				<Card>
-					<Stack $gap={10}>
-						<SectionHeader title="Fees and payments" icon="%" />
-						{/* Derived from the server's effective policy, never
+  async function saveDeliveryCoverage() {
+    await run("delivery-coverage", async () => {
+      await api.patch("/vendors/me/delivery-coverage", {
+        deliveryCoverageType,
+        deliveryLocations,
+      });
+      toast("Delivery coverage saved", "success");
+    });
+  }
+
+  async function initiateBrandKit() {
+    await run("brand-kit", async () => {
+      const result = await api.post<{ data: { paymentUrl: string; reference: string } }>(
+        "/vendors/me/brand-kit",
+        { amountKobo: 0 },
+      );
+      if (result.data?.data?.paymentUrl) {
+        window.location.href = result.data.data.paymentUrl;
+      } else {
+        toast("Brand Kit is already active.", "success");
+      }
+    });
+  }
+
+  async function confirmBrandKitReceipt() {
+    await run("brand-kit-receipt", async () => {
+      await api.patch("/vendors/me/brand-kit", {});
+      toast("Brand Kit receipt confirmed", "success");
+      mutate();
+    });
+  }
+
+  async function previewSticker() {
+    await run("sticker-preview", async () => {
+      const result = await api.post<{ data: { vendorName?: string; shortId?: string; exampleCode?: string; qrUrl?: string; storeUrl?: string } }>(
+        "/api/stickers/preview",
+        {},
+      );
+      if (result.data?.data) {
+        setStickerPreview(result.data.data);
+      }
+    });
+  }
+
+  function openDangerAction(action: "vendor" | "account") {
+    setDangerAction(action);
+    setDangerConfirmation("");
+    setDangerIdentifier("");
+    setDangerPin("");
+  }
+
+  async function closeVendorAccount() {
+    setBusy("close-vendor");
+    try {
+      await api.post("/vendors/me/close", {
+        confirmation: dangerConfirmation,
+        ...(dangerPin ? { securityPin: dangerPin } : {}),
+      });
+      toast(
+        "Vendor profile closed. Your buyer account is still active.",
+        "success",
+      );
+      await refresh();
+      window.location.assign("/feed");
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deletePrechopAccount() {
+    setBusy("delete-account");
+    try {
+      await api.delete("/users/me", {
+        data: {
+          accountIdentifier: dangerIdentifier,
+          confirmation: dangerConfirmation,
+          ...(dangerPin ? { securityPin: dangerPin } : {}),
+        },
+      });
+      window.location.assign("/login?account=deleted");
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const securityPinReady =
+    !!vendor.securityOnboardingCompletedAt && !!vendor.securityPinSet;
+  const publicStoreUrl = vendor.storeSlug ? storeUrl(vendor.storeSlug) : "";
+  const storeShareHref = vendor.storeSlug
+    ? `https://wa.me/?text=${encodeURIComponent(
+        storeWhatsAppMessage(
+          vendor.businessName ?? "My kitchen",
+          vendor.storeSlug,
+        ),
+      )}`
+    : "";
+
+  async function copyStoreLink() {
+    if (!publicStoreUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicStoreUrl);
+      setStoreCopied(true);
+      toast("Store link copied", "success");
+      setTimeout(() => setStoreCopied(false), 2000);
+    } catch {
+      toast("Couldn't copy the store link", "error");
+    }
+  }
+
+  return (
+    <FadeIn>
+      <Stack $gap={20}>
+        <PageHeader
+          eyebrow="Vendor"
+          title={mode === "store" ? "Store" : "Settings"}
+          subtitle={
+            mode === "store"
+              ? "Manage the permanent home buyers see for your kitchen."
+              : "Manage payouts, notifications, security, and your account."
+          }
+        />
+
+        {mode === "store" && (
+          <StoreCard $accent>
+            <Stack $gap={14}>
+              <SectionHeader title="Your Prechop store" icon="🏪" />
+              <Text $muted $size={13}>
+                A permanent home for your kitchen. Share this link anywhere—it
+                stays the same even when today&apos;s menu closes.
+              </Text>
+              {publicStoreUrl ? (
+                <>
+                  <Stack $gap={7}>
+                    <StoreUrlLabel>Public store URL</StoreUrlLabel>
+                    <StoreUrlValue>{publicStoreUrl}</StoreUrlValue>
+                  </Stack>
+                  <StoreActions>
+                    <Button
+                      as={Link}
+                      href={`/${vendor.storeSlug}`}
+                      target="_blank"
+                      $variant="secondary">
+                      Preview store
+                    </Button>
+                    <Button $variant="secondary" onClick={copyStoreLink}>
+                      {storeCopied ? "Copied ✓" : "Copy store link"}
+                    </Button>
+                    <Button
+                      as="a"
+                      href={storeShareHref}
+                      target="_blank"
+                      rel="noopener noreferrer">
+                      Share to WhatsApp
+                    </Button>
+                  </StoreActions>
+                </>
+              ) : (
+                <Text $muted $size={13}>
+                  Creating your permanent store link…
+                </Text>
+              )}
+            </Stack>
+          </StoreCard>
+        )}
+
+        {mode === "settings" && showAdminReset && adminResetToken && (
+          <Card $accent>
+            <Stack $gap={10}>
+              <Text $weight={700}>Admin PIN reset approved</Text>
+              <ForgotPinFlow
+                email={vendor.email ?? user?.email ?? ""}
+                adminAuthorizedToken={adminResetToken}
+                onDone={() => {
+                  const nextUrl = clearPinResetAuthParam();
+                  if (typeof window !== "undefined") {
+                    window.history.replaceState({}, "", nextUrl);
+                  }
+                  setShowAdminReset(false);
+                }}
+                onCancel={() => {
+                  const nextUrl = clearPinResetAuthParam();
+                  if (typeof window !== "undefined") {
+                    window.history.replaceState({}, "", nextUrl);
+                  }
+                  setShowAdminReset(false);
+                }}
+              />
+            </Stack>
+          </Card>
+        )}
+
+        {mode === "store" && (
+          <>
+        <StoreCard>
+          <Stack $gap={14}>
+            <SectionHeader title="Profile" icon="👤" />
+            <ProfileIdentity $gap={14} $align="center" $wrap>
+              <Avatar
+                src={vendor.profileImageUrl}
+                name={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`}
+                size={72}
+              />
+              <Stack $gap={6}>
+                <Text $weight={700}>
+                  {user?.firstName} {user?.lastName}
+                </Text>
+                <Text $muted $size={13}>
+                  {user?.email}
+                </Text>
+                <UploadLabel>
+                  Change store photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadProfileImage(file);
+                    }}
+                  />
+                </UploadLabel>
+              </Stack>
+            </ProfileIdentity>
+            <Row $gap={12} $wrap>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <Input
+                  label="First name"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <Input
+                  label="Last name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+              </div>
+            </Row>
+            <Button
+              $loading={busy === "profile"}
+              disabled={busy === "profile" || !firstName.trim()}
+              onClick={savePersonalDetails}>
+              Save personal details
+            </Button>
+          </Stack>
+        </StoreCard>
+
+        {/* Business identity */}
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Business identity" icon="🏪" />
+            <Input
+              label="Business name"
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Mama T's Kitchen"
+            />
+            <Select
+              label="Vendor type"
+              value={vendorType}
+              onChange={(e) => setVendorType(e.target.value)}>
+              <option value="">Select type…</option>
+              {VENDOR_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="Contact email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <Input
+              label="Phone / WhatsApp number"
+              type="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+2348012345678"
+            />
+            <Textarea
+              label="Short description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Home-style Nigerian meals, freshly cooked daily."
+            />
+            <Button
+              $loading={busy === "identity"}
+              disabled={
+                !businessName.trim() || !email.trim() || busy === "identity"
+              }
+              onClick={saveIdentity}>
+              Save business details
+            </Button>
+          </Stack>
+        </Card>
+
+        {/* Categories */}
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Categories" icon="🍱" />
+            <Text $muted $size={13}>
+              What you sell — buyers filter by these.
+            </Text>
+            <CatGrid>
+              {CATEGORIES.map((c) => (
+                <CatChip
+                  key={c.value}
+                  type="button"
+                  $on={cats.includes(c.value)}
+                  onClick={() => toggleCat(c.value)}>
+                  {c.label}
+                </CatChip>
+              ))}
+            </CatGrid>
+            <Button
+              $loading={busy === "categories"}
+              disabled={busy === "categories"}
+              onClick={saveCategories}>
+              Save categories
+            </Button>
+          </Stack>
+        </Card>
+
+        {/* Location */}
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Location" icon="📍" />
+            <Select
+              label="Location type"
+              value={locationType}
+              onChange={(e) =>
+                setLocationType(e.target.value as "ON_CAMPUS" | "OFF_CAMPUS")
+              }>
+              <option value="ON_CAMPUS">On campus</option>
+              <option value="OFF_CAMPUS">Off campus</option>
+            </Select>
+            {locationType === "ON_CAMPUS" ? (
+              <>
+                <Select
+                  label="Campus"
+                  value={campusId}
+                  onChange={(e) => setCampusId(e.target.value)}>
+                  <option value="">Select campus</option>
+                  {(campuses ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                <Select
+                  label="School (optional)"
+                  value={schoolId}
+                  onChange={(e) => setSchoolId(e.target.value)}>
+                  <option value="">Select school…</option>
+                  {(schools ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Hostel / stall name"
+                  value={hostelOrStallName}
+                  onChange={(e) => setHostelOrStallName(e.target.value)}
+                  placeholder="Block C, Room 12"
+                />
+              </>
+            ) : (
+              <>
+                <Input
+                  label="State"
+                  value={stateName}
+                  onChange={(e) => {
+                    setStateName(e.target.value);
+                    setCampusIds([]);
+                  }}
+                  placeholder="Lagos"
+                />
+                <Input
+                  label="Area / address"
+                  value={areaOrAddress}
+                  onChange={(e) => setAreaOrAddress(e.target.value)}
+                  placeholder="12 Allen Avenue, Ikeja"
+                />
+                {stateName.trim() && (
+                  <Stack $gap={8}>
+                    <Text $weight={700} $size={13}>
+                      Campuses to show your menu on
+                    </Text>
+                    {stateCampuses.length > 0 ? (
+                      <CatGrid>
+                        {stateCampuses.map((c) => (
+                          <CatChip
+                            key={c.id}
+                            type="button"
+                            $on={campusIds.includes(c.id)}
+                            onClick={() => toggleCampus(c.id)}>
+                            {c.name}
+                          </CatChip>
+                        ))}
+                      </CatGrid>
+                    ) : (
+                      <Text $muted $size={13}>
+                        No active campuses found for this state.
+                      </Text>
+                    )}
+                    <Text $muted $size={12}>
+                      {campusIds.length}/3 selected
+                    </Text>
+                  </Stack>
+                )}
+              </>
+            )}
+            <Button
+              $loading={busy === "location"}
+              disabled={
+                busy === "location" ||
+                (locationType === "ON_CAMPUS"
+                  ? !campusId || !hostelOrStallName.trim()
+                  : !stateName.trim() ||
+                    !areaOrAddress.trim() ||
+                    campusIds.length === 0)
+              }
+              onClick={saveLocation}>
+              Save location
+            </Button>
+          </Stack>
+        </Card>
+          </>
+        )}
+
+        {/* Fees */}
+        {mode === "settings" && (
+          <>
+        <Card>
+          <Stack $gap={10}>
+            <SectionHeader title="Fees and payments" icon="%" />
+            {/* Derived from the server's effective policy, never
 						    hardcoded: an admin can change these rates, and a
 						    vendor reading a stale "8%" here would be told their
 						    payout is bigger than it is. */}
-						<Text $muted $size={13}>
-							{describeFeePolicy(feePolicy)}
-						</Text>
-						<Text $muted $size={13}>
-							Buyer service fees, vendor commission and Paystack
-							processing are calculated at checkout. Refunds are
-							returned through the original payment route.
-							Settlements are based on food sales plus delivery
-							fees owed to you, minus Prechop commission and
-							processing costs.
-						</Text>
-					</Stack>
-				</Card>
+            <Text $muted $size={13}>
+              {describeFeePolicy(feePolicy)}
+            </Text>
+            <Text $muted $size={13}>
+              Buyer service fees, vendor commission and Paystack processing are
+              calculated at checkout. Refunds are returned through the original
+              payment route. Settlements are based on food sales plus delivery
+              fees owed to you, minus Prechop commission and processing costs.
+            </Text>
+          </Stack>
+        </Card>
 
-				<Card>
-					<Stack $gap={12}>
-						<SectionHeader title="Help & policies" icon="?" />
-						<Text $muted $size={13}>
-							Quick links for vendor help, selling rules,
-							payments, delivery, no-show handling and disputes.
-						</Text>
-						<PolicyLinkGrid>
-							{SELLING_POLICY_LINKS.map((link) => (
-								<Button
-									key={link.href}
-									as={Link}
-									href={link.href}
-									$variant="secondary"
-									$size="sm"
-									aria-label={`Open ${link.label}`}
-								>
-									{link.label}
-								</Button>
-							))}
-						</PolicyLinkGrid>
-					</Stack>
-				</Card>
+        <Card>
+          <Stack $gap={12}>
+            <SectionHeader title="Help & policies" icon="?" />
+            <Text $muted $size={13}>
+              Quick links for vendor help, selling rules, payments, delivery,
+              no-show handling and disputes.
+            </Text>
+            <PolicyLinkGrid>
+              {SELLING_POLICY_LINKS.map((link) => (
+                <Button
+                  key={link.href}
+                  as={Link}
+                  href={link.href}
+                  $variant="secondary"
+                  $size="sm"
+                  aria-label={`Open ${link.label}`}>
+                  {link.label}
+                </Button>
+              ))}
+            </PolicyLinkGrid>
+          </Stack>
+        </Card>
 
-				{vendor.status === "ACTIVE" && (
-					<Card>
-						<Stack $gap={14}>
-							<SectionHeader title="Vendor security" icon="!" />
-							{securityVerified ? (
-								<Text $muted $size={13}>
-									Security verification is complete for
-									sensitive vendor actions.
-								</Text>
-							) : (
-								<>
-									<Text $muted $size={13}>
-										Create a 4-6 digit security PIN before
-										changing payout details or other
-										sensitive vendor settings.
-									</Text>
-									<Input
-										label="Security PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPin}
-										onChange={(e) =>
-											setSecurityPin(e.target.value)
-										}
-										placeholder="4-6 digits"
-									/>
-									<Input
-										label="Confirm PIN"
-										type="password"
-										inputMode="numeric"
-										value={securityPinConfirm}
-										onChange={(e) =>
-											setSecurityPinConfirm(
-												e.target.value,
-											)
-										}
-										placeholder="Re-enter PIN"
-									/>
-									<Button
-										$loading={
-											busy === "security-onboarding"
-										}
-										disabled={
-											busy === "security-onboarding"
-										}
-										onClick={completeSecurityOnboarding}
-									>
-										Save security PIN
-									</Button>
-								</>
-							)}
-						</Stack>
-					</Card>
-				)}
+        {(vendor.status === "ACTIVE" || !securityPinReady) && (
+          <Card id="security">
+            <Stack $gap={14}>
+              <SectionHeader title="Vendor security" icon="!" />
+              <VendorSecurityPinForm
+                securityPinReady={securityPinReady}
+                onSaved={() => mutate()}
+              />
+            </Stack>
+          </Card>
+        )}
 
-				{/* Bank */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Bank & payouts" icon="🏦" />
-						<BankDetailsForm
-							initialBankCode={vendor.bankCode}
-							initialAccountName={vendor.accountName}
-							saveLabel="Update bank details"
-							onSaved={() => mutate()}
-							securityVerified={securityVerified}
-							onSecureAccount={() => {
-								toast(
-									"Use the Vendor security section to create your PIN.",
-									"info",
-								);
-							}}
-						/>
-					</Stack>
-				</Card>
+        {/* Bank */}
+        <Card id="payouts">
+          <Stack $gap={14}>
+            <SectionHeader title="Bank & payouts" icon="🏦" />
+            <BankDetailsForm
+              initialBankCode={vendor.bankCode}
+              initialAccountName={vendor.accountName}
+              initialEmail={vendor.email}
+              saveLabel="Update bank details"
+              onSaved={() => mutate()}
+              securityVerified={securityPinReady}
+              onSecureAccount={() => {
+                toast(
+                  "Use the Vendor security section to create your PIN.",
+                  "info",
+                );
+              }}
+            />
+          </Stack>
+        </Card>
+          </>
+        )}
 
-				{/* Delivery defaults */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Delivery defaults" icon="🛵" />
-						<Text $muted $size={13}>
-							Vendor-managed delivery. Prechop does not currently
-							provide riders or delivery vehicles. If you enable
-							delivery, you arrange the rider or delivery method,
-							set the fee and coverage, and make sure the order
-							reaches the buyer.
-						</Text>
-						<Select
-							label="Default fulfilment"
-							value={fulfilmentChoice(defPickup, defDelivery)}
-							onChange={(e) => {
-								const value = e.target
-									.value as FulfilmentChoice;
-								setDefPickup(
-									value === "PICKUP" || value === "BOTH",
-								);
-								setDefDelivery(
-									value === "DELIVERY" || value === "BOTH",
-								);
-							}}
-						>
-							<option value="PICKUP">Pickup only</option>
-							<option value="DELIVERY">Delivery only</option>
-							<option value="BOTH">Pickup and delivery</option>
-						</Select>
-						{defDelivery && (
-							<Stack $gap={10}>
-								<Input
-									label="Default delivery fee (₦)"
-									type="number"
-									inputMode="decimal"
-									value={defFee}
-									onChange={(e) => setDefFee(e.target.value)}
-									placeholder="200"
-								/>
-								<Input
-									label="Supported delivery areas or distance"
-									value={defCoverage}
-									onChange={(e) =>
-										setDefCoverage(e.target.value)
-									}
-									placeholder="Within UI campus, halls and nearby hostels"
-								/>
-								<Input
-									label="Estimated delivery time (minutes)"
-									type="number"
-									inputMode="numeric"
-									value={defEstimate}
-									onChange={(e) =>
-										setDefEstimate(e.target.value)
-									}
-									placeholder="25"
-								/>
-								<Input
-									label="Delivery contact number"
-									type="tel"
-									value={defContact}
-									onChange={(e) =>
-										setDefContact(e.target.value)
-									}
-									placeholder="+2348012345678"
-								/>
-								<ConfirmLabel>
-									<input
-										type="checkbox"
-										checked={defDeliveryAccepted}
-										onChange={(e) =>
-											setDefDeliveryAccepted(
-												e.target.checked,
-											)
-										}
-									/>
-									<span>
-										I understand that I am responsible for
-										arranging and completing delivery for
-										this order.
-									</span>
-								</ConfirmLabel>
-							</Stack>
-						)}
-						<Button
-							$loading={busy === "delivery"}
-							disabled={busy === "delivery"}
-							onClick={saveDelivery}
-						>
-							Save delivery defaults
-						</Button>
-					</Stack>
-				</Card>
+        {/* Delivery defaults */}
+        {mode === "store" && (
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Delivery defaults" icon="🛵" />
+            <Text $muted $size={13}>
+              Vendor-managed delivery. Prechop does not currently provide riders
+              or delivery vehicles. If you enable delivery, you arrange the
+              rider or delivery method, set the fee and coverage, and make sure
+              the order reaches the buyer.
+            </Text>
+            <Select
+              label="Default fulfilment"
+              value={fulfilmentChoice(defPickup, defDelivery)}
+              onChange={(e) => {
+                const value = e.target.value as FulfilmentChoice;
+                setDefPickup(value === "PICKUP" || value === "BOTH");
+                setDefDelivery(value === "DELIVERY" || value === "BOTH");
+              }}>
+              <option value="PICKUP">Pickup only</option>
+              <option value="DELIVERY">Delivery only</option>
+              <option value="BOTH">Pickup and delivery</option>
+            </Select>
+            {defDelivery && (
+              <Stack $gap={10}>
+                <Input
+                  label="Default delivery fee (₦)"
+                  type="number"
+                  inputMode="decimal"
+                  value={defFee}
+                  onChange={(e) => setDefFee(e.target.value)}
+                  placeholder="200"
+                />
+                <Input
+                  label="Supported delivery areas or distance"
+                  value={defCoverage}
+                  onChange={(e) => setDefCoverage(e.target.value)}
+                  placeholder="Within UI campus, halls and nearby hostels"
+                />
+                <Input
+                  label="Estimated delivery time (minutes)"
+                  type="number"
+                  inputMode="numeric"
+                  value={defEstimate}
+                  onChange={(e) => setDefEstimate(e.target.value)}
+                  placeholder="25"
+                />
+                <Input
+                  label="Delivery contact number"
+                  type="tel"
+                  value={defContact}
+                  onChange={(e) => setDefContact(e.target.value)}
+                  placeholder="+2348012345678"
+                />
+                <ConfirmLabel>
+                  <input
+                    type="checkbox"
+                    checked={defDeliveryAccepted}
+                    onChange={(e) => setDefDeliveryAccepted(e.target.checked)}
+                  />
+                  <span>
+                    I understand that I am responsible for arranging and
+                    completing delivery for this order.
+                  </span>
+                </ConfirmLabel>
+              </Stack>
+            )}
+            <Button
+              $loading={busy === "delivery"}
+              disabled={busy === "delivery"}
+              onClick={saveDelivery}>
+              Save delivery defaults
+            </Button>
+          </Stack>
+        </Card>
+        )}
 
-				{/* Notifications */}
-				<Card>
-					<Stack $gap={14}>
-						<SectionHeader title="Notifications" icon="🔔" />
-						<ToggleSetting
-							title="New orders"
-							hint="Alert me when a buyer pays for an order"
-							on={notifyNewOrders}
-							onToggle={() => setNotifyNewOrders((v) => !v)}
-						/>
-						<ToggleSetting
-							title="Payouts"
-							hint="Alert me about settlements and transfers"
-							on={notifyPayouts}
-							onToggle={() => setNotifyPayouts((v) => !v)}
-						/>
-						<ToggleSetting
-							title="Reviews"
-							hint="Alert me when a buyer reviews my kitchen"
-							on={notifyReviews}
-							onToggle={() => setNotifyReviews((v) => !v)}
-						/>
-						<Button
-							$loading={busy === "notifications"}
-							disabled={busy === "notifications"}
-							onClick={saveNotifications}
-						>
-							Save notification preferences
-						</Button>
-					</Stack>
-				</Card>
+        {/* Brand Kit */}
+        {mode === "settings" && (
+          <Card>
+            <Stack $gap={14}>
+              <SectionHeader title="Brand Kit" icon="🎨" />
+              <Text $muted $size={13}>
+                Your PreChop Brand Kit provides delivery stickers, branded
+                packaging, and operational materials. You must receive your
+                Brand Kit before you can publish Daily Orders.
+              </Text>
 
-				{/* Account */}
-				<Card>
-					<Stack $gap={10}>
-						<SectionHeader title="Account" icon="👤" />
-						<Text $muted $size={13}>
-							Campus, push notifications, and signing out live in
-							your account.
-						</Text>
-						<Row $justify="flex-start">
-							<AccountLink href="/account">
-								Go to account <span aria-hidden>→</span>
-							</AccountLink>
-						</Row>
-					</Stack>
-				</Card>
-			</Stack>
-		</FadeIn>
-	);
+              {brandKitPaymentStatus === "PAID" ? (
+                <Badge $tone="success">Payment confirmed</Badge>
+              ) : brandKitPaymentStatus === "PENDING" ? (
+                <Badge $tone="warning">Payment pending</Badge>
+              ) : brandKitPaymentStatus === "FAILED" ? (
+                <Badge $tone="danger">Payment failed</Badge>
+              ) : (
+                <Button
+                  $loading={brandKitLoading}
+                  disabled={brandKitLoading}
+                  onClick={initiateBrandKit}
+                  $variant="primary"
+                >
+                  Pay for Brand Kit
+                </Button>
+              )}
+
+              <Text $weight={700} $size={13}>
+                Fulfillment status:{" "}
+                {brandKitFulfillmentStatus ?? "NOT_STARTED"}
+              </Text>
+
+              {brandKitFulfillmentStatus === "DELIVERED" &&
+                brandKitPaymentStatus === "PAID" && (
+                  <Button
+                    $loading={busy === "brand-kit-receipt"}
+                    disabled={busy === "brand-kit-receipt"}
+                    onClick={confirmBrandKitReceipt}
+                    $variant="primary"
+                  >
+                    I've Received My Brand Kit
+                  </Button>
+                )}
+
+              {brandKitFulfillmentStatus === "RECEIVED" && (
+                <Badge $tone="success">
+                  Brand Kit received — you can now publish Daily Orders
+                </Badge>
+              )}
+
+              <Row $gap={10}>
+                <Button
+                  $variant="secondary"
+                  $size="sm"
+                  onClick={previewSticker}
+                  disabled={!vendor?.vendorShortId}
+                >
+                  Preview Delivery Sticker
+                </Button>
+              </Row>
+            </Stack>
+          </Card>
+        )}
+
+        {stickerPreview && (
+          <Card>
+            <Stack $gap={14}>
+              <SectionHeader title="Sticker preview" icon="🏷️" />
+              <Text $muted $size={13}>
+                This is how your delivery sticker will look. PreChop controls
+                the design; your kitchen details are inserted automatically.
+              </Text>
+              <StickerPreview data={stickerPreview} />
+              <Button
+                $variant="secondary"
+                $size="sm"
+                onClick={() => setStickerPreview(null)}
+              >
+                Close preview
+              </Button>
+            </Stack>
+          </Card>
+        )}
+
+        {/* Feature settings */}
+        {mode === "settings" && (
+          <Card>
+            <Stack $gap={14}>
+              <SectionHeader title="Kitchen features" icon="⚡" />
+              <Text $muted $size={13}>
+                Enable or disable features for your kitchen. Global platform
+                settings may override these.
+              </Text>
+              <ToggleSetting
+                title="Schedule Ahead"
+                hint="Allow buyers to order for future dates"
+                on={featureScheduleAhead}
+                onToggle={() => setFeatureScheduleAhead((v) => !v)}
+              />
+              <ToggleSetting
+                title="Weekly Breakfast Plan"
+                hint="Offer a weekly breakfast subscription"
+                on={featureWeeklyBreakfastPlan}
+                onToggle={() => setFeatureWeeklyBreakfastPlan((v) => !v)}
+              />
+              <ToggleSetting
+                title="Delivery"
+                hint="Offer delivery for your orders"
+                on={featureDelivery}
+                onToggle={() => setFeatureDelivery((v) => !v)}
+              />
+              <ToggleSetting
+                title="Pickup"
+                hint="Allow buyers to pick up orders from your kitchen"
+                on={featurePickup}
+                onToggle={() => setFeaturePickup((v) => !v)}
+              />
+              <Button
+                $loading={busy === "features"}
+                disabled={busy === "features"}
+                onClick={saveFeatureSettings}
+              >
+                Save feature settings
+              </Button>
+            </Stack>
+          </Card>
+        )}
+
+        {/* Delivery coverage */}
+        {mode === "settings" && (
+          <Card>
+            <Stack $gap={14}>
+              <SectionHeader title="Delivery coverage" icon="📍" />
+              <Text $muted $size={13}>
+                Define where you deliver. Choose "Anywhere" for full city
+                coverage, or list specific locations.
+              </Text>
+              <Select
+                label="Coverage type"
+                value={deliveryCoverageType}
+                onChange={(e) =>
+                  setDeliveryCoverageType(e.target.value as "ANYWHERE" | "SPECIFIC")
+                }>
+                <option value="SPECIFIC">Specific locations only</option>
+                <option value="ANYWHERE">Anywhere within the city</option>
+              </Select>
+              {deliveryCoverageType === "SPECIFIC" && (
+                <Text $muted $size={13}>
+                  Enter each location on a new line (e.g. campus hostels,
+                  off-campus areas).
+                </Text>
+              )}
+              <Textarea
+                label="Delivery locations"
+                value={deliveryLocations.join("\n")}
+                onChange={(e) =>
+                  setDeliveryLocations(
+                    e.target.value.split("\n").filter((l) => l.trim()),
+                  )
+                }
+                placeholder={
+                  deliveryCoverageType === "ANYWHERE"
+                    ? "City-wide delivery"
+                    : "Kofo Hall\nBello Hostel\nOff-campus GRA..."
+                }
+                disabled={deliveryCoverageType === "ANYWHERE"}
+              />
+              <Button
+                $loading={busy === "delivery-coverage"}
+                disabled={busy === "delivery-coverage"}
+                onClick={saveDeliveryCoverage}
+              >
+                Save delivery coverage
+              </Button>
+            </Stack>
+          </Card>
+        )}
+
+        {/* Notifications */}
+        {mode === "settings" && (
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Notifications" icon="🔔" />
+            <ToggleSetting
+              title="New orders"
+              hint="Alert me when a buyer pays for an order"
+              on={notifyNewOrders}
+              onToggle={() => setNotifyNewOrders((v) => !v)}
+            />
+            <ToggleSetting
+              title="Payouts"
+              hint="Alert me about settlements and transfers"
+              on={notifyPayouts}
+              onToggle={() => setNotifyPayouts((v) => !v)}
+            />
+            <ToggleSetting
+              title="Reviews"
+              hint="Alert me when a buyer reviews my kitchen"
+              on={notifyReviews}
+              onToggle={() => setNotifyReviews((v) => !v)}
+            />
+            <ToggleSetting
+              title="New followers"
+              hint="Alert me when a buyer follows my kitchen"
+              on={notifyFollowers}
+              onToggle={() => setNotifyFollowers((v) => !v)}
+            />
+            <ToggleSetting
+              title="Follower milestones"
+              hint="Alert me when I reach a follower milestone"
+              on={notifyFollowerMilestones}
+              onToggle={() => setNotifyFollowerMilestones((v) => !v)}
+            />
+            <Button
+              $loading={busy === "notifications"}
+              disabled={busy === "notifications"}
+              onClick={saveNotifications}>
+              Save notification preferences
+            </Button>
+          </Stack>
+        </Card>
+        )}
+
+        {/* Account */}
+        {mode === "settings" && (
+        <Card>
+          <Stack $gap={10}>
+            <SectionHeader title="Account" icon="👤" />
+            <Text $muted $size={13}>
+              Campus, push notifications, and signing out live in your account.
+            </Text>
+            <Row $justify="flex-start">
+              <AccountLink href="/account">
+                Go to account <span aria-hidden>→</span>
+              </AccountLink>
+            </Row>
+          </Stack>
+        </Card>
+        )}
+
+        {mode === "settings" && (
+          <DangerCard id="danger-zone">
+            <Stack $gap={12}>
+              <SectionHeader title="Danger zone" icon="!" />
+              <Text $muted $size={13}>
+                These actions are permanent. Resolve active orders, payments,
+                refunds, disputes, and payout obligations first.
+              </Text>
+
+              <DangerAction>
+                <Stack $gap={10}>
+                  <DangerTitle $weight={800}>Close vendor profile</DangerTitle>
+                  <Text $muted $size={13}>
+                    Permanently removes your kitchen, storefront, listings, and
+                    vendor access. Your buyer account and required transaction
+                    history remain available.
+                  </Text>
+                  {dangerAction === "vendor" ? (
+                    <>
+                      <Text $size={13}>
+                        Type{" "}
+                        <ConfirmationCode>
+                          {CLOSE_VENDOR_CONFIRMATION}
+                        </ConfirmationCode>
+                      </Text>
+                      <Input
+                        label="Confirmation"
+                        value={dangerConfirmation}
+                        onChange={(e) => setDangerConfirmation(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {securityPinReady && (
+                        <Input
+                          label="Vendor security PIN"
+                          type="password"
+                          inputMode="numeric"
+                          value={dangerPin}
+                          onChange={(e) => setDangerPin(e.target.value)}
+                          autoComplete="off"
+                        />
+                      )}
+                      <Row $gap={8} style={{ flexWrap: "wrap" }}>
+                        <Button
+                          $variant="danger"
+                          onClick={closeVendorAccount}
+                          $loading={busy === "close-vendor"}
+                          disabled={
+                            busy === "close-vendor" ||
+                            dangerConfirmation !== CLOSE_VENDOR_CONFIRMATION ||
+                            (securityPinReady && !dangerPin)
+                          }
+                        >
+                          Permanently close vendor profile
+                        </Button>
+                        <Button
+                          $variant="secondary"
+                          onClick={() => setDangerAction(null)}
+                          disabled={busy === "close-vendor"}
+                        >
+                          Cancel
+                        </Button>
+                      </Row>
+                    </>
+                  ) : (
+                    <Button
+                      $variant="secondary"
+                      style={{ alignSelf: "flex-start" }}
+                      onClick={() => openDangerAction("vendor")}
+                    >
+                      Close vendor profile
+                    </Button>
+                  )}
+                </Stack>
+              </DangerAction>
+
+              <DangerAction>
+                <Stack $gap={10}>
+                  <DangerTitle $weight={800}>
+                    Delete Prechop account
+                  </DangerTitle>
+                  <Text $muted $size={13}>
+                    Deactivates your entire account, including buyer and vendor
+                    access. A recent sign-in is required; existing financial and
+                    order records follow Prechop&apos;s retention system.
+                  </Text>
+                  {dangerAction === "account" ? (
+                    <>
+                      <Input
+                        label="Account email or verified phone"
+                        value={dangerIdentifier}
+                        onChange={(e) => setDangerIdentifier(e.target.value)}
+                        placeholder={user?.email || user?.phone || "Account contact"}
+                        autoComplete="username"
+                      />
+                      <Text $size={13}>
+                        Type{" "}
+                        <ConfirmationCode>
+                          {DELETE_ACCOUNT_CONFIRMATION}
+                        </ConfirmationCode>
+                      </Text>
+                      <Input
+                        label="Confirmation"
+                        value={dangerConfirmation}
+                        onChange={(e) => setDangerConfirmation(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {securityPinReady && (
+                        <Input
+                          label="Vendor security PIN"
+                          type="password"
+                          inputMode="numeric"
+                          value={dangerPin}
+                          onChange={(e) => setDangerPin(e.target.value)}
+                          autoComplete="off"
+                        />
+                      )}
+                      <Row $gap={8} style={{ flexWrap: "wrap" }}>
+                        <Button
+                          $variant="danger"
+                          onClick={deletePrechopAccount}
+                          $loading={busy === "delete-account"}
+                          disabled={
+                            busy === "delete-account" ||
+                            !dangerIdentifier.trim() ||
+                            dangerConfirmation !== DELETE_ACCOUNT_CONFIRMATION ||
+                            (securityPinReady && !dangerPin)
+                          }
+                        >
+                          Delete entire Prechop account
+                        </Button>
+                        <Button
+                          $variant="secondary"
+                          onClick={() => setDangerAction(null)}
+                          disabled={busy === "delete-account"}
+                        >
+                          Cancel
+                        </Button>
+                      </Row>
+                    </>
+                  ) : (
+                    <Button
+                      $variant="secondary"
+                      style={{ alignSelf: "flex-start" }}
+                      onClick={() => openDangerAction("account")}
+                    >
+                      Delete Prechop account
+                    </Button>
+                  )}
+                </Stack>
+              </DangerAction>
+            </Stack>
+          </DangerCard>
+        )}
+      </Stack>
+    </FadeIn>
+  );
 }

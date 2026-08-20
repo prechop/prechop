@@ -1,4 +1,4 @@
-import type { DailyOrderStatus } from "../enums";
+import type { DailyOrderStatus, MarketplaceCategory } from "../enums";
 
 export interface IDailyOrderOption {
 	_id?: string;
@@ -19,17 +19,33 @@ export interface IDailyOrderOptionGroup {
 	options: IDailyOrderOption[];
 }
 
+export interface IDailyOrderItemVariant {
+	_id?: string;
+	id?: string;
+	sourceVariantId?: string | null;
+	name: string;
+	priceKobo: number;
+	isDefault: boolean;
+	isActive: boolean;
+	displayOrder: number;
+}
+
 export interface IDailyOrderItem {
 	_id?: string;
 	id?: string;
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
+	snapshotVariants: IDailyOrderItemVariant[];
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	// null / undefined = unlimited
 	maxQuantity?: number | null;
 	orderedQuantity: number;
+	reservedQuantity?: number;
+	remainingQuantity?: number | null;
 	optionGroups: IDailyOrderOptionGroup[];
 }
 
@@ -44,8 +60,18 @@ export interface IDailyOrderOptionGroupInput {
 
 export interface IDailyOrderItemInput {
 	menuItemId: string;
+	category?: string;
 	snapshotName: string;
+	snapshotDescription?: string;
 	snapshotPriceKobo: number;
+	snapshotVariants?: Array<{
+		sourceVariantId?: string | null;
+		name: string;
+		priceKobo: number;
+		isDefault?: boolean;
+		isActive?: boolean;
+		displayOrder?: number;
+	}>;
 	snapshotImageUrl?: string;
 	snapshotPrepMin: number;
 	maxQuantity?: number | null;
@@ -71,6 +97,7 @@ export interface IDailyOrderCreateInput {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	items: IDailyOrderItemInput[];
+	marketplaceCategories?: MarketplaceCategory[];
 }
 
 export interface IDailyOrder {
@@ -93,7 +120,9 @@ export interface IDailyOrder {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	totalOrdersCount: number;
+	activeBuyerOrdersCount?: number;
 	items: IDailyOrderItem[];
+	marketplaceCategories?: MarketplaceCategory[];
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

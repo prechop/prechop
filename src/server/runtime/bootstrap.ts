@@ -104,6 +104,28 @@ function collectSilentFailureProblems(): string[] {
 		);
 	}
 
+	const payoutV2Enabled =
+		process.env.PLATFORM_BALANCE_TRANSFER_V2_ENABLED === "1";
+	const payoutV2MoneyEnabled =
+		process.env.PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED === "1";
+	const manualPayoutsApproved =
+		process.env.PAYSTACK_MANUAL_PAYOUTS_APPROVED === "1";
+	const legalAccountingApproved =
+		process.env.PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED === "1";
+	if (payoutV2Enabled && !manualPayoutsApproved) {
+		problems.push(
+			"PLATFORM_BALANCE_TRANSFER_V2_ENABLED=1 requires PAYSTACK_MANUAL_PAYOUTS_APPROVED=1 in production",
+		);
+	}
+	if (
+		payoutV2MoneyEnabled &&
+		(!payoutV2Enabled || !manualPayoutsApproved || !legalAccountingApproved)
+	) {
+		problems.push(
+			"PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED=1 requires the V2 feature flag plus recorded Paystack and legal/accounting approval",
+		);
+	}
+
 	return problems;
 }
 

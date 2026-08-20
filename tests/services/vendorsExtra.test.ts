@@ -77,7 +77,7 @@ describe("setBankDetails", () => {
 				bankCode: "058",
 				accountNumber: "0123456789",
 			}),
-		).rejects.toThrow(/security verification/i);
+		).rejects.toThrow(/security PIN/i);
 
 		const halfComplete = await updateVendorSecurityOnboardingDB({
 			id: vendorId,
@@ -86,7 +86,7 @@ describe("setBankDetails", () => {
 		if (!halfComplete) throw new Error("Expected vendor update");
 		expect(() =>
 			assertVendorSecurityVerifiedForSensitiveAction(halfComplete),
-		).toThrow(/security verification/i);
+		).toThrow(/security PIN/i);
 		await updateSecurityOnboarding({
 			userId,
 			action: "COMPLETE",

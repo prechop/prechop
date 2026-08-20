@@ -1,3 +1,4 @@
+export * from "./confirmBuyerPayment";
 export * from "./externalPaymentRequest";
 export * from "./handlePaystackWebhook";
 export * from "./initializeBuyerPayment";

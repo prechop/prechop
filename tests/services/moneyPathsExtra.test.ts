@@ -218,9 +218,14 @@ describe("getVendorEarnings", () => {
 
 describe("refundOrdersForDailyOrder", () => {
 	it("refunds every PAID/CONFIRMED order on the listing and skips the rest", async () => {
+		let refundId = 0;
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 1, status: "success", amount: TOTAL });
+			.mockImplementation(async () => ({
+				id: ++refundId,
+				status: "processed",
+				amount: TOTAL,
+			}));
 		const { vendorId, campusId } = await makeVendor();
 		const dailyOrderId = oid();
 		const paid = await order({
@@ -273,7 +278,7 @@ describe("refundOrdersForDailyOrder", () => {
 		});
 		vi.spyOn(paystackProvider, "refund")
 			.mockRejectedValueOnce(new Error("paystack down"))
-			.mockResolvedValue({ id: 2, status: "success", amount: TOTAL });
+			.mockResolvedValue({ id: 1002, status: "processed", amount: TOTAL });
 
 		const res = await refundOrdersForDailyOrder({ vendorId, dailyOrderId });
 		expect(res.refunded).toBe(1);
@@ -323,7 +328,7 @@ describe("cancelOrderAsBuyer", () => {
 	it("cancels a PAID order and refunds the buyer", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 3, status: "success", amount: TOTAL });
+			.mockResolvedValue({ id: 3, status: "processed", amount: TOTAL });
 		const { vendorId, campusId } = await makeVendor();
 		const buyerId = oid();
 		const o = await order({
@@ -410,7 +415,7 @@ describe("cancelOrderAsVendor", () => {
 	it("cancels a PAID order, refunds, and SMS-notifies the buyer", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 4, status: "success", amount: TOTAL });
+			.mockResolvedValue({ id: 4, status: "processed", amount: TOTAL });
 		const smsSpy = vi
 			.spyOn(sendchampProvider, "sendOrderCancelled")
 			.mockResolvedValue(undefined as never);

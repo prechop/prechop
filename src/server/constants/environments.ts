@@ -51,10 +51,17 @@ export const ACCESS_TOKEN_MAX_AGE_SECONDS = parseDuration(
 	process.env.ACCESS_TOKEN_MAX_AGE,
 	15 * 60, // 15 minutes
 );
-export const REFRESH_TOKEN_MAX_AGE_SECONDS = parseDuration(
-	process.env.REFRESH_TOKEN_MAX_AGE,
+export const REFRESH_TOKEN_IDLE_MAX_AGE_SECONDS = parseDuration(
+	process.env.REFRESH_TOKEN_IDLE_MAX_AGE,
+	60 * 60 * 24 * 7, // 7 days idle
+);
+export const REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS = parseDuration(
+	process.env.REFRESH_TOKEN_ABSOLUTE_MAX_AGE ??
+		process.env.REFRESH_TOKEN_MAX_AGE,
 	60 * 60 * 24 * 30, // 30 days
 );
+export const REFRESH_TOKEN_MAX_AGE_SECONDS =
+	REFRESH_TOKEN_ABSOLUTE_MAX_AGE_SECONDS;
 
 // PII encryption
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "";
@@ -68,6 +75,17 @@ export const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY ?? "";
 // Payments (Paystack)
 export const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
 export const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY ?? "";
+// Completion-based vendor payouts. All three default closed. Foundation access
+// is separate from the final money-movement interlock so one flag can never
+// accidentally authorize transfers.
+export const PLATFORM_BALANCE_TRANSFER_V2_ENABLED =
+	process.env.PLATFORM_BALANCE_TRANSFER_V2_ENABLED === "1";
+export const PAYSTACK_MANUAL_PAYOUTS_APPROVED =
+	process.env.PAYSTACK_MANUAL_PAYOUTS_APPROVED === "1";
+export const PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED =
+	process.env.PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED === "1";
+export const PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED =
+	process.env.PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED === "1";
 
 // Comms
 export const SENDCHAMP_API_KEY = process.env.SENDCHAMP_API_KEY ?? "";
@@ -76,6 +94,8 @@ export const SENDCHAMP_TIMEOUT_MS = Number(
 );
 export const SMS_CONSOLE_MODE = !IS_PROD;
 export const SENDCHAMP_SENDER_ID = process.env.SENDCHAMP_SENDER_ID ?? "PreChop";
+export const SENDCHAMP_WHATSAPP_SENDER =
+	process.env.SENDCHAMP_WHATSAPP_SENDER ?? SENDCHAMP_SENDER_ID;
 export const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 export const RESEND_FROM_EMAIL =
 	process.env.RESEND_FROM_EMAIL ?? "noreply@prechop.ng";

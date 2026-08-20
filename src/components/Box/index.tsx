@@ -46,6 +46,7 @@ export const Row = styled.div<{
 export const Stack = styled.div<{ $gap?: number }>`
   display: flex;
   flex-direction: column;
+  // color:yellow;
   gap: ${(p) => p.$gap ?? 12}px;
 `;
 

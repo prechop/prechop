@@ -12,6 +12,11 @@ export const upsertEntrySchema = zod
 		menuItemId: zod.string().trim().min(1),
 		dayOfWeek: zod.enum(DayOfWeek),
 		isOpen: zod.boolean(),
+		orderStartTime: zod.string().regex(/^\d{2}:\d{2}$/).optional(),
+		cutoffTime: zod.string().regex(/^\d{2}:\d{2}$/).optional(),
+		cookingStartTime: zod.string().regex(/^\d{2}:\d{2}$/).optional(),
+		readyDeliveryStartTime: zod.string().regex(/^\d{2}:\d{2}$/).optional(),
+		plannedMenu: zod.string().trim().max(500).optional(),
 	})
 	.strict();
 

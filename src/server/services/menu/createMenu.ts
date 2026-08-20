@@ -13,6 +13,7 @@ export async function createMenuItem({
 	name,
 	category,
 	priceNaira,
+	variants,
 	description,
 	imageUrl,
 	estimatedPrepMin,
@@ -23,6 +24,12 @@ export async function createMenuItem({
 	name: string;
 	category: MenuCategory;
 	priceNaira: number;
+	variants?: Array<{
+		name: string;
+		priceNaira: number;
+		isDefault?: boolean;
+		isActive?: boolean;
+	}>;
 	description?: string;
 	imageUrl?: string;
 	estimatedPrepMin?: number;
@@ -44,6 +51,13 @@ export async function createMenuItem({
 			category: normalizeMenuCategory(category) as MenuCategory,
 			name,
 			priceKobo: nairaToKobo(priceNaira),
+			variants: variants?.map((variant, displayOrder) => ({
+				name: variant.name,
+				priceKobo: nairaToKobo(variant.priceNaira),
+				isDefault: variant.isDefault ?? false,
+				isActive: variant.isActive ?? true,
+				displayOrder,
+			})),
 			description,
 			imageUrl,
 			estimatedPrepMin,

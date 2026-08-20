@@ -7,6 +7,7 @@
 // orders) is exercised against the real scratch database, so a regression in the
 // upsert guard actually fails these tests.
 
+import mongoose from "mongoose";
 import {
 	afterAll,
 	afterEach,
@@ -33,6 +34,7 @@ import {
 } from "@/server/models";
 import { paystackProvider } from "@/server/providers";
 import { issueRefund } from "@/server/services/refunds/issueRefund";
+import { reconcileRefunds } from "@/server/services/refunds/reconcileRefunds";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
 import { makeVendor } from "../helpers/factories";
 
@@ -104,7 +106,7 @@ describe("issueRefund — the double-payout guard", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 987,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 		const { orderId, ref } = await paidOrder();
@@ -141,7 +143,7 @@ describe("issueRefund — the double-payout guard", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 111,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 		const { orderId } = await paidOrder();
@@ -173,7 +175,7 @@ describe("issueRefund — the double-payout guard", () => {
 			.spyOn(paystackProvider, "refund")
 			.mockResolvedValue({
 				id: 222,
-				status: "success",
+				status: "processed",
 				amount: AMOUNT_KOBO,
 			});
 		const { orderId } = await paidOrder();
@@ -208,7 +210,7 @@ describe("issueRefund — the double-payout guard", () => {
 				amountKobo: AMOUNT_KOBO,
 				reason: "listing cancelled",
 			}),
-		).rejects.toThrow(/could not be processed/i);
+		).rejects.toThrow(/could not be submitted/i);
 		expect(refundSpy).toHaveBeenCalledTimes(1);
 
 		const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
@@ -226,25 +228,38 @@ describe("issueRefund — the double-payout guard", () => {
 		expect(order?.adminReviewReason).toBe("REFUND_FAILURE");
 	});
 
-	it("a failed payout is retryable only through reconciliation, never re-paid automatically", async () => {
-		// After a Paystack failure the row exists, so a naive retry hits the
-		// guard and returns ALREADY_REFUNDED rather than paying out. This is the
-		// documented trade: an unpaid refund is visible and fixable by hand.
+	it("reconciles Paystack before retrying a failed submission", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
 			.mockRejectedValue(new Error("paystack down"));
+		const discoverSpy = vi
+			.spyOn(paystackProvider, "findRefundForTransaction")
+			.mockResolvedValue(null);
 		const { orderId } = await paidOrder();
 		await expect(
 			issueRefund({ orderId, amountKobo: AMOUNT_KOBO, reason: "x" }),
 		).rejects.toThrow();
-
-		// Paystack is healthy again and the caller retries — but the refund row
-		// from the failed attempt already owns this payment, so no second payout
-		// is attempted. Reset the history so this asserts only the retry.
 		refundSpy.mockReset();
+		await expect(
+			issueRefund({ orderId, amountKobo: AMOUNT_KOBO, reason: "x" }),
+		).rejects.toThrow(/reconciliation window/i);
+		expect(discoverSpy).not.toHaveBeenCalled();
+		expect(refundSpy).not.toHaveBeenCalled();
+		const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
+		const existingRefund = await getRefundByPaymentIdDB({
+			paymentId: payment!._id.toString(),
+		});
+		const { Refund } = await import("@/server/models/refunds");
+		await Refund.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(existingRefund!._id.toString()) },
+			{ $set: { failedAt: new Date(Date.now() - 10 * 60 * 1000) } },
+		);
+
+		// The retry proves that the ambiguous first call did not create a refund
+		// at Paystack before it submits another request.
 		refundSpy.mockResolvedValue({
 			id: 333,
-			status: "success",
+			status: "processed",
 			amount: AMOUNT_KOBO,
 		});
 
@@ -253,8 +268,59 @@ describe("issueRefund — the double-payout guard", () => {
 			amountKobo: AMOUNT_KOBO,
 			reason: "x",
 		});
-		expect(retry.outcome).toBe("REFUND_FAILED");
-		expect(refundSpy).not.toHaveBeenCalled();
+		expect(retry.outcome).toBe("REFUNDED");
+		expect(discoverSpy).toHaveBeenCalledTimes(1);
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not finalize a refund merely because Paystack accepted it", async () => {
+		vi.spyOn(paystackProvider, "refund").mockResolvedValue({
+			id: 444,
+			status: "pending",
+			amount: AMOUNT_KOBO,
+		});
+		const { orderId } = await paidOrder();
+
+		const result = await issueRefund({
+			orderId,
+			amountKobo: AMOUNT_KOBO,
+			reason: "vendor cancelled",
+		});
+
+		expect(result.outcome).toBe("REFUND_PENDING");
+		const payment = await getPaymentByOrderIdDB({ buyerOrderId: orderId });
+		const refund = await getRefundByPaymentIdDB({
+			paymentId: payment?._id.toString() ?? "",
+		});
+		expect(refund?.status).toBe("REFUND_PENDING");
+		expect(refund?.processedAt).toBeFalsy();
+		expect(payment?.status).toBe(PaymentStatus.SUCCESS);
+		expect((await getBuyerOrderByIdDB({ id: orderId }))?.status).toBe(
+			OrderStatus.REFUND_PENDING,
+		);
+
+		const { Refund } = await import("@/server/models/refunds");
+		await Refund.collection.updateOne(
+			{ _id: new mongoose.Types.ObjectId(refund!._id.toString()) },
+			{ $set: { updatedAt: new Date(Date.now() - 5 * 60 * 1000) } },
+		);
+		vi.spyOn(paystackProvider, "getRefund").mockResolvedValue({
+			id: 444,
+			status: "processed",
+			amount: AMOUNT_KOBO,
+			currency: "NGN",
+			domain: "test",
+			transaction: { reference: payment!.paystackRef },
+		});
+		const reconciliation = await reconcileRefunds({ limit: 10 });
+		expect(reconciliation).toMatchObject({
+			scanned: 1,
+			reconciled: 1,
+			failed: 0,
+		});
+		expect(
+			(await getPaymentByOrderIdDB({ buyerOrderId: orderId }))?.status,
+		).toBe(PaymentStatus.REFUNDED);
 	});
 });
 

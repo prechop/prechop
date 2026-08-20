@@ -1,36 +1,35 @@
 import AppShell from "@/layouts/AppShell";
 import PolicyPageContent from "@/libs/PolicyPages";
-
-export default function BuyerNoShowPage() {
+export default function Page() {
 	return (
-		<AppShell shellRole="BUYER" publicAccess>
+		<AppShell publicAccess>
 			<PolicyPageContent
 				eyebrow="Policy"
-				title="Buyer No-show"
-				summary="What vendors and buyers should do when pickup or delivery cannot be completed."
+				title="No-show"
+				summary="What happens when pickup or delivery cannot be completed."
 				sections={[
 					{
-						title: "Pickup no-show",
+						title: "General review",
+						audience: ["shared", "public"],
 						body: [
-							"Vendors can report buyer no-show only after the allowed waiting period for a ready pickup order.",
-							"The buyer may be asked to respond if they believe there was a problem.",
-							"Support may review timing, messages and order status before closing the case.",
-						],
-					},
-					{
-						title: "Buyer unreachable during delivery",
-						body: [
-							"Vendors should try to contact the buyer before using the buyer-unreachable action.",
-							"The report should include the arrival time, number of contact attempts and a short note.",
-							"Delivery failed should be used only after the buyer-unreachable flow allows it.",
+							"A no-show or unreachable report is reviewed against timing, messages, contact attempts and order status.",
+							"Do not falsely mark handover or share a QR/PIN to close an uncompleted order.",
 						],
 					},
 					{
 						title: "Buyer responsibilities",
+						audience: "buyer",
 						body: [
-							"Be available at the pickup or delivery time shown in the order.",
-							"Keep your phone reachable for delivery orders.",
-							"Report a problem quickly if the vendor marked a no-show but you were available.",
+							"Be available at the shown pickup or delivery time and keep your phone reachable.",
+							"Respond promptly if support asks about a no-show and report an incorrect vendor claim quickly.",
+						],
+					},
+					{
+						title: "Vendor responsibilities and payout",
+						audience: "vendor",
+						body: [
+							"Use no-show only after the allowed wait and buyer-contact steps, with a clear note.",
+							"A failed-delivery or no-show review is not trusted completion and keeps the affected payable held until resolved.",
 						],
 					},
 				]}

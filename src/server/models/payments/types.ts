@@ -1,4 +1,4 @@
-import type { PaymentStatus } from "../enums";
+import type { PaymentSettlementMode, PaymentStatus } from "../enums";
 
 export interface IPaymentCreateInput {
 	buyerOrderId: string;
@@ -19,6 +19,10 @@ export interface IPaymentCreateInput {
 	vendorSettlementKobo?: number;
 	idempotencyKey: string;
 	status?: PaymentStatus;
+	settlementMode?: PaymentSettlementMode;
+	migrationModeAtCreation?: string;
+	migrationConfigVersion?: number;
+	pilotMatched?: boolean;
 }
 
 export interface IPayment {
@@ -41,6 +45,10 @@ export interface IPayment {
 	vendorAmountKobo: number;
 	vendorSettlementKobo?: number;
 	status: PaymentStatus;
+	settlementMode: PaymentSettlementMode;
+	migrationModeAtCreation: string;
+	migrationConfigVersion: number;
+	pilotMatched: boolean;
 	channel?: string;
 	paidAt?: Date;
 	webhookVerified: boolean;

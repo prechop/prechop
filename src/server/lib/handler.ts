@@ -1,14 +1,12 @@
 import "server-only";
-import { type NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { connectMongoDB } from "../databases";
 import { restResponseTimeHistogram } from "../metrics";
-import type { IJwtPayload } from "../types";
-import { assertAdministrator, verifyAuthToken } from "./auth";
-import { setAuthCookies, setAuthCookiesOnResponse } from "./cookies";
 import { csrfReject } from "./csrf";
 import {
 	applyRateLimitHeaders,
 	enforceRateLimit,
+	type RateLimitOptions,
 	type RateLimitResult,
 } from "./rateLimit";
 import { fail, handleError } from "./response";
@@ -17,7 +15,7 @@ const DEFAULT_RATE_LIMIT = { windowMs: 60 * 1000, maxRequests: 100 };
 
 interface HandlerOptions {
 	route: string;
-	rateLimit?: { windowMs: number; maxRequests: number } | false;
+	rateLimit?: RateLimitOptions | false;
 	/**
 	 * Skip Origin/Referer CSRF validation. Only for routes that legitimately
 	 * accept non-browser callers (the Paystack webhook).
@@ -43,7 +41,6 @@ export function withApiHandler<TCtx = unknown>(
 	return async (req: NextRequest, context: TCtx): Promise<Response> => {
 		const startNs = process.hrtime.bigint();
 		let rlResult: RateLimitResult | null = null;
-		let refreshedToken: IJwtPayload | null = null;
 
 		try {
 			if (options.csrf !== false) {
@@ -68,19 +65,7 @@ export function withApiHandler<TCtx = unknown>(
 
 			await connectMongoDB();
 
-			if (options.route.startsWith("/api/admin")) {
-				const auth = await verifyAuthToken(req);
-				assertAdministrator(auth);
-				if (auth.refreshed) {
-					refreshedToken = auth.token;
-					await setAuthCookies(auth.token);
-				}
-			}
-
 			const response = await handler({ req, context });
-			if (refreshedToken && response instanceof NextResponse) {
-				setAuthCookiesOnResponse(response, refreshedToken);
-			}
 			if (rlResult) applyRateLimitHeaders(response, rlResult);
 
 			observe(req, response.status, options.route, startNs);

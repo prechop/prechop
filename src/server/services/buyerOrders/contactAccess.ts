@@ -8,6 +8,7 @@ import {
 	appendBuyerOrderTimelineDB,
 	FulfillmentType,
 	getBuyerOrderByIdDB,
+	getUserByIdDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
 	OrderStatus,
@@ -19,11 +20,16 @@ export interface OrderContactReveal {
 	target: ContactTarget;
 	orderId: string;
 	orderNumber: string;
+	buyerName?: string | null;
 	phone?: string;
 	telUrl?: string;
 	whatsappUrl?: string;
 	location?: string | null;
 	address?: string;
+	deliveryHostelName?: string;
+	deliveryRoomNumber?: string;
+	deliveryAdditionalInfo?: string;
+	checkoutNote?: string;
 	instructions?: string[];
 }
 
@@ -91,6 +97,16 @@ function compactInstructions(...values: Array<string | undefined>) {
 	return values.map((value) => value?.trim()).filter(Boolean) as string[];
 }
 
+function userDisplayName(user: Awaited<ReturnType<typeof getUserByIdDB>>) {
+	if (!user) return null;
+	return (
+		[user.firstName, user.lastName]
+			.map((part) => part?.trim())
+			.filter(Boolean)
+			.join(" ") || null
+	);
+}
+
 function assertActiveAcceptedOrder(status: OrderStatus) {
 	if (!ACTIVE_CONTACT_STATUSES.has(status)) {
 		throw invalidOrderState(
@@ -148,6 +164,7 @@ export async function revealBuyerContactForVendor({
 			"This order has no delivery contact to reveal.",
 		);
 	}
+	const buyer = await getUserByIdDB({ id: order.buyerId.toString() });
 
 	await logContactReveal({
 		orderId,
@@ -160,12 +177,13 @@ export async function revealBuyerContactForVendor({
 		target: "buyer",
 		orderId,
 		orderNumber: order.orderNumber,
+		buyerName: userDisplayName(buyer),
 		...phoneLinks(order.deliveryPhone),
 		address,
-		instructions: compactInstructions(
-			order.deliveryAdditionalInfo,
-			order.customerMessage,
-		),
+		deliveryHostelName: order.deliveryHostelName,
+		deliveryRoomNumber: order.deliveryRoomNumber,
+		deliveryAdditionalInfo: order.deliveryAdditionalInfo,
+		checkoutNote: order.customerMessage?.trim() || undefined,
 	};
 }
 

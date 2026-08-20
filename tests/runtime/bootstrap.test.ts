@@ -19,6 +19,12 @@ function setBaseEnv() {
 	vi.stubEnv("PLATFORM_FEE_VENDOR_PERCENT", undefined);
 	vi.stubEnv("PLATFORM_FEE_BUYER_PERCENT", undefined);
 	vi.stubEnv("PLATFORM_FEE_BUYER_MAX_KOBO", undefined);
+	vi.stubEnv("PLATFORM_BALANCE_TRANSFER_V2_ENABLED", undefined);
+	vi.stubEnv("PAYSTACK_MANUAL_PAYOUTS_APPROVED", undefined);
+	vi.stubEnv(
+		"PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED",
+		undefined,
+	);
 }
 
 beforeEach(() => {
@@ -74,6 +80,22 @@ describe("assertRuntimeConfig", () => {
 
 		expect(() => assertRuntimeConfig()).toThrow(
 			/disables ALL rate limiting/,
+		);
+	});
+
+	it("refuses V2 enablement before Paystack manual-payout approval", () => {
+		vi.stubEnv("PLATFORM_BALANCE_TRANSFER_V2_ENABLED", "1");
+
+		expect(() => assertRuntimeConfig()).toThrow(
+			/requires PAYSTACK_MANUAL_PAYOUTS_APPROVED=1/,
+		);
+	});
+
+	it("refuses the money interlock without both prerequisite gates", () => {
+		vi.stubEnv("PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED", "1");
+
+		expect(() => assertRuntimeConfig()).toThrow(
+			/requires the V2 feature flag plus recorded Paystack and legal\/accounting approval/,
 		);
 	});
 

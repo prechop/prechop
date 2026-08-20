@@ -1,5 +1,6 @@
 import { ErrInvalidFields } from "@/server/constants";
-import { handleError, ok, withApiHandler } from "@/server/lib";
+import { handleError, ok, optionalUserId, withApiHandler } from "@/server/lib";
+import { getBuyerFollowedVendorIds } from "@/server/services/vendorFollowers";
 import { searchMarketplace } from "@/server/services/dailyOrders";
 import { marketplaceSearchSchema } from "@/server/validators/dailyOrders/validate";
 
@@ -14,7 +15,16 @@ export const GET = withApiHandler(
 				Object.fromEntries(url.searchParams),
 			);
 			if (!parsed.success) throw ErrInvalidFields;
-			return ok(await searchMarketplace(parsed.data));
+			const viewerUserId = await optionalUserId(req);
+			let followedVendorIds: string[] = [];
+			if (viewerUserId) {
+				followedVendorIds = await getBuyerFollowedVendorIds({
+					buyerId: viewerUserId,
+				});
+			}
+			return ok(
+				await searchMarketplace({ ...parsed.data, followedVendorIds }),
+			);
 		} catch (error) {
 			return handleError(error);
 		}

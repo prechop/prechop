@@ -40,3 +40,19 @@ export const googleCallbackQuerySchema = zod
 		error: zod.string().optional(),
 	})
 	.strict();
+
+const nigerianPhone = zod.string().trim().min(11).max(18);
+
+export const whatsappSignInRequestBodySchema = zod
+	.object({
+		phone: nigerianPhone,
+		next: nextPath,
+	})
+	.strict();
+
+export const whatsappSignInVerifyBodySchema = zod
+	.object({
+		challengeId: zod.string().min(20).max(100),
+		code: zod.string().regex(/^\d{6}$/),
+	})
+	.strict();

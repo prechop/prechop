@@ -24,6 +24,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
+import { formatClosingCountdown } from "@/constants/formatters";
 import { Badge } from "../Text";
 
 /** Minutes before cutoff at which a listing flips to "Closing soon". PRD §8.6. */
@@ -106,6 +107,7 @@ function closed(reason: ClosedReason): VendorStatus {
 		tone: "muted",
 		orderable: false,
 		closedReason: reason,
+		minutesToCutoff: 0,
 		description:
 			reason === "VENDOR_CLOSED"
 				? "Closed today — this kitchen has paused orders"
@@ -160,7 +162,7 @@ export function resolveListingStatus(
 		return {
 			kind: "CLOSING_SOON",
 			label: `Closing soon · ${minutesToCutoff}m`,
-			compactLabel: `Closing · ${minutesToCutoff}m`,
+			compactLabel: `Closing soon · ${minutesToCutoff}m`,
 			glyph: "◐",
 			tone: "warning",
 			orderable: true,
@@ -172,16 +174,17 @@ export function resolveListingStatus(
 		};
 	}
 
+	const closingLabel = formatClosingCountdown(cutoffAt, now);
 	return {
 		kind: "OPEN",
-		label: "Open · Taking orders",
-		compactLabel: "Open",
+		label: closingLabel,
+		compactLabel: closingLabel,
 		glyph: "●",
 		tone: "success",
 		orderable: true,
 		cutoffAt,
 		minutesToCutoff,
-		description: "Open — taking orders now",
+		description: `Open — ${closingLabel.toLowerCase()}`,
 	};
 }
 

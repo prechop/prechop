@@ -14,6 +14,7 @@ import {
 	Skeleton,
 	Stack,
 	Text,
+	Textarea,
 } from "@/components";
 import { api } from "@/constants/api";
 import { MAX_FEE_CAP_KOBO, MAX_FEE_PERCENT } from "@/constants/fees";
@@ -36,12 +37,43 @@ interface SiteConfigs {
 	abandonedOrderMinutes: number;
 	reviewWindowHours: number;
 	cutoffWarningMinutes: number;
+	deliveryInTransitGraceMinutes: number;
+	deliveryInTransitFallbackEstimateMinutes: number;
+	deliveryOverdueAutoEscalateEnabled: boolean;
 	whatsappTvEnabled: boolean;
 	marketplaceEnabled: boolean;
 	reviewsEnabled: boolean;
+	scheduleAheadEnabled: boolean;
+	weeklyBreakfastPlanEnabled: boolean;
+	breakfastEnabled: boolean;
+	lunchEnabled: boolean;
+	dinnerEnabled: boolean;
+	deliveryEnabled: boolean;
+	pickupEnabled: boolean;
+	vendorRegistrationEnabled: boolean;
 	ordersKillSwitch: boolean;
 	paymentsKillSwitch: boolean;
 	profileCompletenessRequired: number;
+	deliveryLocations: string[];
+}
+
+type MigrationMode =
+	| "V1_ONLY"
+	| "V2_PILOT"
+	| "V2_NEW_PAYMENTS"
+	| "EMERGENCY_V1";
+interface SettlementMigrationConfig {
+	mode: MigrationMode;
+	version: number;
+	pilotVendorIds: string[];
+	pilotCampusIds: string[];
+	minimumPayoutKobo: number;
+	safety: {
+		foundationEnabled: boolean;
+		paystackManualPayoutsApproved: boolean;
+		moneyMovementEnabled: boolean;
+		legalAccountingApproved: boolean;
+	};
 }
 
 const Section = styled(Card)`
@@ -120,6 +152,15 @@ const Grid2 = styled.div`
 	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 	gap: var(--pc-space-4);
 `;
+const Select = styled.select`
+	width: 100%;
+	min-height: 44px;
+	border: 1px solid var(--pc-border);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface);
+	color: var(--pc-text);
+	padding: 0 12px;
+`;
 /** Full-strength `--pc-text`, not `$muted`: on the tinted `--pc-surface-2` the
  *  muted token measures 4.38:1 in light theme — under the 4.5:1 AA floor. The
  *  muted token only clears AA against the plain `--pc-surface`. */
@@ -192,9 +233,18 @@ export default function AdminSettingsWrapper() {
 	const { data, isLoading, mutate } = useSWR<SiteConfigs>(
 		"/admin/site-configs",
 	);
+	const { data: migration, mutate: mutateMigration } =
+		useSWR<SettlementMigrationConfig>(
+			"/admin/finance/settlement-migration",
+		);
 	const [form, setForm] = useState<SiteConfigs | null>(null);
 	const [feeDraft, setFeeDraft] = useState<FeeDraft | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [migrationMode, setMigrationMode] =
+		useState<MigrationMode>("V1_ONLY");
+	const [migrationReason, setMigrationReason] = useState("");
+	const [migrationBusy, setMigrationBusy] = useState(false);
+	const [deliveryLocationsText, setDeliveryLocationsText] = useState("");
 
 	useEffect(() => {
 		if (!data) return;
@@ -204,7 +254,40 @@ export default function AdminSettingsWrapper() {
 			platformFeeBuyerMaxKobo: String(data.platformFeeBuyerMaxKobo),
 			platformFeeVendorPercent: String(data.platformFeeVendorPercent),
 		});
+		setDeliveryLocationsText((data.deliveryLocations ?? []).join("\n"));
 	}, [data]);
+
+	useEffect(() => {
+		if (migration) setMigrationMode(migration.mode);
+	}, [migration]);
+
+	async function saveMigrationMode() {
+		if (!migrationReason.trim()) {
+			toast(
+				"Add a reason for this audited settlement-mode change.",
+				"error",
+			);
+			return;
+		}
+		setMigrationBusy(true);
+		try {
+			await api.patch("/admin/finance/settlement-migration", {
+				mode: migrationMode,
+				changeReason: migrationReason.trim(),
+			});
+			setMigrationReason("");
+			await mutateMigration();
+			toast("Settlement migration mode updated", "success");
+		} catch (err: any) {
+			toast(
+				err.response?.data?.message ??
+					"Settlement migration mode is not available.",
+				"error",
+			);
+		} finally {
+			setMigrationBusy(false);
+		}
+	}
 
 	function set<K extends keyof SiteConfigs>(key: K, value: SiteConfigs[K]) {
 		setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -248,30 +331,41 @@ export default function AdminSettingsWrapper() {
 		setBusy(true);
 		try {
 			await api.patch("/admin/site-configs", {
-				// JSON numbers, not strings — the server rejects `"5"` outright
-				// rather than coerce it. Safe to `Number()` here: every field has
-				// just passed `validateFee`, so none is empty or unparseable.
-				platformFeeBuyerPercent: Number(
-					feeDraft.platformFeeBuyerPercent,
-				),
-				platformFeeBuyerMaxKobo: Number(
-					feeDraft.platformFeeBuyerMaxKobo,
-				),
-				platformFeeVendorPercent: Number(
-					feeDraft.platformFeeVendorPercent,
-				),
+				platformFeeBuyerPercent: Number(feeDraft.platformFeeBuyerPercent),
+				platformFeeBuyerMaxKobo: Number(feeDraft.platformFeeBuyerMaxKobo),
+				platformFeeVendorPercent: Number(feeDraft.platformFeeVendorPercent),
 				slotHoldTtlSeconds: Math.round(form.slotHoldTtlSeconds),
 				abandonedOrderMinutes: Math.round(form.abandonedOrderMinutes),
 				reviewWindowHours: Math.round(form.reviewWindowHours),
 				cutoffWarningMinutes: Math.round(form.cutoffWarningMinutes),
+				deliveryInTransitGraceMinutes: Math.round(
+					form.deliveryInTransitGraceMinutes,
+				),
+				deliveryInTransitFallbackEstimateMinutes: Math.round(
+					form.deliveryInTransitFallbackEstimateMinutes,
+				),
+				deliveryOverdueAutoEscalateEnabled:
+					form.deliveryOverdueAutoEscalateEnabled,
 				whatsappTvEnabled: form.whatsappTvEnabled,
 				marketplaceEnabled: form.marketplaceEnabled,
 				reviewsEnabled: form.reviewsEnabled,
+				scheduleAheadEnabled: form.scheduleAheadEnabled,
+				weeklyBreakfastPlanEnabled: form.weeklyBreakfastPlanEnabled,
+				breakfastEnabled: form.breakfastEnabled,
+				lunchEnabled: form.lunchEnabled,
+				dinnerEnabled: form.dinnerEnabled,
+				deliveryEnabled: form.deliveryEnabled,
+				pickupEnabled: form.pickupEnabled,
+				vendorRegistrationEnabled: form.vendorRegistrationEnabled,
 				ordersKillSwitch: form.ordersKillSwitch,
 				paymentsKillSwitch: form.paymentsKillSwitch,
 				profileCompletenessRequired: Math.round(
 					form.profileCompletenessRequired,
 				),
+				deliveryLocations: deliveryLocationsText
+					.split("\n")
+					.map((l) => l.trim())
+					.filter((l) => l.length > 0),
 			});
 			toast("Settings saved", "success");
 			await mutate();
@@ -327,6 +421,85 @@ export default function AdminSettingsWrapper() {
 
 			<FadeIn>
 				<Stack $gap={16}>
+					{migration ? (
+						<Section>
+							<SectionHeader
+								title="Payment settlement migration"
+								icon="🔒"
+							/>
+							<PolicySummary $size={13}>
+								Current mode: <strong>{migration.mode}</strong>{" "}
+								· config v{migration.version}. V2 requires all
+								four runtime readiness gates; unavailable
+								selections fail closed to V1.
+							</PolicySummary>
+							<Grid2>
+								<label htmlFor="settlement-migration-mode">
+									<Text $weight={700} $size={13}>
+										Mode for future payments only
+									</Text>
+									<Select
+										id="settlement-migration-mode"
+										value={migrationMode}
+										onChange={(event) =>
+											setMigrationMode(
+												event.target
+													.value as MigrationMode,
+											)
+										}
+									>
+										<option value="V1_ONLY">V1 only</option>
+										<option value="V2_PILOT">
+											V2 pilot
+										</option>
+										<option value="V2_NEW_PAYMENTS">
+											V2 new payments
+										</option>
+										<option value="EMERGENCY_V1">
+											Emergency V1 rollback
+										</option>
+									</Select>
+								</label>
+								<Input
+									label="Required audit reason"
+									value={migrationReason}
+									onChange={(event) =>
+										setMigrationReason(event.target.value)
+									}
+									hint="This never reclassifies an existing payment."
+								/>
+							</Grid2>
+							<Text $muted $size={12}>
+								Readiness: foundation{" "}
+								{migration.safety.foundationEnabled
+									? "yes"
+									: "no"}
+								; Paystack approval{" "}
+								{migration.safety.paystackManualPayoutsApproved
+									? "yes"
+									: "no"}
+								; legal/accounting{" "}
+								{migration.safety.legalAccountingApproved
+									? "yes"
+									: "no"}
+								; money interlock{" "}
+								{migration.safety.moneyMovementEnabled
+									? "yes"
+									: "no"}
+								.
+							</Text>
+							<Button
+								$loading={migrationBusy}
+								disabled={
+									migrationBusy ||
+									migrationMode === migration.mode
+								}
+								onClick={saveMigrationMode}
+							>
+								Apply future-payment mode
+							</Button>
+						</Section>
+					) : null}
 					<Section>
 						<SectionHeader title="Platform fees" icon="💰" />
 						{/* Derived from the SAVED config, never hardcoded: this is
@@ -448,6 +621,30 @@ export default function AdminSettingsWrapper() {
 								}
 							/>
 							<Input
+								label="Delivery grace (minutes)"
+								type="number"
+								value={form.deliveryInTransitGraceMinutes.toString()}
+								hint="Extra time after the vendor's delivery estimate before an in-transit order is escalated."
+								onChange={(e) =>
+									set(
+										"deliveryInTransitGraceMinutes",
+										Number(e.target.value) || 0,
+									)
+								}
+							/>
+							<Input
+								label="Delivery fallback estimate (minutes)"
+								type="number"
+								value={form.deliveryInTransitFallbackEstimateMinutes.toString()}
+								hint="Used only when an older delivery order has no saved estimate."
+								onChange={(e) =>
+									set(
+										"deliveryInTransitFallbackEstimateMinutes",
+										Number(e.target.value) || 1,
+									)
+								}
+							/>
+							<Input
 								label="Profile completeness required (%)"
 								type="number"
 								value={form.profileCompletenessRequired.toString()}
@@ -464,6 +661,30 @@ export default function AdminSettingsWrapper() {
 					<Section>
 						<SectionHeader title="Feature flags" icon="🚩" />
 						<div>
+							<Toggle>
+								<ToggleText>
+									Delivery overdue escalation
+									<ToggleHint>
+										Send overdue in-transit delivery orders
+										to admin review automatically.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={
+											form.deliveryOverdueAutoEscalateEnabled
+										}
+										onChange={(e) =>
+											set(
+												"deliveryOverdueAutoEscalateEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
 							<Toggle>
 								<ToggleText>
 									Marketplace enabled
@@ -520,6 +741,181 @@ export default function AdminSettingsWrapper() {
 										onChange={(e) =>
 											set(
 												"whatsappTvEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Schedule Ahead
+									<ToggleHint>
+										Allow vendors to accept future-dated orders.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.scheduleAheadEnabled}
+										onChange={(e) =>
+											set(
+												"scheduleAheadEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Weekly Breakfast Plan
+									<ToggleHint>
+										Allow vendors to offer weekly breakfast
+										plans.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.weeklyBreakfastPlanEnabled}
+										onChange={(e) =>
+											set(
+												"weeklyBreakfastPlanEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Breakfast
+									<ToggleHint>
+										Show Breakfast category in the
+										marketplace.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.breakfastEnabled}
+										onChange={(e) =>
+											set(
+												"breakfastEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Lunch
+									<ToggleHint>
+										Show Lunch category in the
+										marketplace.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.lunchEnabled}
+										onChange={(e) =>
+											set(
+												"lunchEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Dinner
+									<ToggleHint>
+										Show Dinner category in the
+										marketplace.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.dinnerEnabled}
+										onChange={(e) =>
+											set(
+												"dinnerEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Delivery
+									<ToggleHint>
+										Allow delivery as a platform-wide
+										fulfillment option.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.deliveryEnabled}
+										onChange={(e) =>
+											set(
+												"deliveryEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Pickup
+									<ToggleHint>
+										Allow pickup as a platform-wide
+										fulfillment option.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.pickupEnabled}
+										onChange={(e) =>
+											set(
+												"pickupEnabled",
+												e.target.checked,
+											)
+										}
+									/>
+									<span className="track" />
+								</Switch>
+							</Toggle>
+							<Toggle>
+								<ToggleText>
+									Vendor registration
+									<ToggleHint>
+										Allow new vendors to register and
+										apply.
+									</ToggleHint>
+								</ToggleText>
+								<Switch>
+									<input
+										type="checkbox"
+										checked={form.vendorRegistrationEnabled}
+										onChange={(e) =>
+											set(
+												"vendorRegistrationEnabled",
 												e.target.checked,
 											)
 										}
@@ -594,6 +990,31 @@ export default function AdminSettingsWrapper() {
 								</Switch>
 							</Toggle>
 						</div>
+					</Section>
+
+					<Section>
+						<SectionHeader
+							title="Delivery locations"
+							icon="📍"
+						/>
+						<Text $muted $size={13}>
+							Define the locations vendors can choose for delivery coverage.
+							One location per line. Leave empty to allow vendors to
+							enter any location.
+						</Text>
+						<Textarea
+							label="Allowed delivery locations"
+							value={deliveryLocationsText}
+							onChange={(e) =>
+								setDeliveryLocationsText(e.target.value)
+							}
+							placeholder={`Samaru\nAviation\nFlyover\nSabon Gari\nHanwa`}
+							rows={6}
+						/>
+						<Text $muted $size={12.5}>
+							Vendors will be able to select from these locations when
+							configuring delivery coverage.
+						</Text>
 					</Section>
 				</Stack>
 			</FadeIn>

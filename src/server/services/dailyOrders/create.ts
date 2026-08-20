@@ -1,10 +1,12 @@
 import {
+	ErrBrandKitNotReceived,
 	ErrForbidden,
 	ErrVendorNotActive,
 	generateShareableToken,
 	validationError,
 } from "../../constants";
 import {
+	BrandKitFulfillmentStatus,
 	createDailyOrderDB,
 	DailyOrderStatus,
 	getDailyOrderByIdDB,
@@ -29,6 +31,12 @@ export async function createDailyOrder({
 		throw validationError(
 			"Complete your vendor campus before posting food.",
 		);
+	}
+	if (
+		!input.draft &&
+		vendor.brandKitFulfillmentStatus !== BrandKitFulfillmentStatus.RECEIVED
+	) {
+		throw ErrBrandKitNotReceived;
 	}
 
 	const vendorId = vendor._id.toString();

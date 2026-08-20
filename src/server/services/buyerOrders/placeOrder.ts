@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
+import { deriveHandoverCredential } from "@/server/constants/handoverCredential";
 import {
 	APP_URL,
 	calculateBuyerServiceFeeKobo,
@@ -13,25 +14,34 @@ import {
 	generateOrderNumber,
 	generatePaystackRef,
 	hash,
+	insufficientQuantity,
 	koboToNaira,
+	listingSoldOut,
 	notFound,
 	resolveFeePolicy,
 	serviceUnavailable,
-	slotUnavailable,
 	sumKobo,
 	validationError,
 } from "../../constants";
 import {
+	allocateDeliveryCodeDB,
+	BuyerOrder,
+	BrandKitPaymentStatus,
 	createBuyerOrderDB,
+	createDeliveryCodeDB,
 	createPaymentDB,
 	DailyOrderStatus,
 	deleteBuyerOrderHardDB,
 	FulfillmentType,
 	getDailyOrderByIdDB,
 	getVendorProfileByIdDB,
+	listDailyOrdersByVendorDB,
 	OrderStatus,
 	PaymentStatus,
+	PaymentSettlementMode,
 	VendorStatus,
+	type IDeliveryCode,
+	type IDeliveryCodeCreateInput,
 } from "../../models";
 import type { IBuyerOrderItem } from "../../models/buyerOrders/types";
 import { paystackProvider } from "../../providers";
@@ -39,6 +49,7 @@ import {
 	getSiteConfigs,
 	MARKETPLACE_UNAVAILABLE_MESSAGE,
 } from "../siteConfigs";
+import { classifyNewPaymentSettlement } from "../vendorPayouts";
 import { releaseSlots, reserveSlots, type SlotRequest } from "./slots";
 
 export interface PlaceOrderInput {
@@ -53,6 +64,7 @@ export interface PlaceOrderInput {
 	items: Array<{
 		dailyOrderItemId: string;
 		quantity: number;
+		selectedVariantId?: string;
 		selectedOptionIds?: string[];
 		selectedOptions?: Array<{ optionId: string; quantity: number }>;
 	}>;
@@ -71,6 +83,10 @@ export async function placeOrder({
 	campusId: string;
 	input: PlaceOrderInput;
 }) {
+	if (!campusId?.trim()) {
+		throw validationError("Choose your campus in Account before checkout.");
+	}
+
 	const config = await getSiteConfigs();
 	if (!config.marketplaceEnabled) {
 		throw serviceUnavailable(
@@ -125,12 +141,64 @@ export async function placeOrder({
 		throw validationError("Add a phone number for delivery.");
 	}
 
+	const now = Date.now();
+	const vendorListings = await listDailyOrdersByVendorDB({
+		vendorId: dailyOrder.vendorId,
+		status: DailyOrderStatus.ACTIVE,
+	});
+	const sameVendorListings = vendorListings.filter(
+		(o) =>
+			o.isPublic &&
+			new Date(o.cutoffTime).getTime() > now &&
+			(o.id ?? o._id)?.toString() !== input.dailyOrderId,
+	);
+	const allListings = [dailyOrder, ...sameVendorListings];
+	const itemMap = new Map<string, (typeof dailyOrder.items)[number]>();
+	for (const listing of allListings) {
+		for (const item of listing.items) {
+			const id = (item.id ?? item._id)?.toString();
+			if (id) itemMap.set(id, item);
+		}
+	}
+
 	// ── 2. Resolve requested items + options against the snapshotted listing ─
 	const resolvedItems: IBuyerOrderItem[] = input.items.map((req) => {
-		const orderItem = dailyOrder.items.find(
-			(i) => (i.id ?? i._id)?.toString() === req.dailyOrderItemId,
-		);
+		const orderItem = itemMap.get(req.dailyOrderItemId);
 		if (!orderItem) throw notFound("Item");
+		if (orderItem.maxQuantity != null) {
+			const remaining = Math.max(
+				0,
+				orderItem.maxQuantity - (orderItem.orderedQuantity ?? 0),
+			);
+			if (req.quantity > remaining) {
+				throw remaining <= 0
+					? listingSoldOut(orderItem.snapshotName)
+					: insufficientQuantity(orderItem.snapshotName, remaining);
+			}
+		}
+		const variants = (orderItem.snapshotVariants ?? []).filter(
+			(variant) => variant.isActive !== false,
+		);
+		const selectedVariant =
+			variants.length > 0
+				? variants.find(
+						(v) =>
+							(v.id ?? v._id)?.toString() ===
+							req.selectedVariantId,
+					)
+				: undefined;
+		if (variants.length > 0 && !selectedVariant) {
+			throw validationError(
+				`Choose one option for "${orderItem.snapshotName}".`,
+			);
+		}
+		if (variants.length === 0 && req.selectedVariantId) {
+			throw validationError(
+				`"${orderItem.snapshotName}" does not have selectable variants.`,
+			);
+		}
+		const basePriceKobo =
+			selectedVariant?.priceKobo ?? orderItem.snapshotPriceKobo;
 
 		const selectedOptionQuantities = new Map<string, number>();
 		for (const id of req.selectedOptionIds ?? []) {
@@ -190,14 +258,18 @@ export async function placeOrder({
 			(s, a) => s + a.subtotalKobo,
 			0,
 		);
-		const itemSubtotal =
-			orderItem.snapshotPriceKobo * req.quantity + optionsSubtotal;
+		const itemSubtotal = basePriceKobo * req.quantity + optionsSubtotal;
 
 		return {
 			dailyOrderItemId: (orderItem.id ?? orderItem._id)?.toString() ?? "",
 			menuItemId: orderItem.menuItemId?.toString(),
 			snapshotName: orderItem.snapshotName,
-			snapshotPriceKobo: orderItem.snapshotPriceKobo,
+			snapshotPriceKobo: basePriceKobo,
+			selectedVariantDailyOrderVariantId: selectedVariant
+				? (selectedVariant.id ?? selectedVariant._id)?.toString()
+				: undefined,
+			selectedVariantName: selectedVariant?.name,
+			selectedVariantPriceKobo: selectedVariant?.priceKobo,
 			snapshotPrepMin: orderItem.snapshotPrepMin,
 			quantity: req.quantity,
 			subtotalKobo: itemSubtotal,
@@ -263,15 +335,31 @@ export async function placeOrder({
 			"This kitchen isn't accepting orders right now. Please try again later.",
 		);
 	}
-	if (!vendor.paystackSubaccountCode) {
+	if (vendor.brandKitPaymentStatus !== BrandKitPaymentStatus.PAID) {
+		throw conflict(
+			"This kitchen is not yet activated. Please check back later.",
+		);
+	}
+	const settlementClassification = await classifyNewPaymentSettlement({
+		vendorId: dailyOrder.vendorId,
+		campusId,
+	});
+	if (
+		settlementClassification.settlementMode ===
+			PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 &&
+		!vendor.paystackSubaccountCode
+	) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 
 	// ── 5. Reserve slots (atomic oversell guard) ─────────────────────────
+	const buyerOrderId = new mongoose.Types.ObjectId().toString();
+	const orderNumber = generateOrderNumber();
+	const paystackRef = generatePaystackRef();
+	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
+
 	const slotRequests: SlotRequest[] = resolvedItems.map((it) => {
-		const listing = dailyOrder.items.find(
-			(i) => (i.id ?? i._id)?.toString() === it.dailyOrderItemId,
-		);
+		const listing = itemMap.get(it.dailyOrderItemId);
 		return {
 			dailyOrderItemId: it.dailyOrderItemId,
 			quantity: it.quantity,
@@ -282,18 +370,17 @@ export async function placeOrder({
 	const reservation = await reserveSlots(
 		slotRequests,
 		config.slotHoldTtlSeconds,
+		buyerOrderId,
 	);
 	if (!reservation.ok) {
 		const failed = resolvedItems.find(
 			(i) => i.dailyOrderItemId === reservation.failedItemId,
 		);
-		throw slotUnavailable(failed?.snapshotName);
+		throw reservation.remaining <= 0
+			? listingSoldOut(failed?.snapshotName)
+			: insufficientQuantity(failed?.snapshotName, reservation.remaining);
 	}
 
-	const buyerOrderId = new mongoose.Types.ObjectId().toString();
-	const orderNumber = generateOrderNumber();
-	const paystackRef = generatePaystackRef();
-	const idempotencyKey = hash(`${buyerOrderId}-${paystackRef}`);
 	const payForMe = input.paymentMode === "PAY_FOR_ME";
 	const externalPaymentToken = payForMe
 		? generateExternalPaymentToken()
@@ -322,6 +409,7 @@ export async function placeOrder({
 				email: buyerEmail,
 				amountKobo: totalKobo,
 				reference: paystackRef,
+				settlementMode: settlementClassification.settlementMode,
 				subaccountCode: vendor.paystackSubaccountCode,
 				vendorAmountKobo: vendorSettlementKobo,
 				metadata: {
@@ -337,7 +425,7 @@ export async function placeOrder({
 				},
 			});
 		} catch (error) {
-			await releaseSlots(holds);
+			await releaseSlots(holds, buyerOrderId);
 			console.error("Paystack init failed:", error);
 			throw validationError(
 				"Payment initialisation failed. Please try again.",
@@ -357,6 +445,12 @@ export async function placeOrder({
 			.join(", ");
 	}
 
+	const handoverCredential = deriveHandoverCredential({
+		_id: buyerOrderId,
+		orderNumber,
+		buyerId,
+		vendorId: dailyOrder.vendorId,
+	});
 	const order = await createBuyerOrderDB({
 		id: buyerOrderId,
 		payload: {
@@ -375,6 +469,10 @@ export async function placeOrder({
 			deliveryFullAddress,
 			deliveryPhone: deliveryPhone || undefined,
 			customerMessage: customerMessage || undefined,
+			deliveryEstimateMinutes:
+				input.fulfillmentType === FulfillmentType.DELIVERY
+					? dailyOrder.deliveryEstimateMinutes
+					: undefined,
 			subtotalKobo,
 			deliveryFeeKobo,
 			platformFeeKobo,
@@ -384,11 +482,14 @@ export async function placeOrder({
 			vendorDeliveryAmountKobo,
 			vendorSettlementKobo,
 			totalKobo,
+			handoverTokenHash: handoverCredential.qrTokenHash,
+			handoverPinHash: handoverCredential.pinHash,
+			handoverCredentialCreatedAt: new Date(),
 			items: resolvedItems,
 		},
 	});
 	if (!order) {
-		await releaseSlots(holds);
+		await releaseSlots(holds, buyerOrderId);
 		throw validationError("Could not create your order. Please try again.");
 	}
 
@@ -414,12 +515,42 @@ export async function placeOrder({
 			status: payForMe
 				? PaymentStatus.AWAITING_EXTERNAL_PAYMENT
 				: PaymentStatus.INITIALIZED,
+			...settlementClassification,
 		},
 	});
 	if (!payment) {
 		await deleteBuyerOrderHardDB({ id: buyerOrderId });
-		await releaseSlots(holds);
+		await releaseSlots(holds, buyerOrderId);
 		throw validationError("Could not create your order. Please try again.");
+	}
+
+	if (!vendor.vendorShortId) {
+		console.error(
+			`[placeOrder] vendor ${vendor.id} missing vendorShortId — delivery code not allocated`,
+		);
+	} else {
+		const allocated = await allocateDeliveryCodeDB({
+			vendorId: dailyOrder.vendorId,
+			vendorShortId: vendor.vendorShortId,
+			session: undefined,
+		});
+		if (allocated) {
+			const deliveryCode = allocated.code;
+			await createDeliveryCodeDB({
+				payload: {
+					vendorId: dailyOrder.vendorId,
+					code: deliveryCode,
+					sequence: allocated.sequence,
+					assignedOrderId: buyerOrderId,
+					assignedAt: new Date(),
+				},
+				session: undefined,
+			});
+			await BuyerOrder.updateOne(
+				{ _id: new mongoose.Types.ObjectId(buyerOrderId) },
+				{ $set: { deliveryCode } },
+			);
+		}
 	}
 
 	// Holds intentionally remain until payment confirmation (webhook) or the

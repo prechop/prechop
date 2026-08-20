@@ -12,6 +12,10 @@ import {
 	listDailyOrdersByVendorDB,
 	listMarketplaceVendorsDB,
 } from "../../models";
+import {
+	withSlotAvailability,
+	withSlotAvailabilityForListings,
+} from "../buyerOrders/slots";
 import { assertMarketplaceEnabled } from "../siteConfigs";
 import {
 	comparePublicVendors,
@@ -62,17 +66,60 @@ function pickupLocation(
 	);
 }
 
+function dailyOrderItemSoldOut(item: IDailyOrder["items"][number]): boolean {
+	if (item.remainingQuantity != null) return item.remainingQuantity <= 0;
+	if (item.maxQuantity != null) {
+		return (
+			(item.orderedQuantity ?? 0) + (item.reservedQuantity ?? 0) >=
+			item.maxQuantity
+		);
+	}
+	return false;
+}
+
+function listingHasAvailableItem(listing: IDailyOrder): boolean {
+	return listing.items.some((item) => !dailyOrderItemSoldOut(item));
+}
+
+function listingSortDate(listing: IDailyOrder): number {
+	return new Date(listing.scheduledDate ?? listing.createdAt ?? 0).getTime();
+}
+
+export function orderMarketplaceListingsForVendor(
+	listings: IDailyOrder[],
+): IDailyOrder[] {
+	return [...listings]
+		.map((listing) => ({
+			...listing,
+			items: [...listing.items].sort(
+				(a, b) =>
+					Number(dailyOrderItemSoldOut(a)) -
+					Number(dailyOrderItemSoldOut(b)),
+			),
+		}))
+		.sort((a, b) => {
+			const availableDelta =
+				Number(listingHasAvailableItem(b)) -
+				Number(listingHasAvailableItem(a));
+			if (availableDelta !== 0) return availableDelta;
+			return listingSortDate(b) - listingSortDate(a);
+		});
+}
+
 export async function getMarketplace({
 	campusId,
 	limit,
 	offset,
 	viewerUserId,
+	followedVendorIds = [],
 }: {
 	campusId?: string;
 	limit?: number;
 	offset?: number;
 	/** The signed-in caller (if any); their own listings are excluded. */
 	viewerUserId?: string;
+	/** Vendor IDs followed by the signed-in caller, for priority sorting. */
+	followedVendorIds?: string[];
 }) {
 	await assertMarketplaceEnabled();
 	let excludeVendorId: string | undefined;
@@ -97,10 +144,12 @@ export async function getMarketplace({
 	// so grouping the flat result by vendor reproduces the previous per-vendor
 	// shape and ordering exactly.
 	const now = new Date();
-	const listings = await listActivePublicListingsForVendorIdsDB({
-		vendorIds: vendors.map((vendor) => vendor._id.toString()),
-		now,
-	});
+	const listings = await withSlotAvailabilityForListings(
+		await listActivePublicListingsForVendorIdsDB({
+			vendorIds: vendors.map((vendor) => vendor._id.toString()),
+			now,
+		}),
+	);
 	const listingsByVendor = new Map<string, IDailyOrder[]>();
 	for (const listing of listings) {
 		const key = listing.vendorId.toString();
@@ -108,6 +157,7 @@ export async function getMarketplace({
 		if (bucket) bucket.push(listing);
 		else listingsByVendor.set(key, [listing]);
 	}
+	const followedSet = new Set(followedVendorIds);
 	const rows = vendors.map((vendor) => {
 		const publicVendor = toPublicVendor(vendor);
 		const vendorListings =
@@ -121,16 +171,25 @@ export async function getMarketplace({
 			// except by walking back up to its parent, which the flattened
 			// views don't do. Rating is the *gated* value, so a
 			// sub-threshold score never crosses the wire here either.
-			listings: vendorListings.map((listing) => ({
-				...listing,
-				vendorOpen: publicVendor.isOpenForOrders,
-				vendorName: publicVendor.businessName,
-				vendorRating: publicVendor.rating,
-				vendorTotalReviews: publicVendor.totalReviews,
-			})),
+			listings: orderMarketplaceListingsForVendor(vendorListings).map(
+				(listing) => ({
+					...listing,
+					vendorOpen: publicVendor.isOpenForOrders,
+					vendorName: publicVendor.businessName,
+					vendorRating: publicVendor.rating,
+					vendorTotalReviews: publicVendor.totalReviews,
+				}),
+			),
+			isFollowed: followedSet.has(vendor._id.toString()),
 		};
 	});
-	return rows.sort((a, b) => comparePublicVendors(a.vendor, b.vendor));
+	// Sort: followed vendors first, then by existing comparator.
+	rows.sort((a, b) => {
+		const followDelta = Number(b.isFollowed) - Number(a.isFollowed);
+		if (followDelta !== 0) return followDelta;
+		return comparePublicVendors(a.vendor, b.vendor);
+	});
+	return rows;
 }
 
 export async function getPublicDailyOrder({
@@ -157,16 +216,21 @@ export async function getPublicDailyOrder({
 	// Shop identity for the storefront link on the public order page.
 	const vendorId = order.vendorId.toString();
 	const vendorName = vendor?.businessName ?? null;
+	const vendorProfileImageUrl = vendor?.profileImageUrl ?? null;
+	const vendorVerified = vendor?.status === "ACTIVE";
 	// Same trust gate as the feed — the listing page shows the shop's rating.
 	const vendorTotalReviews = vendor?.totalReviews ?? 0;
 	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
+	const orderWithAvailability = await withSlotAvailability(order);
 	return {
-		...order,
+		...orderWithAvailability,
 		deliveryContactPhone: undefined,
 		isOwnListing,
 		vendorOpen,
 		vendorId,
 		vendorName,
+		vendorProfileImageUrl,
+		vendorVerified,
 		vendorPickupLocation: pickupLocation(vendor),
 		vendorPhone: null,
 		vendorRating,
@@ -182,6 +246,7 @@ export async function getMyDailyOrders({
 	to,
 	limit,
 	offset,
+	includeFulfillmentQueue,
 }: {
 	userId: string;
 	status?: DailyOrderStatus;
@@ -192,6 +257,7 @@ export async function getMyDailyOrders({
 	to?: Date;
 	limit?: number;
 	offset?: number;
+	includeFulfillmentQueue?: boolean;
 }) {
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw ErrForbidden;
@@ -203,6 +269,7 @@ export async function getMyDailyOrders({
 		to,
 		limit,
 		offset,
+		includeFulfillmentQueue,
 	});
 }
 

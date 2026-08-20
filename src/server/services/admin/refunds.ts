@@ -31,7 +31,9 @@ const REFUNDABLE: OrderStatus[] = [
 	OrderStatus.PICKED_UP,
 	OrderStatus.DELIVERED,
 	OrderStatus.COMPLETED,
+	OrderStatus.PICKUP_PROBLEM_REPORTED,
 	OrderStatus.REFUND_PENDING,
+	OrderStatus.REFUND_PROCESSING,
 	OrderStatus.REFUND_FAILED,
 	OrderStatus.CANCELLED,
 ];
@@ -43,6 +45,8 @@ export interface AdminRefundResult {
 		| "REFUNDED"
 		| "ALREADY_REFUNDED"
 		| "REFUND_PENDING"
+		| "REFUND_PROCESSING"
+		| "REFUND_NEEDS_ATTENTION"
 		| "REFUND_FAILED";
 	amountKobo: number;
 	refundId: string;
@@ -132,15 +136,27 @@ export async function refundOrderAsAdmin({
 		amountKobo: result.amountKobo,
 		refundId: result.refundId,
 		paystackRefundId: result.paystackRefundId,
-		message:
-			result.outcome === "ALREADY_REFUNDED"
-				? "A refund already exists for this order — no second payout was sent."
-				: result.outcome === "REFUND_PENDING"
-					? "A refund request already exists and is awaiting confirmation."
-					: result.outcome === "REFUND_FAILED"
-						? "A previous refund attempt failed and needs admin review."
-						: "Refund confirmed.",
+		message: adminRefundMessage(result.outcome),
 	};
+}
+
+function adminRefundMessage(outcome: AdminRefundResult["outcome"]): string {
+	if (outcome === "ALREADY_REFUNDED") {
+		return "A refund already exists for this order; no second refund was sent.";
+	}
+	if (outcome === "REFUND_PENDING") {
+		return "The refund was submitted to Paystack and is awaiting confirmation.";
+	}
+	if (outcome === "REFUND_PROCESSING") {
+		return "Paystack is processing this refund.";
+	}
+	if (outcome === "REFUND_NEEDS_ATTENTION") {
+		return "Paystack reports that this refund needs attention; admin review is required.";
+	}
+	if (outcome === "REFUND_FAILED") {
+		return "The refund failed after status reconciliation and needs admin review.";
+	}
+	return "Paystack confirmed the refund was processed.";
 }
 
 async function notifyVendorOfAdminRefund(

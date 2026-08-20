@@ -69,6 +69,9 @@ const schema = new mongoose.Schema<any>(
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "users",
 		},
+		resolutionNote: { type: String, maxlength: 2000 },
+		resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+		resolvedAt: { type: Date },
 		relatedOrderRef: { type: String, maxlength: 80 },
 		relatedPaymentRef: { type: String, maxlength: 120 },
 		messages: { type: [messageSchema], default: [] },
@@ -104,6 +107,9 @@ schema.pre("aggregate", function () {
 					{ $toString: "$assignedAdminId" },
 					null,
 				],
+			},
+			resolvedBy: {
+				$cond: ["$resolvedBy", { $toString: "$resolvedBy" }, null],
 			},
 		},
 	});
@@ -244,6 +250,11 @@ export async function addSupportMessageDB({
 					},
 				},
 				$set: { status: nextStatus },
+				$unset: {
+					resolutionNote: "",
+					resolvedBy: "",
+					resolvedAt: "",
+				},
 			},
 			{ session, returnDocument: "after" },
 		);
@@ -258,11 +269,15 @@ export async function updateSupportRequestDB({
 	id,
 	status,
 	assignedAdminId,
+	resolutionNote,
+	resolvedBy,
 	session,
 }: {
 	id: string;
 	status?: SupportStatus;
 	assignedAdminId?: string;
+	resolutionNote?: string;
+	resolvedBy?: string;
 	session?: ClientSession;
 }): Promise<ISupportRequest | null> {
 	try {
@@ -270,6 +285,11 @@ export async function updateSupportRequestDB({
 		if (status) $set.status = status;
 		if (assignedAdminId) {
 			$set.assignedAdminId = new mongoose.Types.ObjectId(assignedAdminId);
+		}
+		if (resolutionNote) $set.resolutionNote = resolutionNote;
+		if (resolvedBy) {
+			$set.resolvedBy = new mongoose.Types.ObjectId(resolvedBy);
+			$set.resolvedAt = new Date();
 		}
 		const res = await SupportRequest.findOneAndUpdate(
 			{ _id: new mongoose.Types.ObjectId(id) },

@@ -1,4 +1,8 @@
-import { ErrPaymentVerification, validationError } from "../../constants";
+import {
+	ErrPaymentVerification,
+	reservationExpired,
+	validationError,
+} from "../../constants";
 import {
 	getBuyerOrderByIdDB,
 	getPaymentByOrderIdDB,
@@ -7,8 +11,11 @@ import {
 	markPaymentBuyerInitializedDB,
 	OrderStatus,
 	PaymentStatus,
+	PaymentSettlementMode,
+	paymentSettlementModeOf,
 } from "../../models";
 import { paystackProvider } from "../../providers";
+import { getSiteConfigs } from "../siteConfigs";
 
 /**
  * Paystack requires an email per transaction, but Prechop buyers authenticate by
@@ -50,6 +57,9 @@ export async function initializeBuyerPayment({
 	if (!payment || payment.webhookVerified) {
 		throw validationError("This order can no longer be paid.");
 	}
+	if (await pendingReservationExpired(payment.createdAt)) {
+		throw reservationExpired();
+	}
 	if (
 		payment.status === PaymentStatus.INITIALIZED &&
 		payment.paystackAuthorizationUrl &&
@@ -80,7 +90,11 @@ export async function initializeBuyerPayment({
 	const vendor = await getVendorProfileByIdDB({
 		id: order.vendorId.toString(),
 	});
-	if (!vendor?.paystackSubaccountCode) {
+	const settlementMode = paymentSettlementModeOf(payment);
+	if (
+		settlementMode === PaymentSettlementMode.DIRECT_SUBACCOUNT_V1 &&
+		!vendor?.paystackSubaccountCode
+	) {
 		throw validationError("Vendor payment account is not configured.");
 	}
 
@@ -88,7 +102,8 @@ export async function initializeBuyerPayment({
 		email: buyerPaystackEmail(buyerId),
 		amountKobo: payment.amountKobo,
 		reference: payment.paystackRef,
-		subaccountCode: vendor.paystackSubaccountCode,
+		settlementMode,
+		subaccountCode: vendor?.paystackSubaccountCode,
 		vendorAmountKobo:
 			payment.vendorSettlementKobo ?? payment.vendorAmountKobo,
 		metadata: {
@@ -127,4 +142,10 @@ export async function initializeBuyerPayment({
 		accessCode: updated.paystackAccessCode ?? tx.access_code,
 		paystackRef: updated.paystackRef,
 	};
+}
+
+async function pendingReservationExpired(createdAt: Date): Promise<boolean> {
+	const config = await getSiteConfigs();
+	if (config.slotHoldTtlSeconds <= 0) return false;
+	return createdAt.getTime() + config.slotHoldTtlSeconds * 1000 <= Date.now();
 }

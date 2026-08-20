@@ -16,6 +16,8 @@ import { Redis } from "@/server/databases/redis";
 import {
 	claimPaymentWebhookDB,
 	createPaymentDB,
+	getDailyOrderByIdDB,
+	incrementDailyOrderItemQuantityDB,
 	listAuditLogsDB,
 	PaymentStatus,
 } from "@/server/models";
@@ -28,6 +30,8 @@ import { FulfillmentType, OrderStatus } from "@/server/models/enums";
 import { listNotificationsDB } from "@/server/models/notifications";
 import { paystackProvider } from "@/server/providers";
 import { cancelOrderAsBuyer } from "@/server/services/buyerOrders/cancel";
+import { revealBuyerContactForVendor } from "@/server/services/buyerOrders/contactAccess";
+import { sweepDeliveryOverdueOrders } from "@/server/services/buyerOrders/deliveryOverdue";
 import {
 	isNoShowOrFailedDeliveryFinanciallySettled,
 	markDeliveryFailed,
@@ -43,6 +47,7 @@ import {
 	revealAdminHandoverPin,
 } from "@/server/services/buyerOrders/handoverConfirmation";
 import {
+	getIncomingVendorOrders,
 	getMyOrders,
 	getOrderById,
 	getVendorOrdersForDailyOrder,
@@ -56,7 +61,11 @@ import { invalidateSiteConfigsCache } from "@/server/services/siteConfigs/getSit
 import { updateSiteConfigs } from "@/server/services/siteConfigs/updateSiteConfigs";
 import { getVendorReviews } from "@/server/services/vendors/reviews";
 import { connectTestDB, dropAndDisconnect, oid } from "../helpers/db";
-import { makeUser, makeVendor } from "../helpers/factories";
+import {
+	makeActiveDailyOrder,
+	makeUser,
+	makeVendor,
+} from "../helpers/factories";
 
 const slotKeys = new Set<string>();
 
@@ -82,6 +91,15 @@ async function makeOrder({
 	status,
 	fulfillmentType = FulfillmentType.PICKUP,
 	acceptanceDeadline,
+	deliveryHostelName,
+	deliveryRoomNumber,
+	deliveryAdditionalInfo,
+	deliveryPhone,
+	customerMessage,
+	dailyOrderId,
+	dailyOrderItemId,
+	deliveryEstimateMinutes,
+	deliveryStartedAt,
 }: {
 	vendorId: string;
 	buyerId: string;
@@ -89,17 +107,42 @@ async function makeOrder({
 	status?: OrderStatus;
 	fulfillmentType?: FulfillmentType;
 	acceptanceDeadline?: Date;
+	deliveryHostelName?: string;
+	deliveryRoomNumber?: string;
+	deliveryAdditionalInfo?: string;
+	deliveryPhone?: string;
+	customerMessage?: string;
+	dailyOrderId?: string;
+	dailyOrderItemId?: string;
+	deliveryEstimateMinutes?: number;
+	deliveryStartedAt?: Date;
 }) {
-	const itemId = oid();
+	const itemId = dailyOrderItemId ?? oid();
 	slotKeys.add(`slot:reserved:${itemId}`);
 	const order = await createBuyerOrderDB({
 		payload: {
 			orderNumber: generateOrderNumber(),
-			dailyOrderId: oid(),
+			dailyOrderId: dailyOrderId ?? oid(),
 			vendorId,
 			buyerId,
 			campusId,
 			fulfillmentType,
+			deliveryHostelName,
+			deliveryRoomNumber,
+			deliveryAdditionalInfo,
+			deliveryFullAddress:
+				fulfillmentType === FulfillmentType.DELIVERY
+					? [
+							deliveryHostelName,
+							deliveryRoomNumber,
+							deliveryAdditionalInfo,
+						]
+							.filter(Boolean)
+							.join(", ")
+					: undefined,
+			deliveryPhone,
+			customerMessage,
+			deliveryEstimateMinutes,
 			subtotalKobo: 150000,
 			deliveryFeeKobo: 0,
 			platformFeeKobo: 5000,
@@ -122,6 +165,7 @@ async function makeOrder({
 			id: order!._id.toString(),
 			status,
 			acceptanceDeadline,
+			deliveryStartedAt,
 		});
 	}
 	return order!;
@@ -146,6 +190,14 @@ async function addSuccessfulPayment(
 	});
 	await claimPaymentWebhookDB({ paystackRef: ref, channel: "card" });
 	return ref;
+}
+
+function firstDailyOrderItemId(listing: {
+	items: Array<{ id?: string; _id?: unknown }>;
+}): string {
+	const item = listing.items[0];
+	if (!item) throw new Error("Expected seeded listing item");
+	return (item.id ?? item._id)?.toString() ?? "";
 }
 
 describe("buyerOrders queries", () => {
@@ -182,6 +234,113 @@ describe("buyerOrders queries", () => {
 			dailyOrderId: order.dailyOrderId.toString(),
 		});
 		expect(list.length).toBe(1);
+	});
+
+	it("redacts delivery details until an accepted delivery order is revealed", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryRoomNumber: "B12",
+			deliveryAdditionalInfo: "Near the back gate",
+			deliveryPhone: "08012345678",
+			customerMessage: "Please call when you arrive.",
+		});
+
+		const list = await getVendorOrdersForDailyOrder({
+			vendorUserId: userId,
+			dailyOrderId: order.dailyOrderId.toString(),
+		});
+		expect(list[0].deliveryFullAddress).toBeUndefined();
+		expect(list[0].deliveryPhone).toBeUndefined();
+		expect(list[0].customerMessage).toBeUndefined();
+
+		const revealed = await revealBuyerContactForVendor({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+		});
+		expect(revealed.buyerName).toBe("Test User");
+		expect(revealed.address).toBe("Kofo Hall, B12, Near the back gate");
+		expect(revealed.deliveryRoomNumber).toBe("B12");
+		expect(revealed.deliveryAdditionalInfo).toBe("Near the back gate");
+		expect(revealed.phone).toBe("+2348012345678");
+		expect(revealed.checkoutNote).toBe("Please call when you arrive.");
+	});
+
+	it("reveals accepted delivery contact without inventing a checkout note", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Moremi Hall",
+			deliveryPhone: "+2348012345678",
+		});
+
+		const revealed = await revealBuyerContactForVendor({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+		});
+		expect(revealed.address).toBe("Moremi Hall");
+		expect(revealed.checkoutNote).toBeUndefined();
+	});
+
+	it("does not reveal delivery details before acceptance, for pickup, or to another vendor", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const otherVendor = await makeVendor();
+		const buyer = await makeUser();
+		const pendingDelivery = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryPhone: "+2348012345678",
+		});
+		const acceptedPickup = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		const acceptedDelivery = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.ACCEPTED,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryHostelName: "Kofo Hall",
+			deliveryPhone: "+2348012345678",
+		});
+
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: userId,
+				orderId: pendingDelivery._id.toString(),
+			}),
+		).rejects.toThrow(/accepted orders/i);
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: userId,
+				orderId: acceptedPickup._id.toString(),
+			}),
+		).rejects.toThrow(/delivery orders/i);
+		await expect(
+			revealBuyerContactForVendor({
+				vendorUserId: otherVendor.userId,
+				orderId: acceptedDelivery._id.toString(),
+			}),
+		).rejects.toThrow();
 	});
 });
 
@@ -224,7 +383,11 @@ describe("updateOrderStatus", () => {
 	it("rejects an awaiting order and starts one refund", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 444, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 444,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -255,7 +418,11 @@ describe("updateOrderStatus", () => {
 	it("expires unanswered orders and is idempotent on duplicate timer execution", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 445, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 445,
+				status: "processed",
+				amount: 155000,
+			});
 		const { vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -321,10 +488,111 @@ describe("updateOrderStatus", () => {
 		).rejects.toThrow();
 	});
 
+	it("expires and refunds instead of accepting when the deadline has passed", async () => {
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 447,
+				status: "processed",
+				amount: 155000,
+			});
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			acceptanceDeadline: new Date(Date.now() - 1000),
+		});
+		await addSuccessfulPayment(order);
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.ACCEPTED,
+			}),
+		).rejects.toMatchObject({
+			appCode: "ACCEPTANCE_DEADLINE_EXPIRED",
+		});
+
+		const expired = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(expired!.status).toBe(OrderStatus.REFUNDED);
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+
+		await expect(
+			updateOrderStatus({
+				vendorUserId: userId,
+				orderId: order._id.toString(),
+				status: OrderStatus.ACCEPTED,
+			}),
+		).rejects.toThrow();
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("fetch-time expiry removes overdue accept actions and restores committed capacity", async () => {
+		const refundSpy = vi
+			.spyOn(paystackProvider, "refund")
+			.mockResolvedValue({
+				id: 448,
+				status: "processed",
+				amount: 155000,
+			});
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const listing = await makeActiveDailyOrder({
+			vendorId,
+			campusId,
+			maxQuantity: 1,
+		});
+		const dailyOrderId = listing._id.toString();
+		const dailyOrderItemId = firstDailyOrderItemId(listing);
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.AWAITING_VENDOR_ACCEPTANCE,
+			acceptanceDeadline: new Date(Date.now() - 1000),
+			dailyOrderId,
+			dailyOrderItemId,
+		});
+		await incrementDailyOrderItemQuantityDB({
+			dailyOrderId,
+			dailyOrderItemId,
+			by: 1,
+		});
+		await addSuccessfulPayment(order);
+
+		const incoming = await getIncomingVendorOrders({
+			vendorUserId: userId,
+		});
+		expect(incoming.map((o) => o._id.toString())).not.toContain(
+			order._id.toString(),
+		);
+
+		const expired = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(expired!.status).toBe(OrderStatus.REFUNDED);
+		const freshListing = await getDailyOrderByIdDB({ id: dailyOrderId });
+		const item = freshListing!.items.find(
+			(i) => (i.id ?? i._id)?.toString() === dailyOrderItemId,
+		);
+		expect(item!.orderedQuantity).toBe(0);
+		expect(refundSpy).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps refund idempotent when rejection is retried after refund", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 446, status: "success", amount: 155000 });
+			.mockResolvedValue({
+				id: 446,
+				status: "processed",
+				amount: 155000,
+			});
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
 		const order = await makeOrder({
@@ -471,6 +739,104 @@ describe("updateOrderStatus", () => {
 		expect(completed.deliveredAt).toBeInstanceOf(Date);
 	});
 
+	it("escalates in-transit delivery after the promised estimate plus admin grace", async () => {
+		await updateSiteConfigs({
+			payload: {
+				deliveryInTransitGraceMinutes: 10,
+				deliveryInTransitFallbackEstimateMinutes: 60,
+				deliveryOverdueAutoEscalateEnabled: true,
+			},
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryEstimateMinutes: 30,
+			deliveryStartedAt: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		const early = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:39:00.000Z"),
+		});
+		expect(early.escalated).toBe(0);
+
+		const due = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:41:00.000Z"),
+		});
+		expect(due.escalated).toBe(1);
+
+		const escalated = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(escalated!.status).toBe(OrderStatus.IN_TRANSIT);
+		expect(escalated!.adminReviewReason).toBe(
+			"DELIVERY_CONFIRMATION_OVERDUE",
+		);
+		expect(escalated!.deliveryOverdueEscalatedAt).toEqual(
+			new Date("2026-07-22T10:41:00.000Z"),
+		);
+		expect(escalated!.timeline?.map((entry) => entry.type)).toContain(
+			"DELIVERY_OVERDUE_ESCALATED",
+		);
+
+		const notifications = await listNotificationsDB({ userId: buyerId });
+		expect(
+			notifications.some(
+				(n) => n.type === "ORDER_DELIVERY_OVERDUE_ESCALATED",
+			),
+		).toBe(true);
+
+		const repeat = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T10:42:00.000Z"),
+		});
+		expect(repeat.escalated).toBe(0);
+	});
+
+	it("respects the admin switch for delivery overdue escalation", async () => {
+		await updateSiteConfigs({
+			payload: {
+				deliveryInTransitGraceMinutes: 10,
+				deliveryInTransitFallbackEstimateMinutes: 20,
+				deliveryOverdueAutoEscalateEnabled: false,
+			},
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.IN_TRANSIT,
+			fulfillmentType: FulfillmentType.DELIVERY,
+			deliveryStartedAt: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		const result = await sweepDeliveryOverdueOrders({
+			now: new Date("2026-07-22T11:00:00.000Z"),
+		});
+		expect(result.scanned).toBe(0);
+		expect(result.escalated).toBe(0);
+		const unchanged = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(unchanged!.adminReviewReason).toBeUndefined();
+
+		await updateSiteConfigs({
+			payload: { deliveryOverdueAutoEscalateEnabled: true },
+			adminId: oid(),
+			role: "SUPER_ADMIN",
+		});
+	});
+
 	it("keeps in-transit unavailable for pickup orders", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
@@ -571,9 +937,10 @@ describe("handover confirmation", () => {
 		const before = await getAdminHandoverVerificationDetails({
 			orderId: order._id.toString(),
 		});
-		expect(before.qrGenerated).toBe(false);
-		expect(before.pinGenerated).toBe(false);
+		expect(before.qrGenerated).toBe(true);
+		expect(before.pinGenerated).toBe(true);
 		expect(before.handoverEligible).toBe(true);
+		expect(before.paymentVerified).toBe(true);
 
 		const adminUserId = oid();
 		const revealed = await revealAdminHandoverPin({
@@ -592,6 +959,9 @@ describe("handover confirmation", () => {
 		});
 		expect(after.qrGenerated).toBe(true);
 		expect(after.pinGenerated).toBe(true);
+		expect(after.credentialGeneratedAt?.getTime()).toBe(
+			before.credentialGeneratedAt?.getTime(),
+		);
 
 		const audit = await listAuditLogsDB({
 			filter: {
@@ -606,6 +976,89 @@ describe("handover confirmation", () => {
 		if (!entry) throw new Error("Expected handover audit entry");
 		expect(entry.userId?.toString()).toBe(adminUserId);
 		expect(JSON.stringify(entry.newState)).not.toContain(revealed.pin);
+	});
+
+	it("generates handover credentials when the buyer order is created and does not regenerate them", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		await addSuccessfulPayment(order);
+
+		const created = await getBuyerOrderByIdDB({ id: order._id.toString() });
+		expect(created?.handoverTokenHash).toBeTruthy();
+		expect(created?.handoverPinHash).toBeTruthy();
+		expect(created?.handoverCredentialCreatedAt).toBeInstanceOf(Date);
+
+		await getBuyerHandoverCredential({
+			buyerId,
+			orderId: order._id.toString(),
+		});
+		const afterDisplay = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(afterDisplay?.handoverTokenHash).toBe(
+			created?.handoverTokenHash,
+		);
+		expect(afterDisplay?.handoverPinHash).toBe(created?.handoverPinHash);
+		expect(afterDisplay?.handoverCredentialCreatedAt?.getTime()).toBe(
+			created?.handoverCredentialCreatedAt?.getTime(),
+		);
+	});
+
+	it("blocks admin PIN reveal after the handover credential has been used", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		await addSuccessfulPayment(order);
+		const credential = await getBuyerHandoverCredential({
+			buyerId,
+			orderId: order._id.toString(),
+		});
+		await confirmOrderHandover({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+			method: "PIN",
+			code: credential.pin,
+		});
+
+		await expect(
+			revealAdminHandoverPin({
+				orderId: order._id.toString(),
+				actor: { userId: oid(), role: "Administrators" },
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_CREDENTIAL_USED" });
+	});
+
+	it("blocks admin PIN reveal before the permitted handover stage", async () => {
+		const { vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const order = await makeOrder({
+			vendorId,
+			buyerId: buyer!._id.toString(),
+			campusId,
+			status: OrderStatus.COOKING,
+		});
+		await addSuccessfulPayment(order);
+
+		await expect(
+			revealAdminHandoverPin({
+				orderId: order._id.toString(),
+				actor: { userId: oid(), role: "Administrators" },
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_NOT_ELIGIBLE" });
 	});
 
 	it("confirms pickup with the correct PIN", async () => {
@@ -779,6 +1232,39 @@ describe("handover confirmation", () => {
 		expect(completed.confirmationMethod).toBe("QR");
 		expect(completed.deliveredAt).toBeInstanceOf(Date);
 	});
+
+	it("rejects a QR credential from a different order", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const first = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		const second = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY,
+		});
+		await addSuccessfulPayment(first);
+		await addSuccessfulPayment(second);
+		const credential = await getBuyerHandoverCredential({
+			buyerId,
+			orderId: first._id.toString(),
+		});
+
+		await expect(
+			confirmOrderHandover({
+				vendorUserId: userId,
+				orderId: second._id.toString(),
+				method: "QR",
+				code: credential.qrToken,
+			}),
+		).rejects.toMatchObject({ appCode: "HANDOVER_INVALID_CODE" });
+	});
 });
 
 describe("pickup no-show and failed delivery", () => {
@@ -856,6 +1342,47 @@ describe("pickup no-show and failed delivery", () => {
 		).rejects.toThrow();
 	});
 
+	it("closes the buyer response window at the exact deadline", async () => {
+		const { userId, vendorId, campusId } = await makeVendor();
+		const buyer = await makeUser();
+		const buyerId = buyer!._id.toString();
+		const order = await makeOrder({
+			vendorId,
+			buyerId,
+			campusId,
+			status: OrderStatus.READY_FOR_PICKUP,
+			fulfillmentType: FulfillmentType.PICKUP,
+		});
+		await setBuyerOrderStatusDB({
+			id: order._id.toString(),
+			status: OrderStatus.READY_FOR_PICKUP,
+			readyAt: new Date("2026-07-22T08:00:00.000Z"),
+		});
+		await reportPickupNoShow({
+			vendorUserId: userId,
+			orderId: order._id.toString(),
+			now: new Date("2026-07-22T10:00:00.000Z"),
+		});
+
+		await expect(
+			respondToPickupNoShow({
+				buyerId,
+				orderId: order._id.toString(),
+				response: "CONFIRMED_COLLECTION",
+				now: new Date("2026-07-22T10:15:00.000Z"),
+			}),
+		).rejects.toThrow("response window has closed");
+
+		const swept = await sweepPickupNoShowTimers({
+			now: new Date("2026-07-22T10:15:00.000Z"),
+		});
+		expect(swept.completedNoResponse).toBe(1);
+		const completed = await getBuyerOrderByIdDB({
+			id: order._id.toString(),
+		});
+		expect(completed!.status).toBe(OrderStatus.COMPLETED_BUYER_NO_SHOW);
+	});
+
 	it("moves pickup no-show to buyer response, then completes after no response without refund", async () => {
 		const { userId, vendorId, campusId } = await makeVendor();
 		const buyer = await makeUser();
@@ -863,12 +1390,12 @@ describe("pickup no-show and failed delivery", () => {
 			vendorId,
 			buyerId: buyer!._id.toString(),
 			campusId,
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			fulfillmentType: FulfillmentType.PICKUP,
 		});
 		await setBuyerOrderStatusDB({
 			id: order._id.toString(),
-			status: OrderStatus.READY,
+			status: OrderStatus.READY_FOR_PICKUP,
 			readyAt: new Date("2026-07-22T08:00:00.000Z"),
 		});
 

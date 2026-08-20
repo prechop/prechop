@@ -48,6 +48,19 @@ const schema = new mongoose.Schema<any>(
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.cutoffWarningMinutes,
 		},
+		deliveryInTransitGraceMinutes: {
+			type: Number,
+			default: DEFAULT_SITE_CONFIGS.deliveryInTransitGraceMinutes,
+		},
+		deliveryInTransitFallbackEstimateMinutes: {
+			type: Number,
+			default:
+				DEFAULT_SITE_CONFIGS.deliveryInTransitFallbackEstimateMinutes,
+		},
+		deliveryOverdueAutoEscalateEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.deliveryOverdueAutoEscalateEnabled,
+		},
 		whatsappTvEnabled: {
 			type: Boolean,
 			default: DEFAULT_SITE_CONFIGS.whatsappTvEnabled,
@@ -60,6 +73,38 @@ const schema = new mongoose.Schema<any>(
 			type: Boolean,
 			default: DEFAULT_SITE_CONFIGS.reviewsEnabled,
 		},
+		scheduleAheadEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.scheduleAheadEnabled,
+		},
+		weeklyBreakfastPlanEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.weeklyBreakfastPlanEnabled,
+		},
+		breakfastEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.breakfastEnabled,
+		},
+		lunchEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.lunchEnabled,
+		},
+		dinnerEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.dinnerEnabled,
+		},
+		deliveryEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.deliveryEnabled,
+		},
+		pickupEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.pickupEnabled,
+		},
+		vendorRegistrationEnabled: {
+			type: Boolean,
+			default: DEFAULT_SITE_CONFIGS.vendorRegistrationEnabled,
+		},
 		ordersKillSwitch: {
 			type: Boolean,
 			default: DEFAULT_SITE_CONFIGS.ordersKillSwitch,
@@ -71,6 +116,10 @@ const schema = new mongoose.Schema<any>(
 		profileCompletenessRequired: {
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.profileCompletenessRequired,
+		},
+		deliveryLocations: {
+			type: [String],
+			default: DEFAULT_SITE_CONFIGS.deliveryLocations,
 		},
 		updatedBy: { type: String },
 	},

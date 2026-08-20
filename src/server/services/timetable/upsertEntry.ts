@@ -10,6 +10,11 @@ interface EntryInput {
 	menuItemId: string;
 	dayOfWeek: DayOfWeek;
 	isOpen: boolean;
+	orderStartTime?: string;
+	cutoffTime?: string;
+	cookingStartTime?: string;
+	readyDeliveryStartTime?: string;
+	plannedMenu?: string;
 }
 
 /** Confirm every referenced menu item belongs to the vendor. */
@@ -29,6 +34,11 @@ export async function upsertTimetableEntry({
 	menuItemId,
 	dayOfWeek,
 	isOpen,
+	orderStartTime,
+	cutoffTime,
+	cookingStartTime,
+	readyDeliveryStartTime,
+	plannedMenu,
 }: {
 	userId: string;
 } & EntryInput) {
@@ -37,7 +47,17 @@ export async function upsertTimetableEntry({
 
 	await assertMenuItemsOwned(vendorId, [menuItemId]);
 
-	return upsertTimetableEntryDB({ vendorId, menuItemId, dayOfWeek, isOpen });
+	return upsertTimetableEntryDB({
+		vendorId,
+		menuItemId,
+		dayOfWeek,
+		isOpen,
+		orderStartTime,
+		cutoffTime,
+		cookingStartTime,
+		readyDeliveryStartTime,
+		plannedMenu,
+	});
 }
 
 export async function upsertTimetableEntries({
@@ -50,7 +70,6 @@ export async function upsertTimetableEntries({
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
 
-	// Validate all before writing any.
 	await assertMenuItemsOwned(
 		vendorId,
 		entries.map((e) => e.menuItemId),
@@ -63,6 +82,11 @@ export async function upsertTimetableEntries({
 				menuItemId: e.menuItemId,
 				dayOfWeek: e.dayOfWeek,
 				isOpen: e.isOpen,
+				orderStartTime: e.orderStartTime,
+				cutoffTime: e.cutoffTime,
+				cookingStartTime: e.cookingStartTime,
+				readyDeliveryStartTime: e.readyDeliveryStartTime,
+				plannedMenu: e.plannedMenu,
 			}),
 		),
 	);

@@ -24,6 +24,17 @@ const schema = new mongoose.Schema<any>(
 		type: { type: String, required: true },
 		dedupeKey: { type: String, required: false },
 		data: { type: mongoose.Schema.Types.Mixed, required: false },
+		deliveryAttempts: {
+			type: [
+				{
+					channel: { type: String, required: true },
+					status: { type: String, required: true },
+					attemptedAt: { type: Date, default: Date.now },
+					message: { type: String },
+				},
+			],
+			default: [],
+		},
 		isRead: { type: Boolean, default: false },
 	},
 	{ timestamps: true },
@@ -53,11 +64,28 @@ export async function createNotificationDB({
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
 		if (payload.dedupeKey) {
+			const filter = {
+				userId: new mongoose.Types.ObjectId(payload.userId),
+				dedupeKey: payload.dedupeKey,
+			};
+			const existing = await Notification.findOne(filter, null, {
+				session,
+			});
+			if (existing) {
+				timer({
+					operation: IOperationType.Read,
+					collection: collectionName,
+					method: "createNotificationDB",
+					success: "true",
+				});
+				return {
+					...(existing.toObject() as unknown as INotification),
+					wasCreated: false,
+				};
+			}
+
 			const doc = await Notification.findOneAndUpdate(
-				{
-					userId: new mongoose.Types.ObjectId(payload.userId),
-					dedupeKey: payload.dedupeKey,
-				},
+				filter,
 				{
 					$setOnInsert: {
 						userId: payload.userId,
@@ -82,7 +110,12 @@ export async function createNotificationDB({
 				method: "createNotificationDB",
 				success: "true",
 			});
-			return doc?.toObject() as unknown as INotification;
+			return doc
+				? {
+						...(doc.toObject() as unknown as INotification),
+						wasCreated: true,
+					}
+				: null;
 		}
 		const doc = await new Notification({
 			userId: payload.userId,
@@ -99,7 +132,10 @@ export async function createNotificationDB({
 			method: "createNotificationDB",
 			success: "true",
 		});
-		return doc.toObject() as unknown as INotification;
+		return {
+			...(doc.toObject() as unknown as INotification),
+			wasCreated: true,
+		};
 	} catch (error) {
 		if (
 			payload.dedupeKey &&
@@ -123,7 +159,10 @@ export async function createNotificationDB({
 					method: "createNotificationDB",
 					success: "true",
 				});
-				return existing.toObject() as unknown as INotification;
+				return {
+					...(existing.toObject() as unknown as INotification),
+					wasCreated: false,
+				};
 			}
 		}
 		timer({
@@ -137,6 +176,41 @@ export async function createNotificationDB({
 			error,
 		);
 		return null;
+	}
+}
+
+export async function recordNotificationDeliveryAttemptDB({
+	id,
+	channel,
+	status,
+	message,
+	session,
+}: {
+	id: string;
+	channel: "email" | "push" | "sms";
+	status: "sent" | "skipped" | "failed";
+	message?: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await Notification.updateOne(
+			{ _id: new mongoose.Types.ObjectId(id) },
+			{
+				$push: {
+					deliveryAttempts: {
+						channel,
+						status,
+						attemptedAt: new Date(),
+						message,
+					},
+				},
+			},
+			{ session },
+		);
+		return res.acknowledged;
+	} catch {
+		return false;
 	}
 }
 
@@ -188,11 +262,15 @@ export async function markAllNotificationsReadDB({
 
 export async function listNotificationsDB({
 	userId,
+	type,
+	typePrefix,
 	limit,
 	offset,
 	session,
 }: {
 	userId: string;
+	type?: string;
+	typePrefix?: string;
 	limit?: number;
 	offset?: number;
 	session?: ClientSession;
@@ -206,7 +284,19 @@ export async function listNotificationsDB({
 		const safeOffset = Math.max(0, offset ?? 0);
 		const result = await Notification.aggregate<INotification>(
 			[
-				{ $match: { userId: new mongoose.Types.ObjectId(userId) } },
+				{
+					$match: {
+						userId: new mongoose.Types.ObjectId(userId),
+						...(type ? { type } : {}),
+						...(typePrefix
+							? {
+									type: {
+										$regex: `^${typePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+									},
+								}
+							: {}),
+					},
+				},
 				{ $sort: { createdAt: -1 } },
 				{ $skip: safeOffset },
 				{ $limit: safeLimit },

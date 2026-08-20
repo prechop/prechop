@@ -50,6 +50,7 @@ export async function sweepAbandonedOrders(): Promise<number> {
 				dailyOrderItemId: i.dailyOrderItemId.toString(),
 				quantity: i.quantity,
 			})),
+			order._id.toString(),
 		);
 		cancelled += 1;
 	}

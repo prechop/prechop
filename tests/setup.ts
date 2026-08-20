@@ -40,6 +40,12 @@ process.env.TRUSTED_PROXY = "0";
 // flag these placeholders; no code validates the key format (network is mocked).
 process.env.PAYSTACK_SECRET_KEY = "test-paystack-secret-key-not-real";
 process.env.PAYSTACK_PUBLIC_KEY = "test-paystack-public-key-not-real";
+// Enable local-only V2 foundation writes so schema/idempotency tests can run.
+// Approval and money movement remain locked; no test can call a transfer path.
+process.env.PLATFORM_BALANCE_TRANSFER_V2_ENABLED = "1";
+process.env.PAYSTACK_MANUAL_PAYOUTS_APPROVED = "0";
+process.env.PLATFORM_BALANCE_TRANSFER_V2_MONEY_MOVEMENT_ENABLED = "0";
+process.env.PAYOUT_V2_LEGAL_ACCOUNTING_APPROVED = "0";
 process.env.RESEND_API_KEY = "re_vitest_fake";
 process.env.RESEND_FROM_EMAIL = "noreply@prechop.test";
 

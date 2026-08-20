@@ -151,7 +151,7 @@ describe("refundOrderAsAdmin — full-refund-only invariant", () => {
 	it("ACCEPTS the full total and refunds", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 42, status: "success", amount: TOTAL });
+			.mockResolvedValue({ id: 42, status: "processed", amount: TOTAL });
 		const { orderId, ref } = await paidOrder();
 
 		const res = await refundOrderAsAdmin({
@@ -171,7 +171,7 @@ describe("refundOrderAsAdmin — full-refund-only invariant", () => {
 	it("ACCEPTS an omitted amount as a full-total refund", async () => {
 		const refundSpy = vi
 			.spyOn(paystackProvider, "refund")
-			.mockResolvedValue({ id: 43, status: "success", amount: TOTAL });
+			.mockResolvedValue({ id: 43, status: "processed", amount: TOTAL });
 		const { orderId } = await paidOrder();
 
 		const res = await refundOrderAsAdmin({

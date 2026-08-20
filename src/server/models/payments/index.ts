@@ -1,12 +1,18 @@
 import mongoose, { type ClientSession, type Model } from "mongoose";
+import { assertPayoutV2FoundationEnabled } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { PaymentStatus } from "../enums";
+import { PaymentSettlementMode, PaymentStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type { IPayment, IPaymentCreateInput } from "./types";
 
 const collectionName = "payments";
 
 export type PaymentModel = Model<any>;
+
+const ACCOUNT_CLOSURE_BLOCKING_PAYMENT_STATUSES = [
+	PaymentStatus.INITIALIZED,
+	PaymentStatus.AWAITING_EXTERNAL_PAYMENT,
+];
 
 const schema = new mongoose.Schema<any>(
 	{
@@ -54,6 +60,32 @@ const schema = new mongoose.Schema<any>(
 			enum: Object.values(PaymentStatus),
 			default: PaymentStatus.INITIALIZED,
 		},
+		settlementMode: {
+			type: String,
+			enum: Object.values(PaymentSettlementMode),
+			default: PaymentSettlementMode.DIRECT_SUBACCOUNT_V1,
+			required: true,
+			index: true,
+			immutable: true,
+		},
+		migrationModeAtCreation: {
+			type: String,
+			default: "V1_ONLY",
+			required: true,
+			immutable: true,
+		},
+		migrationConfigVersion: {
+			type: Number,
+			default: 0,
+			required: true,
+			immutable: true,
+		},
+		pilotMatched: {
+			type: Boolean,
+			default: false,
+			required: true,
+			immutable: true,
+		},
 		channel: { type: String },
 		paidAt: { type: Date },
 		webhookVerified: { type: Boolean, default: false },
@@ -62,14 +94,75 @@ const schema = new mongoose.Schema<any>(
 	{ timestamps: true },
 );
 
+schema.pre("validate", function () {
+	if (
+		this.settlementMode ===
+		PaymentSettlementMode.PLATFORM_BALANCE_TRANSFER_V2
+	) {
+		assertPayoutV2FoundationEnabled();
+	}
+});
+
+export async function countBlockingPaymentsDB({
+	buyerId,
+	vendorId,
+	session,
+}: {
+	buyerId?: string;
+	vendorId?: string;
+	session?: ClientSession;
+}): Promise<number> {
+	try {
+		const ownership: Record<string, unknown>[] = [];
+		if (buyerId && mongoose.Types.ObjectId.isValid(buyerId)) {
+			ownership.push({ buyerId: new mongoose.Types.ObjectId(buyerId) });
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			ownership.push({ vendorId: new mongoose.Types.ObjectId(vendorId) });
+		}
+		if (ownership.length === 0) return 0;
+		return Payment.countDocuments(
+			{
+				$or: ownership,
+				status: { $in: ACCOUNT_CLOSURE_BLOCKING_PAYMENT_STATUSES },
+			},
+			{ session },
+		);
+	} catch (error) {
+		throw error;
+	}
+}
+
 schema.pre("aggregate", function () {
-	this.pipeline().push({ $addFields: { id: { $toString: "$_id" } } });
+	this.pipeline().push({
+		$addFields: {
+			id: { $toString: "$_id" },
+			// Historical rows predate settlement-mode versioning. They are always
+			// V1; aggregate bypasses Mongoose defaults, so classify them here.
+			settlementMode: {
+				$ifNull: [
+					"$settlementMode",
+					PaymentSettlementMode.DIRECT_SUBACCOUNT_V1,
+				],
+			},
+		},
+	});
 	this.pipeline().push({ $project: { __v: 0 } });
 });
 
 export const Payment: PaymentModel =
 	(mongoose.models[collectionName] as PaymentModel | undefined) ??
 	mongoose.model<any>(collectionName, schema);
+
+/** Classify legacy in-memory/plain payment records without using timestamps. */
+export function paymentSettlementModeOf(payment: {
+	settlementMode?: PaymentSettlementMode | string | null;
+}): PaymentSettlementMode {
+	return payment.settlementMode ===
+		PaymentSettlementMode.PLATFORM_BALANCE_TRANSFER_V2
+		? PaymentSettlementMode.PLATFORM_BALANCE_TRANSFER_V2
+		: PaymentSettlementMode.DIRECT_SUBACCOUNT_V1;
+}
 
 export async function createPaymentDB({
 	payload,
@@ -80,7 +173,15 @@ export async function createPaymentDB({
 }): Promise<IPayment | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
-		const doc = await new Payment(payload).save({ session });
+		const settlementMode =
+			payload.settlementMode ?? PaymentSettlementMode.DIRECT_SUBACCOUNT_V1;
+		const doc = await new Payment({
+			...payload,
+			settlementMode,
+			migrationModeAtCreation: payload.migrationModeAtCreation ?? "V1_ONLY",
+			migrationConfigVersion: payload.migrationConfigVersion ?? 0,
+			pilotMatched: payload.pilotMatched ?? false,
+		}).save({ session });
 		timer({
 			operation: IOperationType.Create,
 			collection: collectionName,
@@ -208,6 +309,30 @@ export async function getPaymentByRefDB({
 				)
 			).at(0) ?? null
 		);
+	} catch {
+		return null;
+	}
+}
+
+export async function getPaymentByIdDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<IPayment | null> {
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return null;
+		const payment = await Payment.findById(
+			new mongoose.Types.ObjectId(id),
+			null,
+			{ session },
+		).lean();
+		if (!payment) return null;
+		return {
+			...(payment as unknown as IPayment),
+			settlementMode: paymentSettlementModeOf(payment),
+		};
 	} catch {
 		return null;
 	}

@@ -44,8 +44,8 @@ export default function HowSellingWorksPage() {
 					{
 						title: "Earnings",
 						body: [
-							"Your earnings follow Paystack's settlement schedule for your connected account.",
-							"Prechop shows order and settlement-related figures, but does not promise instant payout.",
+							"A successful buyer payment creates a pending vendor payable, not an immediate settlement.",
+							"Trusted QR/PIN or authorized support-confirmed handover starts the 24-hour review period; eligible payouts then enter the next automated run after all hold checks.",
 							"Keep bank details correct before accepting live orders.",
 						],
 					},

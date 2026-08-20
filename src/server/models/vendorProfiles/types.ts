@@ -1,8 +1,13 @@
 import type {
+	BakeryBusinessType,
+	BrandKitFulfillmentStatus,
+	BrandKitPaymentStatus,
+	DeliveryCoverageType,
 	LocationType,
 	MenuCategory,
 	VendorStatus,
 	VendorType,
+	VendorVerificationDocumentType,
 } from "../enums";
 
 export interface IVendorProfileCreateInput {
@@ -10,7 +15,10 @@ export interface IVendorProfileCreateInput {
 	campusId?: string;
 	email: string;
 	businessName?: string;
+	storeSlug?: string;
 	vendorType?: VendorType;
+	contactPhone?: string;
+	vendorShortId?: string;
 }
 
 export interface IVendorProfile {
@@ -20,7 +28,9 @@ export interface IVendorProfile {
 	campusId?: string;
 	campusIds?: string[];
 	vendorType?: VendorType;
+	bakeryBusinessType?: BakeryBusinessType;
 	businessName?: string;
+	storeSlug?: string;
 	description?: string;
 	email: string;
 	contactPhone?: string;
@@ -32,6 +42,13 @@ export interface IVendorProfile {
 	state?: string;
 	areaOrAddress?: string;
 	profileImageUrl?: string;
+	verificationDocuments?: {
+		type: VendorVerificationDocumentType;
+		key: string;
+		fileName?: string;
+		mimeType?: string;
+		uploadedAt: Date;
+	}[];
 	categories: MenuCategory[];
 	paystackSubaccountCode?: string;
 	bankCode?: string;
@@ -43,15 +60,19 @@ export interface IVendorProfile {
 	totalReviews: number;
 	totalOrders: number;
 	completionRate: number;
+	completedOrders: number;
 	lateOrderCount?: number;
 	unfulfilledOrderCount?: number;
 	avgPrepDelayMin?: number;
 	profileCompleteness: number;
 	isOpenForOrders: boolean;
+	closedAt?: Date;
 	// Vendor notification preferences (email/push opt-ins).
 	notifyNewOrders: boolean;
 	notifyPayouts: boolean;
 	notifyReviews: boolean;
+	notifyFollowers: boolean;
+	notifyFollowerMilestones: boolean;
 	// Defaults pre-filled into the daily-order composer.
 	defaultPickupAvailable: boolean;
 	defaultDeliveryAvailable: boolean;
@@ -71,7 +92,27 @@ export interface IVendorProfile {
 	securityOnboardingCompletedAt?: Date;
 	securityPinHash?: string;
 	securityPinSet?: boolean;
+	pinResetHoldUntil?: Date;
+	lastPinResetAt?: Date;
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;
+	// Permanent short vendor ID (e.g. "CHI").
+	vendorShortId?: string;
+	// Brand Kit payment gate.
+	brandKitPaymentStatus?: BrandKitPaymentStatus;
+	brandKitPaymentId?: string;
+	brandKitPaidAt?: Date;
+	// Brand Kit fulfillment gate.
+	brandKitFulfillmentStatus?: BrandKitFulfillmentStatus;
+	brandKitFulfillmentLocationId?: string;
+	brandKitReceivedAt?: Date;
+	// Vendor-level feature toggles.
+	featureScheduleAhead?: boolean;
+	featureWeeklyBreakfastPlan?: boolean;
+	featureDelivery?: boolean;
+	featurePickup?: boolean;
+	// Delivery coverage.
+	deliveryCoverageType?: DeliveryCoverageType;
+	deliveryLocations?: string[];
 }

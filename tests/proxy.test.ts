@@ -29,6 +29,17 @@ describe("proxy session refresh routing", () => {
 		);
 	});
 
+	it("lets login render after one failed refresh attempt", async () => {
+		const response = await proxy(
+			request(
+				"/login?next=%2Fmy-orders%2F123&refresh=failed",
+				"refreshToken=stale",
+			),
+		);
+
+		expect(response.headers.get("location")).toBeNull();
+	});
+
 	it("still sends anonymous protected requests to login", async () => {
 		const response = await proxy(request("/account"));
 

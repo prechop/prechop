@@ -46,6 +46,9 @@ describe("getSiteConfigs service", () => {
 		expect(cfg.slotHoldTtlSeconds).toBe(
 			DEFAULT_SITE_CONFIGS.slotHoldTtlSeconds,
 		);
+		expect(cfg.deliveryInTransitGraceMinutes).toBe(10);
+		expect(cfg.deliveryInTransitFallbackEstimateMinutes).toBe(60);
+		expect(cfg.deliveryOverdueAutoEscalateEnabled).toBe(true);
 		expect(cfg.ordersKillSwitch).toBe(false);
 	});
 

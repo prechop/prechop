@@ -97,6 +97,7 @@ export async function expireExternalPaymentOrdersForDailyOrder({
 				dailyOrderItemId: item.dailyOrderItemId.toString(),
 				quantity: item.quantity,
 			})),
+			order._id.toString(),
 		);
 		expired += 1;
 	}

@@ -10,6 +10,7 @@ import {
 	type OrderDisputeReason,
 } from "../models";
 import { createUserNotification, notifyAdminAttention } from "./notifications";
+import { holdVendorPayableForOrder } from "./vendorPayouts";
 
 function asSnapshot(value: unknown): Record<string, unknown> | undefined {
 	if (!value) return undefined;
@@ -32,6 +33,13 @@ function evidenceFromOrder({
 	messages?: unknown[];
 }) {
 	const orderSnapshot = asSnapshot(order);
+	const uniqueNotes = (notes: Array<string | undefined>) => [
+		...new Set(
+			notes
+				.map((note) => note?.trim())
+				.filter((note): note is string => Boolean(note)),
+		),
+	];
 	return {
 		orderSnapshot,
 		menuSnapshot: {
@@ -75,14 +83,14 @@ function evidenceFromOrder({
 				: []),
 			...(photos ?? []),
 		],
-		vendorNotes: [
-			...(order.deliveryFailureNote ? [order.deliveryFailureNote] : []),
+		vendorNotes: uniqueNotes([
+			order.deliveryFailureNote,
 			...(vendorNotes ?? []),
-		],
-		buyerNotes: [
-			...(order.pickupProblemNote ? [order.pickupProblemNote] : []),
+		]),
+		buyerNotes: uniqueNotes([
+			order.pickupProblemNote,
 			...(buyerNotes ?? []),
-		],
+		]),
 	};
 }
 
@@ -123,6 +131,12 @@ export async function openOrderDisputeForReview({
 	if (!dispute) {
 		throw validationError("Could not create the admin review record.");
 	}
+	await holdVendorPayableForOrder({
+		orderId,
+		reasonCode: "OPEN_DISPUTE",
+		note: reason,
+		disputeId: dispute.id ?? dispute._id.toString(),
+	});
 	await notifyVendorOfOrderDispute({ order, dispute, reason });
 	await notifyAdminAttention({
 		kind: "DISPUTE",

@@ -4,8 +4,8 @@ import {
 	getBuyerOrderByReceiptUrlDB,
 	getPaymentByOrderIdDB,
 	getVendorProfileByIdDB,
-	OrderStatus,
 	PaymentStatus,
+	SETTLED_ORDER_STATUSES,
 	setBuyerOrderReceiptUrlDB,
 } from "../../models";
 import type { IBuyerOrder } from "../../models/buyerOrders/types";
@@ -52,7 +52,11 @@ export async function getPublicReceipt(token: string): Promise<PublicReceipt> {
 	const order = await getBuyerOrderByReceiptUrlDB({
 		receiptUrl: receiptLink,
 	});
-	if (!order || order.status !== OrderStatus.PAID || !order.paidAt) {
+	if (
+		!order ||
+		!SETTLED_ORDER_STATUSES.includes(order.status) ||
+		!order.paidAt
+	) {
 		throw ErrPaymentVerification;
 	}
 	const payment = await getPaymentByOrderIdDB({

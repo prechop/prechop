@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import styled from "styled-components";
 import { Button, Card, Container, FadeIn, Stack, Text } from "@/components";
+import { api } from "@/constants/api";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
 const Screen = styled.div`
@@ -42,7 +44,36 @@ const Shell = styled(Card)`
 
 export default function SellApplicationWrapper() {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      router.replace("/login?next=/vendor/onboarding");
+      return;
+    }
+
+    let cancelled = false;
+    const resolveVendorDestination = async () => {
+      try {
+        const response = await api.get("/vendors/me");
+        if (cancelled) return;
+        const status = response.data?.data?.status;
+        router.replace(
+          status === "INCOMPLETE" ? "/vendor/onboarding" : "/dashboard",
+        );
+      } catch (error) {
+        if (cancelled) return;
+        const status = (error as { response?: { status?: number } }).response
+          ?.status;
+        router.replace(status === 404 ? "/vendor/onboarding" : "/account");
+      }
+    };
+    resolveVendorDestination();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, isLoading, router]);
 
   return (
     <Screen>
@@ -62,14 +93,8 @@ export default function SellApplicationWrapper() {
               <Button
                 $full
                 $size="lg"
-                onClick={() =>
-                  router.push(
-                    isAuthenticated
-                      ? "/vendor/onboarding"
-                      : "/login?next=/vendor/onboarding&intent=sell",
-                  )
-                }>
-                Continue to Prechop
+                disabled>
+                Checking your account…
               </Button>
             </Stack>
           </Shell>

@@ -14,6 +14,7 @@ export async function updateMenuItem({
 	name,
 	category,
 	priceNaira,
+	variants,
 	description,
 	imageUrl,
 	estimatedPrepMin,
@@ -25,6 +26,12 @@ export async function updateMenuItem({
 	name?: string;
 	category?: MenuCategory;
 	priceNaira?: number;
+	variants?: Array<{
+		name: string;
+		priceNaira: number;
+		isDefault?: boolean;
+		isActive?: boolean;
+	}>;
 	description?: string;
 	imageUrl?: string;
 	estimatedPrepMin?: number;
@@ -39,6 +46,14 @@ export async function updateMenuItem({
 	if (category !== undefined)
 		payload.category = normalizeMenuCategory(category) as MenuCategory;
 	if (priceNaira !== undefined) payload.priceKobo = nairaToKobo(priceNaira);
+	if (variants !== undefined)
+		payload.variants = variants.map((variant, displayOrder) => ({
+			name: variant.name,
+			priceKobo: nairaToKobo(variant.priceNaira),
+			isDefault: variant.isDefault ?? false,
+			isActive: variant.isActive ?? true,
+			displayOrder,
+		}));
 	if (description !== undefined) payload.description = description;
 	if (imageUrl !== undefined) payload.imageUrl = imageUrl;
 	if (estimatedPrepMin !== undefined)

@@ -5,6 +5,7 @@ import {
 	validationError,
 } from "../../constants";
 import {
+	backfillMissingReadyDeadlinesDB,
 	getBuyerOrderByIdDB,
 	getVendorProfileByIdDB,
 	getVendorProfileByUserIdDB,
@@ -29,6 +30,7 @@ export async function sweepLateBuyerOrders(now = new Date()): Promise<{
 	lateMarked: number;
 	escalated: number;
 }> {
+	await backfillMissingReadyDeadlinesDB();
 	const due = await listReadyDeadlineDueOrdersDB({ now });
 	let lateMarked = 0;
 

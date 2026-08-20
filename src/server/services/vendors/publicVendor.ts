@@ -25,16 +25,21 @@ export interface PublicVendor {
 	state: string | null;
 	areaOrAddress: string | null;
 	categories: string[];
-	/**
-	 * null until the vendor has at least `MIN_REVIEWS_FOR_PUBLIC_RATING`
-	 * reviews. Nulled **server-side** so a sub-threshold score never crosses the
-	 * wire — a client-side gate would still ship the number to anyone reading
-	 * the response body.
-	 */
 	rating: number | null;
 	totalReviews: number;
 	totalOrders: number;
+	completedOrders: number;
 	isOpenForOrders: boolean;
+	hasVerificationDocuments: boolean;
+	defaultPickupAvailable: boolean;
+	defaultDeliveryAvailable: boolean;
+	vendorShortId?: string;
+	deliveryCoverageType?: string;
+	deliveryLocations?: string[];
+	featureScheduleAhead?: boolean;
+	featureWeeklyBreakfastPlan?: boolean;
+	featureDelivery?: boolean;
+	featurePickup?: boolean;
 }
 
 /**
@@ -69,7 +74,18 @@ export function toPublicVendor(v: IVendorProfile): PublicVendor {
 		rating: publicRating(v.rating, totalReviews),
 		totalReviews,
 		totalOrders: v.totalOrders ?? 0,
+		completedOrders: v.completedOrders ?? 0,
 		isOpenForOrders: v.isOpenForOrders ?? false,
+		hasVerificationDocuments: (v.verificationDocuments?.length ?? 0) > 0,
+		defaultPickupAvailable: v.defaultPickupAvailable ?? false,
+		defaultDeliveryAvailable: v.defaultDeliveryAvailable ?? false,
+		vendorShortId: v.vendorShortId ?? undefined,
+		deliveryCoverageType: v.deliveryCoverageType ?? undefined,
+		deliveryLocations: v.deliveryLocations ?? undefined,
+		featureScheduleAhead: v.featureScheduleAhead ?? undefined,
+		featureWeeklyBreakfastPlan: v.featureWeeklyBreakfastPlan ?? undefined,
+		featureDelivery: v.featureDelivery ?? undefined,
+		featurePickup: v.featurePickup ?? undefined,
 	};
 }
 

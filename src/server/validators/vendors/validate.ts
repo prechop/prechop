@@ -1,5 +1,11 @@
 import { z as zod } from "zod";
-import { LocationType, MenuCategory, VendorType } from "@/server/models";
+import {
+	BakeryBusinessType,
+	LocationType,
+	MenuCategory,
+	VendorType,
+	VendorVerificationDocumentType,
+} from "@/server/models";
 
 export const businessIdentitySchema = zod
 	.object({
@@ -53,17 +59,42 @@ export const confirmImageSchema = zod
 	})
 	.strict();
 
+export const confirmVerificationDocumentSchema = zod
+	.object({
+		type: zod.enum(VendorVerificationDocumentType),
+		key: zod.string().trim().min(1),
+		fileName: zod.string().trim().min(1).max(240).optional(),
+		mimeType: zod.string().trim().min(1).max(120).optional(),
+		bakeryBusinessType: zod.enum(BakeryBusinessType).optional(),
+	})
+	.strict();
+
 export const bankDetailsSchema = zod
 	.object({
 		bankCode: zod.string().trim().min(1),
 		accountNumber: zod.string().trim().min(1),
 		bankName: zod.string().trim().min(1).optional(),
+		securityPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/),
 	})
 	.strict();
 
 export const openStatusSchema = zod
 	.object({
 		isOpenForOrders: zod.boolean(),
+	})
+	.strict();
+
+export const closeVendorProfileSchema = zod
+	.object({
+		confirmation: zod.string().trim(),
+		securityPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/)
+			.optional(),
 	})
 	.strict();
 
@@ -80,8 +111,15 @@ export const securityOnboardingSchema = zod.discriminatedUnion("action", [
 		.strict(),
 ]);
 
-// Resolve-only bank lookup: previews the account name (Paystack) without
-// creating a subaccount or persisting anything.
+export const securityPinVerificationSchema = zod
+	.object({
+		pin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/),
+	})
+	.strict();
+
 export const resolveBankSchema = zod
 	.object({
 		bankCode: zod.string().trim().min(1),
@@ -94,6 +132,8 @@ export const notificationPrefsSchema = zod
 		notifyNewOrders: zod.boolean().optional(),
 		notifyPayouts: zod.boolean().optional(),
 		notifyReviews: zod.boolean().optional(),
+		notifyFollowers: zod.boolean().optional(),
+		notifyFollowerMilestones: zod.boolean().optional(),
 	})
 	.strict()
 	.refine((v) => Object.keys(v).length > 0, {
@@ -149,7 +189,9 @@ export const becomeVendorSchema = zod
 	.object({
 		businessName: zod.string().trim().min(1).max(120),
 		vendorType: zod.enum(VendorType),
-		location: locationSchema,
+		email: zod.string().trim().email().optional(),
+		contactPhone: zod.string().trim().min(5).max(30).optional(),
+		location: locationSchema.optional(),
 	})
 	.strict();
 
@@ -159,12 +201,64 @@ export const startVendorApplicationSchema = zod.object({}).strict();
 
 export const earningsQuerySchema = zod
 	.object({
-		// Defaulted rather than required so `?` with no query string is a valid
-		// request for today, and an unknown range is rejected outright instead
-		// of silently falling back to "all" (which would leak a wider window
-		// than the caller asked for).
 		range: zod.enum(["today", "week", "month", "all"]).default("today"),
 	})
 	.strict();
 
 export type EarningsQueryInput = zod.infer<typeof earningsQuerySchema>;
+
+export const forgotPinRequestSchema = zod
+	.object({
+		email: zod.string().trim().email(),
+	})
+	.strict();
+
+export const forgotPinVerifySchema = zod
+	.object({
+		email: zod.string().trim().email(),
+		otp: zod
+			.string()
+			.trim()
+			.regex(/^\d{6}$/, "Enter a valid 6-digit verification code"),
+	})
+	.strict();
+
+export const forgotPinResetSchema = zod
+	.object({
+		resetToken: zod.string().trim().min(1),
+		newPin: zod
+			.string()
+			.trim()
+			.regex(/^\d{4,6}$/, "PIN must be 4-6 digits"),
+	})
+	.strict();
+
+export const forgotPinSupportSchema = zod
+	.object({
+		reason: zod.string().trim().min(10).max(1000),
+	})
+	.strict();
+
+// ── New marketplace/delivery validators ──────────────────────────────────────
+
+export const vendorFeatureSettingsSchema = zod
+	.object({
+		scheduleAhead: zod.boolean().optional(),
+		weeklyBreakfastPlan: zod.boolean().optional(),
+		delivery: zod.boolean().optional(),
+		pickup: zod.boolean().optional(),
+	})
+	.strict();
+
+export const deliveryCoverageSchema = zod
+	.object({
+		deliveryCoverageType: zod.enum(["ANYWHERE", "SPECIFIC"]).optional(),
+		deliveryLocations: zod.array(zod.string().trim().min(1)).optional(),
+	})
+	.strict();
+
+export const initiateBrandKitPaymentSchema = zod
+	.object({
+		amountKobo: zod.number().int().positive().optional(),
+	})
+	.strict();

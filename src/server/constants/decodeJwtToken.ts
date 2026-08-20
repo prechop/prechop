@@ -37,6 +37,10 @@ export default async function decodeJwtToken({
 			expiresIn: new Date(decodedToken.expiresIn),
 			refreshToken: decodedToken.refreshToken ?? refreshToken ?? "",
 			refreshTokenExpiresIn: new Date(decodedToken.refreshTokenExpiresIn),
+			refreshTokenAbsoluteExpiresIn: new Date(
+				decodedToken.refreshTokenAbsoluteExpiresIn ??
+					decodedToken.refreshTokenExpiresIn,
+			),
 		};
 
 		if (accessToken) {

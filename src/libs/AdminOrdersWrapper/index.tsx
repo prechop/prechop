@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import useSWR from "swr";
 import {
@@ -17,6 +17,7 @@ import {
 	Stack,
 	StatCard,
 	Text,
+	Textarea,
 	Title,
 } from "@/components";
 import { api, apiData } from "@/constants/api";
@@ -25,8 +26,13 @@ import {
 	formatKobo,
 	statusLabel,
 } from "@/constants/formatters";
+import {
+	orderOutcomeSummary,
+	refundOutcomeLabel,
+} from "@/constants/orderOutcome";
 import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
+import { OrderConversationPanel } from "@/libs/OrderConversationPanel";
 import type { BuyerOrder, OrderStatus } from "@/types";
 
 interface AdminHandoverDetails {
@@ -35,6 +41,7 @@ interface AdminHandoverDetails {
 	status: OrderStatus;
 	fulfillmentType: "PICKUP" | "DELIVERY";
 	isPaid: boolean;
+	paymentVerified?: boolean;
 	handoverEligible: boolean;
 	qrGenerated: boolean;
 	pinGenerated: boolean;
@@ -52,6 +59,40 @@ interface AdminHandoverDetails {
 		actorId?: string;
 		note?: string;
 	}>;
+}
+
+type AdminDisputeAction =
+	| "UPHOLD_COMPLETION"
+	| "ISSUE_FULL_REFUND"
+	| "REQUEST_MORE_EVIDENCE";
+
+interface AdminOrderDispute {
+	id?: string;
+	_id: string;
+	reason: string;
+	status: "OPEN" | "MORE_EVIDENCE_REQUESTED" | "RESOLVED";
+	evidence?: {
+		buyerNotes?: string[];
+		vendorNotes?: string[];
+		photos?: string[];
+	};
+	resolutionAction?: string;
+	resolutionNote?: string;
+	resolvedAt?: string | null;
+	createdAt: string;
+}
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+	if (typeof error === "object" && error !== null && "response" in error) {
+		const response = (
+			error as { response?: { data?: { message?: unknown } } }
+		).response;
+		if (typeof response?.data?.message === "string") {
+			return response.data.message;
+		}
+	}
+	if (error instanceof Error && error.message) return error.message;
+	return fallback;
 }
 
 const STATUSES: OrderStatus[] = [
@@ -199,6 +240,18 @@ const ItemsPanel = styled.div`
 	border-radius: var(--pc-radius);
 	padding: var(--pc-space-3) var(--pc-space-4);
 `;
+const DisputePanel = styled(Card)`
+	border-color: color-mix(in srgb, var(--pc-color-danger) 55%, var(--pc-border));
+	background: color-mix(in srgb, var(--pc-color-danger) 7%, var(--pc-surface));
+`;
+const ComplaintBox = styled.div`
+	padding: var(--pc-space-3);
+	border-radius: var(--pc-radius-sm);
+	background: var(--pc-surface-2);
+	border: 1px solid var(--pc-border);
+	white-space: pre-wrap;
+	word-break: break-word;
+`;
 
 function LoadingTable() {
 	return (
@@ -231,12 +284,26 @@ export default function AdminOrdersWrapper() {
 	const [detailId, setDetailId] = useState<string | null>(null);
 	const [revealedPin, setRevealedPin] = useState<string | null>(null);
 	const [revealBusy, setRevealBusy] = useState(false);
+	const [disputeNote, setDisputeNote] = useState("");
+	const [disputeBusy, setDisputeBusy] = useState<AdminDisputeAction | null>(
+		null,
+	);
+
+	useEffect(() => {
+		const requestedOrderId = new URLSearchParams(
+			window.location.search,
+		).get("orderId");
+		if (requestedOrderId) setDetailId(requestedOrderId);
+	}, []);
 
 	const key = `/admin/orders?limit=50${status ? `&status=${status}` : ""}`;
-	const { data, isLoading } = useSWR<BuyerOrder[]>(key);
-	const { data: detail } = useSWR<BuyerOrder>(
+	const { data, isLoading, mutate: mutateOrders } = useSWR<BuyerOrder[]>(key);
+	const { data: detail, mutate: mutateDetail } = useSWR<BuyerOrder>(
 		detailId ? `/admin/orders/${detailId}` : null,
 	);
+	const { data: disputes, mutate: mutateDisputes } = useSWR<
+		AdminOrderDispute[]
+	>(detailId ? `/admin/orders/${detailId}/disputes` : null);
 	const { data: handover } = useSWR<AdminHandoverDetails>(
 		detailId ? `/admin/orders/${detailId}/handover` : null,
 	);
@@ -245,9 +312,20 @@ export default function AdminOrdersWrapper() {
 	const completedCount = orders.filter(
 		(o) => o.status === "COMPLETED",
 	).length;
+	const canRevealHandoverPin =
+		!!handover?.handoverEligible &&
+		handover.paymentVerified !== false &&
+		!handover.credentialUsedAt;
 	const grossKobo = orders
 		.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED")
 		.reduce((s, o) => s + o.totalKobo, 0);
+	const pickupDispute = disputes?.find(
+		(dispute) => dispute.reason === "BUYER_NO_SHOW_COMPLAINT",
+	);
+	const buyerComplaintNotes = [
+		...(detail?.pickupProblemNote ? [detail.pickupProblemNote] : []),
+		...(pickupDispute?.evidence?.buyerNotes ?? []),
+	].filter((note, index, notes) => note && notes.indexOf(note) === index);
 
 	async function revealPin() {
 		if (!detailId) return;
@@ -260,8 +338,8 @@ export default function AdminOrdersWrapper() {
 			}>(api.post(`/admin/orders/${detailId}/handover/reveal-pin`));
 			setRevealedPin(result.pin);
 			toast("PIN revealed and audit logged.", "success");
-		} catch {
-			toast("Could not reveal PIN.", "error");
+		} catch (error) {
+			toast(apiErrorMessage(error, "Could not reveal PIN."), "error");
 		} finally {
 			setRevealBusy(false);
 		}
@@ -269,12 +347,67 @@ export default function AdminOrdersWrapper() {
 
 	function openDetail(id: string) {
 		setRevealedPin(null);
+		setDisputeNote("");
 		setDetailId(id);
 	}
 
 	function closeDetail() {
 		setRevealedPin(null);
+		setDisputeNote("");
 		setDetailId(null);
+	}
+
+	async function reviewPickupDispute(action: AdminDisputeAction) {
+		if (!pickupDispute) return;
+		const note = disputeNote.trim();
+		if (!note) {
+			toast("Add an admin decision note first.", "error");
+			return;
+		}
+		if (
+			action === "ISSUE_FULL_REFUND" &&
+			!window.confirm(
+				"Issue a full refund and resolve this pickup dispute for the buyer?",
+			)
+		) {
+			return;
+		}
+		if (
+			action === "UPHOLD_COMPLETION" &&
+			!window.confirm(
+				"Uphold the vendor's no-show report and complete this order without a refund?",
+			)
+		) {
+			return;
+		}
+
+		setDisputeBusy(action);
+		try {
+			const disputeId = pickupDispute.id ?? pickupDispute._id;
+			await api.post(`/admin/disputes/${disputeId}/action`, {
+				action,
+				note,
+			});
+			await Promise.all([
+				mutateDisputes(),
+				mutateDetail(),
+				mutateOrders(),
+			]);
+			setDisputeNote("");
+			toast(
+				action === "REQUEST_MORE_EVIDENCE"
+					? "More information requested."
+					: "Pickup dispute resolved.",
+				"success",
+			);
+		} catch (error) {
+			toast(
+				apiErrorMessage(error, "Could not update the pickup dispute."),
+				"error",
+			);
+		} finally {
+			setDisputeBusy(null);
+		}
 	}
 
 	return (
@@ -431,6 +564,110 @@ export default function AdminOrdersWrapper() {
 												{statusLabel(detail.status)}
 											</Badge>
 										</KV>
+										{(() => {
+											const outcome =
+												orderOutcomeSummary(detail);
+											const refundLabel =
+												refundOutcomeLabel(detail);
+											if (!outcome && !refundLabel)
+												return null;
+											return (
+												<>
+													{outcome && (
+														<>
+															<KV>
+																<Text $muted>
+																	Outcome
+																</Text>
+																<Text
+																	$weight={
+																		600
+																	}
+																>
+																	{
+																		outcome.title
+																	}
+																</Text>
+															</KV>
+															<KV>
+																<Text $muted>
+																	Initiated by
+																</Text>
+																<Text
+																	$weight={
+																		600
+																	}
+																>
+																	{
+																		outcome.actor
+																	}
+																</Text>
+															</KV>
+															{outcome.reason && (
+																<KV>
+																	<Text
+																		$muted
+																	>
+																		Reason
+																	</Text>
+																	<Text
+																		$weight={
+																			600
+																		}
+																	>
+																		{
+																			outcome.reason
+																		}
+																	</Text>
+																</KV>
+															)}
+															{outcome.occurredAt && (
+																<KV>
+																	<Text
+																		$muted
+																	>
+																		Outcome
+																		time
+																	</Text>
+																	<Text
+																		$weight={
+																			600
+																		}
+																	>
+																		{formatDateTime(
+																			outcome.occurredAt,
+																		)}
+																	</Text>
+																</KV>
+															)}
+														</>
+													)}
+													{refundLabel && (
+														<KV>
+															<Text $muted>
+																Refund status
+															</Text>
+															<Text $weight={600}>
+																{refundLabel}
+															</Text>
+														</KV>
+													)}
+													{detail.refundAmountKobo !=
+														null && (
+														<KV>
+															<Text $muted>
+																Refund amount
+															</Text>
+															<Text $weight={600}>
+																{formatKobo(
+																	detail.refundAmountKobo,
+																)}
+															</Text>
+														</KV>
+													)}
+												</>
+											);
+										})()}
 										<KV>
 											<Text $muted>Fulfilment</Text>
 											<Text $weight={600}>
@@ -522,11 +759,265 @@ export default function AdminOrdersWrapper() {
 													Review reason
 												</Text>
 												<Text $weight={600}>
-													{detail.adminReviewReason}
+													{statusLabel(
+														detail.adminReviewReason,
+													)}
 												</Text>
 											</KV>
 										)}
 									</Stack>
+
+									{(detail.status ===
+										"PICKUP_PROBLEM_REPORTED" ||
+										pickupDispute ||
+										buyerComplaintNotes.length > 0) && (
+										<DisputePanel>
+											<Stack $gap={14}>
+												<Row
+													$justify="space-between"
+													$align="center"
+													$gap={12}
+												>
+													<Title $size={16}>
+														Buyer&apos;s pickup
+														report
+													</Title>
+													<Badge
+														$tone={
+															pickupDispute?.status ===
+															"RESOLVED"
+																? "success"
+																: "warning"
+														}
+													>
+														{pickupDispute?.status ===
+														"RESOLVED"
+															? "Resolved"
+															: pickupDispute?.status ===
+																	"MORE_EVIDENCE_REQUESTED"
+																? "More information requested"
+																: "Needs review"}
+													</Badge>
+												</Row>
+
+												{buyerComplaintNotes.length ? (
+													<Stack $gap={8}>
+														<Text $muted $size={13}>
+															Buyer&apos;s exact
+															complaint
+														</Text>
+														{buyerComplaintNotes.map(
+															(note) => (
+																<ComplaintBox
+																	key={note}
+																>
+																	<Text
+																		$weight={
+																			600
+																		}
+																	>
+																		{note}
+																	</Text>
+																</ComplaintBox>
+															),
+														)}
+													</Stack>
+												) : (
+													<Text $muted>
+														The buyer did not
+														provide a written
+														complaint.
+													</Text>
+												)}
+
+												<Stack $gap={0}>
+													{detail.readyAt && (
+														<KV>
+															<Text $muted>
+																Ready for pickup
+															</Text>
+															<Text $weight={600}>
+																{formatDateTime(
+																	detail.readyAt,
+																)}
+															</Text>
+														</KV>
+													)}
+													{detail.pickupNoShowReportedAt && (
+														<KV>
+															<Text $muted>
+																Vendor reported
+																no-show
+															</Text>
+															<Text $weight={600}>
+																{formatDateTime(
+																	detail.pickupNoShowReportedAt,
+																)}
+															</Text>
+														</KV>
+													)}
+													{detail.pickupProblemReportedAt && (
+														<KV>
+															<Text $muted>
+																Buyer responded
+															</Text>
+															<Text $weight={600}>
+																{formatDateTime(
+																	detail.pickupProblemReportedAt,
+																)}
+															</Text>
+														</KV>
+													)}
+												</Stack>
+
+												{pickupDispute?.status ===
+												"RESOLVED" ? (
+													<Stack $gap={8}>
+														<Text $weight={700}>
+															Decision:{" "}
+															{statusLabel(
+																pickupDispute.resolutionAction ??
+																	"RESOLVED",
+															)}
+														</Text>
+														{pickupDispute.resolutionNote && (
+															<ComplaintBox>
+																<Text>
+																	{
+																		pickupDispute.resolutionNote
+																	}
+																</Text>
+															</ComplaintBox>
+														)}
+														{pickupDispute.resolvedAt && (
+															<Text
+																$muted
+																$size={12}
+															>
+																Resolved{" "}
+																{formatDateTime(
+																	pickupDispute.resolvedAt,
+																)}
+															</Text>
+														)}
+													</Stack>
+												) : pickupDispute ? (
+													<Stack $gap={10}>
+														<Textarea
+															label="Admin decision note"
+															value={disputeNote}
+															onChange={(event) =>
+																setDisputeNote(
+																	event.target
+																		.value,
+																)
+															}
+															maxLength={2000}
+															rows={4}
+															placeholder="Record the evidence considered and explain the decision."
+														/>
+														<Row $gap={8} $wrap>
+															{can(
+																"support:update",
+															) && (
+																<>
+																	<Button
+																		$variant="secondary"
+																		$size="sm"
+																		$loading={
+																			disputeBusy ===
+																			"REQUEST_MORE_EVIDENCE"
+																		}
+																		disabled={Boolean(
+																			disputeBusy,
+																		)}
+																		onClick={() =>
+																			reviewPickupDispute(
+																				"REQUEST_MORE_EVIDENCE",
+																			)
+																		}
+																	>
+																		Request
+																		information
+																	</Button>
+																	<Button
+																		$variant="danger"
+																		$size="sm"
+																		$loading={
+																			disputeBusy ===
+																			"UPHOLD_COMPLETION"
+																		}
+																		disabled={Boolean(
+																			disputeBusy,
+																		)}
+																		onClick={() =>
+																			reviewPickupDispute(
+																				"UPHOLD_COMPLETION",
+																			)
+																		}
+																	>
+																		Uphold
+																		vendor
+																		no-show
+																	</Button>
+																</>
+															)}
+															{can(
+																"refund:create",
+															) && (
+																<Button
+																	$variant="accent"
+																	$size="sm"
+																	$loading={
+																		disputeBusy ===
+																		"ISSUE_FULL_REFUND"
+																	}
+																	disabled={Boolean(
+																		disputeBusy,
+																	)}
+																	onClick={() =>
+																		reviewPickupDispute(
+																			"ISSUE_FULL_REFUND",
+																		)
+																	}
+																>
+																	Resolve for
+																	buyer +
+																	refund
+																</Button>
+															)}
+														</Row>
+														{!can(
+															"support:update",
+														) &&
+															!can(
+																"refund:create",
+															) && (
+																<Text
+																	$muted
+																	$size={13}
+																>
+																	You can
+																	review this
+																	dispute but
+																	do not have
+																	permission
+																	to resolve
+																	it.
+																</Text>
+															)}
+													</Stack>
+												) : (
+													<Text $muted $size={13}>
+														The dispute evidence
+														record is being
+														prepared. Refresh this
+														order shortly.
+													</Text>
+												)}
+											</Stack>
+										</DisputePanel>
+									)}
 
 									<Stack $gap={8}>
 										<Text $weight={700} $size={14}>
@@ -558,6 +1049,13 @@ export default function AdminOrdersWrapper() {
 											))}
 										</ItemsPanel>
 									</Stack>
+
+									<OrderConversationPanel
+										orderId={detail.id}
+										admin
+										readOnly
+										title="Order messages"
+									/>
 
 									<Stack $gap={0}>
 										<KV>
@@ -684,6 +1182,16 @@ export default function AdminOrdersWrapper() {
 													</KV>
 													<KV>
 														<Text $muted>
+															Payment verified
+														</Text>
+														<Text $weight={600}>
+															{handover.paymentVerified
+																? "Yes"
+																: "No"}
+														</Text>
+													</KV>
+													<KV>
+														<Text $muted>
 															Confirmation method
 														</Text>
 														<Text $weight={600}>
@@ -734,14 +1242,33 @@ export default function AdminOrdersWrapper() {
 													</Row>
 												</ItemsPanel>
 											) : can("order:handover:reveal") ? (
-												<Button
-													$variant="secondary"
-													$size="sm"
-													$loading={revealBusy}
-													onClick={revealPin}
-												>
-													Reveal PIN
-												</Button>
+												<Stack $gap={8}>
+													<Button
+														$variant="secondary"
+														$size="sm"
+														$loading={revealBusy}
+														disabled={
+															!canRevealHandoverPin
+														}
+														onClick={revealPin}
+													>
+														Reveal PIN
+													</Button>
+													{handover &&
+														!canRevealHandoverPin && (
+															<Text
+																$muted
+																$size={13}
+															>
+																PIN reveal is
+																available only
+																after payment is
+																verified and the
+																order reaches
+																handover.
+															</Text>
+														)}
+												</Stack>
 											) : (
 												<Text $muted $size={13}>
 													You do not have permission

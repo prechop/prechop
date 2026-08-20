@@ -2,18 +2,19 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
 import {
-	Button,
-	Card,
-	Container,
-	FadeIn,
-	Input,
-	Stack,
-	Text,
+  Button,
+  Card,
+  Container,
+  FadeIn,
+  Input,
+  Stack,
+  Text,
 } from "@/components";
 import { api } from "@/constants/api";
+import { useAuth } from "@/hooks/Auth/useAuth";
 import { useToast } from "@/hooks/useToast";
 
 const Screen = styled.div`
@@ -42,7 +43,7 @@ const Mark = styled.div`
   place-items: center;
   font-size: 30px;
   border-radius: var(--pc-radius-lg);
-  background: var(--pc-gradient-hero);
+//   background: var(--pc-gradient-hero);
   box-shadow: var(--pc-shadow-primary);
 `;
 const Title = styled.h1`
@@ -62,7 +63,6 @@ const TitleH = styled.h1`
   font-weight: 800;
   letter-spacing: 0;
   color: var(--pc-text);
-
 `;
 const AuthCard = styled(Card)`
   padding: var(--pc-space-6);
@@ -96,153 +96,301 @@ const Foot = styled(Text)`
 `;
 
 export default function LoginWrapper() {
-	const params = useSearchParams();
-	const { toast } = useToast();
-	const [email, setEmail] = useState("");
-	const [emailOpen, setEmailOpen] = useState(false);
-	const [loading, setLoading] = useState(false);
-	const [sent, setSent] = useState(false);
-	const next = useMemo(() => cleanNext(params.get("next")), [params]);
-	const authNext = next;
+  const params = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
+  const { isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
+  const next = useMemo(() => cleanNext(params.get("next")), [params]);
+  const authNext = next;
 
-	async function continueWithEmail() {
-		if (!emailOpen) {
-			setEmailOpen(true);
-			return;
-		}
-		setLoading(true);
-		try {
-			const res = await api.post("/auth/email/request", {
-				email,
-				next: authNext,
-			});
-			const devLink = res.data?.data?.devLink;
-			setSent(true);
-			toast("Check your email for a secure sign-in link.", "success");
-			if (devLink) {
-				console.info("Prechop dev sign-in link:", devLink);
-			}
-		} catch (error) {
-			toast(errMsg(error), "error");
-		} finally {
-			setLoading(false);
-		}
-	}
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace(authNext === "/vendor/onboarding" ? "/sell" : authNext);
+    }
+  }, [authNext, isAuthenticated, isLoading, router]);
 
-	function continueWithGoogle() {
-		const query = new URLSearchParams({ next: authNext });
-		window.location.href = `/api/auth/google?${query.toString()}`;
-	}
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = window.setInterval(
+      () => setResendIn((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [resendIn]);
 
-	const router = useRouter(); // swap for your router's navigation hook
+  async function continueWithEmail() {
+    if (!emailOpen) {
+      setEmailOpen(true);
+      setWhatsAppOpen(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/email/request", {
+        email,
+        next: authNext,
+      });
+      const devLink = res.data?.data?.devLink;
+      setSent(true);
+      toast("Check your email for a secure sign-in link.", "success");
+      if (devLink) {
+        console.info("Prechop dev sign-in link:", devLink);
+      }
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-	return (
-		<Screen>
-			<Wrap>
-				<FadeIn>
-					<Brand>
-						<Mark aria-hidden>🍲</Mark>
-						<Stack $gap={2}>
-							<TitleH>Prechop</TitleH>
-							<Text $muted>Order before they cook.</Text>
-						</Stack>
-					</Brand>
+  function continueWithGoogle() {
+    const query = new URLSearchParams({ next: authNext });
+    window.location.href = `/api/auth/google?${query.toString()}`;
+  }
 
-					<AuthCard>
-						<Stack $gap={14}>
-							<Stack $gap={4}>
-								<Title>Continue to Prechop</Title>
-								<Text $muted>
-									Sign in to continue your order.
-								</Text>
-							</Stack>
+  async function requestWhatsAppCode() {
+    setWhatsAppLoading(true);
+    try {
+      const res = await api.post("/auth/whatsapp/request", {
+        phone,
+        next: authNext,
+      });
+      const data = res.data?.data;
+      setChallengeId(data.challengeId);
+      setMaskedPhone(data.maskedPhone);
+      setOtp("");
+      setResendIn(data.resendAfterSeconds ?? 60);
+      toast("Verification code sent on WhatsApp.", "success");
+      if (data.devOtp) {
+        console.info("Prechop dev WhatsApp OTP:", data.devOtp);
+      }
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  }
 
-							<Button
-								$full
-								$size="lg"
-								onClick={continueWithGoogle}
-							>
-								Continue with Google
-							</Button>
+  async function verifyWhatsAppCode() {
+    setWhatsAppLoading(true);
+    try {
+      const res = await api.post("/auth/whatsapp/verify", {
+        challengeId,
+        code: otp,
+      });
+      window.location.assign(res.data?.data?.next ?? authNext);
+    } catch (error) {
+      toast(errMsg(error), "error");
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  }
 
-							<Divider>OR</Divider>
+  return (
+    <Screen>
+      <Wrap>
+        <FadeIn>
+          <Brand>
+            {/* <Mark aria-hidden>🍲</Mark> */}
+            <Mark aria-hidden>
+              <img src="/dark.png" alt="" aria-hidden />
+            </Mark>
+            <Stack $gap={2}>
+              <TitleH>Prechop</TitleH>
+              <Text $muted>Order before they cook.</Text>
+            </Stack>
+          </Brand>
 
-							<Button
-								$full
-								$size="lg"
-								$variant="secondary"
-								onClick={continueWithEmail}
-								$loading={loading}
-							>
-								Continue with Email
-							</Button>
+          <AuthCard>
+            <Stack $gap={14}>
+              <Stack $gap={4}>
+                <Title>Continue to Prechop</Title>
+                <Text $muted>Sign in to continue your order.</Text>
+              </Stack>
 
-							{emailOpen && (
-								<Panel>
-									<Stack $gap={12}>
-										<Input
-											label="Email"
-											type="email"
-											value={email}
-											onChange={(e) => {
-												setEmail(e.target.value);
-												setSent(false);
-											}}
-											placeholder="you@example.com"
-											onKeyDown={(e) => {
-												if (e.key === "Enter")
-													continueWithEmail();
-											}}
-										/>
-										{sent && (
-											<Text $muted $size={13}>
-												Open the link in your email to
-												finish signing in. It works for
-												new and returning accounts.
-											</Text>
-										)}
-									</Stack>
-								</Panel>
-							)}
-						</Stack>
-					</AuthCard>
+              <Button
+                $full
+                $size="lg"
+                onClick={() => {
+                  setWhatsAppOpen(true);
+                  setEmailOpen(false);
+                }}>
+                Continue with WhatsApp
+              </Button>
 
-					<Foot $size={15}>
-						<Text as="span" $muted>
-							Want to sell?{" "}
-						</Text>
-						<Link
-							href="/sell"
-							onClick={(e) => {
-								e.preventDefault();
-								router.push("/sell");
-							}}
-							style={{
-								color: "var(--pc-color-primary)",
-								fontWeight: 700,
-							}}
-						>
-							Sell on Prechop
-						</Link>
-					</Foot>
+              {whatsAppOpen && (
+                <Panel>
+                  <Stack $gap={12}>
+                    {!challengeId ? (
+                      <>
+                        <Input
+                          label="WhatsApp number"
+                          type="tel"
+                          inputMode="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="0801 234 5678"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") requestWhatsAppCode();
+                          }}
+                        />
+                        <Text $muted $size={13}>
+                          We&apos;ll send a 6-digit code to your Nigerian
+                          WhatsApp number.
+                        </Text>
+                        <Button
+                          $full
+                          onClick={requestWhatsAppCode}
+                          disabled={!phone.trim() || whatsAppLoading}
+                          $loading={whatsAppLoading}>
+                          Send WhatsApp code
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          label="Verification code"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={otp}
+                          onChange={(e) =>
+                            setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          placeholder="123456"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && otp.length === 6)
+                              verifyWhatsAppCode();
+                          }}
+                        />
+                        <Text $muted $size={13}>
+                          Enter the code sent to {maskedPhone}. It expires in 5
+                          minutes.
+                        </Text>
+                        <Button
+                          $full
+                          onClick={verifyWhatsAppCode}
+                          disabled={otp.length !== 6}
+                          $loading={whatsAppLoading}>
+                          Verify and continue
+                        </Button>
+                        <Button
+                          $full
+                          $variant="ghost"
+                          disabled={resendIn > 0 || whatsAppLoading}
+                          onClick={requestWhatsAppCode}>
+                          {resendIn > 0
+                            ? `Resend in ${resendIn}s`
+                            : "Resend code"}
+                        </Button>
+                        <Button
+                          $full
+                          $variant="ghost"
+                          onClick={() => {
+                            setChallengeId("");
+                            setOtp("");
+                          }}>
+                          Change number
+                        </Button>
+                      </>
+                    )}
+                  </Stack>
+                </Panel>
+              )}
 
-					<Foot $muted $size={13}>
-						You can still browse{" "}
-						<Link
-							href="/marketplace"
-							style={{
-								color: "var(--pc-color-primary)",
-								fontWeight: 700,
-							}}
-						>
-							vendors and meals
-						</Link>{" "}
-						before signing in.
-					</Foot>
-				</FadeIn>
-			</Wrap>
-		</Screen>
-	);
+              <Divider>OR</Divider>
+
+              <Button
+                $full
+                $size="lg"
+                $variant="secondary"
+                onClick={continueWithGoogle}>
+                Continue with Google
+              </Button>
+
+              <Button
+                $full
+                $size="lg"
+                $variant="secondary"
+                onClick={continueWithEmail}
+                $loading={loading}>
+                Continue with Email
+              </Button>
+
+              {emailOpen && (
+                <Panel>
+                  <Stack $gap={12}>
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setSent(false);
+                      }}
+                      placeholder="you@example.com"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") continueWithEmail();
+                      }}
+                    />
+                    {sent && (
+                      <Text $muted $size={13}>
+                        Open the link in your email to finish signing in. It
+                        works for new and returning accounts.
+                      </Text>
+                    )}
+                  </Stack>
+                </Panel>
+              )}
+            </Stack>
+          </AuthCard>
+
+          <Foot $size={15}>
+            <Text as="span" $muted>
+              Want to sell?{" "}
+            </Text>
+            <Link
+              href="/login?next=/vendor/onboarding"
+              onClick={(e) => {
+                e.preventDefault();
+                router.push("/login?next=/vendor/onboarding");
+              }}
+              style={{
+                color: "var(--pc-color-primary)",
+                fontWeight: 700,
+              }}>
+              Sell on Prechop
+            </Link>
+          </Foot>
+
+          <Foot $muted $size={13}>
+            You can still browse{" "}
+            <Link
+              href="/marketplace"
+              style={{
+                color: "var(--pc-color-primary)",
+                fontWeight: 700,
+              }}>
+              vendors and meals
+            </Link>{" "}
+            before signing in.
+          </Foot>
+        </FadeIn>
+      </Wrap>
+    </Screen>
+  );
 }
 
 // 	return (
@@ -369,13 +517,13 @@ export default function LoginWrapper() {
 // }
 
 function errMsg(e: unknown): string {
-	const err = e as { response?: { data?: { message?: string } } };
-	return err?.response?.data?.message ?? "Something went wrong. Try again.";
+  const err = e as { response?: { data?: { message?: string } } };
+  return err?.response?.data?.message ?? "Something went wrong. Try again.";
 }
 
 function cleanNext(value: string | null): string {
-	if (!value?.startsWith("/") || value.startsWith("//")) {
-		return "/marketplace";
-	}
-	return value;
+  if (!value?.startsWith("/") || value.startsWith("//")) {
+    return "/marketplace";
+  }
+  return value;
 }

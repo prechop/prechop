@@ -27,6 +27,9 @@ export const PATCH = withApiHandler(
 				vendorUserId: auth.userId,
 				orderId,
 				status: parsed.data.status,
+				reason: parsed.data.reason,
+				reasonCode: parsed.data.reasonCode,
+				explanation: parsed.data.explanation,
 			});
 			return ok(result);
 		} catch (error) {

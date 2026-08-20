@@ -3,8 +3,11 @@ import {
   canonicalOrderStatus,
   handoverUnavailableMessage,
   isBuyerHandoverEligible,
+  isVendorPipelineCompletedStatus,
   orderFlowForFulfillment,
   orderTimelineSteps,
+  pickupNoShowAvailability,
+  pickupNoShowResponseWindow,
 } from "@/constants/orderLifecycle";
 
 describe("order lifecycle mapping", () => {
@@ -64,6 +67,74 @@ describe("order lifecycle mapping", () => {
     expect(isBuyerHandoverEligible("IN_TRANSIT", "DELIVERY", new Date())).toBe(
       false,
     );
+  });
+
+  it.each([
+    "READY",
+    "READY_FOR_PICKUP",
+  ] as const)("enables pickup no-show for %s only after 120 minutes", (status) => {
+    const readyAt = "2026-08-08T08:00:00.000Z";
+    expect(
+      pickupNoShowAvailability(
+        status,
+        "PICKUP",
+        readyAt,
+        new Date("2026-08-08T09:59:59.999Z").getTime(),
+      ),
+    ).toMatchObject({ available: false });
+    expect(
+      pickupNoShowAvailability(
+        status,
+        "PICKUP",
+        readyAt,
+        new Date("2026-08-08T10:00:00.000Z").getTime(),
+      ),
+    ).toEqual({
+      available: true,
+      availableAt: new Date("2026-08-08T10:00:00.000Z"),
+    });
+  });
+
+  it("does not expose pickup no-show for delivery orders", () => {
+    expect(
+      pickupNoShowAvailability(
+        "READY_FOR_DELIVERY",
+        "DELIVERY",
+        "2026-08-08T08:00:00.000Z",
+      ),
+    ).toBeNull();
+  });
+
+  it("tracks the buyer response deadline down to expiry", () => {
+    const deadline = "2026-08-08T10:15:00.000Z";
+    expect(
+      pickupNoShowResponseWindow(
+        deadline,
+        new Date("2026-08-08T10:02:55.000Z").getTime(),
+      ),
+    ).toEqual({
+      deadline: new Date(deadline),
+      expired: false,
+      remainingMs: 725_000,
+      countdown: "12:05 remaining",
+    });
+    expect(
+      pickupNoShowResponseWindow(deadline, new Date(deadline).getTime()),
+    ).toMatchObject({
+      expired: true,
+      remainingMs: 0,
+      countdown: "Response window closed",
+    });
+  });
+
+  it("keeps buyer no-show completion in vendor pipeline history", () => {
+    expect(isVendorPipelineCompletedStatus("COMPLETED")).toBe(true);
+    expect(isVendorPipelineCompletedStatus("COMPLETED_BUYER_NO_SHOW")).toBe(
+      true,
+    );
+    expect(
+      isVendorPipelineCompletedStatus("AWAITING_BUYER_NO_SHOW_RESPONSE"),
+    ).toBe(false);
   });
 
   it("uses canonical backend status sequences", () => {

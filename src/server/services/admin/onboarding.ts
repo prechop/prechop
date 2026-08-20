@@ -10,6 +10,7 @@ import {
 import { resendProvider } from "../../providers";
 import { recordAudit } from "../audit";
 import { getBuiltInGroupId } from "../iam";
+import { withVerificationDocumentReviewUrls } from "../vendors";
 import type { AdminActor } from "./vendors";
 
 const ErrNotUnderReview = new AppError(
@@ -32,7 +33,7 @@ export async function getOnboardingSubmission(id: string) {
 	if (!vendor) throw ErrVendorNotFound;
 	const owner = await getUserByIdDB({ id: vendor.userId.toString() });
 	return {
-		vendor,
+		vendor: await withVerificationDocumentReviewUrls(vendor),
 		owner: owner
 			? {
 					id: owner._id.toString(),

@@ -2,7 +2,10 @@ import type { IJwtPayload } from "../../types";
 
 export interface IRefreshTokenEntry {
 	refreshToken: string;
+	/** Sliding idle expiry. Extended on each successful refresh. */
 	deadline: Date;
+	/** Hard session expiry. Never extended by refresh rotation. */
+	absoluteDeadline?: Date;
 }
 
 export interface IUserCreateInput {
@@ -18,6 +21,7 @@ export interface IUserCreateInput {
 	googleSubject?: string;
 	googleEmailVerified?: boolean;
 	phone?: string;
+	phoneVerifiedAt?: Date;
 	isActive?: boolean;
 }
 
@@ -39,6 +43,7 @@ export interface IUser {
 	// returning to the owning user.
 	phone?: string;
 	phoneHash?: string;
+	phoneVerifiedAt?: Date;
 	isActive: boolean;
 	lastLoginAt?: Date;
 	refreshTokens?: IRefreshTokenEntry[];
@@ -48,7 +53,10 @@ export interface IUser {
 }
 
 export interface IUserMethods extends IUser {
-	generateAuthToken(ip?: string): Promise<IJwtPayload>;
+	generateAuthToken(
+		ip?: string,
+		options?: { refreshTokenAbsoluteExpiresIn?: Date },
+	): Promise<IJwtPayload>;
 }
 
 /** Shape safe to return to clients (phone decrypted, secrets stripped). */
