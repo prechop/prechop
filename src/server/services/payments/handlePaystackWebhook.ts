@@ -2,6 +2,11 @@ import { ErrInvalidWebhookSignature } from "../../constants";
 import { handleRefundWebhook } from "../refunds";
 import { finalizeSuccessfulPayment } from "./finalizeSuccessfulPayment";
 import { applyPaystackTransferState, type PaystackTransferEvent } from "../vendorPayouts";
+import {
+	BrandKitPaymentStatus,
+	getVendorProfileByBrandKitPaymentIdDB,
+	updateVendorProfileDB,
+} from "../../models";
 
 interface PaystackChargeEvent {
 	event: string;
@@ -41,6 +46,20 @@ export async function handlePaystackWebhook({
 
 	const { reference, amount, channel, status } = event.data;
 	if (status !== "success") return { received: true };
+
+	const brandKitVendor = await getVendorProfileByBrandKitPaymentIdDB({
+		paymentId: reference,
+	});
+	if (brandKitVendor) {
+		await updateVendorProfileDB({
+			id: brandKitVendor._id.toString(),
+			payload: {
+				brandKitPaymentStatus: BrandKitPaymentStatus.PAID,
+				brandKitPaidAt: new Date(),
+			},
+		});
+		return { received: true };
+	}
 
 	const result = await finalizeSuccessfulPayment({
 		reference,

@@ -125,6 +125,12 @@ const nav: NavItemDef[] = [
     icon: "⚙️",
     permission: "siteConfig:read",
   },
+  {
+    href: "/admin/fulfillment-locations",
+    label: "Fulfillment locations",
+    icon: "📍",
+    permission: "siteConfig:read",
+  },
 ];
 
 const Layout = styled.div`

@@ -19,6 +19,7 @@ import {
 	createVendorProfileDB,
 	updateVendorProfileDB,
 } from "@/server/models/vendorProfiles";
+import { BrandKitPaymentStatus, BrandKitFulfillmentStatus } from "@/server/models/enums";
 import { paystackProvider } from "@/server/providers/paystack";
 import { placeOrder } from "@/server/services/buyerOrders/placeOrder";
 import { buildSnapshotItems } from "@/server/services/dailyOrders/snapshot";
@@ -54,6 +55,9 @@ async function vendorWithMenu(campusId: string) {
 		payload: {
 			paystackSubaccountCode: "ACCT_test123",
 			isOpenForOrders: true,
+			brandKitPaymentStatus: BrandKitPaymentStatus.PAID,
+			brandKitFulfillmentStatus: BrandKitFulfillmentStatus.RECEIVED,
+			brandKitReceivedAt: new Date(),
 		},
 	});
 	return vendorId;

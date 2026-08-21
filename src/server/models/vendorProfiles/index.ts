@@ -184,7 +184,6 @@ schema.index({ campusId: 1, status: 1, isOpenForOrders: 1 });
 schema.index({ campusIds: 1, status: 1, isOpenForOrders: 1 });
 schema.index({ storeSlug: 1 }, { unique: true, sparse: true });
 schema.index({ vendorShortId: 1 }, { unique: true, sparse: true });
-schema.index({ brandKitPaymentStatus: 1 });
 
 schema.pre("aggregate", function () {
 	this.pipeline().unshift({ $match: { deleted: false } });
@@ -1004,6 +1003,24 @@ export async function countVendorsDB({
 		});
 	} catch {
 		return 0;
+	}
+}
+
+export async function getVendorProfileByBrandKitPaymentIdDB({
+	paymentId,
+}: {
+	paymentId: string;
+}): Promise<IVendorProfile | null> {
+	try {
+		const doc = await VendorProfile.findOne({
+			brandKitPaymentId: paymentId,
+			deleted: false,
+		})
+			.lean()
+			.exec();
+		return (doc as unknown as IVendorProfile) ?? null;
+	} catch {
+		return null;
 	}
 }
 

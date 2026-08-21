@@ -262,3 +262,19 @@ export const createFulfillmentLocationSchema = zod
 export type CreateFulfillmentLocationInput = zod.infer<
 	typeof createFulfillmentLocationSchema
 >;
+
+export const updateFulfillmentLocationSchema = zod
+	.object({
+		id: zod.string().trim().min(1),
+		name: zod.string().trim().min(1).max(200).optional(),
+		state: zod.string().trim().min(1).max(120).optional(),
+		city: zod.string().trim().min(1).max(120).optional(),
+		campusOrSchool: zod.string().trim().min(1).max(200).optional(),
+		address: zod.string().trim().min(1).max(300).optional(),
+		isActive: zod.boolean().optional(),
+	})
+	.strict();
+
+export type UpdateFulfillmentLocationInput = zod.infer<
+	typeof updateFulfillmentLocationSchema
+>;

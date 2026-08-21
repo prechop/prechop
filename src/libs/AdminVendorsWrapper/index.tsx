@@ -185,6 +185,13 @@ export default function AdminVendorsWrapper() {
 		qrDataUrl?: string;
 		storeUrl?: string;
 	} | null>(null);
+	const [fulfillmentLocations, setFulfillmentLocations] = useState<
+		{ _id: string; name: string; isActive: boolean }[]
+	>([]);
+	const [editingFulfillment, setEditingFulfillment] = useState(false);
+	const [editFulfillmentStatus, setEditFulfillmentStatus] = useState("");
+	const [editFulfillmentLocationId, setEditFulfillmentLocationId] =
+		useState("");
 
 	const key = `/admin/vendors${status ? `?status=${status}` : ""}`;
 	const { data, isLoading, mutate } = useSWR<AdminVendor[]>(key);
@@ -199,6 +206,27 @@ export default function AdminVendorsWrapper() {
 				: null;
 		if (id) setDetailId(id);
 	}, []);
+
+	useEffect(() => {
+		if (!detailId) return;
+		let cancelled = false;
+		async function loadLocations() {
+			try {
+				const res = await api.get("/admin/fulfillment-locations");
+				if (!cancelled) {
+					setFulfillmentLocations(
+						res.data.data ?? [],
+					);
+				}
+			} catch {
+				// non-blocking
+			}
+		}
+		loadLocations();
+		return () => {
+			cancelled = true;
+		};
+	}, [detailId]);
 
 	async function reactivate(id: string) {
 		setBusy(true);
@@ -254,6 +282,35 @@ export default function AdminVendorsWrapper() {
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	async function saveFulfillment() {
+		if (!detailId) return;
+		setBusy(true);
+		try {
+			await api.patch(`/admin/vendors/${detailId}/brand-kit`, {
+				status: editFulfillmentStatus,
+				locationId: editFulfillmentLocationId || undefined,
+			});
+			toast("Brand Kit updated", "success");
+			setEditingFulfillment(false);
+			await mutate();
+			if (detailId) await globalMutate(`/admin/vendors/${detailId}`);
+		} catch (err: any) {
+			toast(
+				err.response?.data?.message ?? "Could not update Brand Kit",
+				"error",
+			);
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	function startEditFulfillment() {
+		if (!detail) return;
+		setEditFulfillmentStatus(detail.brandKitFulfillmentStatus ?? "NOT_STARTED");
+		setEditFulfillmentLocationId(detail.brandKitFulfillmentLocationId ?? "");
+		setEditingFulfillment(true);
 	}
 
 	const vendors = data ?? [];
@@ -594,17 +651,148 @@ export default function AdminVendorsWrapper() {
 												"NOT_STARTED"}
 										</Badge>
 									</KV>
-									{detail.brandKitReceivedAt && (
-										<KV>
-											<Text $muted>
-												Brand Kit received at
-											</Text>
-											<Text $weight={600}>
-												{new Date(detail.brandKitReceivedAt).toLocaleString()}
-											</Text>
-										</KV>
-									)}
-										<KV>
+								{detail.brandKitReceivedAt && (
+									<KV>
+										<Text $muted>
+											Brand Kit received at
+										</Text>
+										<Text $weight={600}>
+											{new Date(detail.brandKitReceivedAt).toLocaleString()}
+										</Text>
+									</KV>
+								)}
+								<KV>
+									<Text $muted>Fulfillment location</Text>
+									<Text $weight={600}>
+										{fulfillmentLocations.find(
+											(l) =>
+												l._id ===
+												detail.brandKitFulfillmentLocationId,
+										)?.name ??
+											detail
+												.brandKitFulfillmentLocationId
+												? "—"
+												: "Not assigned"}
+									</Text>
+								</KV>
+								{!editingFulfillment ? (
+									<KV>
+										<Text $muted>
+											Fulfillment status
+										</Text>
+										<Row $gap={8}>
+											<Badge
+												$tone={
+													detail
+														.brandKitFulfillmentStatus ===
+													"RECEIVED"
+														? "success"
+														: detail
+																.brandKitFulfillmentStatus ===
+														  "DELIVERED"
+															? "warning"
+															: detail
+																	.brandKitFulfillmentStatus ===
+															  "DISPATCHED"
+																? "primary"
+																: "muted"
+												}
+											>
+												{detail.brandKitFulfillmentStatus ??
+													"NOT_STARTED"}
+											</Badge>
+											<Button
+												$variant="secondary"
+												$size="sm"
+												onClick={startEditFulfillment}
+												disabled={busy}
+											>
+												Edit
+											</Button>
+										</Row>
+									</KV>
+								) : (
+									<KV>
+										<Text $muted>
+											Fulfillment status
+										</Text>
+										<Stack $gap={8}>
+											<Select
+												value={editFulfillmentStatus}
+												onChange={(e) =>
+													setEditFulfillmentStatus(
+														e.target.value,
+													)
+												}
+												disabled={busy}
+											>
+												<option value="NOT_STARTED">
+													NOT_STARTED
+												</option>
+												<option value="PREPARING">
+													PREPARING
+												</option>
+												<option value="DISPATCHED">
+													DISPATCHED
+												</option>
+												<option value="DELIVERED">
+													DELIVERED
+												</option>
+												<option value="RECEIVED">
+													RECEIVED
+												</option>
+											</Select>
+											<Select
+												value={
+													editFulfillmentLocationId
+												}
+												onChange={(e) =>
+													setEditFulfillmentLocationId(
+														e.target.value,
+													)
+												}
+												disabled={busy}
+												placeholder="Select location"
+											>
+												<option value="">—</option>
+												{fulfillmentLocations
+													.filter(
+														(l) => l.isActive,
+													)
+													.map((l) => (
+														<option
+															key={l._id}
+															value={l._id}
+														>
+															{l.name}
+														</option>
+													))}
+											</Select>
+											<Row $gap={8}>
+												<Button
+													$size="sm"
+													onClick={saveFulfillment}
+													disabled={busy}
+												>
+													Save
+												</Button>
+												<Button
+													$variant="secondary"
+													$size="sm"
+													onClick={() =>
+														setEditingFulfillment(
+															false,
+														)
+													}
+													disabled={busy}
+												>
+													Cancel
+												</Button>
+											</Row>
+										</Stack>
+									</KV>
+								)}
+							<KV>
 											<Text $muted>
 												Feature: Schedule Ahead
 											</Text>

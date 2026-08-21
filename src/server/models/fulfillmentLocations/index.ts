@@ -133,4 +133,35 @@ export async function updateFulfillmentLocationDB({
 	}
 }
 
+export async function deleteFulfillmentLocationDB({
+	id,
+	session,
+}: {
+	id: string;
+	session?: ClientSession;
+}): Promise<boolean> {
+	const timer = databaseResponseTimeHistogram.startTimer();
+	try {
+		if (!mongoose.Types.ObjectId.isValid(id)) return false;
+		const res = await FulfillmentLocation.deleteOne({
+			_id: new mongoose.Types.ObjectId(id),
+		});
+		timer({
+			operation: IOperationType.Delete,
+			collection: collectionName,
+			method: "deleteFulfillmentLocationDB",
+			success: res.deletedCount > 0 ? "true" : "false",
+		});
+		return res.deletedCount > 0;
+	} catch {
+		timer({
+			operation: IOperationType.Delete,
+			collection: collectionName,
+			method: "deleteFulfillmentLocationDB",
+			success: "false",
+		});
+		return false;
+	}
+}
+
 export * from "./types";

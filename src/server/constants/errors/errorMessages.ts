@@ -214,7 +214,7 @@ export const ErrPinResetHoldActive = new AppError(
 );
 
 export const ErrBrandKitNotReceived = new AppError(
-	"Brand Kit has not been received. You cannot publish orders until your Brand Kit is delivered.",
+	"Your kitchen has been approved, but you must receive your PreChop Brand Kit before you can publish Daily Orders.",
 	403,
 	"BRAND_KIT_NOT_RECEIVED",
 );
