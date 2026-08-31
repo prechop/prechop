@@ -50,7 +50,14 @@ import {
 	MARKETPLACE_UNAVAILABLE_MESSAGE,
 } from "../siteConfigs";
 import { classifyNewPaymentSettlement } from "../vendorPayouts";
+import { getAttributionByToken } from "../referrals/attribution";
 import { releaseSlots, reserveSlots, type SlotRequest } from "./slots";
+import {
+	getDeliveryWindowCapacity,
+} from "../deliveryWindows/capacity";
+import {
+	getTodaysBatches,
+} from "../deliveryWindows/batches";
 
 export interface PlaceOrderInput {
 	dailyOrderId: string;
@@ -60,6 +67,7 @@ export interface PlaceOrderInput {
 	deliveryRoomNumber?: string;
 	deliveryAdditionalInfo?: string;
 	deliveryPhone?: string;
+	deliveryWindowId?: string;
 	customerMessage?: string;
 	items: Array<{
 		dailyOrderItemId: string;
@@ -68,6 +76,8 @@ export interface PlaceOrderInput {
 		selectedOptionIds?: string[];
 		selectedOptions?: Array<{ optionId: string; quantity: number }>;
 	}>;
+	referralToken?: string;
+	buyerIp?: string;
 }
 
 function generateExternalPaymentToken(): string {
@@ -116,7 +126,11 @@ export async function placeOrder({
 	if (dailyOrder.status !== DailyOrderStatus.ACTIVE)
 		throw ErrDailyOrderNotActive;
 	// "Coming soon": ordering hasn't opened yet for this listing.
+	// For batch-mode listings (mode "A"), the batch status + cutoff are the
+	// authoritative gates; availableFrom is ignored so a same-day batch that
+	// opens later today is still selectable in the checkout modal.
 	if (
+		dailyOrder.mode !== "A" &&
 		dailyOrder.availableFrom &&
 		dailyOrder.availableFrom.getTime() > Date.now()
 	)
@@ -352,6 +366,42 @@ export async function placeOrder({
 		throw validationError("Vendor payment account is not configured.");
 	}
 
+	if (
+		dailyOrder.mode === "A" &&
+		(input.deliveryWindowId ?? dailyOrder.deliveryWindowId)
+	) {
+		const windowId = input.deliveryWindowId ?? dailyOrder.deliveryWindowId!;
+		const batches = await getTodaysBatches({
+			vendorId: dailyOrder.vendorId,
+			date: new Date(dailyOrder.scheduledDate),
+		});
+		const selected = batches.find(
+			(b) => b.window._id.toString() === windowId,
+		);
+		if (!selected) {
+			throw listingSoldOut("This batch is no longer available.");
+		}
+		if (selected.status === "paused") {
+			throw conflict(
+				"This kitchen has paused orders for this batch today. Please check back later.",
+			);
+		}
+		if (selected.status === "closed") {
+			throw conflict(
+				"This order window has ended. Please check back for the next batch.",
+			);
+		}
+		const totalQty = resolvedItems.reduce(
+			(sum, it) => sum + it.quantity,
+			0,
+		);
+		if (selected.capacity.remainingQuantity < totalQty) {
+			throw listingSoldOut(
+				`Only ${selected.capacity.remainingQuantity} spots left for this batch`,
+			);
+		}
+	}
+
 	// ── 5. Reserve slots (atomic oversell guard) ─────────────────────────
 	const buyerOrderId = new mongoose.Types.ObjectId().toString();
 	const orderNumber = generateOrderNumber();
@@ -451,6 +501,19 @@ export async function placeOrder({
 		buyerId,
 		vendorId: dailyOrder.vendorId,
 	});
+
+	let referralCreatorUserId: string | undefined;
+	let referralIpHash: string | undefined;
+	let referralDeviceId: string | undefined;
+	if (input.referralToken) {
+		const attribution = await getAttributionByToken(input.referralToken);
+		if (attribution) {
+			referralCreatorUserId = attribution.creatorUserId;
+			referralIpHash = input.buyerIp ? hash(input.buyerIp) : undefined;
+			referralDeviceId = undefined;
+		}
+	}
+
 	const order = await createBuyerOrderDB({
 		id: buyerOrderId,
 		payload: {
@@ -486,6 +549,9 @@ export async function placeOrder({
 			handoverPinHash: handoverCredential.pinHash,
 			handoverCredentialCreatedAt: new Date(),
 			items: resolvedItems,
+			referralCreatorUserId,
+			referralIpHash,
+			referralDeviceId,
 		},
 	});
 	if (!order) {

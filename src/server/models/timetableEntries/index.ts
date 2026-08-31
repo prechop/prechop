@@ -27,12 +27,8 @@ const schema = new mongoose.Schema<any>(
 			enum: Object.values(DayOfWeek),
 			required: true,
 		},
-		isOpen: { type: Boolean, default: true },
-		orderStartTime: { type: String },
-		cutoffTime: { type: String },
-		cookingStartTime: { type: String },
-		readyDeliveryStartTime: { type: String },
-		plannedMenu: { type: String },
+	isOpen: { type: Boolean, default: true },
+	plannedMenu: { type: String },
 	},
 	{ timestamps: true },
 );
@@ -56,10 +52,6 @@ export async function upsertTimetableEntryDB({
 	menuItemId,
 	dayOfWeek,
 	isOpen = true,
-	orderStartTime,
-	cutoffTime,
-	cookingStartTime,
-	readyDeliveryStartTime,
 	plannedMenu,
 	session,
 }: {
@@ -67,10 +59,6 @@ export async function upsertTimetableEntryDB({
 	menuItemId: string;
 	dayOfWeek: DayOfWeek;
 	isOpen?: boolean;
-	orderStartTime?: string;
-	cutoffTime?: string;
-	cookingStartTime?: string;
-	readyDeliveryStartTime?: string;
 	plannedMenu?: string;
 	session?: ClientSession;
 }): Promise<ITimetableEntry | null> {
@@ -91,10 +79,6 @@ export async function upsertTimetableEntryDB({
 			{
 				$set: {
 					isOpen,
-					...(orderStartTime !== undefined ? { orderStartTime } : {}),
-					...(cutoffTime !== undefined ? { cutoffTime } : {}),
-					...(cookingStartTime !== undefined ? { cookingStartTime } : {}),
-					...(readyDeliveryStartTime !== undefined ? { readyDeliveryStartTime } : {}),
 					...(plannedMenu !== undefined ? { plannedMenu } : {}),
 				},
 			},

@@ -4,6 +4,7 @@ import {
 	type ComponentType,
 	useCallback,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -40,6 +41,7 @@ import { PageLoader } from "@/components/Loader";
 import { api, apiData } from "@/constants/api";
 import { fetcher } from "@/constants/fetcher";
 import { formatKobo, statusLabel } from "@/constants/formatters";
+import { MEAL_TIMES } from "@/constants/mealTimes";
 import {
 	canSendOrderChat,
 	ORDER_CHAT_NOT_OPEN_MESSAGE,
@@ -657,6 +659,9 @@ export default function PipelineWrapper() {
 		fetcher,
 	);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const [mealTimeFilter, setMealTimeFilter] = useState<
+		"ALL" | "BREAKFAST" | "LUNCH" | "DINNER"
+	>("ALL");
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const [contactBusyId, setContactBusyId] = useState<string | null>(null);
 	const [buyerContacts, setBuyerContacts] = useState<
@@ -699,12 +704,35 @@ export default function PipelineWrapper() {
 	}, []);
 
 	const active = dailyOrders ?? [];
-	const currentId = selectedId ?? active[0]?.id ?? null;
+	const filteredActive = useMemo(
+		() =>
+			mealTimeFilter === "ALL"
+				? active
+				: active.filter((dailyOrder) =>
+						(dailyOrder.marketplaceCategories ?? []).includes(
+							mealTimeFilter,
+						),
+					),
+		[active, mealTimeFilter],
+	);
+	const currentId = selectedId ?? filteredActive[0]?.id ?? null;
 	const currentDailyOrder =
-		active.find((dailyOrder) => dailyOrder.id === currentId) ?? null;
+		filteredActive.find((dailyOrder) => dailyOrder.id === currentId) ??
+		null;
 	const currentFulfillmentLabel = currentDailyOrder
 		? fulfillmentQueueLabel(currentDailyOrder)
 		: null;
+
+	const counts = useMemo(() => {
+		const map: Record<string, number> = { ALL: active.length };
+		for (const dailyOrder of active) {
+			const meals = dailyOrder.marketplaceCategories ?? [];
+			for (const meal of meals) {
+				map[meal] = (map[meal] ?? 0) + 1;
+			}
+		}
+		return map;
+	}, [active]);
 
 	const {
 		data: orders,
@@ -1430,34 +1458,65 @@ export default function PipelineWrapper() {
 					</ModalOverlay>
 				)}
 				<Stack $gap={20}>
-					<PageHeader
-						eyebrow="Live kitchen"
-						title="Cooking"
-						subtitle="Move orders across the board as you cook and hand off."
-						actions={
-							liveCount > 0 ? (
-								<Badge $tone="primary">
-									<FiClock size={14} aria-hidden />{" "}
-									{liveCount} live
-								</Badge>
-							) : undefined
-						}
-					/>
+			<PageHeader
+				eyebrow="Live kitchen"
+				title="Cooking"
+				subtitle="Move orders across the board as you cook and hand off."
+				actions={
+					liveCount > 0 ? (
+						<Badge $tone="primary">
+							<FiClock size={14} aria-hidden />{" "}
+							{liveCount} live
+						</Badge>
+					) : undefined
+				}
+			/>
 
-					<Select
-						value={currentId ?? ""}
-						onChange={(event) => setSelectedId(event.target.value)}
-					>
-						{active.map((dailyOrder) => (
-							<option key={dailyOrder.id} value={dailyOrder.id}>
-								{dailyOrder.title} -{" "}
-								{fulfillmentQueueLabel(dailyOrder) ??
-									`${dailyOrder.totalOrdersCount} ${pluralizeOrder(
-										dailyOrder.totalOrdersCount,
-									)}`}
-							</option>
-						))}
-					</Select>
+			<Row $gap={8}>
+				{MEAL_TIMES.map((mealTime) => {
+					const selected = mealTimeFilter === mealTime.value;
+					return (
+						<button
+							key={mealTime.value}
+							onClick={() => {
+								setMealTimeFilter(mealTime.value);
+								setSelectedId(null);
+							}}
+							style={{
+								padding: "6px 12px",
+								borderRadius: "var(--pc-radius-sm)",
+								border: "1px solid var(--pc-border)",
+								background: selected
+									? "var(--pc-color-primary)"
+									: "var(--pc-surface)",
+								color: selected
+									? "var(--pc-color-primary-ink)"
+									: "var(--pc-text)",
+								fontWeight: 700,
+								fontSize: 13,
+								cursor: "pointer",
+							}}
+						>
+							{mealTime.label} {counts[mealTime.value] ?? 0}
+						</button>
+					);
+				})}
+			</Row>
+
+				<Select
+					value={currentId ?? ""}
+					onChange={(event) => setSelectedId(event.target.value)}
+				>
+					{filteredActive.map((dailyOrder) => (
+						<option key={dailyOrder.id} value={dailyOrder.id}>
+							{dailyOrder.title} -{" "}
+							{fulfillmentQueueLabel(dailyOrder) ??
+								`${dailyOrder.totalOrdersCount} ${pluralizeOrder(
+									dailyOrder.totalOrdersCount,
+								)}`}
+						</option>
+					))}
+				</Select>
 					{currentFulfillmentLabel && (
 						<Badge $tone="warning">{currentFulfillmentLabel}</Badge>
 					)}

@@ -17,6 +17,7 @@ export const Card = styled.div<{
   $hover?: boolean;
   $accent?: boolean;
 }>`
+
   background: var(--pc-surface);
   border: 1px solid var(--pc-border);
   border-radius: var(--pc-radius);

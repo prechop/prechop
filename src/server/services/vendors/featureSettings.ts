@@ -10,7 +10,7 @@ import {
 function clampToPlatform(
 	vendorValue: boolean,
 	platformValue: boolean,
-	defaultValue: boolean,
+	_defaultValue: boolean,
 ): boolean {
 	if (!platformValue) return false;
 	return vendorValue;
@@ -25,9 +25,12 @@ export async function getVendorFeatureSettings({
 	weeklyBreakfastPlan: boolean;
 	delivery: boolean;
 	pickup: boolean;
+	breakfastEnabled: boolean;
+	lunchEnabled: boolean;
+	dinnerEnabled: boolean;
 }> {
 	const vendor = await getVendorProfileByUserIdDB({ userId });
-	if (!vendor) return { scheduleAhead: false, weeklyBreakfastPlan: false, delivery: false, pickup: true };
+	if (!vendor) return { scheduleAhead: false, weeklyBreakfastPlan: false, delivery: false, pickup: true, breakfastEnabled: true, lunchEnabled: true, dinnerEnabled: true };
 	const configs = await getSiteConfigs();
 	return {
 		scheduleAhead: clampToPlatform(
@@ -50,6 +53,21 @@ export async function getVendorFeatureSettings({
 			configs.pickupEnabled,
 			true,
 		),
+		breakfastEnabled: clampToPlatform(
+			vendor.breakfastEnabled ?? true,
+			configs.breakfastEnabled,
+			true,
+		),
+		lunchEnabled: clampToPlatform(
+			vendor.lunchEnabled ?? true,
+			configs.lunchEnabled,
+			true,
+		),
+		dinnerEnabled: clampToPlatform(
+			vendor.dinnerEnabled ?? true,
+			configs.dinnerEnabled,
+			true,
+		),
 	};
 }
 
@@ -59,17 +77,26 @@ export async function updateVendorFeatureSettings({
 	weeklyBreakfastPlan,
 	delivery,
 	pickup,
+	breakfastEnabled,
+	lunchEnabled,
+	dinnerEnabled,
 }: {
 	userId: string;
 	scheduleAhead?: boolean;
 	weeklyBreakfastPlan?: boolean;
 	delivery?: boolean;
 	pickup?: boolean;
+	breakfastEnabled?: boolean;
+	lunchEnabled?: boolean;
+	dinnerEnabled?: boolean;
 }): Promise<{
 	scheduleAhead: boolean;
 	weeklyBreakfastPlan: boolean;
 	delivery: boolean;
 	pickup: boolean;
+	breakfastEnabled: boolean;
+	lunchEnabled: boolean;
+	dinnerEnabled: boolean;
 }> {
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw new Error("Vendor profile not found");
@@ -88,6 +115,15 @@ export async function updateVendorFeatureSettings({
 	}
 	if (pickup !== undefined && configs.pickupEnabled) {
 		updates.featurePickup = pickup;
+	}
+	if (breakfastEnabled !== undefined && configs.breakfastEnabled) {
+		updates.breakfastEnabled = breakfastEnabled;
+	}
+	if (lunchEnabled !== undefined && configs.lunchEnabled) {
+		updates.lunchEnabled = lunchEnabled;
+	}
+	if (dinnerEnabled !== undefined && configs.dinnerEnabled) {
+		updates.dinnerEnabled = dinnerEnabled;
 	}
 
 	await updateVendorProfileDB({

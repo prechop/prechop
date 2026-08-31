@@ -1,4 +1,4 @@
-import type { DailyOrderStatus, MarketplaceCategory } from "../enums";
+import type { DailyOrderStatus, MealTime } from "../enums";
 
 export interface IDailyOrderOption {
 	_id?: string;
@@ -97,7 +97,10 @@ export interface IDailyOrderCreateInput {
 	deliveryContactPhone?: string;
 	deliveryResponsibilityAccepted?: boolean;
 	items: IDailyOrderItemInput[];
-	marketplaceCategories?: MarketplaceCategory[];
+	marketplaceCategories?: MealTime[];
+	mode?: "A" | "B";
+	deliveryWindowId?: string;
+	batchId?: string;
 }
 
 export interface IDailyOrder {
@@ -122,7 +125,11 @@ export interface IDailyOrder {
 	totalOrdersCount: number;
 	activeBuyerOrdersCount?: number;
 	items: IDailyOrderItem[];
-	marketplaceCategories?: MarketplaceCategory[];
+	marketplaceCategories?: MealTime[];
+	mode?: "A" | "B";
+	deliveryWindowId?: string;
+	batchId?: string;
+	pausedForToday?: boolean;
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

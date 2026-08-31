@@ -101,6 +101,9 @@ export default function AccountWrapper() {
 		fetcher,
 		{ shouldRetryOnError: false },
 	);
+	const { data: siteConfigs } = useSWR<{
+		platformMode?: "MARKETPLACE" | "SINGLE_KITCHEN";
+	}>("/site-configs/marketplace", fetcher, { shouldRetryOnError: false });
 
 	const [savingCampus, setSavingCampus] = useState(false);
 
@@ -191,9 +194,11 @@ export default function AccountWrapper() {
 	const isDraftVendorApplication = vendorApplication?.status === "INCOMPLETE";
 	const isPendingVendorApplication =
 		vendorApplication?.status === "PENDING_REVIEW";
+	const isSingleKitchen = siteConfigs?.platformMode === "SINGLE_KITCHEN";
 	const showVendorApplicationSection =
-		!isVendor ||
-		(hasVendorApplication && vendorApplication.status !== "ACTIVE");
+		!isSingleKitchen &&
+		(!isVendor ||
+			(hasVendorApplication && vendorApplication.status !== "ACTIVE"));
 
 	return (
 		<FadeIn>

@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
-import { Avatar, Button, Container } from "@/components";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Container,
+  Stack,
+  Text,
+} from "@/components";
 import { useAuth } from "@/hooks/Auth/useAuth";
 
 const Page = styled.div`
@@ -242,46 +251,6 @@ const InfoHeader = styled.div`
     line-height: 1.55;
   }
 `;
-const FlowSwitch = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: var(--pc-space-5);
-  border-radius: var(--pc-radius-pill);
-  border: 1px solid var(--pc-border);
-  background: var(--pc-surface);
-  box-shadow: var(--pc-shadow-sm);
-`;
-const FlowTab = styled.button<{ $active: boolean }>`
-  border: none;
-  cursor: pointer;
-  min-height: 38px;
-  padding: 0 16px;
-  border-radius: var(--pc-radius-pill);
-  background: ${(p) => (p.$active ? "var(--pc-color-primary)" : "transparent")};
-  color: ${(p) => (p.$active ? "#fff" : "var(--pc-text-muted)")};
-  font-weight: 800;
-  font-size: 13px;
-  white-space: nowrap;
-  box-shadow: ${(p) => (p.$active ? "var(--pc-shadow-sm)" : "none")};
-  transition:
-    background var(--pc-dur) var(--pc-ease),
-    color var(--pc-dur) var(--pc-ease),
-    box-shadow var(--pc-dur) var(--pc-ease);
-  &:hover {
-    color: ${(p) => (p.$active ? "#fff" : "var(--pc-text)")};
-  }
-  &:focus-visible {
-    outline: 2px solid var(--pc-color-primary);
-    outline-offset: 2px;
-  }
-  @media (max-width: 420px) {
-    min-height: 36px;
-    padding: 0 12px;
-    font-size: 12.5px;
-  }
-`;
 const InfoGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -343,12 +312,68 @@ const StepList = styled.ol`
 `;
 const AuthCluster = styled.div`
   /* Reserve the row height so the nav never jumps while auth resolves or
-	   between the logged-out and logged-in states. */
+     between the logged-out and logged-in states. */
   display: flex;
   align-items: center;
   gap: 12px;
   background: var(--pc-surface);
   min-height: 40px;
+`;
+
+const _SingleKitchenSection = styled(Container)`
+  padding-top: var(--pc-space-6);
+  padding-bottom: var(--pc-space-10);
+`;
+const _SingleKitchenKicker = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-border);
+  box-shadow: var(--pc-shadow-sm);
+  color: var(--pc-text);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: var(--pc-radius-pill);
+  width: fit-content;
+`;
+const _SingleKitchenTitle = styled.h1`
+  font-family: var(--pc-font-display);
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  color: var(--pc-text);
+`;
+const _SingleKitchenSubtitle = styled.p`
+  color: var(--pc-text-muted);
+  font-size: 16px;
+  line-height: 1.55;
+`;
+const _SingleKitchenCardWrap = styled.div`
+  max-width: 520px;
+`;
+const _SingleKitchenHero = styled(Container)`
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  align-items: center;
+  gap: var(--pc-space-8);
+  padding-top: var(--pc-space-6);
+  padding-bottom: var(--pc-space-10);
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+    gap: var(--pc-space-6);
+  }
+`;
+const _SingleKitchenCopy = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+  max-width: 620px;
+  animation: pc-fade-up 0.5s var(--pc-ease) both;
 `;
 
 /** Auth-aware nav control: reflects whether the visitor is signed in. */
@@ -387,11 +412,128 @@ function HeaderAuth() {
   );
 }
 
-export default function LandingPage() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const [flowAudience, setFlowAudience] = useState<"BUYERS" | "VENDORS">(
-    "BUYERS",
+function _KitchenCard({ row }: { row: any }) {
+  const vendor = row?.vendor ?? row;
+  const listings = row?.listings ?? [];
+  const firstListing = listings[0];
+  const menuCount = listings.reduce(
+    (sum: number, l: any) => sum + (l?.items?.length ?? 0),
+    0,
   );
+  const imageUrl =
+    vendor?.profileImageUrl ??
+    firstListing?.items?.[0]?.imageUrl ??
+    null;
+  const vendorId = vendor?.id ?? row?.vendorId;
+  const businessName = vendor?.businessName ?? "Our kitchen";
+  const isOpen = vendor?.isOpenForOrders ?? false;
+  const rating = vendor?.rating ?? null;
+  const totalReviews = vendor?.totalReviews ?? 0;
+  const deliveryAvailable =
+    firstListing?.deliveryAvailable ??
+    listings.some((l: any) => l?.deliveryAvailable);
+  const pickupAvailable =
+    firstListing?.pickupAvailable ??
+    listings.some((l: any) => l?.pickupAvailable);
+
+  return (
+    <Card $pad={0} as={Link} href={vendorId ? `/v/${vendorId}` : "/marketplace"}>
+      <div
+        style={{
+          height: 220,
+          background:
+            imageUrl
+              ? `center / cover no-repeat url(${imageUrl})`
+              : "linear-gradient(135deg, var(--pc-color-gold) 0%, var(--pc-color-primary) 100%)",
+          borderRadius: "18px 18px 0 0",
+        }}
+      />
+      <Stack $gap={12} style={{ padding: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}>
+          <Text $weight={800} $size={18}>
+            {businessName}
+          </Text>
+          {vendor?.verified ? (
+            <Badge $tone="success">Verified</Badge>
+          ) : null}
+          <Badge $tone={isOpen ? "success" : "muted"}>
+            {isOpen ? "Open now" : "Closed"}
+          </Badge>
+        </div>
+        <Stack $gap={6}>
+          <Text $muted $size={13}>
+            {rating != null && totalReviews > 0
+              ? `Rated ${rating.toFixed(1)} (${totalReviews} reviews)`
+              : "New kitchen — no reviews yet"}
+          </Text>
+          <Text $muted $size={13}>
+            {menuCount > 0
+              ? `${menuCount} menu item${menuCount === 1 ? "" : "s"} available`
+              : "No menus available"}
+          </Text>
+          <Text $muted $size={13}>
+            {deliveryAvailable && pickupAvailable
+              ? "Delivery / Pickup"
+              : deliveryAvailable
+                ? "Delivery"
+                : pickupAvailable
+                  ? "Pickup"
+                  : "Menu, prices and ratings"}
+          </Text>
+        </Stack>
+        <Button as="span" $pill $size="sm" style={{ marginTop: 4 }}>
+          View kitchen →
+        </Button>
+      </Stack>
+
+    </Card>
+  );
+}
+
+export default function LandingPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
+  const [platformMode, setPlatformMode] = useState<"MARKETPLACE" | "SINGLE_KITCHEN">(
+    "MARKETPLACE",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPlatformMode() {
+      try {
+        const res = await fetch("/api/site-configs/marketplace", {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const mode = data?.data?.platformMode;
+        setPlatformMode(mode ?? "MARKETPLACE");
+      } catch {
+        // ignore
+      }
+    }
+    loadPlatformMode();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (platformMode === "SINGLE_KITCHEN") {
+      router.replace("/marketplace");
+    }
+  }, [platformMode, router]);
+
+  if (isLoading) return null;
+
+  const isSingleKitchen = platformMode === "SINGLE_KITCHEN";
 
   return (
     <Page>
@@ -406,82 +548,84 @@ export default function LandingPage() {
         </Brand>
         <HeaderAuth />
       </Nav>
-      <Hero as="main" id="main-content">
-        <Copy>
-          <Kicker>
-            <span aria-hidden>⏱️</span> Order <b>before</b> they cook
-          </Kicker>
-          <H1>
-            Skip the queue.
-            <br />
-            <em>Reserve your meal.</em>
-          </H1>
-          <Lead>
-            Browse today&apos;s campus kitchens, reserve your meal, and pay
-            upfront. Pick up hot &mdash; or choose hostel delivery&mdash;without
-            worrying about sold-out food.
-          </Lead>
-          <CTAs>
-            <Button as={Link} href="/marketplace" $size="lg" $pill>
-              Browse food 🍛
-            </Button>
-            <Button
-              as={Link}
-              href={
-                isAuthenticated
-                  ? "/vendor/onboarding"
-                  : "/login?next=/vendor/onboarding"
-              }
-              $size="lg"
-              $variant="secondary"
-              $pill>
-              Become a vendor
-            </Button>
-          </CTAs>
+      {isSingleKitchen ? null : (
+        <Hero as="main" id="main-content">
+          <Copy>
+            <Kicker>
+              <span aria-hidden>⏱️</span> Order <b>before</b> they cook
+            </Kicker>
+            <H1>
+              Skip the queue.
+              <br />
+              <em>Reserve your meal.</em>
+            </H1>
+            <Lead>
+              Browse today&apos;s campus kitchens, reserve your meal, and pay
+              upfront. Pick up hot &mdash; or choose hostel delivery&mdash;without
+              worrying about sold-out food.
+            </Lead>
+            <CTAs>
+              <Button as={Link} href="/marketplace" $size="lg" $pill>
+                Browse food 🍛
+              </Button>
+              <Button
+                as={Link}
+                href={
+                  isAuthenticated
+                    ? "/vendor/onboarding"
+                    : "/login?next=/vendor/onboarding"
+                }
+                $size="lg"
+                $variant="secondary"
+                $pill>
+                Become a vendor
+              </Button>
+            </CTAs>
 
-          <Points>
-            <li>
-              <span>✓</span> Secure Paystack checkout
-            </li>
-            <li>
-              <span>✓</span> Live cutoff timers
-            </li>
-            <li>
-              <span>✓</span> Pickup or hostel delivery
-            </li>
-          </Points>
-        </Copy>
-        <Visual aria-hidden>
-          {/* <Plate>🍲</Plate> */}
-          <Plate>
-            <img src="/img-2.png" alt="" aria-hidden />
-          </Plate>
-          <FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
-            <span
-              className="emoji"
-              style={{ background: "var(--pc-color-accent-50)" }}>
-              ✅
-            </span>
-            <div>
-              <strong>Order confirmed</strong>
-              <br />
-              <small>Ready by 1:30 PM</small>
-            </div>
-          </FloatCard>
-          <FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
-            <span
-              className="emoji"
-              style={{ background: "var(--pc-color-gold-50)" }}>
-              🔥
-            </span>
-            <div>
-              <strong>Now cooking</strong>
-              <br />
-              <small>Jollof &amp; grilled chicken</small>
-            </div>
-          </FloatCard>
-        </Visual>
-      </Hero>
+            <Points>
+              <li>
+                <span>✓</span> Secure Paystack checkout
+              </li>
+              <li>
+                <span>✓</span> Live cutoff timers
+              </li>
+              <li>
+                <span>✓</span> Pickup or hostel delivery
+              </li>
+            </Points>
+          </Copy>
+          <Visual aria-hidden>
+            {/* <Plate>🍲</Plate> */}
+            <Plate>
+              <img src="/img-2.png" alt="" aria-hidden />
+            </Plate>
+            <FloatCard $pos="top: 4%; left: -4%;" $delay={220}>
+              <span
+                className="emoji"
+                style={{ background: "var(--pc-color-accent-50)" }}>
+                ✅
+              </span>
+              <div>
+                <strong>Order confirmed</strong>
+                <br />
+                <small>Ready by 1:30 PM</small>
+              </div>
+            </FloatCard>
+            <FloatCard $pos="bottom: 8%; right: -4%;" $delay={380}>
+              <span
+                className="emoji"
+                style={{ background: "var(--pc-color-gold-50)" }}>
+                🔥
+              </span>
+              <div>
+                <strong>Now cooking</strong>
+                <br />
+                <small>Jollof &amp; grilled chicken</small>
+              </div>
+            </FloatCard>
+          </Visual>
+        </Hero>
+      )}
       <Info aria-label="Help and information">
         <InfoHeader>
           <h2>How Prechop works</h2>
@@ -490,121 +634,49 @@ export default function LandingPage() {
             campus kitchens cook only for confirmed orders.
           </p>
         </InfoHeader>
-        <FlowSwitch role="tablist" aria-label="How it works audience">
-          <FlowTab
-            type="button"
-            role="tab"
-            $active={flowAudience === "BUYERS"}
-            aria-selected={flowAudience === "BUYERS"}
-            onClick={() => setFlowAudience("BUYERS")}>
-            For Buyers
-          </FlowTab>
-          <FlowTab
-            type="button"
-            role="tab"
-            $active={flowAudience === "VENDORS"}
-            aria-selected={flowAudience === "VENDORS"}
-            onClick={() => setFlowAudience("VENDORS")}>
-            For Vendors
-          </FlowTab>
-        </FlowSwitch>
-        {flowAudience === "BUYERS" ? (
-          <InfoGrid>
-            <InfoCard>
-              <h3>Buyer flow</h3>
-              <StepList>
-                <li>
-                  <span>1</span>
-                  <div>
-                    <strong>Browse kitchens</strong>
-                    <small>
-                      See open and closed vendors across your campus.
-                    </small>
-                  </div>
-                </li>
-                <li>
-                  <span>2</span>
-                  <div>
-                    <strong>Choose a meal</strong>
-                    <small>Pick items, options, pickup or delivery.</small>
-                  </div>
-                </li>
-                <li>
-                  <span>3</span>
-                  <div>
-                    <strong>Pay and reserve</strong>
-                    <small>Payment confirms your slot with the vendor.</small>
-                  </div>
-                </li>
-                <li>
-                  <span>4</span>
-                  <div>
-                    <strong>Receive your order</strong>
-                    <small>
-                      Track cooking status, then pick up or receive delivery.
-                    </small>
-                  </div>
-                </li>
-              </StepList>
-            </InfoCard>
-            <InfoCard>
-              <h3>Pay for Me</h3>
-              <p>
-                Choose Pay for Me at checkout to create a secure payment link.
-                Send it to a parent, friend or sponsor; once they pay through
-                Paystack, your original order is confirmed automatically.
-              </p>
-            </InfoCard>
-          </InfoGrid>
-        ) : (
-          <InfoGrid>
-            <InfoCard>
-              <h3>Vendor flow</h3>
-              <StepList>
-                <li>
-                  <span>1</span>
-                  <div>
-                    <strong>Create your kitchen profile</strong>
-                    <small>
-                      Add your business information, location, menu and
-                      fulfilment options.
-                    </small>
-                  </div>
-                </li>
-                <li>
-                  <span>2</span>
-                  <div>
-                    <strong>Post what you are cooking</strong>
-                    <small>
-                      Create a daily menu, set order opening and closing times,
-                      quantity and price.
-                    </small>
-                  </div>
-                </li>
-                <li>
-                  <span>3</span>
-                  <div>
-                    <strong>Receive confirmed orders</strong>
-                    <small>
-                      See paid orders in your dashboard and prepare only what
-                      customers reserved.
-                    </small>
-                  </div>
-                </li>
-                <li>
-                  <span>4</span>
-                  <div>
-                    <strong>Cook and fulfil</strong>
-                    <small>
-                      Update the cooking status, then hand over for pickup or
-                      complete vendor-managed delivery.
-                    </small>
-                  </div>
-                </li>
-              </StepList>
-            </InfoCard>
-          </InfoGrid>
-        )}
+        <InfoGrid>
+          <InfoCard>
+            <h3>How it works</h3>
+            <StepList>
+              <li>
+                <span>1</span>
+                <div>
+                  <strong>Choose your meal</strong>
+                  <small>Pick items, options, pickup or delivery.</small>
+                </div>
+              </li>
+              <li>
+                <span>2</span>
+                <div>
+                  <strong>Pick your delivery window</strong>
+                  <small>Select a time that works for you.</small>
+                </div>
+              </li>
+              <li>
+                <span>3</span>
+                <div>
+                  <strong>Pay &amp; reserve</strong>
+                  <small>Payment confirms your slot with the kitchen.</small>
+                </div>
+              </li>
+              <li>
+                <span>4</span>
+                <div>
+                  <strong>Receive your order</strong>
+                  <small>Track cooking status, then pick up or receive delivery.</small>
+                </div>
+              </li>
+            </StepList>
+          </InfoCard>
+          <InfoCard>
+            <h3>Pay for Me</h3>
+            <p>
+              Choose Pay for Me at checkout to create a secure payment link.
+              Send it to a parent, friend or sponsor; once they pay through
+              Paystack, your original order is confirmed automatically.
+            </p>
+          </InfoCard>
+        </InfoGrid>
       </Info>
       <Footer as="footer">
         © {new Date().getFullYear()} Prechop · Campus food, pre-ordered.

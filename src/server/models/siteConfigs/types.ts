@@ -49,6 +49,9 @@ export interface ISiteConfigs {
 	// kill switches
 	ordersKillSwitch: boolean;
 	paymentsKillSwitch: boolean;
+	// platform mode
+	platformMode: "MARKETPLACE" | "SINGLE_KITCHEN";
+	singleKitchenVendorId?: string;
 	// vendor visibility
 	profileCompletenessRequired: number;
 	/** Admin-defined delivery locations vendors may select. Empty = free-text. */
@@ -82,6 +85,7 @@ export const DEFAULT_SITE_CONFIGS: ISiteConfigs = {
 	vendorRegistrationEnabled: true,
 	ordersKillSwitch: false,
 	paymentsKillSwitch: false,
+	platformMode: "MARKETPLACE",
 	profileCompletenessRequired: 100,
 	deliveryLocations: [],
 };

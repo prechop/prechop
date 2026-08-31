@@ -10,6 +10,7 @@ import {
 	withApiHandler,
 	withAuth,
 } from "@/server/lib";
+import { getCookieValue } from "@/server/lib/cookies";
 import { getMyOrders, placeOrder } from "@/server/services/buyerOrders";
 import {
 	ordersQuerySchema,
@@ -59,10 +60,19 @@ export const POST = withApiHandler(
 			}
 			const parsed = placeOrderBodySchema.safeParse(await req.json());
 			if (!parsed.success) throw ErrInvalidFields;
+
+			const referralToken =
+				parsed.data.referralToken ??
+				(await getCookieValue("referral_token")) ?? undefined;
+
 			const result = await placeOrder({
 				buyerId: auth.userId,
 				campusId: auth.campusId,
-				input: parsed.data,
+				input: {
+					...parsed.data,
+					referralToken,
+					buyerIp: getClientIp(req),
+				},
 			});
 			return created(result, "Order created");
 		} catch (error) {

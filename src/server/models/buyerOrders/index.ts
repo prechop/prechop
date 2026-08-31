@@ -236,6 +236,9 @@ const schema = new mongoose.Schema<any>(
 		receiptStatus: { type: String, enum: RECEIPT_STATUSES },
 		deliveryCode: { type: String, index: true },
 		sentForDeliveryAt: { type: Date },
+		referralCreatorUserId: { type: String },
+		referralIpHash: { type: String },
+		referralDeviceId: { type: String },
 		buyerReceiptConfirmedAt: { type: Date },
 		timeline: { type: [timelineSchema], default: [] },
 		items: { type: [itemSchema], default: [] },
@@ -403,6 +406,9 @@ export async function createBuyerOrderDB({
 				payload.handoverCredentialCreatedAt ??
 				(generatedCredential ? new Date() : undefined),
 			items: mapItems(payload.items),
+			referralCreatorUserId: payload.referralCreatorUserId,
+			referralIpHash: payload.referralIpHash,
+			referralDeviceId: payload.referralDeviceId,
 		}).save({ session });
 		timer({
 			operation: IOperationType.Create,

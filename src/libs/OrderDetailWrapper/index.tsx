@@ -838,6 +838,15 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
   const [externalPayment, setExternalPayment] =
     useState<ExternalPaymentResult | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<{
+    windowId: string;
+    windowName?: string;
+    orderWindowStart: string;
+    orderWindowEnd: string;
+    deliveryWindowStart: string;
+    deliveryWindowEnd: string;
+  } | null>(null);
+  const [showBatchPicker, setShowBatchPicker] = useState(false);
   const cartStorageKey = `pch-cart-${token}`;
   const favouritesStorageKey = "pch-favourite-listings";
 
@@ -869,6 +878,23 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
     setFulfillment((current) => availableFulfillment(data, current));
     if (data.pickupAvailable !== data.deliveryAvailable) {
       setFulfillmentTouched(true);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (!data || data.mode !== "A" || !data.availableBatches) return;
+    const openBatches = data.availableBatches.filter(
+      (b) => b.status === "open",
+    );
+    if (openBatches.length === 1) {
+      setSelectedBatch({
+        windowId: openBatches[0].window._id,
+        windowName: openBatches[0].window.name,
+        orderWindowStart: openBatches[0].window.orderWindowStart,
+        orderWindowEnd: openBatches[0].window.orderWindowEnd,
+        deliveryWindowStart: openBatches[0].window.deliveryWindowStart,
+        deliveryWindowEnd: openBatches[0].window.deliveryWindowEnd,
+      });
     }
   }, [data]);
 
@@ -1482,6 +1508,10 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
       toast("Choose pickup or delivery before payment.", "error");
       return;
     }
+    if (data.mode === "A" && data.availableBatches?.length && !selectedBatch) {
+      setShowBatchPicker(true);
+      return;
+    }
     if (!isAuthenticated) {
       saveCartForLogin();
       const next =
@@ -1531,6 +1561,7 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
               deliveryPhone: deliveryPhone.trim(),
             }
           : {}),
+        ...(selectedBatch ? { deliveryWindowId: selectedBatch.windowId } : {}),
         customerMessage: customerMessage.trim() || undefined,
         items,
       });
@@ -2011,9 +2042,112 @@ export default function OrderDetailWrapper({ token }: { token: string }) {
           </Content>
         </OrderSurface>
       </FadeIn>
+
+      {showBatchPicker && data?.availableBatches?.length && (
+        <BatchOverlay>
+          <BatchSheet>
+            <Stack $gap={14}>
+              <Text $weight={800} $size={16}>
+                Choose your batch
+              </Text>
+              <Text $muted $size={13}>
+                Pick the delivery window that works for you. Capacity updates in real time.
+              </Text>
+              <Stack $gap={8}>
+                {data.availableBatches
+                  .filter((b) => b.status === "open")
+                  .map((b) => {
+                    const active =
+                      selectedBatch?.windowId === b.window._id;
+                    return (
+                      <BatchCard
+                        key={b.window._id}
+                        $active={active}
+                        onClick={() =>
+                          setSelectedBatch({
+                            windowId: b.window._id,
+                            windowName: b.window.name,
+                            orderWindowStart: b.window.orderWindowStart,
+                            orderWindowEnd: b.window.orderWindowEnd,
+                            deliveryWindowStart: b.window.deliveryWindowStart,
+                            deliveryWindowEnd: b.window.deliveryWindowEnd,
+                          })
+                        }>
+                        <Row $justify="space-between" $gap={10}>
+                          <Stack $gap={2}>
+                            <Text $weight={700} $size={14}>
+                              {b.window.name ||
+                                `${b.window.mealTime.toLowerCase()} · batch`}
+                            </Text>
+                            <Text $muted $size={12}>
+                              Order {b.window.orderWindowStart} –{" "}
+                              {b.window.orderWindowEnd}
+                              {" · "}
+                              Delivery {b.window.deliveryWindowStart} –{" "}
+                              {b.window.deliveryWindowEnd}
+                            </Text>
+                          </Stack>
+                          <Badge $tone={active ? "success" : "primary"}>
+                            {b.capacity.remainingQuantity} left
+                          </Badge>
+                        </Row>
+                      </BatchCard>
+                    );
+                  })}
+              </Stack>
+              <Row $gap={10}>
+                <Button
+                  $size="sm"
+                  $variant="secondary"
+                  onClick={() => setShowBatchPicker(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  $size="sm"
+                  disabled={!selectedBatch}
+                  onClick={() => {
+                    setShowBatchPicker(false);
+                    checkout();
+                  }}>
+                  Continue
+                </Button>
+              </Row>
+            </Stack>
+          </BatchSheet>
+        </BatchOverlay>
+      )}
     </Wrap>
   );
 }
+
+const BatchOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: var(--pc-space-4);
+`;
+
+const BatchSheet = styled(Card)`
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--pc-space-5);
+`;
+
+const BatchCard = styled.div<{ $active?: boolean }>`
+  padding: var(--pc-space-3) var(--pc-space-4);
+  border-radius: var(--pc-radius);
+  border: 1.5px solid
+    ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  background: ${(p) =>
+    p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface)"};
+  cursor: pointer;
+  transition: all var(--pc-dur) var(--pc-ease);
+`;
 
 function errMsg(e: unknown): string {
   const err = e as { response?: { data?: { message?: string } } };

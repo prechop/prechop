@@ -179,4 +179,29 @@ describe("menuItems model", () => {
 		});
 		expect(many.length).toBe(2);
 	});
+
+	it("stores and updates meal times", async () => {
+		const vendorId = oid();
+		const campusId = oid();
+		const item = await createMenuItemDB({
+			payload: {
+				vendorId,
+				campusId,
+				category: MenuCategory.MEALS,
+				name: "Breakfast Special",
+				priceKobo: 1200,
+				mealTimes: ["BREAKFAST", "LUNCH"],
+			},
+		});
+		expect(item).not.toBeNull();
+		if (!item) throw new Error("Expected menu item to be created");
+		expect(item.mealTimes).toEqual(["BREAKFAST", "LUNCH"]);
+
+		const updated = await updateMenuItemDB({
+			id: item._id.toString(),
+			vendorId,
+			payload: { mealTimes: ["DINNER"] },
+		});
+		expect(updated?.mealTimes).toEqual(["DINNER"]);
+	});
 });

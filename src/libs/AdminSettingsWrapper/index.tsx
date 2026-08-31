@@ -53,6 +53,8 @@ interface SiteConfigs {
 	vendorRegistrationEnabled: boolean;
 	ordersKillSwitch: boolean;
 	paymentsKillSwitch: boolean;
+	platformMode: "MARKETPLACE" | "SINGLE_KITCHEN";
+	singleKitchenVendorId?: string;
 	profileCompletenessRequired: number;
 	deliveryLocations: string[];
 }
@@ -233,6 +235,11 @@ export default function AdminSettingsWrapper() {
 	const { data, isLoading, mutate } = useSWR<SiteConfigs>(
 		"/admin/site-configs",
 	);
+	const { data: activeVendors } = useSWR<
+		{ id: string; businessName: string }[]
+	>(data?.platformMode === "SINGLE_KITCHEN"
+		? "/admin/vendors/active"
+		: null);
 	const { data: migration, mutate: mutateMigration } =
 		useSWR<SettlementMigrationConfig>(
 			"/admin/finance/settlement-migration",
@@ -357,16 +364,18 @@ export default function AdminSettingsWrapper() {
 				deliveryEnabled: form.deliveryEnabled,
 				pickupEnabled: form.pickupEnabled,
 				vendorRegistrationEnabled: form.vendorRegistrationEnabled,
-				ordersKillSwitch: form.ordersKillSwitch,
-				paymentsKillSwitch: form.paymentsKillSwitch,
-				profileCompletenessRequired: Math.round(
-					form.profileCompletenessRequired,
-				),
-				deliveryLocations: deliveryLocationsText
-					.split("\n")
-					.map((l) => l.trim())
-					.filter((l) => l.length > 0),
-			});
+			ordersKillSwitch: form.ordersKillSwitch,
+			paymentsKillSwitch: form.paymentsKillSwitch,
+			platformMode: form.platformMode,
+			singleKitchenVendorId: form.singleKitchenVendorId,
+			profileCompletenessRequired: Math.round(
+				form.profileCompletenessRequired,
+			),
+			deliveryLocations: deliveryLocationsText
+				.split("\n")
+				.map((l) => l.trim())
+				.filter((l) => l.length > 0),
+		});
 			toast("Settings saved", "success");
 			await mutate();
 		} catch (err: any) {
@@ -925,6 +934,71 @@ export default function AdminSettingsWrapper() {
 							</Toggle>
 						</div>
 					</Section>
+
+					<Section>
+						<SectionHeader
+							title="Platform mode"
+							icon="🏪"
+						/>
+						<Text $muted $size={13}>
+							Choose the marketplace experience buyers see on the
+							homepage.
+						</Text>
+						<Grid2>
+							<label htmlFor="platform-mode">
+								<Text $weight={700} $size={13}>
+									Mode
+								</Text>
+								<Select
+									id="platform-mode"
+									value={form.platformMode}
+									onChange={(e) =>
+										set(
+											"platformMode",
+											e.target.value as
+												| "MARKETPLACE"
+												| "SINGLE_KITCHEN",
+										)
+									}
+								>
+									<option value="MARKETPLACE">
+										MARKETPLACE
+									</option>
+								<option value="SINGLE_KITCHEN">
+									SINGLE_KITCHEN
+								</option>
+							</Select>
+						</label>
+					</Grid2>
+					{form?.platformMode === "SINGLE_KITCHEN" && (
+						<Grid2>
+							<label htmlFor="single-kitchen-vendor">
+								<Text $weight={700} $size={13}>
+									Active kitchen
+								</Text>
+								<Select
+									id="single-kitchen-vendor"
+									value={form.singleKitchenVendorId ?? ""}
+									onChange={(e) =>
+										set(
+											"singleKitchenVendorId",
+											e.target.value,
+										)
+									}
+								>
+									<option value="">
+										Select a kitchen...
+									</option>
+									{(activeVendors ?? []).map((v) => (
+										<option key={v.id} value={v.id}>
+											{v.businessName}
+										</option>
+									))}
+								</Select>
+							</label>
+						</Grid2>
+					)}
+				</Section>
 
 					<Section>
 						<SectionHeader

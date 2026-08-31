@@ -27,6 +27,7 @@ import {
 	normalizeMenuCategory,
 	type OptionGroupSuggestion,
 } from "@/constants/menuCategories";
+import { MEAL_TIMES } from "@/constants/mealTimes";
 import { useToast } from "@/hooks/useToast";
 import OptionGroupsManager from "@/libs/OptionGroupsManager";
 import type { MenuItem, MenuOptionGroup } from "@/types";
@@ -47,6 +48,7 @@ interface Draft {
 	description: string;
 	estimatedPrepMin: string;
 	optionGroupIds: string[];
+	mealTimes: string[];
 }
 
 interface DraftVariant {
@@ -65,6 +67,7 @@ const emptyDraft: Draft = {
 	description: "",
 	estimatedPrepMin: "",
 	optionGroupIds: [],
+	mealTimes: [],
 };
 
 const BackLink = styled(Link)`
@@ -271,6 +274,11 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		"/menu/option-groups",
 		fetcher,
 	);
+	const { data: featureSettings } = useSWR<{
+		breakfastEnabled: boolean;
+		lunchEnabled: boolean;
+		dinnerEnabled: boolean;
+	}>("/vendors/me/feature-settings", fetcher);
 	const optionGroups = groupsData ?? [];
 
 	const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -295,20 +303,21 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 			name: item.name,
 			category: normalizeMenuCategory(item.category),
 			priceNaira: String((item.priceKobo ?? 0) / 100),
-			hasVariants: (item.variants ?? []).length > 0,
-			variants: (item.variants ?? []).map((variant) => ({
-				name: variant.name,
-				priceNaira: String((variant.priceKobo ?? 0) / 100),
-				isDefault: variant.isDefault,
-				isActive: variant.isActive,
-			})),
-			description: item.description ?? "",
-			estimatedPrepMin: item.estimatedPrepMin
-				? String(item.estimatedPrepMin)
-				: "",
-			optionGroupIds: item.optionGroupIds ?? [],
-		});
-		setExistingImageUrl(item.imageUrl);
+		hasVariants: (item.variants ?? []).length > 0,
+		variants: (item.variants ?? []).map((variant) => ({
+			name: variant.name,
+			priceNaira: String((variant.priceKobo ?? 0) / 100),
+			isDefault: variant.isDefault,
+			isActive: variant.isActive,
+		})),
+		description: item.description ?? "",
+		estimatedPrepMin: item.estimatedPrepMin
+			? String(item.estimatedPrepMin)
+			: "",
+		optionGroupIds: item.optionGroupIds ?? [],
+		mealTimes: item.mealTimes ?? [],
+	});
+	setExistingImageUrl(item.imageUrl);
 	}, [isEdit, items, itemId]);
 
 	// Revoke the object URL when it changes or on unmount to avoid a leak.
@@ -480,13 +489,14 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 		}
 		setBusy(true);
 		try {
-			const body: Record<string, unknown> = {
-				name: draft.name.trim(),
-				category: normalizeMenuCategory(draft.category),
-				priceNaira: price,
-				variants,
-				optionGroupIds: draft.optionGroupIds,
-			};
+		const body: Record<string, unknown> = {
+			name: draft.name.trim(),
+			category: normalizeMenuCategory(draft.category),
+			priceNaira: price,
+			variants,
+			optionGroupIds: draft.optionGroupIds,
+			mealTimes: draft.mealTimes,
+		};
 			if (draft.description.trim())
 				body.description = draft.description.trim();
 			if (Number(draft.estimatedPrepMin) > 0)
@@ -633,6 +643,57 @@ export default function MenuItemEditor({ itemId }: { itemId?: string }) {
 								</option>
 							))}
 						</Select>
+						<Stack $gap={12}>
+							<Text $weight={700} $size={13}>
+								Meal time
+							</Text>
+							<Row $gap={16} $wrap>
+								{MEAL_TIMES.map((mealTime) => {
+									const checked = draft.mealTimes.includes(
+										mealTime.value,
+									);
+									const disabled =
+										(mealTime.value === "BREAKFAST" && featureSettings?.breakfastEnabled === false) ||
+										(mealTime.value === "LUNCH" && featureSettings?.lunchEnabled === false) ||
+										(mealTime.value === "DINNER" && featureSettings?.dinnerEnabled === false);
+									return (
+										<label
+											key={mealTime.value}
+											style={{
+												display: "inline-flex",
+												alignItems: "center",
+												gap: 8,
+												cursor: disabled ? "not-allowed" : "pointer",
+												opacity: disabled ? 0.5 : 1,
+											}}
+										>
+											<input
+												type="checkbox"
+												checked={checked}
+												disabled={disabled}
+												onChange={() => {
+													setDraft((d) => ({
+														...d,
+														mealTimes: checked
+															? d.mealTimes.filter(
+																	(m) =>
+																		m !==
+																		mealTime.value,
+																)
+															: [
+																	...d.mealTimes,
+																	mealTime.value,
+																],
+													}));
+												}}
+											/>
+											{mealTime.label}
+										</label>
+									);
+								},
+								)}
+							</Row>
+						</Stack>
 						<Input
 							label="Price (₦)"
 							type="number"

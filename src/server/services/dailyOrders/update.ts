@@ -15,7 +15,7 @@ import {
 import type { IDailyOrderCreateInput } from "../../models/dailyOrders/types";
 import type { UpdateDailyOrderDraftInput } from "../../validators/dailyOrders/validate";
 import { getSlotAvailability } from "../buyerOrders/slots";
-import { buildSnapshotItems } from "./snapshot";
+import { buildSnapshotItemsWithMealTimes } from "./snapshot";
 
 /**
  * Edit the current listing for future buyers. Buyer orders retain their own
@@ -72,10 +72,11 @@ export async function updateDailyOrder({
 			input.deliveryResponsibilityAccepted;
 	}
 	if (input.items !== undefined) {
-		const nextItems = await buildSnapshotItems({
-			vendorId,
-			items: input.items,
-		});
+		const { items: nextItems, marketplaceCategories } =
+			await buildSnapshotItemsWithMealTimes({
+				vendorId,
+				items: input.items,
+			});
 		const availability = await getSlotAvailability(existing.items);
 		const nextByMenuItem = new Map(
 			nextItems.map((item) => [item.menuItemId.toString(), item]),
@@ -118,6 +119,7 @@ export async function updateDailyOrder({
 			}
 		}
 		payload.items = nextItems;
+		payload.marketplaceCategories = marketplaceCategories as import("@/server/models").MealTime[];
 	}
 
 	// Validate the resulting window using new values where supplied. An already

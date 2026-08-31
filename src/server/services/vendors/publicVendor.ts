@@ -40,6 +40,9 @@ export interface PublicVendor {
 	featureWeeklyBreakfastPlan?: boolean;
 	featureDelivery?: boolean;
 	featurePickup?: boolean;
+	breakfastEnabled?: boolean;
+	lunchEnabled?: boolean;
+	dinnerEnabled?: boolean;
 }
 
 /**
@@ -86,6 +89,9 @@ export function toPublicVendor(v: IVendorProfile): PublicVendor {
 		featureWeeklyBreakfastPlan: v.featureWeeklyBreakfastPlan ?? undefined,
 		featureDelivery: v.featureDelivery ?? undefined,
 		featurePickup: v.featurePickup ?? undefined,
+		breakfastEnabled: v.breakfastEnabled ?? undefined,
+		lunchEnabled: v.lunchEnabled ?? undefined,
+		dinnerEnabled: v.dinnerEnabled ?? undefined,
 	};
 }
 

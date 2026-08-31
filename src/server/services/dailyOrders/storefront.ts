@@ -10,13 +10,14 @@ import {
 	type IMenuItem,
 	listActivePublicListingsForVendorIdsDB,
 	listDailyOrdersByVendorDB,
+	listDeliveryWindowsByVendorDB,
 	listMenuItemsByVendorDB,
 	listVendorsByIdsDB,
 	VendorStatus,
 } from "../../models";
 import { getPublicTimetable } from "../timetable/extendedQueries";
 import { withSlotAvailabilityForListings } from "../buyerOrders/slots";
-import { assertMarketplaceEnabled } from "../siteConfigs";
+import { assertMarketplaceEnabled, getSiteConfigs } from "../siteConfigs";
 import {
 	comparePublicVendors,
 	type PublicVendor,
@@ -86,18 +87,27 @@ export async function getVendorStorefront({
 		plannedMenu?: string;
 		menuItem?: IMenuItem | null;
 	}>;
+	mealTimes: string[];
 }> {
 	await assertMarketplaceEnabled();
 	const vendor = await getVendorProfileByIdDB({ id: vendorId });
 	if (!vendor || vendor.status !== VendorStatus.ACTIVE)
 		throw ErrVendorNotFound;
-	const [listings, menu, completedOrders, timetable] =
+	const [listings, menu, completedOrders, timetable, deliveryWindows] =
 		await Promise.all([
 			activeListingsForVendor(vendorId),
 			listMenuItemsByVendorDB({ vendorId, availableOnly: true }),
 			countCompletedBuyerOrdersByVendorDB({ vendorId }),
 			getPublicTimetable({ vendorId }),
+			listDeliveryWindowsByVendorDB({ vendorId }),
 		]);
+	const windowMealTimes = Array.from(
+		new Set(
+			deliveryWindows
+				.filter((w) => w.active)
+				.map((w) => w.mealTime),
+		),
+	);
 	return {
 		vendor: {
 			...toPublicVendor(vendor),
@@ -108,6 +118,7 @@ export async function getVendorStorefront({
 		),
 		menu,
 		timetable,
+		mealTimes: windowMealTimes,
 	};
 }
 
@@ -137,6 +148,7 @@ export async function searchMarketplace({
 	followedVendorIds?: string[];
 }): Promise<VendorSearchHit[]> {
 	await assertMarketplaceEnabled();
+	const configs = await getSiteConfigs();
 	const term = q.trim();
 	if (!term) return [];
 	const campusIds = await marketplaceCampusIds(campusId);
@@ -160,7 +172,15 @@ export async function searchMarketplace({
 	add(byMenu, "menu");
 	add(byListing, "listing");
 
-	const vendorIds = [...matched.keys()].slice(0, limit);
+	let vendorIds = [...matched.keys()].slice(0, limit);
+	if (
+		configs.platformMode === "SINGLE_KITCHEN" &&
+		configs.singleKitchenVendorId
+	) {
+		vendorIds = vendorIds.filter(
+			(id) => id === configs.singleKitchenVendorId,
+		);
+	}
 
 	// Two batched reads instead of ~2 queries per matched vendor: one `$in` fetch
 	// of every matched profile, and one batched fetch of all their active/public/

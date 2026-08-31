@@ -164,10 +164,13 @@ const schema = new mongoose.Schema<any>(
 		},
 		brandKitReceivedAt: { type: Date },
 		// Vendor-level feature toggles (only consulted when the global flag is on).
-		featureScheduleAhead: { type: Boolean, default: false },
-		featureWeeklyBreakfastPlan: { type: Boolean, default: false },
-		featureDelivery: { type: Boolean, default: false },
-		featurePickup: { type: Boolean, default: true },
+	featureScheduleAhead: { type: Boolean, default: false },
+	featureWeeklyBreakfastPlan: { type: Boolean, default: false },
+	featureDelivery: { type: Boolean, default: false },
+	featurePickup: { type: Boolean, default: true },
+	breakfastEnabled: { type: Boolean, default: true },
+	lunchEnabled: { type: Boolean, default: true },
+	dinnerEnabled: { type: Boolean, default: true },
 		// Delivery coverage.
 		deliveryCoverageType: {
 			type: String,
@@ -905,12 +908,14 @@ export async function listMarketplaceVendorsDB({
 	excludeVendorId,
 	limit = MAX_LIMIT,
 	offset = 0,
+	vendorId,
 	session,
 }: {
 	campusIds: string[];
 	excludeVendorId?: string;
 	limit?: number;
 	offset?: number;
+	vendorId?: string;
 	session?: ClientSession;
 }): Promise<IVendorProfile[]> {
 	try {
@@ -928,6 +933,15 @@ export async function listMarketplaceVendorsDB({
 			mongoose.Types.ObjectId.isValid(excludeVendorId)
 		) {
 			match._id = { $ne: new mongoose.Types.ObjectId(excludeVendorId) };
+		}
+		if (vendorId && mongoose.Types.ObjectId.isValid(vendorId)) {
+			if (
+				excludeVendorId &&
+				vendorId === excludeVendorId
+			) {
+				return [];
+			}
+			match._id = new mongoose.Types.ObjectId(vendorId);
 		}
 		const vendors = await VendorProfile.aggregate<IVendorProfile>(
 			[

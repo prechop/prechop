@@ -268,7 +268,7 @@ export default function AdminVendorsWrapper() {
 		setBusy(true);
 		try {
 			const result = await api.post<{ data: { vendorName?: string; shortId?: string; exampleCode?: string; qrUrl?: string; storeUrl?: string } }>(
-				"/api/stickers/preview",
+				"/stickers/preview",
 				{ vendorId },
 			);
 			if (result.data?.data) {

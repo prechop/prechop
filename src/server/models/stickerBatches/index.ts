@@ -70,6 +70,18 @@ export async function createStickerBatchDB({
 }): Promise<IStickerBatch | null> {
 	const timer = databaseResponseTimeHistogram.startTimer();
 	try {
+		const lastBatch = await StickerBatch.findOne({
+			vendorId: new mongoose.Types.ObjectId(payload.vendorId),
+		})
+			.sort({ startSequence: -1 })
+			.lean()
+			.exec();
+		if (lastBatch && payload.startSequence <= lastBatch.endSequence) {
+			throw new Error(
+				`Batch start sequence ${payload.startSequence} must continue after the vendor's last batch end sequence ${lastBatch.endSequence}`,
+			);
+		}
+
 		const quantity = payload.endSequence - payload.startSequence + 1;
 		const doc = await new StickerBatch({
 			vendorId: new mongoose.Types.ObjectId(payload.vendorId),

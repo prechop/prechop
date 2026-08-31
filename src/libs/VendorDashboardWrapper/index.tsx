@@ -45,6 +45,11 @@ interface IncomingOrder {
   totalKobo: number;
   createdAt?: string;
   items: Array<{ snapshotName: string; quantity: number }>;
+  dailyOrderTitle?: string | null;
+  dailyOrderMode?: "A" | "B" | null;
+  deliveryWindowId?: string | null;
+  batchId?: string | null;
+  scheduledDate?: string | null;
 }
 
 function shortIncomingOrderRef(orderNumber: string): string {
@@ -876,6 +881,7 @@ export default function VendorDashboardWrapper() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [greeting, setGreeting] = useState("");
+  const [batchesLoading, setBatchesLoading] = useState(false);
 
   const {
     data: vendor,
@@ -901,6 +907,20 @@ export default function VendorDashboardWrapper() {
   // access gate, and requiring it here would strand a just-approved vendor on
   // the onboarding screen with no way to add menu items.
   const isActive = vendor?.status === "ACTIVE";
+
+  const {
+    data: todayBatches,
+    mutate: mutateTodayBatches,
+  } = useSWR<{ batches: Array<{
+    window: { _id: string; mealTime: string; name?: string; orderWindowStart: string; orderWindowEnd: string; deliveryWindowStart: string; deliveryWindowEnd: string; capacity: number };
+    batch: { _id?: string } | null;
+    capacity: { reservedQuantity: number; remainingQuantity: number };
+    status: "open" | "paused" | "closed" | "full";
+    paused: boolean;
+  }> }>(
+    isActive ? "/vendor/daily-orders/today/pause" : null,
+    fetcher,
+  );
 
   // Unfiltered fetch backs the stat cards + the "current active order" incoming
   // panel, so those summaries stay stable regardless of the list filter below.
@@ -1058,6 +1078,28 @@ export default function VendorDashboardWrapper() {
     setDebouncedSearch("");
     setFromDate("");
     setToDate("");
+  }
+
+  async function toggleBatchPause(windowId: string, action: "pause" | "resume", orderWindowEnd: string) {
+    setBatchesLoading(true);
+    try {
+      await api.post("/vendor/daily-orders/today/pause", { windowId, action });
+      await mutateTodayBatches();
+      toast(
+        action === "pause"
+          ? "Batch paused for today"
+          : "Batch resumed",
+        "success",
+      );
+    } catch (e: unknown) {
+      const message =
+        (e as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ??
+        (e instanceof Error ? e.message : "Something went wrong");
+      toast(message, "error");
+    } finally {
+      setBatchesLoading(false);
+    }
   }
 
   if (isLoading || !vendor) return <PageLoader />;
@@ -1415,6 +1457,78 @@ export default function VendorDashboardWrapper() {
             <span aria-hidden>＋</span> New daily order
           </NewButton>
 
+          <SectionHeader title="Today's batches" icon="🏷️" />
+          {!todayBatches?.batches?.length ? (
+            <Text $muted $size={13}>
+              No active delivery windows for today. Configure delivery windows to
+              start accepting batch orders.
+            </Text>
+          ) : (
+            <Stack $gap={8}>
+              {todayBatches.batches.map((b) => {
+                const isPaused = b.status === "paused";
+                const isClosed = b.status === "closed";
+                const isFull = b.status === "full";
+                const disabled = isPaused || isClosed || isFull;
+                const statusLabel =
+                  b.status === "open"
+                    ? "Open"
+                    : b.status === "paused"
+                      ? "Paused for today"
+                      : b.status === "closed"
+                        ? "Closed"
+                        : "Fully booked";
+                return (
+                  <Card key={b.window._id}>
+                    <Row $justify="space-between" $gap={10} $wrap>
+                      <Stack $gap={2} style={{ minWidth: 0, flex: 1 }}>
+                        <Text $weight={700}>
+                          {b.window.name || `${b.window.mealTime} · Window`}
+                        </Text>
+                        <Text $muted $size={12}>
+                          {b.window.orderWindowStart} – {b.window.orderWindowEnd}{" "}
+                          (order) · {b.window.deliveryWindowStart} –{" "}
+                          {b.window.deliveryWindowEnd} (delivery)
+                        </Text>
+                        <Text $muted $size={12}>
+                          {b.capacity.reservedQuantity} booked ·{" "}
+                          {b.capacity.remainingQuantity} left of {b.window.capacity}
+                        </Text>
+                      </Stack>
+                      <Row $gap={8}>
+                        <Badge
+                          $tone={
+                            b.status === "open"
+                              ? "success"
+                              : "muted"
+                          }
+                        >
+                          {statusLabel}
+                        </Badge>
+                        {!isClosed && (
+                          <Button
+                            $size="sm"
+                            $variant={isPaused ? "primary" : "secondary"}
+                            disabled={batchesLoading}
+                            onClick={() =>
+                              toggleBatchPause(
+                                b.window._id,
+                                isPaused ? "resume" : "pause",
+                                b.window.orderWindowEnd,
+                              )
+                            }
+                          >
+                            {isPaused ? "Resume" : "Pause"}
+                          </Button>
+                        )}
+                      </Row>
+                    </Row>
+                  </Card>
+                );
+              })}
+            </Stack>
+          )}
+
           <SectionHeader title="Quick actions" />
           <QuickActionsGrid>
             <QuickActionLink href="/menu">
@@ -1483,6 +1597,9 @@ export default function VendorDashboardWrapper() {
                         {o.items.reduce((n, it) => n + it.quantity, 0) === 1
                           ? ""
                           : "s"}
+                        {o.dailyOrderTitle
+                          ? ` · ${o.dailyOrderMode === "A" ? "⚡ Batch" : "📅"} ${o.dailyOrderTitle}`
+                          : ""}
                       </IncomingMeta>
                     </IncomingLeft>
                     <IncomingRight>

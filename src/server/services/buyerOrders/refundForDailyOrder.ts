@@ -1,4 +1,5 @@
 import {
+	getDailyOrderByIdDB,
 	getPaymentByOrderIdDB,
 	listBuyerOrdersByVendorAndDailyOrderDB,
 	markBuyerOrderCancelledDB,
@@ -6,6 +7,7 @@ import {
 	OrderStatus,
 } from "../../models";
 import { refundBuyerOrder } from "../payments/refundBuyerOrder";
+import { releaseBatchCapacity } from "../deliveryWindows/batches";
 import { releaseSlots } from "./slots";
 
 /**
@@ -22,6 +24,15 @@ export async function refundOrdersForDailyOrder({
 	dailyOrderId: string;
 	reason?: string;
 }): Promise<{ refunded: number; failed: number }> {
+	const dailyOrder = await getDailyOrderByIdDB({ id: dailyOrderId });
+	const batchWindowId = dailyOrder?.deliveryWindowId;
+	const batchDate = dailyOrder?.scheduledDate;
+	const batchMode = dailyOrder?.mode;
+	const totalQty = dailyOrder?.items.reduce(
+		(sum, it) => sum + (it.maxQuantity ?? 1),
+		0,
+	);
+
 	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
 		vendorId,
 		dailyOrderId,
@@ -65,8 +76,24 @@ export async function refundOrdersForDailyOrder({
 			);
 		}
 	}
+
+	if (
+		batchWindowId &&
+		batchDate &&
+		batchMode === "A" &&
+		totalQty &&
+		totalQty > 0
+	) {
+		await releaseBatchCapacity({
+			windowId: batchWindowId,
+			date: new Date(batchDate),
+			quantity: totalQty,
+			orderId: dailyOrderId,
+		});
+	}
+
 	return { refunded, failed };
-}
+};
 
 export async function expireExternalPaymentOrdersForDailyOrder({
 	vendorId,
@@ -77,6 +104,15 @@ export async function expireExternalPaymentOrdersForDailyOrder({
 	dailyOrderId: string;
 	reason?: string;
 }): Promise<number> {
+	const dailyOrder = await getDailyOrderByIdDB({ id: dailyOrderId });
+	const batchWindowId = dailyOrder?.deliveryWindowId;
+	const batchDate = dailyOrder?.scheduledDate;
+	const batchMode = dailyOrder?.mode;
+	const totalQty = dailyOrder?.items.reduce(
+		(sum, it) => sum + (it.maxQuantity ?? 1),
+		0,
+	);
+
 	const orders = await listBuyerOrdersByVendorAndDailyOrderDB({
 		vendorId,
 		dailyOrderId,
@@ -101,5 +137,21 @@ export async function expireExternalPaymentOrdersForDailyOrder({
 		);
 		expired += 1;
 	}
+
+	if (
+		batchWindowId &&
+		batchDate &&
+		batchMode === "A" &&
+		totalQty &&
+		totalQty > 0
+	) {
+		await releaseBatchCapacity({
+			windowId: batchWindowId,
+			date: new Date(batchDate),
+			quantity: totalQty,
+			orderId: dailyOrderId,
+		});
+	}
+
 	return expired;
 }

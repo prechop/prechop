@@ -39,12 +39,24 @@ export async function buildSnapshotItems({
 	vendorId: string;
 	items: DailyOrderItemInput[];
 }): Promise<IDailyOrderItemInput[]> {
+	const { items: resolved } = await buildSnapshotItemsWithMealTimes({
+		vendorId,
+		items,
+	});
+	return resolved;
+}
+
+export async function buildSnapshotItemsWithMealTimes({
+	vendorId,
+	items,
+}: {
+	vendorId: string;
+	items: DailyOrderItemInput[];
+}): Promise<{ items: IDailyOrderItemInput[]; marketplaceCategories: string[] }> {
 	const ids = items.map((it) => it.menuItemId);
 	const menuItems = await getMenuItemsByIdsDB({ ids });
 	const byId = new Map(menuItems.map((m) => [(m.id ?? m._id).toString(), m]));
 
-	// Pre-load every library group referenced by the selected items (for
-	// auto-resolve), scoped to this vendor so cross-vendor ids are ignored.
 	const referencedGroupIds = Array.from(
 		new Set(
 			items.flatMap((it) => {
@@ -60,7 +72,10 @@ export async function buildSnapshotItems({
 		libraryGroups.map((g) => [(g.id ?? g._id).toString(), g]),
 	);
 
-	return items.map((it) => {
+	const seen = new Set<string>();
+	const marketplaceCategories: string[] = [];
+
+	const resolvedItems = items.map((it) => {
 		const menuItem = byId.get(it.menuItemId);
 		if (!menuItem) throw notFound("Menu item");
 		if (menuItem.vendorId.toString() !== vendorId) throw ErrForbidden;
@@ -86,6 +101,13 @@ export async function buildSnapshotItems({
 					.filter((g): g is IOptionGroup => Boolean(g))
 					.map(groupFromLibrary);
 
+		for (const mealTime of menuItem.mealTimes ?? []) {
+			if (!seen.has(mealTime)) {
+				seen.add(mealTime);
+				marketplaceCategories.push(mealTime);
+			}
+		}
+
 		return {
 			menuItemId: (menuItem.id ?? menuItem._id).toString(),
 			category: menuItem.category,
@@ -107,4 +129,6 @@ export async function buildSnapshotItems({
 			optionGroups,
 		};
 	});
+
+	return { items: resolvedItems, marketplaceCategories };
 }

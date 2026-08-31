@@ -5,10 +5,6 @@ export interface ITimetableEntryCreateInput {
 	menuItemId: string;
 	dayOfWeek: DayOfWeek;
 	isOpen?: boolean;
-	orderStartTime?: string;
-	cutoffTime?: string;
-	cookingStartTime?: string;
-	readyDeliveryStartTime?: string;
 	plannedMenu?: string;
 }
 
@@ -19,10 +15,6 @@ export interface ITimetableEntry {
 	menuItemId: string;
 	dayOfWeek: DayOfWeek;
 	isOpen: boolean;
-	orderStartTime?: string;
-	cutoffTime?: string;
-	cookingStartTime?: string;
-	readyDeliveryStartTime?: string;
 	plannedMenu?: string;
 	createdAt: Date;
 	updatedAt: Date;

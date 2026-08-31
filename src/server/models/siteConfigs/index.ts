@@ -113,6 +113,12 @@ const schema = new mongoose.Schema<any>(
 			type: Boolean,
 			default: DEFAULT_SITE_CONFIGS.paymentsKillSwitch,
 		},
+		platformMode: {
+			type: String,
+			enum: ["MARKETPLACE", "SINGLE_KITCHEN"],
+			default: DEFAULT_SITE_CONFIGS.platformMode,
+		},
+		singleKitchenVendorId: { type: String },
 		profileCompletenessRequired: {
 			type: Number,
 			default: DEFAULT_SITE_CONFIGS.profileCompletenessRequired,

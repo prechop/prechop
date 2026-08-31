@@ -54,11 +54,14 @@ export enum MenuCategory {
 	DRINKS = "DRINKS",
 }
 
-export enum MarketplaceCategory {
+export enum MealTime {
 	BREAKFAST = "BREAKFAST",
 	LUNCH = "LUNCH",
 	DINNER = "DINNER",
 }
+
+/** @deprecated Use `MealTime`. Kept for backward compatibility during transition. */
+export const MarketplaceCategory = MealTime;
 
 export enum DailyOrderStatus {
 	DRAFT = "DRAFT",

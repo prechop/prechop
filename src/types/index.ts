@@ -37,6 +37,7 @@ export interface MenuItem {
 	isSoldOut: boolean;
 	displayOrder: number;
 	optionGroupIds: string[];
+	mealTimes?: string[];
 }
 
 export interface MenuItemVariant {
@@ -129,6 +130,9 @@ export interface VendorProfile {
 	featureWeeklyBreakfastPlan?: boolean;
 	featureDelivery?: boolean;
 	featurePickup?: boolean;
+	breakfastEnabled?: boolean;
+	lunchEnabled?: boolean;
+	dinnerEnabled?: boolean;
 	deliveryCoverageType?: string;
 	deliveryLocations?: string[];
 }
@@ -199,6 +203,26 @@ export interface DailyOrder {
 	activeBuyerOrdersCount?: number;
 	items: DailyOrderItem[];
 	marketplaceCategories?: string[];
+	mode?: "A" | "B";
+	deliveryWindowId?: string;
+	batchId?: string;
+	pausedForToday?: boolean;
+	availableBatches?: Array<{
+		window: {
+			_id: string;
+			name?: string;
+			mealTime: string;
+			orderWindowStart: string;
+			orderWindowEnd: string;
+			deliveryWindowStart: string;
+			deliveryWindowEnd: string;
+			capacity: number;
+		};
+		batch: { _id?: string } | null;
+		capacity: { reservedQuantity: number; remainingQuantity: number };
+		status: "open" | "paused" | "closed" | "full";
+		paused: boolean;
+	}>;
 	/** True on the public listing response when the signed-in caller owns it. */
 	isOwnListing?: boolean;
 	/** On the public listing response: is the vendor currently accepting orders? */
@@ -247,12 +271,16 @@ export interface PublicVendor {
 	featureWeeklyBreakfastPlan?: boolean;
 	featureDelivery?: boolean;
 	featurePickup?: boolean;
+	breakfastEnabled?: boolean;
+	lunchEnabled?: boolean;
+	dinnerEnabled?: boolean;
 }
 
 export interface VendorStorefront {
 	vendor: PublicVendor;
 	listings: DailyOrder[];
 	menu: MenuItem[];
+	mealTimes: string[];
 }
 
 export interface MarketplaceVendor {
@@ -639,4 +667,19 @@ export interface FeedItem {
 	createdAt: string;
 	scheduledDate?: string;
 	cutoffTime?: string;
+}
+
+export interface DeliveryWindow {
+	id: string;
+	vendorId: string;
+	name: string;
+	mealTime: "BREAKFAST" | "LUNCH" | "DINNER";
+	orderWindowStart: string;
+	orderWindowEnd: string;
+	deliveryWindowStart: string;
+	deliveryWindowEnd: string;
+	capacity: number;
+	active: boolean;
+	createdAt: string;
+	updatedAt: string;
 }

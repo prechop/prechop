@@ -1,6 +1,6 @@
 import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { nairaToKobo, validationError } from "@/server/constants";
-import { createMenuItemDB, type MenuCategory } from "@/server/models";
+import { createMenuItemDB, type MenuCategory, type MealTime } from "@/server/models";
 import {
 	recomputeVendorCompleteness,
 	resolveVendorByUserId,
@@ -19,6 +19,7 @@ export async function createMenuItem({
 	estimatedPrepMin,
 	displayOrder,
 	optionGroupIds,
+	mealTimes,
 }: {
 	userId: string;
 	name: string;
@@ -35,6 +36,7 @@ export async function createMenuItem({
 	estimatedPrepMin?: number;
 	displayOrder?: number;
 	optionGroupIds?: string[];
+	mealTimes?: MealTime[];
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
@@ -66,6 +68,7 @@ export async function createMenuItem({
 				vendorId,
 				optionGroupIds,
 			}),
+			mealTimes,
 		},
 	});
 

@@ -1,6 +1,6 @@
 import { z as zod } from "zod";
 import { validationError } from "@/server/constants";
-import { MenuCategory } from "@/server/models";
+import { MenuCategory, MealTime } from "@/server/models";
 
 const SUPPORTED_IMAGE_MIME_TYPES = [
 	"image/jpeg",
@@ -84,6 +84,10 @@ export const createMenuItemSchema = zod
 			.min(0, "Display order must be zero or greater.")
 			.optional(),
 		optionGroupIds: zod.array(zod.string().trim().min(1)).optional(),
+		mealTimes: zod
+			.array(zod.enum(MealTime))
+			.min(1, "Select at least one meal time.")
+			.optional(),
 	})
 	.strict();
 
@@ -124,6 +128,7 @@ export const updateMenuItemSchema = zod
 			.min(0, "Display order must be zero or greater.")
 			.optional(),
 		optionGroupIds: zod.array(zod.string().trim().min(1)).optional(),
+		mealTimes: zod.array(zod.enum(MealTime)).optional(),
 	})
 	.strict();
 

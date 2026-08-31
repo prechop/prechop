@@ -176,15 +176,9 @@ export default function RootLayout({
 			className={`${jakarta.variable} ${bricolage.variable}`}
 			suppressHydrationWarning
 		>
-			<head>
-				<link rel="apple-touch-icon" href="/dark.png" />
-				<style>{`html,body{background:#FFF6EC}:root[data-theme="dark"] body{background:#14100C}`}</style>
-				<script
-					dangerouslySetInnerHTML={{
-						__html: `(function(){try{var t=localStorage.getItem('pc-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
-					}}
-				/>
-				{/* Structured data for Google */}
+		<head>
+			<link rel="apple-touch-icon" href="/dark.png" />
+			{/* Structured data for Google */}
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{

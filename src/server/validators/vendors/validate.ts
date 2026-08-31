@@ -247,6 +247,9 @@ export const vendorFeatureSettingsSchema = zod
 		weeklyBreakfastPlan: zod.boolean().optional(),
 		delivery: zod.boolean().optional(),
 		pickup: zod.boolean().optional(),
+		breakfastEnabled: zod.boolean().optional(),
+		lunchEnabled: zod.boolean().optional(),
+		dinnerEnabled: zod.boolean().optional(),
 	})
 	.strict();
 

@@ -1,4 +1,4 @@
-import type { MenuCategory } from "../enums";
+import type { MenuCategory, MealTime } from "../enums";
 
 export interface IMenuItemCreateInput {
 	vendorId: string;
@@ -12,6 +12,7 @@ export interface IMenuItemCreateInput {
 	estimatedPrepMin?: number;
 	displayOrder?: number;
 	optionGroupIds?: string[];
+	mealTimes?: MealTime[];
 }
 
 export interface IMenuItemVariantInput {
@@ -48,6 +49,7 @@ export interface IMenuItem {
 	isSoldOut: boolean;
 	displayOrder: number;
 	optionGroupIds: string[];
+	mealTimes?: MealTime[];
 	deleted: boolean;
 	createdAt: Date;
 	updatedAt: Date;

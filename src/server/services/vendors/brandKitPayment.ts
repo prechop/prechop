@@ -58,6 +58,14 @@ export async function confirmBrandKitReceipt({
 }): Promise<{ status: BrandKitFulfillmentStatus; receivedAt: Date }> {
 	const vendor = await getVendorProfileByUserIdDB({ userId });
 	if (!vendor) throw ErrVendorNotFound;
+	if (
+		vendor.brandKitFulfillmentStatus !==
+		BrandKitFulfillmentStatus.DELIVERED
+	) {
+		throw new Error(
+			"Your Brand Kit must be marked as delivered before confirming receipt.",
+		);
+	}
 	const receivedAt = new Date();
 	await updateVendorProfileDB({
 		id: vendor._id.toString(),

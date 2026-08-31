@@ -37,7 +37,8 @@ export type VendorStatusKind =
 	| "OPEN"
 	| "CLOSING_SOON"
 	| "OPENS_AT"
-	| "CLOSED_TODAY";
+	| "CLOSED_TODAY"
+	| "PAUSED_TODAY";
 
 export type ClosedReason = "VENDOR_CLOSED" | "NO_LISTINGS" | "PAST_CUTOFF";
 
@@ -49,6 +50,8 @@ export interface StatusListing {
 	/** Ordering opens at this time. Absent ⇒ orderable from publish. */
 	availableFrom?: string | Date | null;
 	cutoffTime: string | Date;
+	pausedForToday?: boolean;
+	mode?: "A" | "B";
 }
 
 export interface VendorStatus {
@@ -75,7 +78,8 @@ const RANK: Record<VendorStatusKind, number> = {
 	OPEN: 0,
 	CLOSING_SOON: 1,
 	OPENS_AT: 2,
-	CLOSED_TODAY: 3,
+	PAUSED_TODAY: 3,
+	CLOSED_TODAY: 4,
 };
 
 function toDate(v: string | Date | null | undefined): Date | undefined {
@@ -117,6 +121,19 @@ function closed(reason: ClosedReason): VendorStatus {
 	};
 }
 
+function paused(): VendorStatus {
+	return {
+		kind: "PAUSED_TODAY",
+		label: "Paused for today",
+		compactLabel: "Paused",
+		glyph: "⏸",
+		tone: "muted",
+		orderable: false,
+		minutesToCutoff: 0,
+		description: "Paused for today — check back later",
+	};
+}
+
 /**
  * Resolve a single listing's status.
  * `vendorOpen === false` forces CLOSED_TODAY, matching server enforcement.
@@ -132,13 +149,15 @@ export function resolveListingStatus(
 		return closed(
 			listing.status === "CLOSED" ? "PAST_CUTOFF" : "NO_LISTINGS",
 		);
+	if (listing.pausedForToday) return paused();
 
 	const cutoffAt = toDate(listing.cutoffTime);
 	if (!cutoffAt) return closed("NO_LISTINGS");
 	if (cutoffAt.getTime() <= now) return closed("PAST_CUTOFF");
 
+	const isBatchMode = listing.mode === "A";
 	const opensAt = toDate(listing.availableFrom);
-	if (opensAt && opensAt.getTime() > now) {
+	if (!isBatchMode && opensAt && opensAt.getTime() > now) {
 		const at = formatClock(opensAt);
 		return {
 			kind: "OPENS_AT",
@@ -177,14 +196,16 @@ export function resolveListingStatus(
 	const closingLabel = formatClosingCountdown(cutoffAt, now);
 	return {
 		kind: "OPEN",
-		label: closingLabel,
-		compactLabel: closingLabel,
+		label: isBatchMode ? `Pre-order · ${closingLabel}` : closingLabel,
+		compactLabel: isBatchMode ? `Pre-order · ${closingLabel}` : closingLabel,
 		glyph: "●",
 		tone: "success",
 		orderable: true,
 		cutoffAt,
 		minutesToCutoff,
-		description: `Open — ${closingLabel.toLowerCase()}`,
+		description: isBatchMode
+			? `Pre-order — choose your batch at checkout`
+			: `Open — ${closingLabel.toLowerCase()}`,
 	};
 }
 
@@ -272,16 +293,16 @@ const Pill = styled(Badge)<{ $kind: VendorStatusKind; $onHero?: boolean }>`
 	/* A second, non-colour channel: closed states read as outline-only, live
 	   states read as filled. Survives greyscale and colour-blind vision. */
 	border: 1px solid
-		${(p) => (p.$kind === "CLOSED_TODAY" ? "currentColor" : "transparent")};
-	color: ${(p) => TONE_INK[p.$tone as Tone] ?? "var(--pc-color-primary-ink)"};
+		${(p) => (p.$kind === "CLOSED_TODAY" || p.$kind === "PAUSED_TODAY" ? "currentColor" : "transparent")};
 	${(p) =>
-		p.$onHero &&
-		/* A white wash over --pc-gradient-hero is illegible at the gold stop
-		   (#fff on an 18% white scrim over #F4B400 measures 1.66:1). A dark
-		   scrim carries #fff at 7.39:1 against the worst stop. */
-		`background: var(--pc-scrim-on-hero);
-		 color: #fff;
-		 border-color: var(--pc-scrim-on-hero-border);`}
+		p.$kind === "PAUSED_TODAY"
+			? "background: transparent;"
+			: p.$onHero
+				? `background: var(--pc-scrim-on-hero);
+				   color: #fff;
+				   border-color: var(--pc-scrim-on-hero-border);`
+				: ""}
+	color: ${(p) => TONE_INK[p.$tone as Tone] ?? "var(--pc-color-primary-ink)"};
 	white-space: nowrap;
 `;
 

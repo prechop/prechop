@@ -2,6 +2,7 @@ import { ErrForbidden, ErrOrderNotFound } from "../../constants";
 import {
 	FulfillmentType,
 	getBuyerOrderByIdDB,
+	getDailyOrderByIdDB,
 	getPaymentByOrderIdDB,
 	getRefundByPaymentIdDB,
 	getVendorProfileByIdDB,
@@ -140,5 +141,29 @@ export async function getIncomingVendorOrders({
 		vendorId: vendor._id.toString(),
 		limit,
 	});
-	return orders.map((order) => redactVendorDeliveryContact(order));
+	const dailyOrderIds = Array.from(
+		new Set(orders.map((o) => o.dailyOrderId.toString())),
+	);
+	const dailyOrders = await Promise.all(
+		dailyOrderIds.map((id) => getDailyOrderByIdDB({ id })),
+	);
+	const dailyOrderMap = new Map(
+		dailyOrders
+			.filter((d): d is NonNullable<typeof d> => !!d)
+			.map((d) => [d._id.toString(), d]),
+	);
+	return orders.map((order) => {
+		const dailyOrder = dailyOrderMap.get(order.dailyOrderId.toString());
+		const enriched = { ...order } as Record<string, unknown>;
+		if (dailyOrder) {
+			enriched.dailyOrderTitle = dailyOrder.title ?? null;
+			enriched.dailyOrderMode = dailyOrder.mode ?? null;
+			enriched.deliveryWindowId = dailyOrder.deliveryWindowId ?? null;
+			enriched.batchId = dailyOrder.batchId ?? null;
+			enriched.scheduledDate = dailyOrder.scheduledDate
+				? new Date(dailyOrder.scheduledDate).toISOString()
+				: null;
+		}
+		return redactVendorDeliveryContact(enriched);
+	});
 }

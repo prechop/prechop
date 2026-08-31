@@ -79,6 +79,10 @@ export interface IBuyerOrderCreateInput {
 	items: IBuyerOrderItem[];
 	// Delivery code assigned at order creation.
 	deliveryCode?: string;
+	// Referral attribution captured at order creation.
+	referralCreatorUserId?: string;
+	referralIpHash?: string;
+	referralDeviceId?: string;
 }
 
 export interface IBuyerOrder {
@@ -190,6 +194,10 @@ export interface IBuyerOrder {
 	receiptStatus?: ReceiptStatus;
 	// Delivery code assigned at order creation (e.g. "CHI1001").
 	deliveryCode?: string;
+	// Referral attribution captured at order creation.
+	referralCreatorUserId?: string;
+	referralIpHash?: string;
+	referralDeviceId?: string;
 	// Vendor marked the order as sent for delivery.
 	sentForDeliveryAt?: Date;
 	// Buyer confirmed physical receipt of the order.

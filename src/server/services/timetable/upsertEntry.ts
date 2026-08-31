@@ -10,10 +10,6 @@ interface EntryInput {
 	menuItemId: string;
 	dayOfWeek: DayOfWeek;
 	isOpen: boolean;
-	orderStartTime?: string;
-	cutoffTime?: string;
-	cookingStartTime?: string;
-	readyDeliveryStartTime?: string;
 	plannedMenu?: string;
 }
 
@@ -34,10 +30,6 @@ export async function upsertTimetableEntry({
 	menuItemId,
 	dayOfWeek,
 	isOpen,
-	orderStartTime,
-	cutoffTime,
-	cookingStartTime,
-	readyDeliveryStartTime,
 	plannedMenu,
 }: {
 	userId: string;
@@ -52,10 +44,6 @@ export async function upsertTimetableEntry({
 		menuItemId,
 		dayOfWeek,
 		isOpen,
-		orderStartTime,
-		cutoffTime,
-		cookingStartTime,
-		readyDeliveryStartTime,
 		plannedMenu,
 	});
 }
@@ -82,10 +70,6 @@ export async function upsertTimetableEntries({
 				menuItemId: e.menuItemId,
 				dayOfWeek: e.dayOfWeek,
 				isOpen: e.isOpen,
-				orderStartTime: e.orderStartTime,
-				cutoffTime: e.cutoffTime,
-				cookingStartTime: e.cookingStartTime,
-				readyDeliveryStartTime: e.readyDeliveryStartTime,
 				plannedMenu: e.plannedMenu,
 			}),
 		),

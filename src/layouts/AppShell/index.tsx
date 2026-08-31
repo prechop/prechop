@@ -29,6 +29,7 @@ const vendorMobileNav = [
   { href: "/pipeline", label: "Orders", icon: "🔥" },
   { href: "/menu", label: "Menu", icon: "📋" },
   { href: "/vendor/store", label: "Store", icon: "🏪" },
+  { href: "/vendor/delivery-windows", label: "Delivery", icon: "🚚" },
   { href: "/vendor/more", label: "More", icon: "⋯" },
 ];
 const vendorDesktopNav = [
@@ -36,6 +37,7 @@ const vendorDesktopNav = [
   { href: "/pipeline", label: "Cooking", icon: "🔥" },
   { href: "/menu", label: "Menu", icon: "📋" },
   { href: "/timetable", label: "Timetable", icon: "🗓️" },
+  { href: "/vendor/delivery-windows", label: "Delivery", icon: "🚚" },
   { href: "/earnings", label: "Earnings", icon: "💰" },
   { href: "/vendor/followers", label: "Followers", icon: "👥" },
   { href: "/vendor/store", label: "Store", icon: "🏪" },
@@ -545,7 +547,11 @@ export default function AppShell({
     fetcher,
     { refreshInterval: 15_000, shouldRetryOnError: false },
   );
+  const { data: siteConfigs } = useSWR<{
+    platformMode?: "MARKETPLACE" | "SINGLE_KITCHEN";
+  }>("/site-configs/marketplace", fetcher, { shouldRetryOnError: false });
   const alertCount = alertData?.unread ?? 0;
+  const isSingleKitchen = siteConfigs?.platformMode === "SINGLE_KITCHEN";
 
   useEffect(() => {
     if (!publicAccess && !isLoading && !isAuthenticated) {
@@ -568,16 +574,25 @@ export default function AppShell({
   if (!publicAccess && !isAuthenticated) return <PageLoader full />;
 
   const isActiveVendor = vendor?.status === "ACTIVE";
+  const buyerNavBase = isSingleKitchen
+    ? [
+        { href: "/", label: "Kitchen", icon: "🍲" },
+        { href: "/my-orders", label: "Orders", icon: "🧾" },
+        { href: "/feed", label: "Feed", icon: "📰" },
+        { href: "/notifications", label: "Alerts", icon: "🔔" },
+        { href: "/account", label: "Account", icon: "👤" },
+      ]
+    : buyerNav;
   const nav = isVendor
     ? isActiveVendor
       ? vendorDesktopNav
       : vendorSetupNav
-    : buyerNav;
+    : buyerNavBase;
   const mobileNav = isVendor
     ? isActiveVendor
       ? vendorMobileNav
       : vendorSetupNav
-    : buyerNav;
+    : buyerNavBase;
   // Vendors can also shop as buyers (from other kitchens). The mode switcher
   // lets them cross between their selling area and the buyer marketplace; it is
   // hidden from plain buyers. Its state is derived from the current area, so it
@@ -593,7 +608,8 @@ export default function AppShell({
     if (label === "More") return pathname === "/vendor/more";
     if (label === "Notifications") return pathname === "/notifications";
     if (label === "Support") return pathname === "/help";
-    if (href === "/marketplace") return pathname === href && !savedView;
+    if (href === "/marketplace" || href === "/")
+      return (pathname === "/marketplace" || pathname === "/") && !savedView;
     return pathname.startsWith(href);
   };
 
@@ -610,7 +626,7 @@ export default function AppShell({
           </Brand>
           {!isVendor && (
             <NavRow aria-label="Buyer navigation">
-              {buyerNav.map((n) => {
+              {buyerNavBase.map((n) => {
                 const active = isNavActive(n.href, n.label);
                 return (
                   <TopLink
@@ -686,7 +702,7 @@ export default function AppShell({
             </Logo>
             Prechop
           </SidebarBrand>
-          {(isAuthenticated ? nav : [buyerNav[0]]).map((n) => (
+            {(isAuthenticated ? nav : [buyerNavBase[0]]).map((n) => (
             <SidebarLink
               key={n.href}
               href={n.href}
@@ -735,7 +751,7 @@ export default function AppShell({
         </MainInner>
       </Main>
       <BottomNav>
-        {(isAuthenticated ? mobileNav : [buyerNav[0]]).map((n) => (
+        {(isAuthenticated ? mobileNav : [buyerNavBase[0]]).map((n) => (
           <NavLink
             key={n.href}
             href={n.href}

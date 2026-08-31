@@ -2,7 +2,7 @@ import mongoose, { type ClientSession, type Model } from "mongoose";
 import { normalizeMenuCategory } from "@/constants/menuCategories";
 import { ErrMenuItemNotFound, MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
-import { MenuCategory, VendorStatus } from "../enums";
+import { MenuCategory, MealTime, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type { IMenuItem, IMenuItemCreateInput } from "./types";
 
@@ -53,6 +53,12 @@ const schema = new mongoose.Schema<any>(
 			type: [mongoose.Schema.Types.ObjectId],
 			ref: "optionGroups",
 			default: [],
+		},
+		mealTimes: {
+			type: [String],
+			enum: Object.values(MealTime),
+			default: [],
+			index: true,
 		},
 		deleted: { type: Boolean, default: false, select: false },
 	},

@@ -68,6 +68,37 @@ export const PATCH = withApiHandler(
 				return handleError(new Error("Vendor not found"));
 			}
 
+			const currentStatus =
+				vendor.brandKitFulfillmentStatus ??
+				BrandKitFulfillmentStatus.NOT_STARTED;
+			const allowedTransitions: Record<
+				BrandKitFulfillmentStatus,
+				BrandKitFulfillmentStatus[]
+			> = {
+				[BrandKitFulfillmentStatus.NOT_STARTED]: [
+					BrandKitFulfillmentStatus.PREPARING,
+				],
+				[BrandKitFulfillmentStatus.PREPARING]: [
+					BrandKitFulfillmentStatus.DISPATCHED,
+				],
+				[BrandKitFulfillmentStatus.DISPATCHED]: [
+					BrandKitFulfillmentStatus.DELIVERED,
+				],
+				[BrandKitFulfillmentStatus.DELIVERED]: [
+					BrandKitFulfillmentStatus.RECEIVED,
+				],
+				[BrandKitFulfillmentStatus.RECEIVED]: [],
+			};
+
+			const allowed = allowedTransitions[currentStatus] ?? [];
+			if (!allowed.includes(status)) {
+				return handleError(
+					new Error(
+						`Cannot transition fulfillment from ${currentStatus} to ${status}`,
+					),
+				);
+			}
+
 			const payload: Record<string, unknown> = {
 				brandKitFulfillmentStatus: status,
 			};

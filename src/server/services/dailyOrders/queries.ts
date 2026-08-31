@@ -16,7 +16,11 @@ import {
 	withSlotAvailability,
 	withSlotAvailabilityForListings,
 } from "../buyerOrders/slots";
-import { assertMarketplaceEnabled } from "../siteConfigs";
+import { assertMarketplaceEnabled, getSiteConfigs } from "../siteConfigs";
+import {
+	isBatchPausedForToday,
+	getTodaysBatches,
+} from "../deliveryWindows/batches";
 import {
 	comparePublicVendors,
 	publicRating,
@@ -63,6 +67,16 @@ function pickupLocation(
 			.map((part) => part?.trim())
 			.filter(Boolean)
 			.join(" · ") || null
+	);
+}
+
+async function isListingPausedForToday(
+	listing: IDailyOrder,
+): Promise<boolean> {
+	if (listing.mode !== "A" || !listing.deliveryWindowId) return false;
+	return isBatchPausedForToday(
+		listing.deliveryWindowId,
+		new Date(listing.scheduledDate),
 	);
 }
 
@@ -122,6 +136,7 @@ export async function getMarketplace({
 	followedVendorIds?: string[];
 }) {
 	await assertMarketplaceEnabled();
+	const configs = await getSiteConfigs();
 	let excludeVendorId: string | undefined;
 	if (viewerUserId) {
 		const vendor = await getVendorProfileByUserIdDB({
@@ -135,6 +150,10 @@ export async function getMarketplace({
 		limit,
 		offset,
 		excludeVendorId,
+		vendorId:
+			configs.platformMode === "SINGLE_KITCHEN"
+				? configs.singleKitchenVendorId
+				: undefined,
 	});
 	// One batched query for every vendor's active/public/still-open listings
 	// instead of one round-trip per vendor (was 61 queries for a 60-vendor feed
@@ -150,6 +169,9 @@ export async function getMarketplace({
 			now,
 		}),
 	);
+	for (const listing of listings) {
+		listing.pausedForToday = await isListingPausedForToday(listing);
+	}
 	const listingsByVendor = new Map<string, IDailyOrder[]>();
 	for (const listing of listings) {
 		const key = listing.vendorId.toString();
@@ -164,13 +186,6 @@ export async function getMarketplace({
 			listingsByVendor.get(vendor._id.toString()) ?? [];
 		return {
 			vendor: publicVendor,
-			// Stamp the vendor's trust/availability signals onto each
-			// listing. The feed is grouped by vendor, but cards are rendered
-			// (and can be re-sorted, filtered or flattened) per listing —
-			// without these a card has no way to show "Closed" or a rating
-			// except by walking back up to its parent, which the flattened
-			// views don't do. Rating is the *gated* value, so a
-			// sub-threshold score never crosses the wire here either.
 			listings: orderMarketplaceListingsForVendor(vendorListings).map(
 				(listing) => ({
 					...listing,
@@ -222,6 +237,14 @@ export async function getPublicDailyOrder({
 	const vendorTotalReviews = vendor?.totalReviews ?? 0;
 	const vendorRating = publicRating(vendor?.rating, vendorTotalReviews);
 	const orderWithAvailability = await withSlotAvailability(order);
+	const pausedForToday = await isListingPausedForToday(orderWithAvailability);
+	const availableBatches =
+		orderWithAvailability.mode === "A"
+			? await getTodaysBatches({
+					vendorId: orderWithAvailability.vendorId.toString(),
+					date: new Date(orderWithAvailability.scheduledDate),
+				})
+			: undefined;
 	return {
 		...orderWithAvailability,
 		deliveryContactPhone: undefined,
@@ -235,6 +258,8 @@ export async function getPublicDailyOrder({
 		vendorPhone: null,
 		vendorRating,
 		vendorTotalReviews,
+		pausedForToday,
+		availableBatches,
 	};
 }
 

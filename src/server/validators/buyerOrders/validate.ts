@@ -13,7 +13,9 @@ export const placeOrderBodySchema = zod
 		deliveryRoomNumber: zod.string().optional(),
 		deliveryAdditionalInfo: zod.string().optional(),
 		deliveryPhone: zod.string().trim().min(5).max(30).optional(),
+		deliveryWindowId: zod.string().min(1).optional(),
 		customerMessage: zod.string().trim().max(150).optional(),
+		referralToken: zod.string().trim().min(1).optional(),
 		items: zod
 			.array(
 				zod

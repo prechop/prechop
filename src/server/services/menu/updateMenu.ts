@@ -3,6 +3,7 @@ import { ErrMenuItemNotFound, nairaToKobo } from "@/server/constants";
 import {
 	type IMenuItem,
 	type MenuCategory,
+	type MealTime,
 	updateMenuItemDB,
 } from "@/server/models";
 import { resolveVendorByUserId, vendorIdOf } from "@/server/services/vendors";
@@ -20,6 +21,7 @@ export async function updateMenuItem({
 	estimatedPrepMin,
 	displayOrder,
 	optionGroupIds,
+	mealTimes,
 }: {
 	userId: string;
 	itemId: string;
@@ -37,6 +39,7 @@ export async function updateMenuItem({
 	estimatedPrepMin?: number;
 	displayOrder?: number;
 	optionGroupIds?: string[];
+	mealTimes?: MealTime[];
 }) {
 	const vendor = await resolveVendorByUserId({ userId });
 	const vendorId = vendorIdOf(vendor);
@@ -59,6 +62,7 @@ export async function updateMenuItem({
 	if (estimatedPrepMin !== undefined)
 		payload.estimatedPrepMin = estimatedPrepMin;
 	if (displayOrder !== undefined) payload.displayOrder = displayOrder;
+	if (mealTimes !== undefined) payload.mealTimes = mealTimes;
 	const resolvedGroupIds = await resolveOwnedOptionGroupIds({
 		vendorId,
 		optionGroupIds,

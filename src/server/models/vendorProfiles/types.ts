@@ -112,6 +112,9 @@ export interface IVendorProfile {
 	featureWeeklyBreakfastPlan?: boolean;
 	featureDelivery?: boolean;
 	featurePickup?: boolean;
+	breakfastEnabled?: boolean;
+	lunchEnabled?: boolean;
+	dinnerEnabled?: boolean;
 	// Delivery coverage.
 	deliveryCoverageType?: DeliveryCoverageType;
 	deliveryLocations?: string[];

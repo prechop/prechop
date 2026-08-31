@@ -35,6 +35,7 @@ import {
 } from "../notifications";
 import { issueRefund } from "../refunds";
 import { getSiteConfigs } from "../siteConfigs";
+import { creditReferralIfEligible } from "../referrals/credit";
 
 type CapacityCommitStatus =
 	| "CAPACITY_COMMITTED"
@@ -304,13 +305,29 @@ export async function finalizeSuccessfulPayment({
 				}
 			}
 		}
-		await incrementDailyOrderTotalCountDB({
-			dailyOrderId: paid.dailyOrderId.toString(),
-		});
-		await incrementVendorOrderCountDB({ id: paid.vendorId.toString() });
-		await commitSlots(slotHolds(paid), paid._id.toString());
+	await incrementDailyOrderTotalCountDB({
+		dailyOrderId: paid.dailyOrderId.toString(),
+	});
+	await incrementVendorOrderCountDB({ id: paid.vendorId.toString() });
+	await commitSlots(slotHolds(paid), paid._id.toString());
 
-		await notifyParties(paid);
+	if (paid.referralCreatorUserId && paid.referralIpHash) {
+		try {
+			await creditReferralIfEligible({
+				vendorId: paid.vendorId.toString(),
+				creatorUserId: paid.referralCreatorUserId,
+				referredUserId: paid.buyerId.toString(),
+				buyerOrderId: paid._id.toString(),
+				ip: paid.referralIpHash,
+				ipHash: paid.referralIpHash,
+				deviceId: paid.referralDeviceId,
+			});
+		} catch {
+			// Referral credit must not affect payment finalization.
+		}
+	}
+
+	await notifyParties(paid);
 
 		return {
 			received: true,

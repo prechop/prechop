@@ -48,10 +48,11 @@ import {
 	upsertSiteConfigsDB,
 	VendorStatus,
 } from "../src/server/models";
-import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 import {
+	BrandKitFulfillmentStatus,
 	BrandKitPaymentStatus,
 } from "../src/server/models/enums";
+import { getBuiltInGroupId, seedBuiltInIam } from "../src/server/services/iam";
 
 const SEED_ADMIN_PHONE = process.env.SEED_ADMIN_PHONE?.trim() || "08130135756";
 
@@ -196,14 +197,27 @@ async function backfillVendorShortIdsAndBrandKit(): Promise<void> {
 		const updates: Record<string, unknown> = {};
 
 		if (!vendor.vendorShortId) {
-			const shortId = generateUniqueShortId(vendor.businessName ?? "", usedShortIds);
+			const shortId = generateUniqueShortId(
+				vendor.businessName ?? "",
+				usedShortIds,
+			);
 			usedShortIds.add(shortId);
 			updates.vendorShortId = shortId;
 		}
 
 		if (vendor.brandKitPaymentStatus !== BrandKitPaymentStatus.PAID) {
 			updates.brandKitPaymentStatus = BrandKitPaymentStatus.PAID;
-			updates.brandKitPaidAt = new Date();
+			updates.brandKitPaidAt = vendor.brandKitPaidAt ?? new Date();
+		}
+
+		if (
+			vendor.brandKitFulfillmentStatus !==
+			BrandKitFulfillmentStatus.RECEIVED
+		) {
+			updates.brandKitFulfillmentStatus =
+				BrandKitFulfillmentStatus.RECEIVED;
+			updates.brandKitReceivedAt =
+				vendor.brandKitReceivedAt ?? new Date();
 		}
 
 		if (Object.keys(updates).length > 0) {
@@ -216,7 +230,7 @@ async function backfillVendorShortIdsAndBrandKit(): Promise<void> {
 	}
 
 	log(
-		`backfilled ${updated} active vendor(s) with short IDs and Brand Kit PAID status`,
+		`backfilled ${updated} active vendor(s) with short IDs and Brand Kit RECEIVED status`,
 	);
 }
 

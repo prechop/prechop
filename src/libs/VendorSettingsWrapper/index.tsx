@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import styled from "styled-components";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import {
   Avatar,
   Badge,
@@ -520,6 +520,9 @@ export default function VendorSettingsWrapper({
   const [featureWeeklyBreakfastPlan, setFeatureWeeklyBreakfastPlan] = useState(false);
   const [featureDelivery, setFeatureDelivery] = useState(false);
   const [featurePickup, setFeaturePickup] = useState(true);
+  const [breakfastEnabled, setBreakfastEnabled] = useState(true);
+  const [lunchEnabled, setLunchEnabled] = useState(true);
+  const [dinnerEnabled, setDinnerEnabled] = useState(true);
 
   // Delivery coverage
   const [deliveryCoverageType, setDeliveryCoverageType] = useState<"ANYWHERE" | "SPECIFIC">("SPECIFIC");
@@ -599,6 +602,9 @@ export default function VendorSettingsWrapper({
     setFeatureWeeklyBreakfastPlan(vendor.featureWeeklyBreakfastPlan ?? false);
     setFeatureDelivery(vendor.featureDelivery ?? false);
     setFeaturePickup(vendor.featurePickup ?? true);
+    setBreakfastEnabled(vendor.breakfastEnabled ?? true);
+    setLunchEnabled(vendor.lunchEnabled ?? true);
+    setDinnerEnabled(vendor.dinnerEnabled ?? true);
     setDeliveryCoverageType(
       (vendor.deliveryCoverageType as "ANYWHERE" | "SPECIFIC" | undefined) ??
         "SPECIFIC",
@@ -813,15 +819,25 @@ export default function VendorSettingsWrapper({
   }
 
   async function saveFeatureSettings() {
-    await run("features", async () => {
+    setBusy("features");
+    try {
       await api.patch("/vendors/me/feature-settings", {
         scheduleAhead: featureScheduleAhead,
         weeklyBreakfastPlan: featureWeeklyBreakfastPlan,
         delivery: featureDelivery,
         pickup: featurePickup,
+        breakfastEnabled,
+        lunchEnabled,
+        dinnerEnabled,
       });
+      await mutate();
+      await globalMutate("/vendors/me/feature-settings");
       toast("Feature settings saved", "success");
-    });
+    } catch (e) {
+      toast(errMsg(e), "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function saveDeliveryCoverage() {
@@ -859,7 +875,7 @@ export default function VendorSettingsWrapper({
   async function previewSticker() {
     await run("sticker-preview", async () => {
       const result = await api.post<{ data: { vendorName?: string; shortId?: string; exampleCode?: string; qrUrl?: string; storeUrl?: string } }>(
-        "/api/stickers/preview",
+        "/stickers/preview",
         {},
       );
       if (result.data?.data) {
@@ -1150,6 +1166,42 @@ export default function VendorSettingsWrapper({
               disabled={busy === "categories"}
               onClick={saveCategories}>
               Save categories
+            </Button>
+          </Stack>
+        </Card>
+
+        {/* Meal times */}
+        <Card>
+          <Stack $gap={14}>
+            <SectionHeader title="Meal times" icon="🍽️" />
+            <Text $muted $size={13}>
+              Choose which meal times your kitchen serves. Buyers will only
+              see tabs for the meal times you enable.
+            </Text>
+            <ToggleSetting
+              title="Breakfast"
+              hint="Offer breakfast items and delivery windows"
+              on={breakfastEnabled}
+              onToggle={() => setBreakfastEnabled((v) => !v)}
+            />
+            <ToggleSetting
+              title="Lunch"
+              hint="Offer lunch items and delivery windows"
+              on={lunchEnabled}
+              onToggle={() => setLunchEnabled((v) => !v)}
+            />
+            <ToggleSetting
+              title="Dinner"
+              hint="Offer dinner items and delivery windows"
+              on={dinnerEnabled}
+              onToggle={() => setDinnerEnabled((v) => !v)}
+            />
+            <Button
+              $loading={busy === "features"}
+              disabled={busy === "features"}
+              onClick={saveFeatureSettings}
+            >
+              Save meal times
             </Button>
           </Stack>
         </Card>
@@ -1658,6 +1710,29 @@ export default function VendorSettingsWrapper({
             </Row>
           </Stack>
         </Card>
+        )}
+
+        {/* Referral Campaign */}
+        {mode === "settings" && (
+          <Card>
+            <Stack $gap={10}>
+              <SectionHeader title="Referral campaign" icon="🎁" />
+              <Text $muted $size={13}>
+                Run an invite-and-earn campaign. Share a link, reward creators
+                when their referrals order, and grow your kitchen.
+              </Text>
+              <Row $justify="flex-start">
+                <Button
+                  as={Link}
+                  href="/vendor/settings/referral"
+                  $variant="primary"
+                  $size="sm"
+                >
+                  Manage referral campaign
+                </Button>
+              </Row>
+            </Stack>
+          </Card>
         )}
 
         {mode === "settings" && (

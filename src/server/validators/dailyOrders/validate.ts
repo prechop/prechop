@@ -97,6 +97,10 @@ export const createDailyOrderSchema = z
 		deliveryFeeKobo: z.number().int().nonnegative().optional(),
 		...deliveryFields,
 		draft: z.boolean().optional(),
+		mode: z.enum(["A", "B"]).optional(),
+		mealTime: z.enum(["BREAKFAST", "LUNCH", "DINNER"]).optional(),
+		deliveryWindowId: z.string().optional(),
+		batchId: z.string().optional(),
 		items: z.array(dailyOrderItemInputSchema).min(1),
 	})
 	.superRefine(requireDeliveryDetails);

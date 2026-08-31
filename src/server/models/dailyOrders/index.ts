@@ -2,7 +2,7 @@ import mongoose, { type ClientSession, type Model } from "mongoose";
 import { MAX_LIMIT } from "../../constants";
 import { databaseResponseTimeHistogram } from "../../metrics";
 import { VENDOR_ATTENTION_ORDER_STATUSES } from "../buyerOrders";
-import { DailyOrderStatus, MarketplaceCategory, VendorStatus } from "../enums";
+import { DailyOrderStatus, MealTime, VendorStatus } from "../enums";
 import { IOperationType } from "../utils";
 import type {
 	IDailyOrder,
@@ -116,10 +116,17 @@ const schema = new mongoose.Schema<any>(
 		items: { type: [itemSchema], default: [] },
 		marketplaceCategories: {
 			type: [String],
-			enum: Object.values(MarketplaceCategory),
+			enum: Object.values(MealTime),
 			default: [],
 			index: true,
 		},
+		mode: {
+			type: String,
+			enum: ["A", "B"],
+			default: "B",
+		},
+		deliveryWindowId: { type: String },
+		batchId: { type: String },
 		deleted: { type: Boolean, default: false, select: false },
 	},
 	{ timestamps: true },
@@ -299,6 +306,10 @@ export async function createDailyOrderDB({
 			deliveryContactPhone: payload.deliveryContactPhone,
 			deliveryResponsibilityAccepted:
 				payload.deliveryResponsibilityAccepted ?? false,
+			marketplaceCategories: payload.marketplaceCategories ?? [],
+			mode: payload.mode ?? "B",
+			deliveryWindowId: payload.deliveryWindowId,
+			batchId: payload.batchId,
 			items: mapItems(payload.items),
 		}).save({ session });
 		timer({
@@ -793,6 +804,8 @@ export async function updateDailyOrderDraftDB({
 		set.deliveryResponsibilityAccepted =
 			payload.deliveryResponsibilityAccepted;
 	}
+	if (payload.marketplaceCategories !== undefined)
+		set.marketplaceCategories = payload.marketplaceCategories;
 	const nextItems =
 		payload.items !== undefined ? mapItems(payload.items) : undefined;
 

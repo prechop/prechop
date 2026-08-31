@@ -87,12 +87,20 @@ export async function createDailyOrderFromTemplate({
 	);
 
 	const items: IDailyOrderItemInput[] = [];
+	const seenMealTimes = new Set<string>();
+	const marketplaceCategories: string[] = [];
 	for (const entry of todaysEntries) {
 		const menuItem = byId.get(entry.menuItemId.toString());
 		if (!menuItem) continue;
 		const inheritedVariants = [...(menuItem.variants ?? [])].sort(
 			(a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
 		);
+		for (const mealTime of menuItem.mealTimes ?? []) {
+			if (!seenMealTimes.has(mealTime)) {
+				seenMealTimes.add(mealTime);
+				marketplaceCategories.push(mealTime);
+			}
+		}
 		items.push({
 			menuItemId: (menuItem.id ?? menuItem._id).toString(),
 			snapshotName: menuItem.name,
@@ -145,6 +153,7 @@ export async function createDailyOrderFromTemplate({
 			deliveryResponsibilityAccepted:
 				input.deliveryResponsibilityAccepted,
 			items,
+			marketplaceCategories: marketplaceCategories as import("@/server/models").MealTime[],
 		},
 	});
 	if (!created) throw ErrForbidden;

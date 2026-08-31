@@ -179,14 +179,18 @@ export const updateSiteConfigsSchema = zod
 		profileCompletenessRequired: zod
 			.number()
 			.int()
-			.min(0)
-			.max(100)
-			.optional(),
-		deliveryLocations: zod
-			.array(zod.string().trim().min(1).max(120))
-			.optional(),
-	})
-	.strict();
+		.min(0)
+		.max(100)
+		.optional(),
+	deliveryLocations: zod
+		.array(zod.string().trim().min(1).max(120))
+		.optional(),
+	platformMode: zod
+		.enum(["MARKETPLACE", "SINGLE_KITCHEN"])
+		.optional(),
+	singleKitchenVendorId: zod.string().trim().min(1).optional(),
+})
+.strict();
 
 export const auditQuerySchema = zod
 	.object({

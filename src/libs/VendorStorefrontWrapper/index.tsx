@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
 	FiArrowLeft,
 	FiArrowRight,
@@ -850,6 +850,10 @@ const TimetableCard = styled(Card)`
   flex-direction: column;
   gap: 8px;
 `;
+const TimetableCardToday = styled(TimetableCard)`
+  border-color: color-mix(in srgb, var(--pc-color-accent) 60%, var(--pc-border));
+  background: color-mix(in srgb, var(--pc-color-accent) 8%, var(--pc-surface));
+`;
 const TimetableDay = styled.div`
   font-weight: 800;
   font-size: 13px;
@@ -944,6 +948,12 @@ function StorefrontListingCard({
 							)}
 							{listingFulfillment(listing)}
 						</MetaItem>
+						{listing.mode === "A" && (
+							<MetaItem>
+								<span aria-hidden>🏷️</span>
+								Batch #{listing.batchId?.slice(-4)}
+							</MetaItem>
+						)}
 					</CardFooter>
 					<CardActions>
 						<OrderCta
@@ -999,6 +1009,9 @@ export default function VendorStorefrontWrapper({
 	const savedKitchens = useSavedKitchens();
 	const savedListings = useSavedListings();
 	const [followLoading, setFollowLoading] = useState(false);
+	const [selectedMealTime, setSelectedMealTime] = useState<string | null>(
+		null,
+	);
 	const { data: availability, isLoading: availabilityLoading } =
 		useSWR<MarketplaceAvailability>("/site-configs/marketplace", fetcher, {
 			refreshInterval: 10_000,
@@ -1029,14 +1042,22 @@ export default function VendorStorefrontWrapper({
 				description?: string;
 				priceKobo: number;
 				imageUrl?: string;
+				mealTimes?: string[];
 			} | null;
 		}>
-	>(
-		marketplaceEnabled
-			? `/api/timetable/public/${vendorId}`
-			: null,
-		fetcher,
-	);
+	>(marketplaceEnabled ? `/timetable/public/${vendorId}` : null, fetcher);
+	const todayValue = useMemo(() => {
+		const days = [
+			"SUNDAY",
+			"MONDAY",
+			"TUESDAY",
+			"WEDNESDAY",
+			"THURSDAY",
+			"FRIDAY",
+			"SATURDAY",
+		];
+		return days[new Date().getDay()];
+	}, []);
 	const followKey = `/vendors/${vendorId}/follow`;
 	const { data: followStatus } = useSWR<{ followed: boolean }>(
 		isAuthenticated && !authLoading && vendorId ? followKey : null,
@@ -1085,13 +1106,32 @@ export default function VendorStorefrontWrapper({
 		);
 	}
 
-	const { vendor, listings, menu } = data;
+	const { vendor, listings, menu, mealTimes: windowMealTimes } = data;
 	const cookingItems = listings.flatMap((listing) =>
 		listing.items.map((item) => ({ listing, item })),
 	);
 	const vendorName = vendor.businessName ?? "Campus kitchen";
 	const reviews = reviewData?.reviews ?? [];
 	const isVerified = vendor.hasVerificationDocuments;
+
+	const mealTimes = Array.from(
+		new Set([
+			...(cookingItems
+				.flatMap(({ listing }) => listing.marketplaceCategories ?? [])
+				.filter(Boolean) as string[]),
+			...(windowMealTimes ?? []),
+		]),
+	).filter((mt) => {
+		if (mt === "BREAKFAST") return vendor.breakfastEnabled !== false;
+		if (mt === "LUNCH") return vendor.lunchEnabled !== false;
+		if (mt === "DINNER") return vendor.dinnerEnabled !== false;
+		return true;
+	});
+	const visibleMealTime =
+		selectedMealTime && mealTimes.includes(selectedMealTime)
+			? selectedMealTime
+			: null;
+	const visibleCookingItems = cookingItems;
 
 	const kitchenSaved = savedKitchens.saved.has(vendor.id);
 	const isFollowing = !!followStatus?.followed;
@@ -1312,15 +1352,47 @@ export default function VendorStorefrontWrapper({
 							View all <FiChevronRight aria-hidden />
 						</ViewAllLink>
 					</SectionTop>
-					{cookingItems.length === 0 ? (
+
+					{mealTimes.length > 1 ? (
+						<PillRow>
+							{mealTimes.map((mt) => (
+								<Button
+									key={mt}
+									$size="sm"
+									$variant={
+										selectedMealTime === mt
+											? "primary"
+											: "secondary"
+									}
+									onClick={() =>
+										setSelectedMealTime(
+											selectedMealTime === mt ? null : mt,
+										)
+									}
+								>
+									{mt}
+								</Button>
+							))}
+						</PillRow>
+					) : null}
+
+					{visibleCookingItems.length === 0 ? (
 						<EmptyState
 							icon="⏸️"
-							title="Nothing available right now"
-							description="Follow this kitchen to know when they’re cooking again."
+							title={
+								visibleMealTime
+									? `${visibleMealTime} is closed`
+									: "Nothing available right now"
+							}
+							description={
+								visibleMealTime
+									? `No ${visibleMealTime.toLowerCase()} listings are open right now. Check back later or browse other meal times.`
+									: "Follow this kitchen to know when they’re cooking again."
+							}
 						/>
 					) : (
 						<CookingList>
-							{cookingItems.map(({ listing, item }, i) => (
+							{visibleCookingItems.map(({ listing, item }, i) => (
 								<FadeIn
 									key={`${listing.id}-${item.id}`}
 									$delay={i * 45}
@@ -1357,49 +1429,108 @@ export default function VendorStorefrontWrapper({
 						/>
 					) : (
 						<TimetableGrid>
-							{["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"].map(
-								(day) => {
-									const entries = timetable.filter(
-										(e) => e.dayOfWeek === day && e.isOpen,
-									);
-									if (entries.length === 0) return null;
-									return (
-										<TimetableCard key={day}>
-											<TimetableDay>{day}</TimetableDay>
-											{entries.map((entry, i) => (
+							{[
+								"MONDAY",
+								"TUESDAY",
+								"WEDNESDAY",
+								"THURSDAY",
+								"FRIDAY",
+								"SATURDAY",
+								"SUNDAY",
+							].map((day) => {
+								const entries = timetable.filter(
+									(e) => e.dayOfWeek === day,
+								);
+								const isToday = day === todayValue;
+								const CardComponent = isToday
+									? TimetableCardToday
+									: TimetableCard;
+								return (
+									<CardComponent key={day}>
+										<TimetableDay>
+											<Row $gap={8} $align="center">
+												<span>{day}</span>
+												{isToday && (
+													<Badge $tone="primary">
+														Today
+													</Badge>
+												)}
+											</Row>
+										</TimetableDay>
+										{entries.length === 0 && (
+											<Text $size={14} $muted>
+												Nothing planned
+											</Text>
+										)}
+										{entries.map((entry) => {
+											const displayName =
+												entry.plannedMenu ||
+												entry.menuItem?.name;
+											if (!displayName) return null;
+											const mealTimes =
+												entry.menuItem?.mealTimes;
+											return (
 												<div key={entry._id}>
-													{entry.plannedMenu && (
-														<TimetableItem>
-															{entry.plannedMenu}
-														</TimetableItem>
-													)}
-													{entry.menuItem && (
-														<TimetableItem>
-															{entry.menuItem.name}
-														</TimetableItem>
-													)}
-													{(entry.orderStartTime || entry.cutoffTime) && (
+													<TimetableItem>
+														{displayName}
+													</TimetableItem>
+													{mealTimes &&
+														mealTimes.length >
+															0 && (
+															<Row $gap={6}>
+																{mealTimes.map(
+																	(mt) => (
+																		<Badge
+																			key={
+																				mt
+																			}
+																			$tone="muted"
+																		>
+																			{mt
+																				.charAt(
+																					0,
+																				)
+																				.toUpperCase() +
+																				mt
+																					.slice(
+																						1,
+																					)
+																					.toLowerCase()}
+																		</Badge>
+																	),
+																)}
+															</Row>
+														)}
+													{(entry.orderStartTime ||
+														entry.cutoffTime) && (
 														<TimetableTime>
 															{entry.orderStartTime &&
 																`Orders from ${entry.orderStartTime}`}
-															{entry.orderStartTime && entry.cutoffTime && " · "}
+															{entry.orderStartTime &&
+																entry.cutoffTime &&
+																" · "}
 															{entry.cutoffTime &&
 																`Cutoff ${entry.cutoffTime}`}
 														</TimetableTime>
 													)}
-													{(entry.cookingStartTime || entry.readyDeliveryStartTime) && (
+													{(entry.cookingStartTime ||
+														entry.readyDeliveryStartTime) && (
 														<TimetableTime>
-															{entry.cookingStartTime && `Cooking ${entry.cookingStartTime}`}
-															{entry.cookingStartTime && entry.readyDeliveryStartTime && " · "}
-															{entry.readyDeliveryStartTime && `Ready ${entry.readyDeliveryStartTime}`}
+															{entry.cookingStartTime &&
+																`Cooking ${entry.cookingStartTime}`}
+															{entry.cookingStartTime &&
+																entry.readyDeliveryStartTime &&
+																" · "}
+															{entry.readyDeliveryStartTime &&
+																`Ready ${entry.readyDeliveryStartTime}`}
 														</TimetableTime>
 													)}
 												</div>
-											))}
-										</TimetableCard>
-									);
-								},
-							)}
+											);
+										})}
+									</CardComponent>
+								);
+							})}
 						</TimetableGrid>
 					)}
 				</Stack>

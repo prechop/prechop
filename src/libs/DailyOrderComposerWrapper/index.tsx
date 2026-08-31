@@ -210,6 +210,15 @@ const SubmitAction = styled.div`
   min-width: 200px;
 `;
 
+const BatchCard = styled.div<{ $active?: boolean }>`
+  padding: var(--pc-space-3) var(--pc-space-4);
+  border-radius: var(--pc-radius);
+  border: 1px solid ${(p) => (p.$active ? "var(--pc-color-primary)" : "var(--pc-border)")};
+  background: ${(p) => (p.$active ? "var(--pc-color-primary-50)" : "var(--pc-surface)")};
+  cursor: pointer;
+  transition: all var(--pc-dur) var(--pc-ease);
+`;
+
 /* ── Post-publish share screen (#9) ─────────────────────────────────────── */
 const SuccessHero = styled(Card)`
   text-align: center;
@@ -326,6 +335,15 @@ export default function DailyOrderComposerWrapper({
 		fetcher,
 	);
 	const { data: vendor } = useSWR<VendorMe>("/vendors/me", fetcher);
+	const { data: featureSettings } = useSWR<{
+		scheduleAhead: boolean;
+		weeklyBreakfastPlan: boolean;
+		delivery: boolean;
+		pickup: boolean;
+		breakfastEnabled: boolean;
+		lunchEnabled: boolean;
+		dinnerEnabled: boolean;
+	}>("/vendors/me/feature-settings", fetcher);
 	// Edit mode: load the listing being edited so the form can hydrate from it.
 	const { data: editing, isLoading: editingLoading } = useSWR<DailyOrder>(
 		orderId ? `/daily-orders/my-orders/${orderId}` : null,
@@ -365,6 +383,45 @@ export default function DailyOrderComposerWrapper({
 	const [published, setPublished] = useState<Published | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [storeCopied, setStoreCopied] = useState(false);
+	const [modeTab, setModeTab] = useState<"BREAKFAST" | "LUNCH" | "DINNER" | "SCHEDULE_AHEAD">(
+		"SCHEDULE_AHEAD",
+	);
+
+	const breakfastEnabled = featureSettings?.breakfastEnabled ?? true;
+	const lunchEnabled = featureSettings?.lunchEnabled ?? true;
+	const dinnerEnabled = featureSettings?.dinnerEnabled ?? true;
+
+	const enabledMealTabs = [
+		breakfastEnabled && "BREAKFAST",
+		lunchEnabled && "LUNCH",
+		dinnerEnabled && "DINNER",
+	].filter(Boolean) as Array<"BREAKFAST" | "LUNCH" | "DINNER">;
+
+	useEffect(() => {
+		if (
+			!enabledMealTabs.includes(modeTab as "BREAKFAST" | "LUNCH" | "DINNER") &&
+			modeTab !== "SCHEDULE_AHEAD" &&
+			!isEdit
+		) {
+			setModeTab("SCHEDULE_AHEAD");
+		}
+	}, [enabledMealTabs, modeTab, isEdit]);
+	const [selectedBatch, setSelectedBatch] = useState<{
+		windowId: string;
+		batchId?: string;
+	} | null>(null);
+	const { data: batchesData } = useSWR<{ batches: Array<{
+		window: { _id: string; mealTime: string; name?: string; orderWindowStart: string; orderWindowEnd: string; deliveryWindowStart: string; deliveryWindowEnd: string; capacity: number };
+		batch: { _id?: string } | null;
+		capacity: { reservedQuantity: number; remainingQuantity: number };
+		status: "open" | "paused" | "closed" | "full";
+		paused: boolean;
+	}> }>(
+		modeTab !== "SCHEDULE_AHEAD"
+			? `/daily-orders/today-batches?mealTime=${modeTab}&all=true`
+			: null,
+		fetcher,
+	);
 
 	// Seed fulfilment toggles from the vendor's saved delivery defaults, once.
 	// Skipped when editing — there the existing listing's values win.
@@ -387,6 +444,69 @@ export default function DailyOrderComposerWrapper({
 			vendor.defaultDeliveryResponsibilityAccepted ?? false,
 		);
 	}, [isEdit, vendor]);
+
+	// Auto-select first available batch when today's batches load.
+	const batched = useRef(false);
+	const prevModeTab = useRef(modeTab);
+	useEffect(() => {
+		batched.current = false;
+		if (
+			prevModeTab.current === "SCHEDULE_AHEAD" &&
+			modeTab !== "SCHEDULE_AHEAD"
+		) {
+			setScheduledDate(defaultDate());
+			setSelectedBatch(null);
+		}
+		if (
+			prevModeTab.current !== "SCHEDULE_AHEAD" &&
+			modeTab === "SCHEDULE_AHEAD"
+		) {
+			setSelectedBatch(null);
+			setAvailableFrom(nowLocal());
+			setCutoff(defaultCutoff());
+		}
+		prevModeTab.current = modeTab;
+	}, [modeTab]);
+	useEffect(() => {
+		if (batched.current || !batchesData?.batches?.length) return;
+		const available = batchesData.batches.find(
+			(b) => b.status === "open" && b.capacity.remainingQuantity > 0,
+		);
+		if (available) {
+			setSelectedBatch({
+				windowId: available.window._id,
+				batchId: available.batch?._id,
+			});
+		}
+		batched.current = true;
+	}, [batchesData]);
+
+	// Sync availableFrom/cutoff with the selected batch window in batch mode.
+	useEffect(() => {
+		if (
+			modeTab === "SCHEDULE_AHEAD" ||
+			!selectedBatch ||
+			!batchesData?.batches
+		)
+			return;
+		const batch = batchesData.batches.find(
+			(b) => b.window._id === selectedBatch.windowId,
+		);
+		if (!batch) return;
+		const today = defaultDate();
+		const isOvernight =
+			batch.window.orderWindowEnd <= batch.window.orderWindowStart;
+		const year = Number(today.slice(0, 4));
+		const month = Number(today.slice(5, 7)) - 1;
+		const day = Number(today.slice(8, 10));
+		const base = new Date(year, month, day);
+		const endDate = isOvernight
+			? new Date(base.getTime() + 86400000)
+			: base;
+		const endDateStr = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}`;
+		setAvailableFrom(`${today}T${batch.window.orderWindowStart}`);
+		setCutoff(`${endDateStr}T${batch.window.orderWindowEnd}`);
+	}, [selectedBatch, modeTab, batchesData]);
 
 	// Hydrate the whole form from the listing being edited, once.
 	const hydrated = useRef(false);
@@ -503,7 +623,12 @@ export default function DailyOrderComposerWrapper({
 		);
 	}
 
-	const menuItems = (menu ?? []).filter((m) => m.isAvailable);
+	const menuItems = (menu ?? [])
+		.filter((m) => m.isAvailable)
+		.filter((m) => {
+			if (modeTab === "SCHEDULE_AHEAD") return true;
+			return (m.mealTimes ?? []).includes(modeTab);
+		});
 	const groupById = new Map((groupsData ?? []).map((g) => [g.id, g]));
 
 	/** Library option groups attached to a menu item, in attach order. */
@@ -694,43 +819,87 @@ export default function DailyOrderComposerWrapper({
 				return;
 			}
 		}
-		setBusy(true);
-		try {
-			const body = {
-				title: title.trim(),
-				scheduledDate: new Date(scheduledDate).toISOString(),
-				availableFrom: new Date(availableFrom).toISOString(),
-				cutoffTime: new Date(cutoff).toISOString(),
-				pickupAvailable: pickup,
-				deliveryAvailable: delivery,
-				deliveryFeeKobo: delivery
-					? Math.round(Number(deliveryFee) * 100)
-					: 0,
-				deliveryCoverage: delivery
-					? deliveryCoverage.trim()
-					: undefined,
-				deliveryEstimateMinutes: delivery
-					? Math.round(Number(deliveryEstimate))
-					: undefined,
-				deliveryContactPhone: delivery
-					? deliveryContact.trim()
-					: undefined,
-				deliveryResponsibilityAccepted: delivery
-					? deliveryAccepted
-					: false,
-				items,
-			};
-
-			if (isEdit) {
-				await api.patch(`/daily-orders/${orderId}`, body);
-				toast("Changes saved", "success");
-				router.push("/dashboard");
+		const isToday =
+			scheduledDate ===
+			defaultDate();
+		const isScheduleAhead = modeTab === "SCHEDULE_AHEAD";
+		if (isToday && !isScheduleAhead && !selectedBatch && !isEdit) {
+			toast(
+				"Select a delivery window batch for today's order.",
+				"error",
+			);
+			return;
+		}
+		if (isToday && !isScheduleAhead && selectedBatch && batchesData?.batches) {
+			const selected = batchesData.batches.find(
+				(b) => b.window._id === selectedBatch.windowId,
+			);
+			if (selected && selected.status !== "open") {
+				const messages: Record<string, string> = {
+					paused: "This batch is paused for today.",
+					closed: "This order window has ended.",
+					full: "This batch is fully booked.",
+				};
+				toast(
+					messages[selected.status] ??
+						"This batch is not available.",
+					"error",
+				);
 				return;
 			}
+		}
+		setBusy(true);
+		try {
+		const isToday =
+			scheduledDate ===
+			defaultDate();
 
-			const order = await apiData<DailyOrder>(
-				api.post("/daily-orders", { ...body, draft: false }),
-			);
+		const body: Record<string, unknown> = {
+			title: title.trim(),
+			scheduledDate: new Date(scheduledDate).toISOString(),
+			availableFrom: new Date(availableFrom).toISOString(),
+			cutoffTime: new Date(cutoff).toISOString(),
+			pickupAvailable: pickup,
+			deliveryAvailable: delivery,
+			deliveryFeeKobo: delivery
+				? Math.round(Number(deliveryFee) * 100)
+				: 0,
+			deliveryCoverage: delivery
+				? deliveryCoverage.trim()
+				: undefined,
+			deliveryEstimateMinutes: delivery
+				? Math.round(Number(deliveryEstimate))
+				: undefined,
+			deliveryContactPhone: delivery
+				? deliveryContact.trim()
+				: undefined,
+			deliveryResponsibilityAccepted: delivery
+				? deliveryAccepted
+				: false,
+			items,
+		};
+
+		const isScheduleAhead = modeTab === "SCHEDULE_AHEAD";
+
+		if (isToday && !isScheduleAhead) {
+			body.mode = "A";
+			body.mealTime = modeTab;
+			body.deliveryWindowId = selectedBatch?.windowId;
+			body.batchId = selectedBatch?.batchId;
+		} else {
+			body.mode = "B";
+		}
+
+		if (isEdit) {
+			await api.patch(`/daily-orders/${orderId}`, body);
+			toast("Changes saved", "success");
+			router.push("/dashboard");
+			return;
+		}
+
+		const order = await apiData<DailyOrder>(
+			api.post("/daily-orders", { ...body, draft: false }),
+		);
 			toast("Daily order posted", "success");
 			let storeSlug = vendor?.storeSlug;
 			if (!storeSlug) {
@@ -1024,81 +1193,134 @@ export default function DailyOrderComposerWrapper({
 				/>
 
 				<Card>
-					<Stack $gap={16}>
-						<SectionHeader title="Details" icon="📝" />
-						<Input
-							label="Title"
-							value={title}
-							onChange={(e) => setTitle(e.target.value)}
-							placeholder="Friday lunch specials"
-						/>
-						<div style={{ maxWidth: 240 }}>
+					<Stack $gap={12}>
+						<Text $weight={700} $size={13}>
+							Mode
+						</Text>
+						<Row $gap={8} $wrap>
+							{enabledMealTabs.map((tab) => {
+								const label =
+									tab.charAt(0) + tab.slice(1).toLowerCase();
+								return (
+									<Button
+										key={tab}
+										$size="sm"
+										$variant={
+											modeTab === tab
+												? "primary"
+												: "secondary"
+										}
+										onClick={() =>
+											setModeTab(tab)
+										}
+									>
+										{label}
+									</Button>
+								);
+							})}
+							<Button
+								$size="sm"
+								$variant={
+									modeTab === "SCHEDULE_AHEAD"
+										? "primary"
+										: "secondary"
+								}
+								onClick={() =>
+									setModeTab("SCHEDULE_AHEAD")
+								}
+							>
+								Schedule ahead
+							</Button>
+						</Row>
+					</Stack>
+				</Card>
+
+					<Card>
+						<Stack $gap={16}>
+							<SectionHeader title="Details" icon="📝" />
 							<Input
-								label="Menu date"
-								type="date"
-								min={defaultDate()}
-								value={scheduledDate}
-								onChange={(e) =>
-									setScheduledDate(e.target.value)
+								label="Title"
+								value={title}
+								onChange={(e) => setTitle(e.target.value)}
+								placeholder={
+									modeTab === "SCHEDULE_AHEAD"
+										? "Friday lunch specials"
+										: `${modeTab === "BREAKFAST" ? "Breakfast" : modeTab === "LUNCH" ? "Lunch" : "Dinner"} specials`
 								}
 							/>
-						</div>
-						<Row $gap={12} $wrap>
-							<div style={{ flex: 1, minWidth: 160 }}>
-								<Input
-									label="Orders open (start)"
-									type="datetime-local"
-									min={currentLocal}
-									value={availableFrom}
-									onChange={(e) =>
-										setAvailableFrom(e.target.value)
-									}
-								/>
-							</div>
-							<div style={{ flex: 1, minWidth: 160 }}>
-								<Input
-									label="Orders close (end)"
-									type="datetime-local"
-									min={closeMin}
-									value={cutoff}
-									onChange={(e) => setCutoff(e.target.value)}
-								/>
-							</div>
-						</Row>
-						<Text $muted $size={12}>
-							Before it opens, buyers see this listing as “coming
-							soon”. After it closes it’s pulled from the main
-							page.
-						</Text>
+							{modeTab === "SCHEDULE_AHEAD" && (
+								<div style={{ maxWidth: 240 }}>
+									<Input
+										label="Menu date"
+										type="date"
+										min={defaultDate()}
+										value={scheduledDate}
+										onChange={(e) =>
+											setScheduledDate(e.target.value)
+										}
+									/>
+								</div>
+							)}
+							{modeTab === "SCHEDULE_AHEAD" && (
+								<Row $gap={12} $wrap>
+									<div style={{ flex: 1, minWidth: 160 }}>
+										<Input
+											label="Orders open (start)"
+											type="datetime-local"
+											min={currentLocal}
+											value={availableFrom}
+											onChange={(e) =>
+												setAvailableFrom(e.target.value)
+											}
+										/>
+									</div>
+									<div style={{ flex: 1, minWidth: 160 }}>
+										<Input
+											label="Orders close (end)"
+											type="datetime-local"
+											min={closeMin}
+											value={cutoff}
+											onChange={(e) => setCutoff(e.target.value)}
+										/>
+									</div>
+								</Row>
+							)}
+							{modeTab === "SCHEDULE_AHEAD" && (
+								<Text $muted $size={12}>
+									Before it opens, buyers see this listing as "coming
+									soon". After it closes it's pulled from the main
+									page.
+								</Text>
+							)}
 
-						<Stack $gap={10}>
-							<Text $muted $size={13}>
-								Vendor-managed delivery. Prechop does not
-								currently provide riders or vehicles. If you
-								enable delivery, you arrange the delivery
-								method, fee, coverage, timing, and completion.
-							</Text>
-							<Select
-								label="Fulfilment"
-								value={fulfilmentChoice(pickup, delivery)}
-								onChange={(e) => {
-									const value = e.target
-										.value as FulfilmentChoice;
-									setPickup(
-										value === "PICKUP" || value === "BOTH",
-									);
-									setDelivery(
-										value === "DELIVERY" ||
-											value === "BOTH",
-									);
-								}}
-							>
-								<option value="PICKUP">Pickup only</option>
-								<option value="DELIVERY">Delivery only</option>
-								<option value="BOTH">
-									Pickup and delivery
-								</option>
-							</Select>
+							<Stack $gap={10}>
+								<Text $muted $size={13}>
+									Vendor-managed delivery. Prechop does not
+									currently provide riders or vehicles. If you
+									enable delivery, you arrange the delivery
+									method, fee, coverage, timing, and completion.
+								</Text>
+								<Select
+									label="Fulfilment"
+									value={fulfilmentChoice(pickup, delivery)}
+									onChange={(e) => {
+										const value = e.target
+											.value as FulfilmentChoice;
+										setPickup(
+											value === "PICKUP" || value === "BOTH",
+										);
+										setDelivery(
+											value === "DELIVERY" ||
+												value === "BOTH",
+										);
+									}}
+								>
+									<option value="PICKUP">Pickup only</option>
+									<option value="DELIVERY">Delivery only</option>
+									<option value="BOTH">
+										Pickup and delivery
+									</option>
+								</Select>
 							{delivery && (
 								<Stack $gap={10}>
 									<Input
@@ -1161,6 +1383,98 @@ export default function DailyOrderComposerWrapper({
 							)}
 						</Stack>
 					</Stack>
+
+				{batchesData?.batches?.length ? (
+					<Stack $gap={10}>
+						<Text $weight={700} $size={13}>
+							<span aria-hidden>🏷️</span> Today's batches
+						</Text>
+						<Text $muted $size={12}>
+							Pick a delivery window for today. Capacity updates
+							in real time.
+						</Text>
+						<Stack $gap={8}>
+							{batchesData.batches.map((b) => {
+								const disabled =
+									b.status === "paused" ||
+									b.status === "closed" ||
+									b.status === "full";
+								const active =
+									selectedBatch?.windowId ===
+									b.window._id;
+								const statusLabel =
+									b.status === "open"
+										? "Open"
+										: b.status === "paused"
+											? "Paused for today"
+											: b.status === "closed"
+												? "Closed"
+												: "Fully booked";
+								const statusTone =
+									b.status === "open"
+										? active
+											? "success"
+											: "primary"
+										: "muted";
+								return (
+									<BatchCard
+										key={b.window._id}
+										$active={active}
+										style={{
+											cursor: disabled
+												? "not-allowed"
+												: "pointer",
+											opacity: disabled ? 0.6 : 1,
+										}}
+										onClick={() => {
+											if (disabled) return;
+											setSelectedBatch({
+												windowId: b.window._id,
+												batchId: b.batch?._id,
+											});
+										}}
+									>
+										<Row
+											$justify="space-between"
+											$gap={10}
+										>
+											<Stack $gap={2}>
+												<Text $weight={700}>
+													{b.window.name ||
+														`${b.window.mealTime} · Window`}
+												</Text>
+												<Text $muted $size={12}>
+													{b.window.orderWindowStart}
+													{" – "}
+													{b.window.orderWindowEnd}{" "}
+													(order)
+													{" · "}
+													{b.window.deliveryWindowStart}
+													{" – "}
+													{b.window.deliveryWindowEnd}{" "}
+													(delivery)
+												</Text>
+											</Stack>
+											<Badge $tone={statusTone as any}>
+												{statusLabel}
+												{" · "}
+												{b.capacity.remainingQuantity}{" "}
+												left
+											</Badge>
+										</Row>
+									</BatchCard>
+								);
+							})}
+						</Stack>
+					</Stack>
+				) : (
+					modeTab !== "SCHEDULE_AHEAD" && (
+						<Text $muted $size={12}>
+							No {modeTab.toLowerCase()} delivery window configured.
+							Configure delivery windows before posting.
+						</Text>
+					)
+				)}
 				</Card>
 
 				<Card>
@@ -1185,6 +1499,8 @@ export default function DailyOrderComposerWrapper({
 								</Button>
 							</ItemsAction>
 						</ItemsHeader>
+
+						{batchesData?.batches?.length ? null : null}
 
 						<Stack $gap={8}>
 							{menuItems.map((m) => {

@@ -40,6 +40,8 @@ export const GET = withApiHandler(
 				deliveryEnabled: configs.deliveryEnabled,
 				pickupEnabled: configs.pickupEnabled,
 				vendorRegistrationEnabled: configs.vendorRegistrationEnabled,
+				platformMode: configs.platformMode,
+				singleKitchenVendorId: configs.singleKitchenVendorId,
 				...toEffectiveFeePolicy(configs),
 			});
 		} catch (error) {
